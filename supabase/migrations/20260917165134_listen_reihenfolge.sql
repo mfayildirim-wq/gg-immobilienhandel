@@ -1,0 +1,3 @@
+ALTER TABLE "fach"."deals" ADD COLUMN "reihenfolge" bigint DEFAULT (-(extract(epoch from clock_timestamp()) * 1000000))::bigint NOT NULL;--> statement-breakpoint
+ALTER TABLE "fach"."makler" ADD COLUMN "reihenfolge" bigint DEFAULT (-(extract(epoch from clock_timestamp()) * 1000000))::bigint NOT NULL;--> statement-breakpoint
+ALTER TABLE "fach"."objekte" ADD COLUMN "reihenfolge" bigint DEFAULT (-(extract(epoch from clock_timestamp()) * 1000000))::bigint NOT NULL;

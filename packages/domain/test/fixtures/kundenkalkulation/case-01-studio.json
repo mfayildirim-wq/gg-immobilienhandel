@@ -1,0 +1,108 @@
+{
+  "$schema": "../KKalk-fixture.schema.json",
+  "case_id": 1,
+  "name": "Klein-Studio (Berlin) — User-generiert via Excel",
+  "description": "Einfachste Konstellation: Kleines Studio, 80% Finanzierung, alle Defaults. Edge-Case: Cashflow Jahr 1 nahe Null (-80€/Mo) bei 4% Zins / 2% Tilgung — typisches 'Break-Even-Investment'.",
+  "source": "User-eingegeben in Excel-Original, Werte zurückgemeldet 2026-04-30",
+
+  "scope": "global",
+  "einheitId": null,
+
+  "objSnapshot": {
+    "adresse": "Test-Case 1: Studio Berlin",
+    "kaufdatum": "2024-01-01",
+    "wohnflaecheGesamt": 35,
+    "stellplaetzeAnzahl": 0,
+    "einheitenAnzahl": 1,
+    "einheiten": [
+      {
+        "_comment": "Im Excel als Aggregat-Eingabe (MFH-Kalkulator C6='Aus'), 1 Einheit"
+      }
+    ]
+  },
+
+  "inputs": {
+    "kaufpreis": 250000,
+    "notarPct": 0.015,
+    "grundbuchPct": 0.005,
+    "grundsteuerPct": 0.05,
+    "maklerPct": 0,
+    "sonstigePct": 0,
+
+    "renovierungssumme": 0,
+    "renovierungAktivieren": false,
+
+    "nettokaltmieteMonat": 1000,
+    "stellplatzMiete": 0,
+    "sonstigeMiete": 0,
+    "umlagefaehigeKostenMonat": 0,
+    "mieterhoehungJaehrlich": 0.015,
+
+    "hausverwaltungMonat": 0,
+    "instandhaltungsruecklage": 0,
+    "mietausfallruecklage": 0,
+    "sonstigeNichtUmlagefaehig": 80,
+
+    "wertsteigerungJaehrlich": 0.02,
+    "anteilGebaeudeKaufpreis": 0.7,
+    "afaSatz": 0.02,
+    "afaTypDenkmal": false,
+    "denkmalAfaBasis": 0,
+    "denkmalAfaSatz": 0.09,
+
+    "grenzsteuersatz": 0.35,
+
+    "darlehen": [
+      {
+        "label": "Darlehen I",
+        "summe": 200000,
+        "zinssatz": 0.04,
+        "tilgung": 0.02,
+        "sondertilgung": 0
+      }
+    ],
+    "eigenkapital": 67500,
+    "_comment_eigenkapital": "= GIK (267.500) - Darlehen (200.000)"
+  },
+
+  "expected": {
+    "_comment": "User-extrahierte Excel-Outputs vom 2026-04-30. KP/m² noch offen (Wohnfläche unklar).",
+
+    "investition": {
+      "kaufpreisProQm": 7143,
+      "_comment_kp_qm": "= 250.000 / 35 = 7.142,86 (Excel rundet auf 7.143)",
+      "nebenkostenEuroTotal": 17500,
+      "gik": 267500,
+      "afaBasisLangfristig": 187250
+    },
+
+    "kennzahlen_jahr_1": {
+      "nettokaltmieteProJahr": 12000,
+      "bruttomietrendite": 0.048,
+      "faktor": 20.8,
+      "nettomietrendite": 0.041,
+      "cashflowOperativ": -80,
+      "_comment_cashflow_breakdown": "Warmmiete +1.000 - Bewirtschaftung 80 - Zinsen 666,67 - Tilgung 333,33 = -80€/Mo"
+    },
+
+    "kennzahlen_zukunft_2033": {
+      "zieljahr": 2033,
+      "wertImmobilie": 304749,
+      "_comment_wert_2033": "= 250.000 × 1.02^10 (10 Wertsteigerungs-Perioden, Excel zählt von Spalte D als Jahr 1 → 2033 = Index 9 = 10 multiplikative Perioden)",
+      "cashflowOperativ": 48,
+      "_comment_cashflow_2033": "Cashflow positiv weil Mieten gestiegen sind (1.143€/Mo) und Zinsen gesunken sind (sinkende Restschuld)"
+    },
+
+    "profikennzahlen_2033": {
+      "vermoegenszuwachsTotal": 80221
+    }
+  },
+
+  "tolerance": {
+    "currency": 0.50,
+    "percentage": 0.0001
+  },
+
+  "verification_status": "user_provided_via_excel",
+  "_verification_note": "User hat diese Werte am 2026-04-30 aus dem Excel-Original abgeschrieben. Plausibilität bestätigt durch Nachrechnung aller Schlüsselwerte (alle stimmen)."
+}

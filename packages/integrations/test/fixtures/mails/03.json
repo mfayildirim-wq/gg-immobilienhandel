@@ -1,0 +1,25 @@
+{
+  "id": "03",
+  "label": "Garant Immobilien — Exposé 154.938",
+  "expectedVerdict": "LINK_LANDING_LOCKED",
+  "note": "Anhang ist die Widerrufsbelehrung. Body nennt \"Details ansehen\" als Freischaltweg.",
+  "mail": {
+    "from": "expose@garant-immo.de",
+    "fromName": "expose@garant-immo.de",
+    "subject": "Immobilien-Exposé 154.938",
+    "date": "2026-07-22T07:49:57Z",
+    "bodyText": "Sehr geehrter Herr Weyrich, wir freuen uns, Ihnen ein Immobilienangebot von GARANT Immobilien präsentieren zu dürfen. Für die Vereinbarung eines Besichtigungstermins oder den Erhalt des vollständigen Exposés inklusive der Objektadresse nutzen Sie bitte den Button \"Details ansehen\" unterhalb der Objekt-Daten. Nach Anzeige der vollständigen Objektinformationen finden Sie dort auch die direkte Durchwahlnummer für Ihre persönliche Terminvereinbarung. Wohn- und Geschäftshaus mit historischem Charme in bester Innenstadtlage von Backnang Objektnummer 154.938 71522 Backnang Baujahr 1895 2.500.000 Euro Käuferprovision 4,76% (inkl. MwSt.) 1.100 m² Wohnfläche 13,0 Zimmer Details ansehen Falls Sie keine weiteren Angebote mehr erhalten möchten, können Sie sich hier abmelden . Mit freundlichen Grüßen Robert Kastner Referenznummern: 196.9543 154.938 Garant Immobilien AG, Wilhelmstraße 5, 70182 Stuttgart, Tel.: 0711/23 95 50, Fax: 0711/23 95 51 50 Vorstand: Erich Sandner (Vorsitzender), Miriam Rohde Aufsichtsrat: Gerald Winkler (Vorsitzender), Sabine Kluge (Stellvertreterin), AG Stuttgart, HRB 90003 Datenweitergabe Gemäß EU-DSGVO sind wir dazu verpflichtet Sie über die Weitergabe Ihrer personenbezogenen Daten zu informieren. Im Rahmen unserer Dienstleistungen wurden diese Daten an folgende(n) Handelsvertreter weitergegeben: Robert Kastner (und ggf. weitere Handelsvetreter aus dem Büro Ludwigsburg). Unter folgendem Link finden Sie unsere Datenschutzgrundsätze , mit Hilfe derer Sie sich einen Überblick verschaffen können, welche personenbezogenen Daten wir von Ihnen erheben und wie wir diese verarbeiten. Widerrufsbelehrung und Widerrufsrecht Aufgrund gesetzlicher Vorgaben müssen wir Sie über Ihr nachfolgendes Widerrufsrecht belehren und Ihnen ein Muster-Widerrufsformular zu diesem Maklervertrag zur Verfügung stellen. Mit der Zusendung von Exposes sowie durch die Objektbesichtigungen mit uns entstehen Ihnen keine Kosten. Nur wenn es zum Abschluss eines von uns nachgewiesenen und/oder vermittelten Vertrags kommt, entsteht ein Provisionsanspruch unsererseits an Sie. Widerrufsrecht Sie haben das Recht, binnen vierzehn Tagen ohne Angabe von Gründen diesen Vertrag zu widerrufen. Die Widerrufsfrist beträgt 14 Tage ab dem Tag des Vertragsabschlusses. Um Ihr Widerrufsrecht auszuüben, müssen Sie uns (Garant Immobilien AG, Wilhelmstraße 5, 70182 Stuttgart, Tel.: 0711/23 95 50, Email: info@garant-immo.de) mittels einer eindeutigen Erklärung (z. B. ein mit der Post versandter Brief oder E-Mail) über Ihren Entschluss, diesen Vertrag zu widerrufen, informieren. Sie können dafür das beigefügte Muster-Widerrufsformular verwenden, das jedoch nicht vorgeschrieben ist. Zur Wahrung der Widerrufsfrist reicht es aus, dass Sie die Mitteilung über die Ausübung des Widerrufsrechts vor Ablauf der Widerrufsfrist absenden. Sie können Ihr Widerrufsrecht auch online unter www.garant-immo.de und dort über die Betätigung der Schaltfläche Vertrag widerrufen ausüben. Wenn Sie diese Online-Funktion nutzen",
+    "attachments": [
+      {
+        "filename": "154938-widerruf.pdf",
+        "sizeMB": 0.21,
+        "kind": "pdf"
+      }
+    ],
+    "links": [
+      "https://www.garant-immo.de/abmeldung?abmeldTyp=angebote&amp;expose=de5eb667530c7e38bfc912f8e4ebe1bd",
+      "https://www.garant-immo.de/expose/vorschau?expose=de5eb667530c7e38bfc912f8e4ebe1bd",
+      "https://www.garant-immo.de/rechtliches/informationspflicht-10"
+    ]
+  }
+}

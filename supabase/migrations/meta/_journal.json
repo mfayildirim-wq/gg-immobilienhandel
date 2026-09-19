@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1789647872111,
+      "tag": "20260917122432_fachschema",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789649207974,
+      "tag": "20260917124647_deal_kalkulation_felder",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789657396280,
+      "tag": "20260917150316_begleitschein_sortierung",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789662017733,
+      "tag": "20260917162017_projekt_felder",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789663894051,
+      "tag": "20260917165134_listen_reihenfolge",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789670597282,
+      "tag": "20260917184317_merge_protokoll",
+      "breakpoints": true
+    }
+  ]
+}

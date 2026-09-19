@@ -1,0 +1,23 @@
+{
+  "id": "04",
+  "label": "Brandt & Ohlbrecht — Exposé Gewerbe Möhringen",
+  "expectedVerdict": "ATTACHMENT",
+  "note": "Objektpräsentation als Anhang. Der Mailtext kündigt zusätzlich ein zweites Objekt nur an (R9).",
+  "mail": {
+    "from": "ohlbrecht@brandt-ohlbrecht-immo.de",
+    "fromName": "Paul Ohlbrecht",
+    "subject": "Exposé Gewerbe Möhringen",
+    "date": "2026-07-21T11:26:43Z",
+    "bodyText": "Hallo Gerry, ich hoffe, dir geht es gut soweit. Wir bekommen bald ein neues Objekt in Unterweissach in die Vermarktung mit 12 1-Zimmer-Wohnungen und Ausbaupotenzial. Das würde ich dir mal zuschicken, wenn das etwas für dich wäre. Außerdem schicke ich dir anbei ein Gewerbeobjekt, das interessant sein könnte. Sollte es für dich nicht in Frage kommen. Kennst du jemanden, für den solche Objekte interessant sind? Bei Rückfragen stehen wir Ihnen gerne zur Verfügung. Mit freundlichen Grüßen Paul Ohlbrecht Immobilienkaufmann mit der Zusatzqualifikation des privaten Vermögensmanagements Brandt & Ohlbrecht Immobilien GbR Website: www.brandt-ohlbrecht-immo.de Email: ohlbrecht@brandt-ohlbrecht-immo.de Tel.: +49 152 55 00 11 22 Ahornweg 4 71334 Waiblingen Impressum",
+    "attachments": [
+      {
+        "filename": "Objektpräsentation Möhringen.pdf",
+        "sizeMB": 2.24,
+        "kind": "pdf"
+      }
+    ],
+    "links": [
+      "https://www.brandt-ohlbrecht-immo.de/Start.htm"
+    ]
+  }
+}

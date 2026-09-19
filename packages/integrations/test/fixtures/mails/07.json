@@ -1,0 +1,25 @@
+{
+  "id": "07",
+  "label": "ImmoScout24 / Kernbau — Landingpage",
+  "expectedVerdict": "LINK_LANDING_OPEN",
+  "note": "Landingpage-Link ohne Freischaltstrecke. 8 weitere Links sind Rauschen.",
+  "mail": {
+    "from": "anbieter.22222222222222222222222222222222@nachrichten.immobilienscout24.de",
+    "fromName": "Sven Hagedorn",
+    "subject": "Neue Nachricht: Herr Hagedorn hat Ihnen geantwortet. (Objekt 169209703)",
+    "date": "2026-07-17T09:34:05Z",
+    "bodyText": "Die Nr. 1 für Immobilien Du hast eine neue Nachricht von Herr Sven Hagedorn Vorsicht bei externen Links Diese Nachricht enthält einen externen Link. Seien Sie vorsichtig, insbesondere wenn Sie zur Eingabe von Daten aufgefordert werden. Geben Sie keine persönlichen Daten oder Zahlungsinformationen ein. ImmoScout24 wird Sie niemals auf diesem Weg zur Zahlung oder Verifikation auffordern . Guten Tag Herr Weyrich, anbei sende ich Ihnen noch das Exposé. https://kernbau-gmbh.landingpage.immobilien/public/exposee/kernsaniertes-wohn-und-geschaftshaus-in-stuttgart-vaihingen-eyJzaG9wX3Rva2VuIjoiWkRmaWZpRHVkVzdMVEVTVmUxN1lvMmk3IiwicHJvcGVydHlfdG9rZW4iOiJaRHM3VFZXZm02M3JYSmZONUNCTEJzdkQifQ== Viele Grüße Sven Hagedorn ⓘ Kommuniziere zu deinem Schutz und deiner Sicherheit immer über ImmoScout24. Antworten Immobilie Zum Exposé Renditestarkes Wohn- und Geschäftshaus in Stuttgart-Vaihingen 70563 70563 Stuttgart 1.490.000,00 € 370 m 2 13 Zi. Anbieter Sven Hagedorn Kernbau GmbH Verdächtiges Inserat? Hast du Zweifel an der Ehrlichkeit des Angebots? Nutze den ImmoScout24 Messenger oder melde das Inserat. Überweise auf keinen Fall Geld im Voraus! Alle Sicherheits-Tipps Verdacht melden Immobilien Scout GmbH – Ein Unternehmen der Scout24-Gruppe, Invalidenstraße 65, 10557 Berlin · immobilienscout24.de · Geschäftsführung: Dr. Gesine Carow, Daniel Hendrich · Vorsitzender des Aufsichtsrats: Ralf Wendt · Handelsregister: Amtsgericht Charlottenburg, HRB 69108 · Sitz der Gesellschaft: Berlin · USt-IdNr. DE200269419 Datenschutz | Impressum © 1999 - 2026 Immobilien Scout GmbH",
+    "attachments": [],
+    "links": [
+      "https://kernbau-gmbh.landingpage.immobilien/public/exposee/kernsaniertes-wohn-und-geschaftshaus-in-stuttgart-vaihingen-eyJzaG9wX3Rva2VuIjoiWkRmaWZpRHVkVzdMVEVTVmUxN1lvMmk3IiwicHJvcGVydHlfdG9rZW4iOiJaRHM3VFZXZm02M3JYSmZONUNCTEJzdkQifQ==",
+      "https://www.immobilienscout24.de/expose/169209703?utm_medium=email&amp;utm_source=system&amp;utm_campaign=commservicemail_vendortoseeker&amp;utm_content=object_textlink",
+      "https://www.immobilienscout24.de/nachrichten/unterhaltung/c5348fc5-846d-4cfa-b808-295cd7378009?utm_content=response_button&amp;utm_source=system&amp;utm_medium=email&amp;utm_campaign=42001",
+      "https://pictures.immobilienscout24.de/listings/7135a582-25e7-439f-9c41-41df7feed9fd-2058735366.jpg/ORIG/resize/275x/format/jpg/quality/80",
+      "https://jzxinqht.r.eu-west-1.awstrack.me/I0/0102019f6f6caaae-fb47c9b3-9684-4e48-9cdc-42e7c0e41fe1-000000/DEta6xq7SlXpRJqjAVEKASIjG3g=473",
+      "https://pictures.immobilienscout24.de/usercontent/1112ccde-807a-497f-9348-b8236fc50d87.JPG/ORIG/resize/300x100/format/jpg/quality/80",
+      "https://www.immobilienscout24.de/?utm_source=system&amp;utm_medium=email&amp;utm_content=header_logo&amp;utm_campaign=42001",
+      "https://sicherheit.immobilienscout24.de?utm_source=system&amp;utm_medium=email&amp;utm_campaign=42001",
+      "https://angebot-melden.immobilienscout24.de/?realEstateId=169209703&amp;publicationState=live"
+    ]
+  }
+}

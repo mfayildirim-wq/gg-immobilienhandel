@@ -1,0 +1,21 @@
+{
+  "id": "08",
+  "label": "Deutsche Bank Immobilien — Suchprofil-Treffer",
+  "expectedVerdict": "LINK_LANDING_OPEN",
+  "note": "Newsletter-Form, aber genau ein konkretes Objekt mit \"Zum Exposé\"-Link. Kein Freischaltweg.",
+  "mail": {
+    "from": "team.immobilienservice@immobilien.db.com",
+    "fromName": "Deutsche Bank Immobilien Suchprofil",
+    "subject": "Passende Immobilien gefunden: Neue Treffer zu Ihrem Suchprofil",
+    "date": "2026-07-16T12:14:07Z",
+    "bodyText": "Neue Treffer zu Ihrem Suchprofil. Guten Tag! Glückwunsch. Wir haben zu Ihrem Suchprofil neue, passende Immobilienangebote gefunden. Ihre persönliche Traumimmobilie ist jetzt nur noch wenige Klicks entfernt. Folgende Immobilienangebote passen zu Ihrem Suchprofil: Einfamilienhaus in Stuttgart Halbhöhenlage Stuttgart – Filetstück mit Weitblick und Entwicklungspotenzial Kaufpreis: 1.970.000,00 € Zimmer: 10,0 Wohnfläche: ca. 420 m² Grundstücksfläche: ca. 1.450 m² Zum Exposé Wir senden Ihnen diese Nachricht, weil Sie der Deutsche Bank Immobilien GmbH Ihr Einverständnis gegeben oder sich auf den Internet-Seiten der Deutsche Bank Immobilien ein Suchprofil hinterlegt haben. Falls Sie keine Benachrichtigungen für Ihr Suchprofil mehr erhalten möchten, können Sie diese unter dem unten stehenden Link abbestellen. Suchprofil vom 12.06.2025 mit folgenden Kriterien: Objekttyp: Haus Wohnfläche: ab 300 m² bis 4.000 m² Preis: ab 800.000,00 € bis 10.000.000,00 € Lage: 25 km um Stuttgart Kaufobjekte Hier können Sie Benachrichtigungen für das oben genannte Suchprofil abbestellen . Sofern weitere Suchprofile erstellt wurden, sind diese gesondert abzubestellen. Mit freundlichen Grüßen Ihre Deutsche Bank Immobilien GmbH Diese E-Mail enthält vertrauliche und/oder rechtlich geschützte Informationen. Wenn Sie nicht der richtige Adressat sind oder diese E-Mail irrtümlich erhalten haben, informieren Sie bitte sofort den Absender und vernichten Sie diese E-Mail. Das unerlaubte Kopieren sowie die unbefugte Weitergabe dieser E-Mail ist nicht gestattet. Wenn Sie künftig von Deutsche Bank Immobilien keine Angebote und Informationen mehr erhalten möchten, können Sie der Nutzung Ihrer Daten zu Werbezwecken hier widersprechen: Deutsche Bank Immobilien GmbH, Lubahnstraße 2, 31789 Hameln. Oder per Mail: immobilien@db.com Informationen (einschließlich Pflichtangaben) zu einzelnen Gesellschaften und Zweigniederlassungen des Konzerns Deutsche Bank AG finden Sie unter https://www.deutsche-bank.de/pflichtangaben . Wir weisen hiermit darauf hin, dass Verträge die mit der Deutsche Bank Immobilien GmbH, Lubahnstraße 2, 31789 Hameln geschlossen wurden und Leistungen durch diese bzw. durch die für diese tätigen selbständigen Immobilienberater*innen erbracht werden. If you are not the intended recipient (or have received this e-mail in error) please notify the sender immediately and delete this e-mail. Any unauthorized copying, disclosure or distribution of the material in this e-mail is strictly forbidden. If you no longer wish to receive offers and information from Deutsche Bank Immobilien in the future, you may object to the use of your data for advertising purposes here: Deutsche Bank Immobilien GmbH, Lubahnstraße 2, 31789 Hameln. Or via email: immobilien@db.com Please refer to https://www.deutsche-bank.com/disclosures for information (including mandatory corporate particulars) on selected Deutsche Bank AG branches and group companies. We hereby point out that contracts with Deutsche Bank Imm",
+    "attachments": [],
+    "links": [
+      "https://www.deutsche-bank-immobilien.de/expose/FID-P13-335-971",
+      "https://portal.fio.de/cdn/media/apiv1?token=aZ3Y95hU4klN2IEeVP6-2bCtN15CLS6DhIO8qxVh2bz7DIgErAgUwIB4xtT-2b-2bp0l59&amp;type=s",
+      "https://www.deutsche-bank-immobilien.de/suchprofil?searchAgentIdentifier=fe51b801-da51-4578-8809-c6afcb81be32",
+      "https://www.deutsche-bank.de/pflichtangaben",
+      "https://www.deutsche-bank.com/disclosures"
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+node_modules/
+dist/
+.turbo/
+.env
+.env.local
+*.log
+test-results/
+playwright-report/
+supabase/.temp/
+supabase/.branches/
+.DS_Store
+berichte/
+
+# IDE-Einstellungen gehören zum Rechner, nicht zum Projekt
+.idea/
+.vscode/
+
+# Erzeugte Wissensgraphen und Zwischenstände
+graphify-out/

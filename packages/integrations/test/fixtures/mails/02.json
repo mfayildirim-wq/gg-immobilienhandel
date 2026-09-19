@@ -1,0 +1,30 @@
+{
+  "id": "02",
+  "label": "Immobilienvermittlung BW — MFH 70599 Stuttgart",
+  "expectedVerdict": "LINK_LANDING_LOCKED",
+  "note": "Beide Anhänge sind Rechtsdokumente. Web-Exposé auf fio mit Freischaltstrecke.",
+  "mail": {
+    "from": "beate.kolb@immobilienvermittlung-bw.de",
+    "fromName": "Kolb, Beate",
+    "subject": "Ihr Objektangebot: Mehrfamilienhaus in 70599 Stuttgart",
+    "date": "2026-07-24T14:22:15Z",
+    "bodyText": "Sehr geehrter Herr Weyrich, wir freuen uns über Ihr Interesse an unserem Immobilienangebot. Gerne übersenden wir Ihnen anbei das gewünschte Exposé. Selbstverständlich sind diese Informationen kostenlos für Sie. Erst bei Erwerb oder Anmietung eines Objekts berechnen wir Ihnen die Nachweis- bzw. Vermittlungsprovision, deren Höhe Sie dem Exposé entnehmen können. Mehrfamilienhaus in 70599 Stuttgart vermietetes MFH mit 8 vermietbaren Einheiten und 6 Stellplätzen Objektnummer: S-109291 Preis 1.290.000,00 EUR Käuferprovision 4,76 % inkl. ges. MwSt. Wir empfehlen Ihnen, sich die Immobilie vorab von außen anzusehen (Bitte beachten Sie, dass eine Innenbesichtigung nur in unserer Anwesenheit stattfinden kann). Gefällt Ihnen die Lage und das Umfeld auf den ersten Blick und Sie können sich vorstellen, hier zu leben? Oder haben Sie es sich ganz anders vorgestellt? Kontaktieren Sie uns gerne, wenn Sie besichtigen möchten. Klicken Sie auf das nachstehende blaue Kästchen, um weitere Informationen zu erhalten. Zum Web-Exposé WICHTIG: Bitte schauen Sie regelmäßig in Ihren Spam/ Junk-Ordner. Leider kommt es immer häufiger vor, dass E-Mails vom Spamfilter des jeweiligen E-Mail-Providers blockiert werden. Freundliche Grüße Beate Kolb --------------------------------------------------------------- Beate Kolb Immobilienvermittlung BW GmbH (1050/H) für die BW-Bank Heilbronner Straße 28 70191 Stuttgart Telefon: 0711/124-55501 mailto: beate.kolb@immobilienvermittlung-bw.de https://www.bw-bank.de/ Immobilienvermittlung BW GmbH Ein Unternehmen der LBBW - Gruppe Hauptsitz: Stuttgart Amtsgericht Stuttgart, HRB 90002 Geschäftsführer: Andreas Kleist Vorsitzende des Aufsichtsrats: Renate Vollmer Die LBBW verarbeitet gemaess Erfordernissen der DSGVO Ihre personenbezogenen Daten. Informationen finden Sie unter https://www.lbbw.de/datenschutz.",
+    "attachments": [
+      {
+        "filename": "Maklervertrag Interessent.pdf",
+        "sizeMB": 0.06,
+        "kind": "pdf"
+      },
+      {
+        "filename": "Verbraucherinformationen.pdf",
+        "sizeMB": 0.43,
+        "kind": "pdf"
+      }
+    ],
+    "links": [
+      "https://immo.fio.de/webexposee/N1bh4-2fbIj6gIrW3vrOCpJlfG4f6ISYBadOr1MyUsPgmRdMvqA-2bAUWi7gGJE0kShmnY7ouOHXM3V4j5H0nbfEp0ZdCmidTCKseLq9cnu0L-2fzEkgazdWWkLXdGYOQ9Wv4GOwakPjKg6MU1CNQ0Mz94UIfw7gHF25SLarfiPMy6xsPyuT5q5g8hklLGZMjN-2bwyn%7c/?integrated=false",
+      "https://ssl3.fioport.de/Vermarktung/lbbw/Previewer.aspx?DownloadImages=0&amp;file=mh07p1SWbxIrpiJhFHfdPNBe6pfPFRqTol9qNUq1dgG7d3BcNMNmVo5d8clWsPo1%7c",
+      "https://www.bw-bank.de/"
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "id": "01",
+  "label": "SHV — Mehrfamilienhaus 73663 Berglen",
+  "expectedVerdict": "BODY",
+  "note": "Alle Eckdaten stehen im Mailtext, kein Anhang, kein Exposé-Link.",
+  "mail": {
+    "from": "bertram@shv-gmbh.de",
+    "fromName": "Bertram Ludwig",
+    "subject": "Mehrfamilienhaus in 73663 Berglen",
+    "date": "2026-07-24T14:29:06Z",
+    "bodyText": "Sehr geehrter Herr Weyrich, ich hoffe Ihnen geht es gut. Aktuell haben wir ein Mehrfamilienhaus in 73663 Berglen im Verkauf. Im Folgenden die Eckdaten: Mehrfamilienhaus mit 6 Wohnungen (alle vermietet). Gebäude und Wohnungen im guten Zustand. Ca. 440 m² Wohnfläche. Ca. 800 m² Grundstück. Jahresnettoeinnahmen ca. 64.000 €. Kaufpreis 1.290.000 €. Wäre das interessant für Sie? Mit freundlichen Grüßen i.V. Ludwig Bertram SHV Stuttgarter Haus- und Vermögensverwaltung GmbH Fritz-Elsas-Str. 50 70174 Stuttgart Telefon: +49 (0) 711 - 555 01-15 Fax: +49 (0) 711 - 555 01 99 mailto: simon.bertram@shv-gmbh.de Sitz der Gesellschaft: Fritz-Elsas-Str. 50 D-70174 Stuttgart Registergericht: Amtsgericht Stuttgart Handelsregister: HRB 90001 Geschäftsführer: Konrad Vollmer Nähere Informationen zur Datenverarbeitung erhalten Sie unter folgendem Link: https://www.shv-gmbh.de/informationen-zur-datenverarbeitung",
+    "attachments": [],
+    "links": [
+      "https://www.shv-gmbh.de/informationen-zur-datenverarbeitung"
+    ]
+  }
+}

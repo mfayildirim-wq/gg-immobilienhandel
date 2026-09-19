@@ -1,0 +1,48 @@
+/* Zeile der schmalen Liste (Ansicht „nebeneinander") — Hover wie in den Tabellen der App. */
+.zeile {
+  border-radius: 8px;
+  border: 1px solid var(--mantine-color-default-border);
+  background: transparent;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.zeile:hover {
+  background: var(--mantine-color-default-hover);
+  border-color: var(--mantine-color-default-border);
+}
+
+/* Die Auswahl bleibt auch beim Überfahren erkennbar. */
+.zeile[data-aktiv] {
+  background: var(--mantine-primary-color-light);
+  border-color: var(--mantine-primary-color-filled);
+}
+
+.zeile[data-aktiv]:hover {
+  background: var(--mantine-primary-color-light-hover);
+}
+
+.zeile:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
+}
+
+/*
+ * Auswählbare Karte im Ankauf-Cockpit (Deals nachverfolgen, Makler kontaktieren).
+ * Gleiches Verhalten wie die Listenzeile; der farbige Rand links bleibt der Karte überlassen,
+ * weil seine Farbe von der Fälligkeit abhängt.
+ */
+.karte {
+  transition: background-color 120ms ease;
+}
+
+.karte:hover {
+  background-color: var(--mantine-color-default-hover);
+}
+
+.karte[data-aktiv] {
+  background-color: var(--mantine-primary-color-light);
+}
+
+.karte[data-aktiv]:hover {
+  background-color: var(--mantine-primary-color-light-hover);
+}

@@ -1,0 +1,221 @@
+{
+  "$schema": "../KKalk-fixture.schema.json",
+  "case_id": "real-9fh",
+  "name": "Real-Case 9-Familienhaus mit Komplettsanierung (10.04.2026)",
+  "description": "Vom User gestellter Real-Case aus 'Kundenkalkulation 10.04.2026_nach Fertigstellung.xlsx'. Tatsächlich umgesetzter Deal mit 887k€ Sofort-Sanierung + 3 Darlehen-Tranchen. Anspruchsvollste Konstellation: kombiniert Sofort-Abschreibung (massive Steuerrückzahlung Jahr 1), Mehr-Tranchen-Finanzierung und Edge-Case dass Excel-IRR nicht konvergiert.",
+  "source": "docs/excel-reference/Kundenkalkulation_REAL-CASE_2026-04-10.xlsx",
+  "extracted_at": "2026-04-30",
+  "extracted_by": "Python openpyxl, alle hellblauen Input-Felder (BG theme:3 tint:0.90)",
+
+  "scope": "global",
+  "einheitId": null,
+
+  "objSnapshot": {
+    "adresse": "IVT AG Projekt: Entwicklung eines 9-Familienhauses",
+    "kaufdatum": "2025-01-01",
+    "wohnflaecheGesamt": 554.5,
+    "stellplaetzeAnzahl": 5,
+    "einheitenAnzahl": 9,
+    "_comment": "Im Excel als Aggregat-Eingabe (MFH-Kalkulator C6='Aus'). Mieten kommen als manuelle Aggregat-Werte 8.369€/Mo (= 6.020 + 2.349 - vermutlich 2 Mieterhöhungs-Komponenten).",
+    "einheiten": []
+  },
+
+  "inputs": {
+    "_comment_kaufpreis": "Cockpit D14",
+    "kaufpreis": 1550000,
+    "notarPct": 0.015,
+    "grundbuchPct": 0.005,
+    "grundsteuerPct": 0.05,
+    "maklerPct": 0,
+    "sonstigePct": 0,
+
+    "_comment_sanierung_KRITISCH": "Im Excel sind 4 Posten (Cockpit B26-B29). Hier werden sie als Liste mit modus+amount kodiert. 'sofort' = im Jahr 1 sofort-abzugsfähig (massiver Steuervorteil). 'aktivieren' = zur AfA-Basis addiert (langfristige Abschreibung über 50 Jahre).",
+    "sanierungsposten": [
+      { "label": "Sanierung", "amount": 887000, "modus": "sofort" },
+      { "label": "Küche", "amount": 9800, "modus": "aktivieren" },
+      { "label": "Möblierung", "amount": 0, "modus": "aktivieren" },
+      { "label": "Sonstiges", "amount": 0, "modus": "sofort" }
+    ],
+    "renovierungssumme": 896800,
+    "_comment_renovierungssumme": "= 887.000 + 9.800 (alle Aktiven, egal ob 'Sofort' oder 'Aktivieren'); steht in Excel E30 = 896.800",
+
+    "_comment_miete": "MFH-Kalkulator C6='Aus' → Aggregat-Eingabe in Cockpit H10 = 8.369€/Mo",
+    "nettokaltmieteMonat": 8369,
+    "stellplatzMiete": 0,
+    "sonstigeMiete": 0,
+    "umlagefaehigeKostenMonat": 0,
+    "mieterhoehungJaehrlich": 0.02,
+
+    "_comment_bewirtschaftung": "Cockpit K9-K30",
+    "umlagefaehig": 0,
+    "nichtUmlagefaehig": 1040,
+    "_comment_nicht_uml": "Cockpit K25 (Hausgeld nicht umlagefähig) = 1.040€/Mo",
+
+    "wertsteigerungJaehrlich": 0.02,
+    "anteilGebaeudeKaufpreis": 0.7,
+    "afaSatz": 0.02,
+    "afaTypDenkmal": false,
+    "denkmalAfaBasis": 0,
+    "denkmalAfaSatz": 0.09,
+
+    "grenzsteuersatz": 0.45,
+
+    "_comment_finanzierung_KRITISCH": "Cockpit hat 4 Tranchen-Slots. Real-Case nutzt 3 (I, II, III), IV ist 0. Wichtig: Tranche III hat Tilgung 0% (vermutlich KfW-Zinsbindung mit Tilgungspause).",
+    "darlehen": [
+      { "label": "Darlehen I",  "summe": 1408500, "zinssatz": 0.0404, "tilgung": 0.01, "sondertilgung": 0 },
+      { "label": "Darlehen II", "summe": 100000,  "zinssatz": 0.0404, "tilgung": 0.01, "sondertilgung": 0 },
+      {
+        "label": "Darlehen III (KfW Effizienzhaus)",
+        "summe": 787000,
+        "zinssatz": 0.0294,
+        "tilgung": 0.0,
+        "sondertilgung": 0,
+        "plan_overrides": {
+          "1": { "sondertilgung": 185000 },
+          "2": { "tilgung": 0 },
+          "3": { "tilgung": 0 },
+          "4": { "tilgung": 0 },
+          "5": { "tilgung": 0 },
+          "6": { "annuitaet": 43712 }
+        },
+        "_comment_overrides": "KfW-Logik: 185k Tilgungszuschuss Jahr 1 (Sondertilgung), 4 Jahre tilgungsfrei (Jahr 2-5), ab Jahr 6 startet Standard-Annuität mit 43.712€. Die Werte sind direkt aus dem Excel-Tilgungsplan kopiert (Wert,AfA,Darlehen!D79, E75-H75, I78)."
+      }
+    ],
+    "eigenkapital": 259800,
+    "_comment_eigenkapital": "= GIK 2.555.300 - Σ Darlehen 2.295.500 = 259.800€",
+
+    "zieljahr": 2035,
+    "_comment_zieljahr": "Cockpit T9 = 10 Jahre nach Kauf"
+  },
+
+  "expected": {
+    "_comment": "Excel-Wahrheit aus dem Real-Case. Die Engine MUSS diese Werte exakt reproduzieren — sonst Haftungsrisiko.",
+
+    "investition": {
+      "kaufpreisProQm": 2795.31,
+      "nebenkostenPctTotal": 0.07,
+      "nebenkostenEuroTotal": 108500,
+      "renovierungSumme": 896800,
+      "gik": 2555300,
+      "afaBasisLangfristig": 1170750,
+      "_comment_afa": "= 0.7 × (1.550.000 + 108.500) + Renovierung-aktivieren (9.800) = 1.160.950 + 9.800 = ... vermutlich Excel-spezifische Berechnung mit Sanierungsposten — zu prüfen!"
+    },
+
+    "miete": {
+      "nettokaltmieteMonat": 8369,
+      "warmmieteMonat": 8369,
+      "jahresmiete": 100428,
+      "_comment_jahresmiete": "= 8.369 × 12"
+    },
+
+    "bewirtschaftung": {
+      "umlagefaehig": 0,
+      "nichtUmlagefaehig": 1040,
+      "gesamt": 1040
+    },
+
+    "finanzierung": {
+      "darlehensummeGesamt": 2295500,
+      "eigenkapital": 259800,
+      "gewichteterZinssatz": 0.03662870834,
+      "gewichteteTilgung": 0.006571553,
+      "kapitaldienstProMonat": 8263.85
+    },
+
+    "kennzahlen_jahr_1": {
+      "bruttomietrendite": 0.06479,
+      "faktor": 15.43,
+      "nettomietrendite": 0.03442,
+      "warmmiete": 8369,
+      "bewirtschaftung": -1040,
+      "zinsen": -7006.77,
+      "tilgung": -1257.08,
+      "cashflowOperativ": -934.85,
+      "_comment_cashflow_op": "Operativ negativ -934,85€/Mo. Aber durch die Sofort-Sanierung gibt es massive Steuerrückzahlung → siehe Bankgespräch."
+    },
+
+    "kennzahlen_zukunft_2035": {
+      "zieljahr": 2035,
+      "jahreNachKauf": 10,
+      "jahresmiete": 122421.17,
+      "wertImmobilie": 3042288.26,
+      "wertProQm": 5486.54,
+      "warmmiete": 10201.76,
+      "bewirtschaftung": -1267.75,
+      "zinsen": -5604.68,
+      "tilgung": -4373.68,
+      "cashflowOperativ": -1044.36
+    },
+
+    "profikennzahlen_2035": {
+      "wertImmobilie": 3042288.26,
+      "minusRestschuld": -1738625.31,
+      "minusEigenkapitalEinsatz": -259800,
+      "plusKumulierterCashflow": 270643.87,
+      "_comment_kumul_cf": "POSITIV! Wegen Sofort-Sanierungs-Steuerrückzahlung Jahr 1 = +407.946€",
+      "vermoegenszuwachsTotal": 1314506.82,
+      "beleihungsreserve": 1303662.95
+    },
+
+    "_HAFTUNGS_KRITISCH_bankgespraech": {
+      "_comment": "Real-Case Bankgespräch ist erweitert ggü. F016 (KfW-Förderkredit-Block, 2 separate Cashflow-Tabellen). Hier nur die Investor-relevanten finalen Werte.",
+
+      "cashflow_jahr_1": {
+        "_comment": "Bankgespräch G19-G23",
+        "zuzahlungProMonat": -1751.52,
+        "_comment_zuzahlung": "= operativer Cashflow vor Steuern, identisch mit Cockpit Q23+(extras)",
+        "zuzahlungProJahr": -21018.20,
+        "rueckerstattungVomFinanzamt": 407946.69,
+        "_comment_rueckerstattung_KRITISCH": "= |zu_versteuernder_CF_Jahr_1| × Grenzsteuersatz. Der zu-versteuernde-CF ist im Jahr 1 stark negativ wegen Sofort-Sanierung 887.000€ als sofort-abzugsfähig.",
+        "cashflowProJahrNachSteuer": 386928.49
+      },
+
+      "cashflow_ab_jahr_2": {
+        "_comment": "Bankgespräch G25-G29",
+        "zuzahlungProMonat": -335.02,
+        "zuzahlungProJahr": -4020.24,
+        "rueckerstattungVomFinanzamt": 5283.36,
+        "_comment_rueckerstattung_2": "Ab Jahr 2 deutlich kleiner — kein Sofort-Sanierungs-Effekt mehr, nur normale AfA-Steuerersparnis",
+        "cashflowProJahrNachSteuer": 1263.12
+      },
+
+      "kumulierterCashflow_pro_jahr_T26_AC26": {
+        "_comment": "Bankgespräch T26:AC26 — kumuliert Jahr 1 bis 10 (positiv wegen Sofort-Steuerrück)",
+        "jahr_1":  386928.49,
+        "jahr_2":  388191.61,
+        "jahr_3":  390156.19,
+        "jahr_4":  392830.42,
+        "jahr_5":  396222.45,
+        "jahr_6":  374327.14,
+        "jahr_7":  352821.49,
+        "jahr_8":  331703.23,
+        "jahr_9":  310969.70,
+        "jahr_10": 290617.77
+      },
+
+      "hochrechnungVerkauf_in_10_jahren": {
+        "_comment": "Bankgespräch J78:J84 (anders als F016 wo J75:J81 stand)",
+        "verkaufspreis": 3042288.26,
+        "restschuld": 1738625.31,
+        "erloes": 1303662.95,
+        "_comment_erloes": "= Verkaufspreis - Restschuld",
+        "eingesetztes_oder_entnommenes_EK": -57404.06,
+        "_comment_ek": "= -EK_Initial (259.800) + kumul. CF (+202.395,94 = J20 = 1.686,63 × 12 × 10) ≈ -57.404. Hier ist die Excel-Logik komplexer als ich vermute, evtl. ohne Sofort-Steuerrück.",
+        "steuerfreierVermoegenszuwachs": 1246258.89,
+        "_comment_vermoegenswachstum": "= Erlös - eingesetztes EK = 1.303.662,95 - (-57.404,06) = 1.361.067... aber Excel zeigt 1.246.258,89. Diskrepanz von ~115k€ — Excel rechnet anders!",
+        "nettoEKRenditePA_IRR": null,
+        "_comment_irr_KRITISCH": "Excel zeigt #NUM! — IRR konvergiert nicht. Engine muss diesen Edge-Case sauber handhaben (NaN/null statt Crash).",
+        "mieteEndjahr": 10201.76
+      }
+    }
+  },
+
+  "tolerance": {
+    "currency": 1.0,
+    "_comment_currency": "Toleranz 1€ wegen mehr Akkumulations-Schritte in komplexerer Berechnung",
+    "percentage": 0.0001
+  },
+
+  "verification_status": "extracted_from_excel_realcase",
+  "_verification_note": "Werte direkt aus dem Real-Case-Excel kopiert. Ist die anspruchsvollste Test-Konstellation — wenn Engine hier exakt rechnet, sind alle einfacheren Cases automatisch abgedeckt."
+}

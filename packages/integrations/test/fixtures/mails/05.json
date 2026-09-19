@@ -1,0 +1,110 @@
+{
+  "id": "05",
+  "label": "Reiser — Bauplatz 10-Familienhaus Neustetten",
+  "expectedVerdict": "BODY",
+  "note": "17 PDF-Anhänge, aber alles Zusatzunterlagen. Der Mailtext ist das Exposé.",
+  "mail": {
+    "from": "martin.reiser@mr-reiser.de",
+    "fromName": "martin.reiser@mr-reiser.de",
+    "subject": "Bauplatzangebot mit Projektentwicklung und kurz vor der Genehmigung stehenden 10-Familienahus in 72149 Neustetten im Ortsteil Remmingsheim bei Rottenburg am Neckar im Landkreis Tübingen",
+    "date": "2026-07-21T09:28:19Z",
+    "bodyText": "Sehr geehrter Herr Weyrich, h iermit möchte ich Ihnen im Alleinauftrag der privaten Verkäuferin folgenden interessanten Bauplatz in der Gemeinde Neustetten-Remmingsheim m it 3.853 Einwohner n im Landkreis Tübingen sowie im direkten Speckgürtel in nur 6 km entfernten in die Großen Kreisstadt Rottenburg am Neckar mit 44.653 Einwohnern sowie nur 17 km in die Universitätsstadt Tübingen mit 92.000 Einwohnern entfernt, p rovisionspflichtig zum Kauf anbieten: Baugrundstück mit Projektentwicklung und in Kürze genehmigtem Baugesuch für ein 2 ½-geschossiges 10-Familienhaus mit 12 Stellplätzen in der Tiefgarage sowie 7 oberirdischen Stellplätzen in 72149 Neustetten im Ortsteil Remmingsheim, Lindenstraße 12 / Ecke Rosenweg Auf dem 935 m² großen Grundstück Flst. 214/3, auf welchem noch eine große Scheuer steht, die noch vom Käufer abzubrechen ist, wurde von der privaten Verkäuferin, bei dem Baurecht nach § 34 BBauGB mit Anpassung an die Nachbarschaftsbebauung, ein von 8 auf 10 Wohneinheiten geändertes Baugesuch für ein 2 ½-geschossiges 10-Familienhaus zur Baugenehmigung eingereicht. Die Einreichung erfolgte nach langer Rücksprache mit der Gemeinde und dem Landratsamt Tübingen sowie nach Zustimmung des Gemeinderates. Die Gesamtwohnfläche beträgt 885,27 m² aufgeteilt in 4 2-Zimmerwohnungen mit ca. 67 m², 4 3-Zimmerwohnungen mit ca. 77 und 96 m², 1 4-Zimmerwohnung mit ca. 123 m² sowie 1 5-Zimmerwohnung mit ca. 148 m². Die Nutzfläche beträgt 495,43 m² und der umbaute Raum 4.870,17 m³. Gute und gewachsene innerörtliche Lage. In kurzer Entfernung beim Rathaus befindet sich die Bushaltstelle nach Rottenburg auch zu sämtlichen weiterführenden Schulen. Grundschule, 2 Kindergärten, Apotheke, Ärzte, Pflegeheim und Netto-Markt befinden sich am Ort. Gute und rasche Verkehrsanbindung nach Rottenburg und Tübingen sowie über die A 81 und den Autobahnanschluss 29 Rottenburg nach Herrenberg, Böblingen / Sindelfingen und nach Horb sowie in Richtung Bodensee sprechen für sich, ebenso der hohe Freizeitwert. In der Nachbargemeinde Bondorf wird der Neubau zwischen EUR 5.420,-- und 5.784,-- pro m², in Eutingen zwischen EUR 4.656,-- und 4.805,-- pro m² und die der Nachbarstadt Rottenburg zwischen EUR 5.508,-- und 5.809,-- pro m² angeboten. Die Kauf preisvorstellung der privaten Verkäuferin beträgt EUR 550.000 ,-- incl. der Projektentwicklung und in Kürze genehmigtem Baugesuch, was auch Zahlungsvor- aussetzung ist und einem Grundstücks anteil von EUR 621,27 pro m² Wohnfläche entspricht , jedoch ohne die noch anfallende n Kaufnebenkosten! Weitere Einzelheiten entnehmen Sie bitte den beigefügten Unterlagen zum Angebot. Für weitere Fragen sowie für einen Gesprächstermin bei der Verkäuferin in Neustetten- Remmingsheim stehe ich Ihnen jederzeit nach Terminvereinbarung gerne zur Verfügun g. Hier nur der Google-Link: https://maps.app.goo.gl/Xk7QeR2mBvT4sN1a8 Meine Nachweis-/Vermittlungsprovision vom Käufer beträgt 4,76% incl. 19% MwSt. aus dem Kaufpreis, fällig bei Abschluss des",
+    "attachments": [
+      {
+        "filename": "2.ENT_10WHG_EG_84.pdf",
+        "sizeMB": 0.65,
+        "kind": "pdf"
+      },
+      {
+        "filename": "image001.jpg",
+        "sizeMB": 0.01,
+        "kind": "image"
+      },
+      {
+        "filename": "72740LPNT.PDF",
+        "sizeMB": 0.55,
+        "kind": "pdf"
+      },
+      {
+        "filename": "7.ENT_10WHG_Ansicht Süd_89.pdf",
+        "sizeMB": 1.7,
+        "kind": "pdf"
+      },
+      {
+        "filename": "Nutzflächenberechnung.pdf",
+        "sizeMB": 0.18,
+        "kind": "pdf"
+      },
+      {
+        "filename": "9.ENT_10WHG_Ansicht West_91.pdf",
+        "sizeMB": 1.46,
+        "kind": "pdf"
+      },
+      {
+        "filename": "72740TTNT.PDF",
+        "sizeMB": 0.21,
+        "kind": "pdf"
+      },
+      {
+        "filename": "8.ENT_10WHG_Ansicht Ost_90.pdf",
+        "sizeMB": 1.83,
+        "kind": "pdf"
+      },
+      {
+        "filename": "Wohnflächenberechnung.pdf",
+        "sizeMB": 0.24,
+        "kind": "pdf"
+      },
+      {
+        "filename": "4.ENT_10WHG_DG_86.pdf",
+        "sizeMB": 0.46,
+        "kind": "pdf"
+      },
+      {
+        "filename": "72740AFNT.PDF",
+        "sizeMB": 0.55,
+        "kind": "pdf"
+      },
+      {
+        "filename": "3.ENT_10WHG_OG_85.pdf",
+        "sizeMB": 0.42,
+        "kind": "pdf"
+      },
+      {
+        "filename": "5.ENT_10WHG_Schnitt A_87.pdf",
+        "sizeMB": 0.71,
+        "kind": "pdf"
+      },
+      {
+        "filename": "1.ENT_10WHG_GG_83.pdf",
+        "sizeMB": 0.61,
+        "kind": "pdf"
+      },
+      {
+        "filename": "6.ENT_10WHG_Schnitt B_88.pdf",
+        "sizeMB": 1.33,
+        "kind": "pdf"
+      },
+      {
+        "filename": "Kubaturberechnung.pdf",
+        "sizeMB": 0.18,
+        "kind": "pdf"
+      },
+      {
+        "filename": "10.ENT_10WHG_Ansicht Nord_92.pdf",
+        "sizeMB": 2.21,
+        "kind": "pdf"
+      },
+      {
+        "filename": "Übersichtspläne Neustetten-Remmingsheim.pdf",
+        "sizeMB": 0.65,
+        "kind": "pdf"
+      }
+    ],
+    "links": [
+      "https://maps.app.goo.gl/Xk7QeR2mBvT4sN1a8",
+      "http://www.planwerk-sued.de/",
+      "http://www.mr-reiser.de/"
+    ]
+  }
+}

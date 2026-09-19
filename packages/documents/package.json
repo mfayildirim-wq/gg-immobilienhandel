@@ -1,0 +1,20 @@
+{
+  "name": "@gg/documents",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./pdf": "./src/pdf/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@gg/domain": "workspace:*",
+    "playwright-core": "1.63.0",
+    "pptxgenjs": "^4.0.1"
+  },
+  "devDependencies": { "jszip": "^3.10.1", "vitest": "^5.0.1" }
+}

@@ -1,0 +1,217 @@
+{
+  "$schema": "../KKalk-fixture.schema.json",
+  "case_id": 4,
+  "name": "MFH 11-Familienhaus (Excel-Original-Beispiel)",
+  "description": "Aus dem Excel direkt extrahierte Werte. Bewusst simple Konstellation: Manuelle Aggregat-Mietangabe (kein einzelner Einheiten-Detail), nur 1 Darlehens-Tranche, KEINE Sanierung, 100% Beleihungsanteil, Standard-AfA 2%.",
+  "source": "docs/excel-reference/F016_Ankauf_Kalkulationsvorlage_11022026_GW_REFERENCE.xlsx",
+  "extracted_at": "2026-04-29",
+  "extracted_by": "Python openpyxl data_only=True (cached recalc values)",
+
+  "_comment": "Edge-Case dieser Konstellation: Cashflow Jahr 1 ist NEGATIV (-1.175€/Mo) weil der Kapitaldienst (6.069€) die Nettokaltmiete (5.714€) übersteigt — bei 100% Finanzierung normal. Trotzdem Vermögenszuwachs +42k€/J. durch Wertsteigerung +2%/J.",
+
+  "scope": "global",
+  "einheitId": null,
+
+  "objSnapshot": {
+    "adresse": "IVT AG Projekt: 11-Familienhaus",
+    "kaufdatum": "2024-01-01",
+    "wohnflaecheGesamt": 596.06,
+    "stellplaetzeAnzahl": 4,
+    "einheitenAnzahl": 11,
+    "einheiten": [
+      {
+        "_comment": "Im Excel-Original sind die einzelnen Einheiten im MFH-Kalkulator NICHT ausgefüllt (C6='Aus'). Die Miete kommt als Aggregat aus der Tabelle112 (5.714,25€/Monat = H10). Wir replizieren das in der Fixture mit dem Aggregat — pro Einheit-Detail werden andere Test-Cases die einzelnen mi_neu-Werte abdecken."
+      }
+    ]
+  },
+
+  "inputs": {
+    "_comment_section_kaufpreis": "Kaufpreis + Nebenkosten (Cockpit Spalte D)",
+    "kaufpreis": 1474210,
+    "notarPct": 0.015,
+    "grundbuchPct": 0.005,
+    "grundsteuerPct": 0.05,
+    "maklerPct": 0,
+    "sonstigePct": 0,
+
+    "_comment_section_renovierung": "Renovierungs-Block (Cockpit Z 26-29) — im Original-Beispiel alle 0",
+    "renovierungssumme": 0,
+    "renovierungAktivieren": false,
+
+    "_comment_section_miete": "Mieten — manuelle Aggregat-Eingabe (C6='Aus')",
+    "nettokaltmieteMonat": 5714.25,
+    "stellplatzMiete": 0,
+    "sonstigeMiete": 0,
+    "umlagefaehigeKostenMonat": 0,
+    "mieterhoehungJaehrlich": 0.02,
+
+    "_comment_section_bewirtschaftung": "Nicht umlagefähig (K10=820 = nur Hausgeld nicht umlagefähig, K25=820)",
+    "hausverwaltungMonat": 0,
+    "instandhaltungsruecklage": 0,
+    "mietausfallruecklage": 0,
+    "sonstigeNichtUmlagefaehig": 820,
+
+    "_comment_section_wert": "Wertentwicklung + AfA",
+    "wertsteigerungJaehrlich": 0.02,
+    "anteilGebaeudeKaufpreis": 0.7,
+    "afaSatz": 0.02,
+    "afaTypDenkmal": false,
+    "denkmalAfaBasis": 0,
+    "denkmalAfaSatz": 0.09,
+
+    "_comment_section_steuern": "Persönlicher Grenzsteuersatz (Cockpit!Q33) — im Original-Beispiel zu prüfen",
+    "grenzsteuersatz": 0.42,
+
+    "_comment_section_finanzierung": "Nur 1 Darlehen-Tranche aktiv. Restschuld I = Kaufpreis - 150.000€ EK = 1.324.210€",
+    "darlehen": [
+      {
+        "label": "Darlehen I",
+        "summe": 1324210,
+        "zinssatz": 0.04,
+        "tilgung": 0.015,
+        "sondertilgung": 0
+      }
+    ],
+    "eigenkapital": 253194.70,
+    "_comment_eigenkapital": "Auto-berechnet: GIK (1.577.404,70) - Σ Darlehen (1.324.210) = 253.194,70€"
+  },
+
+  "expected": {
+    "_comment": "Excel-Output-Werte exakt übernommen (Cockpit-Sheet, data_only=True). Implementierung muss ±0.50€ Toleranz erreichen.",
+
+    "investition": {
+      "kaufpreisProQm": 2473.26,
+      "nebenkostenPctTotal": 0.07,
+      "nebenkostenEuroTotal": 103194.70,
+      "gik": 1577404.70,
+      "gik_15pct_grenze": 197096.72,
+      "afaBasisLangfristig": 1104183.29,
+      "_comment_afa_basis": "= (Kaufpreis + Nebenkosten) × 0.7 = (1.474.210 + 103.194,70) × 0.7 = 1.104.183,29€"
+    },
+
+    "miete": {
+      "nettokaltmieteMonat": 5714.25,
+      "warmmieteMonat": 5714.25,
+      "_comment_warmmiete": "= Nettokaltmiete + umlagefähige Kosten (0)"
+    },
+
+    "bewirtschaftung": {
+      "umlagefaehig": 0,
+      "nichtUmlagefaehig": 820,
+      "anteilNichtUmlagefaehigVonNetto": 0.1435,
+      "gesamt": 820
+    },
+
+    "finanzierung": {
+      "darlehensummeGesamt": 1324210,
+      "eigenkapital": 253194.70,
+      "gewichteterZinssatz": 0.04,
+      "gewichteteTilgung": 0.015,
+      "kapitaldienstProMonat": 6069.30,
+      "jahrVolltilgung": 2057,
+      "_comment_volltilgung": "33 Jahre nach Kauf"
+    },
+
+    "kennzahlen_jahr_1": {
+      "nettokaltmieteProJahr": 68571,
+      "bruttomietrendite": 0.04651,
+      "faktor": 21.50,
+      "nettomietrendite": 0.03723,
+      "warmmiete": 5714.25,
+      "bewirtschaftung": -820,
+      "zinsen": -4414.03,
+      "tilgung": -1655.26,
+      "cashflowOperativ": -1175.05,
+      "_comment_cashflow": "Negativ! Bei 100% Finanzierung übersteigt der Kapitaldienst (6.069€/Mo) die Nettokaltmiete (5.714€/Mo). Differenz = -355€ + Bewirtschaftung -820€ = -1.175€/Mo."
+    },
+
+    "vermoegenszuwachs_pa": {
+      "totalProJahr": 42101.65,
+      "ohneWertsteigerung": 12617.45,
+      "_comment_diff": "Differenz = Wertsteigerung Jahr 1 = 1.474.210 × 2% = 29.484,20€. Plus Cashflow*12 + Tilgung*12 = Vermögensaufbau."
+    },
+
+    "kennzahlen_zukunft_2033": {
+      "_comment": "Hochrechnung über 9 Jahre (T9=2033, Kauf=2024, T10=9)",
+      "zieljahr": 2033,
+      "jahreNachKauf": 9,
+      "nettokaltmieteProJahr": 81948.69,
+      "wertImmobilie": 1797053.76,
+      "wertProQm": 3014.89,
+      "warmmiete": 6829.06,
+      "bewirtschaftung": -979.98,
+      "zinsen": -3713.34,
+      "tilgung": -2355.95,
+      "cashflowOperativ": -220.21,
+      "_comment_cashflow_2033": "Cashflow nähert sich der Null-Linie (Mieten steigen schneller als Kapitaldienst durch sinkende Zinsen wegen Tilgung)"
+    },
+
+    "profikennzahlen_2033": {
+      "wertImmobilie": 1797053.76,
+      "minusRestschuld": -1085730.89,
+      "minusEigenkapitalEinsatz": -253194.70,
+      "plusKumulierterCashflow": -56841.74,
+      "vermoegenszuwachsTotal": 401286.43,
+      "beleihungsreserve": 711322.87,
+      "_comment_vermoegen": "Über 9 Jahre: Wert+322k + Tilgung+238k - kumul. negativer Cashflow -57k = +401k Vermögenszuwachs trotz operativ-negativem Cashflow"
+    },
+
+    "_HAFTUNGS_KRITISCH_bankgespraech": {
+      "_comment": "Diese Werte landen 1:1 im Investor-PDF. Excel-Bankgespräch-Sheet R26:AC26 + J75:J81. MUST-MATCH für Spec-Konformität.",
+
+      "kumulierterCashflowNachSteuern_jaehrlich": {
+        "_comment": "Bankgespräch T26:AC26 — kumuliert Cashflow nach Steuern × 12, jährlich addiert",
+        "jahr_1":  -7245.70,
+        "jahr_2":  -14143.83,
+        "jahr_3":  -20694.09,
+        "jahr_4":  -26896.49,
+        "jahr_5":  -32751.27,
+        "jahr_6":  -38259.00,
+        "jahr_7":  -43420.54,
+        "jahr_8":  -48237.08,
+        "jahr_9":  -52710.18,
+        "jahr_10": -56841.74
+      },
+
+      "hochrechnungVerkauf_in_10_jahren": {
+        "_comment": "Bankgespräch J75:J81 — die zentralen Investor-Kennzahlen",
+        "verkaufspreis": 1797053.76,
+        "restschuld": 1085730.89,
+        "erloes": 711322.87,
+        "eingesetztes_oder_entnommenes_EK": -310036.44,
+        "_comment_eingesetztes_ek": "= -EK_Initial (253.194,70) + kumul. CF (-56.841,74) = -310.036,44 (negativ = investiert)",
+        "steuerfreier_vermoegenszuwachs": 401286.43,
+        "_comment_vermoegenszuwachs": "= Erlös - eingesetztes EK = 711.322,87 - (-310.036,44) = 401.286,43€ steuerfrei",
+        "netto_ek_rendite_pa_IRR": 0.10356757,
+        "_comment_irr": "= IRR über 10 Jahre, Cashflow-Reihe mit Initial-EK + 8 reine Jahre + Exit. Excel-IRR-kompatibel.",
+        "miete_pro_monat_endjahr": 6829.06,
+        "_comment_miete": "= Jahresmiete 2033 / 12 = 81.948,69 / 12"
+      },
+
+      "irr_cashflow_reihe": {
+        "_comment": "Die Cashflow-Reihe für die IRR-Berechnung. 10 jährliche Perioden. Periode 0 enthält EK-Outlay, Periode 9 enthält Verkaufserlös. Aus 'Miete, Cashflow, Steuern'!D64:M64",
+        "periode_0": -260440.40,
+        "periode_1": -6898.12,
+        "periode_2": -6550.27,
+        "periode_3": -6202.40,
+        "periode_4": -5854.78,
+        "periode_5": -5507.73,
+        "periode_6": -5161.54,
+        "periode_7": -4816.54,
+        "periode_8": -4473.10,
+        "periode_9": 707191.31,
+        "_comment_periode_9": "= -4131.56 (CF nach Steuern × 12) + 1.797.053,76 - 1.085.730,89 (Verkaufserlös) = 707.191,31"
+      }
+    }
+  },
+
+  "tolerance": {
+    "currency": 0.50,
+    "_comment_currency": "Toleranz 50 Cent für €-Werte wegen Excel-Rundungs-Reihenfolge",
+    "percentage": 0.0001,
+    "_comment_percentage": "0.01 Prozentpunkte für %-Werte"
+  },
+
+  "verification_status": "extracted_from_excel_only",
+  "_verification_note": "Diese Werte sind direkt aus dem Excel kopiert. Sie wurden NICHT mit einer alternativen Engine verifiziert. Die App-Engine muss diese Werte exakt reproduzieren — falls nicht, ist Excel die Wahrheit (Haftungs-Brücke)."
+}

@@ -1,0 +1,35 @@
+{
+  "id": "06",
+  "label": "DMRE — AW: Objekte Stoll",
+  "expectedVerdict": "SUPPLEMENT",
+  "note": "Mieterlisten und Flächenaufstellung zu einem bekannten Objekt, kein Exposé, keine Objektdaten im Text.",
+  "mail": {
+    "from": "marcel.lorenz@dmre.de",
+    "fromName": "Marcel Lorenz | DMRE",
+    "subject": "AW: Objekte Stoll",
+    "date": "2026-07-20T14:47:40Z",
+    "bodyText": "Anbei Mieterlisten Flächenaufstellungen (mehr oder weniger geschätzt) Brauchst du noch mehr? Mit freundlichen Grüßen Marcel Lorenz MSc Management / Mannheim Master in Management (Universität Mannheim) DMRE GmbH Schubertweg 1, 73207 Plochingen Website: www.dmre.de E-Mail: Immobilien@dmre.de Tel.: +49 152 55000101 Von: Gerry Weyrich <weyrich@ivt-ag.com> Gesendet: Montag, 20. Juli 2026 15:33 An: David Markwart | DMRE <David.Markwart@dmre.de> Cc: Marcel Lorenz | DMRE <marcel.lorenz@dmre.de> Betreff: Re: Objekte Stoll Schönbergstr und Bildstöckle. Habe noch nichts Gerry Weyrich Geschäftsführer, IVT Wohnen GmbH B.Sc. Immobilienwirtschaft Tel: 0160 973 614 96 Mail: weyrich@ivt-ag.com Web: www.ivt-ag.com Von: David Markwart | DMRE < David.Markwart@dmre.de > Gesendet: Monday, 20 July 2026 15:30:12 An: Gerry Weyrich < weyrich@ivt-ag.com > Cc: Marcel Lorenz | DMRE < marcel.lorenz@dmre.de > Betreff: Objekte Stoll Hi Gerry, Welche Unterlagen für welche Objekte werden noch benötigt? Viele Grüße, David David Markwart Geschäftsführender Gesellschafter MSc Finance Bocconi / Sustainable Real Estate Manager (IREBS) DMRE GmbH Schubertweg 1, 73207 Plochingen Website: www.dmre.de E-Mail: Immobilien@dmre.de Tel.: +49 159 55000202 Buchen Sie einen Termin, um mich zu treffen",
+    "attachments": [
+      {
+        "filename": "BS7 20260720 Mieterliste.pdf",
+        "sizeMB": 0.25,
+        "kind": "pdf"
+      },
+      {
+        "filename": "SB50+52 20260720 Mieterliste.pdf",
+        "sizeMB": 0.25,
+        "kind": "pdf"
+      },
+      {
+        "filename": "Flächenaufstellung BS7 und SB50+52.xlsx",
+        "sizeMB": 0.01,
+        "kind": "spreadsheet"
+      }
+    ],
+    "links": [
+      "https://outlook.office.com/bookwithme/user/11111111111111111111111111111111@dmre.de?anonymous&amp;ismsaljsauthenabled&amp;ep=bwmEmailSignature",
+      "https://www.ivt-ag.com/",
+      "http://www.dmre.de/"
+    ]
+  }
+}
