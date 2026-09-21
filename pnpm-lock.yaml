@@ -71,6 +71,9 @@ importers:
       jose:
         specifier: ^6.2.12
         version: 6.2.12
+      pdf-lib:
+        specifier: 1.17.1
+        version: 1.17.1
       pdfjs-dist:
         specifier: ^5.7.284
         version: 5.7.284

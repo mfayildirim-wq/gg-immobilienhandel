@@ -8,8 +8,14 @@
 //  • Das Absenden einer AGB-/Provisionsbestätigung fragt die Freigabe über einen Port ab — die Engine kennt weder
 //    Datenbank noch Schalter.
 /* eslint-disable @typescript-eslint/no-explicit-any -- KI-Antworten und DOM-Auswertung sind ungetypt */
-// Die Funktionen in page.evaluate() laufen im Browser der Maklerseite, nicht in Node — dafür die DOM-Typen.
-/// <reference lib="dom" />
+// Die Funktionen in page.evaluate() laufen im Browser der Maklerseite, nicht in Node. Die DOM-Bibliothek von TypeScript
+// lässt sich nicht auf diese Datei begrenzen — ein `/// <reference lib="dom" />` gälte im ganzen Programm und änderte dort
+// z. B. `BodyInit`. Deshalb stehen die wenigen benutzten Namen hier als lokale, ungetypte Platzhalter.
+/* eslint-disable @typescript-eslint/no-unused-vars, no-var */
+type HTMLElement = any; type HTMLInputElement = any; type HTMLButtonElement = any; type HTMLAnchorElement = any; type DOMRect = any;
+declare const document: any; declare const window: any; declare const location: any;
+declare const Event: any;
+/* eslint-enable @typescript-eslint/no-unused-vars, no-var */
 import type { Download, Page } from 'playwright-core';
 import type { KiClient } from '../ki/anthropic.ts';
 import { NEVER_DOWNLOAD_SOURCE } from '../expose/triage.ts';
@@ -30,7 +36,7 @@ export async function classifyPageType(page: Page, ki: KiClient): Promise<{ type
   const snapshot = await page.evaluate(() => {
     const checkboxes = Array.from(document.querySelectorAll('input[type="checkbox"]')).length;
     const buttons = Array.from(document.querySelectorAll('button, a, input[type="submit"]'))
-      .map(el => (el.textContent || (el as HTMLInputElement).value || '').trim())
+      .map((el: any) => (el.textContent || (el as HTMLInputElement).value || '').trim())
       .filter(t => t.length > 0 && t.length < 200)
       .slice(0, 30);
     const h1 = document.querySelector('h1')?.textContent?.trim() || '';

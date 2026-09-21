@@ -19,6 +19,10 @@
   },
   "rewrites": [
     {
+      "source": "/api/auto-import/(.*)",
+      "destination": "/api/render"
+    },
+    {
       "source": "/api/cron/(.*)",
       "destination": "/api/render"
     },

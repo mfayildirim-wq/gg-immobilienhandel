@@ -16,6 +16,7 @@ import {
   ZugangStatus,
   OutwardStand,
   BewertungsDaten,
+  AutoImportLauf,
   M365Posteingang,
   M365Stand,
   PropstackBewertung,
@@ -95,7 +96,7 @@ import type { Db } from '@gg/db';
 import { AUFBEWAHRUNG, DealStatus, geplanteStufe, rueckwegPruefen, type RueckwegRegeln } from '@gg/domain';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import { sql } from 'drizzle-orm';
-import { bankgespraechPdf, type BilderPorts, erzeugeSchleuse, finanzpraesPdf, finanzpraesPptx, KeinBrowserError, praesentationDateiname, SCHLEUSE_STANDARD, type Schleuse } from '@gg/documents/pdf';
+import { bankgespraechPdf, type BilderPorts, browserStarten, erzeugeSchleuse, finanzpraesPdf, finanzpraesPptx, KeinBrowserError, praesentationDateiname, SCHLEUSE_STANDARD, type Schleuse } from '@gg/documents/pdf';
 import type { FinanzPraes } from '@gg/domain';
 import { pdfDateiname, type BankgespraechPayload } from '@gg/documents';
 import { FachFehler } from './fehler.ts';
@@ -117,6 +118,7 @@ import { dokumentBezeichnen, dokumentDatei, einheitenAusMieterliste, dokumenteHo
 import { uploadTicket } from './services/direktUpload.ts';
 import { alsStrom } from './strom.ts';
 import { cronErlaubt } from './cron.ts';
+import { autoImportAbbrechen, autoImportAusfuehren, autoImportVerlauf } from './services/autoImport.ts';
 import { ddVorlageLesen, ddVorlageSpeichern } from './services/ddVorlage.ts';
 import { begrenzung, GRENZEN } from './middleware/begrenzung.ts';
 import { archivSpiegeln, eingangAufraeumen } from './services/archivSpiegel.ts';
@@ -161,7 +163,7 @@ import {
 import { kommunikationAnlegen, maklerAendern, maklerAnlegen, maklerDetail, maklerErledigt, maklerListe, maklerLoeschen, maklerPersoenlichSpeichern } from './services/makler.ts';
 import { beziehungsprofilErstellen, entwurfErstellen, erwaehnungenErgaenzen, gespraechsoeffnerErstellen, kontaktAnlaesseErmitteln, osintAusfuehren, personaAnalysieren, type Suchdienste, personaStand, persoenlichesErgaenzen, transkription, zusammenfassungErstellen } from './services/maklerKi.ts';
 import { mcpAnmelden, mcpSchluesselAusKopfOderNull, mcpStand, mcpVerarbeiten } from './services/mcp.ts';
-import { m365Entsperren, m365Anhang, m365AnmeldungStarten, m365KonfigurationSpeichern, m365OrdnerSpeichern, m365Posteingang, m365Rueckweg, m365Sperren, m365Stand, m365Trennen } from './services/m365.ts';
+import { m365Client, m365OrdnerLesen, m365Entsperren, m365Anhang, m365AnmeldungStarten, m365KonfigurationSpeichern, m365OrdnerSpeichern, m365Posteingang, m365Rueckweg, m365Sperren, m365Stand, m365Trennen } from './services/m365.ts';
 import { propstackAnlegen, propstackLesen, propstackStatusListe, propstackStatusSpeichern, propstackVorbelegen } from './services/propstack.ts';
 import { freigabeBeantragen, freigabeEntscheiden, gateSpeichern, outwardStand } from './services/outward.ts';
 import { maklerImportUebernehmen, maklerImportVorschau } from './services/maklerImport.ts';
@@ -190,6 +192,8 @@ export interface AppKontext {
   openaiKey?: string;
   /** Öffentliche Suche (DuckDuckGo, Google News); Standard: echte Abfragen, mit KI-Attrappe keine */
   suche?: Suchdienste;
+  /** Auto-Import: Browser-Start (Standard: wie der PDF-Export) und Grenzen. `lokaleZieleErlaubt` ist NUR für Tests. */
+  autoImport?: { browserStarten?: () => Promise<import('playwright-core').Browser>; maxZeitlimitSek?: number; lokaleZieleErlaubt?: boolean };
   /** `CRON_SECRET`: ohne dieses Geheimnis antworten die Cron-Routen immer mit 401. */
   cronGeheimnis?: string;
   /** Wohin die Microsoft-Anmeldung zurückleiten darf; Standard: nur lokale Adressen (`rueckwegRegelnAusUmgebung`). */
@@ -215,7 +219,7 @@ const Version = z.object({ version: z.number().int() });
 const Geaendert = json(z.object({ id: z.string(), version: z.number().int() }), 'geändert');
 const konflikt = { 400: fehler('Eingabe ungültig'), 404: fehler('nicht gefunden'), 409: fehler('Versionskonflikt') };
 
-export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, cronGeheimnis, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
+export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, cronGeheimnis, autoImport, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
   const exposeKontext = () => {
     if (!expose) throw new FachFehler(422, 'Dateiablage ist nicht eingerichtet (SUPABASE_SERVICE_ROLE_KEY).');
     return expose;
@@ -269,6 +273,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   app.use('/api/expose/analyse', begrenzung(GRENZEN.ki));
   app.use('/api/deals/:id/einheiten-aus-pdf', begrenzung(GRENZEN.ki));
   app.use('/api/transkription', begrenzung(GRENZEN.diktat));
+  app.use('/api/auto-import/lauf', begrenzung(GRENZEN.ki));
   app.use('/api/m365/posteingang', begrenzung(GRENZEN.abruf));
   app.use('/api/m365/konfiguration', begrenzung(GRENZEN.zugang));
   app.use('/api/m365/anmeldung', begrenzung(GRENZEN.zugang));
@@ -693,6 +698,23 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
       if (!rueckweg.ok) throw new FachFehler(400, rueckweg.grund);
       return c.json(await m365AnmeldungStarten(db, rueckweg.uri), 200);
     },
+  );
+  // ── Auto-Import: aus einer Angebots-Mail selbstständig das Exposé holen ──
+  // Der Lauf gehört zur Anfrage (online: lang laufende Function); das Ergebnis steht in der Tabelle und im Exposé-Eingang.
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/auto-import/lauf', request: body(z.object({ mailUid: z.string().min(1).max(500) })), responses: { 200: json(AutoImportLauf, 'Ergebnis des Laufs'), 404: fehler('Mail fehlt'), 422: fehler('nicht eingerichtet'), 429: fehler('alle Plätze belegt'), 503: fehler('Anhänge unvollständig') } }),
+    async (c) => c.json(await autoImportAusfuehren(db, {
+      speicher: ablage(), ki: kiOpt ?? expose?.ki ?? null, graph: await m365Client(db, graphOpt), ordner: await m365OrdnerLesen(db),
+      browserStarten: autoImport?.browserStarten ?? browserStarten, maxZeitlimitSek: autoImport?.maxZeitlimitSek, lokaleZieleErlaubt: autoImport?.lokaleZieleErlaubt,
+    }, c.req.valid('json').mailUid), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/auto-import/abbrechen', request: body(z.object({ mailUid: z.string().min(1).max(500) })), responses: { 200: json(z.object({ abgebrochen: z.number() }), 'Abbruch angefordert') } }),
+    async (c) => c.json(await autoImportAbbrechen(db, c.req.valid('json').mailUid), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'get', path: '/api/auto-import/verlauf', responses: { 200: json(z.array(AutoImportLauf), 'letzte Läufe, jüngste zuerst') } }),
+    async (c) => c.json(await autoImportVerlauf(db), 200),
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/m365/rueckweg', request: body(z.object({ code: z.string().min(1), state: z.string().min(1) })), responses: { 200: json(z.object({ email: z.string() }), 'verbunden'), 400: fehler('Anmeldeversuch unbekannt'), 422: fehler('nicht eingerichtet') } }),
