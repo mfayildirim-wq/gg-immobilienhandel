@@ -30,6 +30,19 @@ export async function exposeEingang(k: ExposeKontext, bytes: Uint8Array) {
   return { key, groesse: bytes.byteLength };
 }
 
+/**
+ * Direkt-Upload, Schritt 3: das PDF liegt schon unter `_eingang/<uuid>` — geprüft wird am liegenden Objekt.
+ * Was durchfällt, wird gelöscht: es war nie ein Exposé, es lag nur kurz im Eingang.
+ */
+export async function exposeEingangUebernehmen(k: ExposeKontext, key: string) {
+  if (!istEingangsSchluessel(key)) throw new FachFehler(400, 'Ungültiger Upload-Schlüssel.');
+  const { bytes, groesse } = await k.speicher.anfang(BUCKETS.pdfs, key, 1024).catch(() => { throw new FachFehler(404, 'Die hochgeladene Datei wurde nicht gefunden — bitte erneut hochladen.'); });
+  const ablehnen = async (status: 422, grund: string): Promise<never> => { await k.speicher.loeschen(BUCKETS.pdfs, [key]).catch(() => {}); throw new FachFehler(status, grund); };
+  if (!istPdf(bytes)) await ablehnen(422, 'Die Datei ist kein PDF.');
+  if (groesse > MAX_EXPOSE_BYTES) await ablehnen(422, 'Das PDF ist größer als 200 MB.');
+  return { key, groesse };
+}
+
 /** Kostenzeile ins Audit (mit Hash-Kette). */
 async function kostenBuchen(db: Db, model: string, usage: Parameters<typeof kostenBuchung>[1] | undefined, quelle: string) {
   if (!usage) return;

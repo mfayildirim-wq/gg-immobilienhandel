@@ -29,6 +29,13 @@ export interface Dateispeicher {
   verschieben(bucket: Bucket, von: string, nach: string): Promise<void>;
   kopieren(bucket: Bucket, von: string, zielBucket: Bucket, nach: string): Promise<void>;
   loeschen(bucket: Bucket, keys: string[]): Promise<void>;
+  /**
+   * Direkt-Upload: eine signierte Adresse, an die der **Browser** die Datei per PUT schickt — an der Function vorbei,
+   * die höchstens 4,5 MB annimmt. Die Adresse gilt nur für genau diesen Schlüssel und läuft nach kurzer Zeit ab.
+   */
+  uploadTicket(bucket: Bucket, key: string): Promise<{ url: string }>;
+  /** Die ersten Bytes eines liegenden Objekts und seine Gesamtgröße — zum Prüfen nach dem Direkt-Upload, ohne es ganz zu laden. */
+  anfang(bucket: Bucket, key: string, bytes: number): Promise<{ bytes: Uint8Array; groesse: number }>;
 }
 
 /** Supabase Storage über die REST-API (Service-Schlüssel, nur serverseitig). */
@@ -76,6 +83,20 @@ export function supabaseSpeicher(url: string, serviceKey: string): Dateispeicher
     async kopieren(bucket, von, zielBucket, nach) {
       await kopieOderVerschiebe('copy', { bucketId: bucket, sourceKey: von, destinationBucket: zielBucket, destinationKey: nach }, `Kopieren ${von} → ${zielBucket}/${nach}`);
     },
+    async uploadTicket(bucket, key) {
+      const r = await pruefe(await fetch(`${basis}/object/upload/sign/${bucket}/${pfad(key)}`, { method: 'POST', headers: kopf }), `Upload-Ticket ${bucket}/${key}`);
+      const { url: relativ } = (await r.json()) as { url: string };
+      return { url: `${basis}${relativ}` };
+    },
+    async anfang(bucket, key, bytes) {
+      const r = await fetch(`${basis}/object/authenticated/${bucket}/${pfad(key)}`, { headers: { ...kopf, Range: `bytes=0-${bytes - 1}` } });
+      if (r.status === 404 || r.status === 400) throw new Error(`Speicher: ${bucket}/${key} nicht gefunden`);
+      await pruefe(r, `Anfang ${bucket}/${key}`);
+      const teil = new Uint8Array(await r.arrayBuffer());
+      // 206 nennt die Gesamtgröße hinter dem Schrägstrich; 200 heißt: der Speicher hat die ganze Datei geschickt
+      const gesamt = Number(/\/(\d+)\s*$/.exec(r.headers.get('content-range') ?? '')?.[1]);
+      return { bytes: teil.subarray(0, bytes), groesse: r.status === 206 && Number.isFinite(gesamt) ? gesamt : teil.byteLength };
+    },
     async loeschen(bucket, keys) {
       if (!keys.length) return;
       await pruefe(await fetch(`${basis}/object/${bucket}`, { method: 'DELETE', headers: { ...kopf, 'Content-Type': 'application/json' }, body: JSON.stringify({ prefixes: keys }) }), `Löschen in ${bucket}`);
@@ -99,5 +120,8 @@ export function speicherImSpeicher(): Dateispeicher & { inhalt: Map<string, Uint
     async verschieben(b, von, nach) { inhalt.set(k(b, nach), hole(b, von)); inhalt.delete(k(b, von)); },
     async kopieren(b, von, zb, nach) { inhalt.set(k(zb, nach), hole(b, von)); },
     async loeschen(b, keys) { keys.forEach((key) => inhalt.delete(k(b, key))); },
+    // Im Test „lädt der Browser hoch", indem der Test `ablegen` mit demselben Schlüssel ruft
+    async uploadTicket(b, key) { return { url: `speicher://${b}/${key}` }; },
+    async anfang(b, key, bytes) { const d = hole(b, key); return { bytes: d.subarray(0, bytes), groesse: d.byteLength }; },
   };
 }

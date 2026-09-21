@@ -113,12 +113,13 @@ import {
   vertriebslisteAnlegen, vertriebslisteDetail, vertriebslisteLoeschen, vertriebslistenUebersicht, vertriebslisteSpeichern, vlEinstellungenLesen, vlEinstellungenSpeichern,
 } from './services/vertriebslisten.ts';
 import { varianteAnlegen, varianteLoeschen, variantenListe } from './services/kalkVarianten.ts';
-import { dokumentBezeichnen, dokumentDatei, einheitenAusMieterliste, dokumenteHochladen, dokumenteListe, dokumentLoeschen } from './services/dealDokumente.ts';
+import { dokumentBezeichnen, dokumentDatei, einheitenAusMieterliste, dokumenteHochladen, dokumenteListe, dokumenteUebernehmen, dokumentLoeschen } from './services/dealDokumente.ts';
+import { uploadTicket } from './services/direktUpload.ts';
 import { filterAnlegen, filterListe, filterLoeschen, filterUmbenennen, filterVorlagenEinrichten, listenAltformat } from './services/listen.ts';
 import { projektAnlegen, projektDealAuswahl, projektDetail, projekteListe, projektLoeschen, projektSpeichern } from './services/projekte.ts';
 import { fotoDatei, fotoHochladen, fotoLoeschen, fotoPort, fotosListe, fotosSortieren } from './services/fotos.ts';
 import { type Dateispeicher, type GraphClient, type KiClient, type PropstackClient, nachrichtenSuche, webSuche, anthropicClient } from '@gg/integrations';
-import { bekannteExposeDateien, exposeAnalysieren, exposeEingang, type ExposeKontext, exposeUebernehmen, MAX_EXPOSE_BYTES } from './services/expose.ts';
+import { bekannteExposeDateien, exposeAnalysieren, exposeEingang, exposeEingangUebernehmen, type ExposeKontext, exposeUebernehmen, MAX_EXPOSE_BYTES } from './services/expose.ts';
 import { auth, type AuthOptionen } from './middleware/auth.ts';
 import {
   dealAnlegen,
@@ -1054,6 +1055,19 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
     const bytes = new Uint8Array(await c.req.arrayBuffer());
     return c.json(await exposeEingang(exposeKontext(), bytes), 201);
   });
+  // Direkt-Upload (Function-Grenze 4,5 MB): Ticket → Browser lädt in den Speicher → Übernahme prüft die liegende Datei
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/upload/ticket', request: body(z.object({ zweck: z.enum(['expose', 'dokument']), groesse: z.number().int().nonnegative().optional() })), responses: { 200: json(z.object({ url: z.string(), key: z.string() }), 'Upload-Adresse'), 413: fehler('zu groß'), 422: fehler('Dateiablage nicht eingerichtet') } }),
+    async (c) => { const b = c.req.valid('json'); return c.json(await uploadTicket(ablage(), b.zweck, b.groesse), 200); },
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/expose/eingang/uebernehmen', request: body(z.object({ key: z.string() })), responses: { 201: json(z.object({ key: z.string(), groesse: z.number() }), 'im Eingang'), 404: fehler('Datei fehlt'), 422: fehler('kein PDF') } }),
+    async (c) => c.json(await exposeEingangUebernehmen(exposeKontext(), c.req.valid('json').key), 201),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/deals/{id}/dokumente/uebernehmen', request: { params: IdParam, ...body(z.object({ dateien: z.array(z.object({ key: z.string(), name: z.string().min(1).max(300), typ: z.string().max(200) })).min(1).max(50) })) }, responses: { 201: json(z.array(DealDokument), 'übernommen'), 404: fehler('nicht gefunden'), 413: fehler('zu groß'), 415: fehler('Dateiart nicht erlaubt') } }),
+    async (c) => c.json(await dokumenteUebernehmen(db, ablage(), c.req.valid('param').id, c.req.valid('json').dateien), 201),
+  );
   app.openapi(
     createRoute({ method: 'post', path: '/api/expose/analyse', ...{ request: body(z.object({ key: z.string(), dateiname: z.string().max(300) })) }, responses: { 200: json(ExposeAnalyseAntwort, 'ausgewertet'), 404: fehler('Datei fehlt'), 422: fehler('nicht auswertbar') } }),
     async (c) => { const b = c.req.valid('json'); return c.json(await exposeAnalysieren(db, exposeKontext(), b.key, b.dateiname), 200); },

@@ -399,11 +399,22 @@ export const useKundenkalkEinstellungenSpeichern = () =>
 export const useKiStatus = () => useQuery({ queryKey: ['ki-status'], queryFn: () => anfrage<{ verfuegbar: boolean; attrappe: boolean; ablage: boolean }>('/api/ki/status') });
 export const useBekannteExposeDateien = () => useQuery({ queryKey: ['expose', 'bekannt'], queryFn: () => anfrage<string[]>('/api/expose/bekannte-dateien') });
 
+/**
+ * Direkt-Upload: Ticket holen, Datei **direkt in den Speicher** laden, Schlüssel zurückgeben. Die Datei geht damit nie
+ * durch die API — online nimmt eine Function höchstens 4,5 MB an, echte Exposés haben bis zu 13 MB und mehr.
+ * Geprüft wird danach vom Server, bei der Übernahme (`…/uebernehmen`).
+ */
+async function direktHochladen(zweck: 'expose' | 'dokument', datei: File): Promise<string> {
+  const { url, key } = await anfrage<{ url: string; key: string }>('/api/upload/ticket', senden('POST', { zweck, groesse: datei.size }));
+  // Ohne Anmelde-Token: die Adresse selbst ist die Berechtigung, für genau diese eine Datei
+  const res = await fetch(url, { method: 'PUT', body: datei, headers: { 'content-type': datei.type || 'application/octet-stream' } });
+  if (!res.ok) throw new ApiFehler(res.status, `„${datei.name}" ließ sich nicht hochladen (${res.status}). Bitte erneut versuchen.`);
+  return key;
+}
+
 export async function exposeHochladen(datei: File): Promise<{ key: string }> {
-  const res = await fetch('/api/expose/eingang', { method: 'POST', body: datei, headers: await mitToken({ 'content-type': 'application/pdf' }) });
-  const body = await res.json().catch(() => null);
-  if (!res.ok) throw new ApiFehler(res.status, body?.fehler ?? `Upload fehlgeschlagen (${res.status})`);
-  return body;
+  const key = await direktHochladen('expose', datei);
+  return anfrage<{ key: string }>('/api/expose/eingang/uebernehmen', senden('POST', { key }));
 }
 export const exposeAnalysieren = (key: string, dateiname: string) => anfrage<ExposeAnalyseAntwort>('/api/expose/analyse', senden('POST', { key, dateiname }));
 
@@ -561,12 +572,15 @@ function useDokumentAendern<E, R>(dealId: string, aufruf: (e: E) => Promise<R>) 
   return useMutation({ mutationFn: aufruf, onSettled: () => qc.invalidateQueries({ queryKey: ['dokumente', dealId] }) });
 }
 export const useDokumenteHochladen = (dealId: string) => useDokumentAendern(dealId, async (dateien: File[]) => {
-  const form = new FormData();
-  dateien.forEach((f) => form.append('dateien', f, f.name));
-  const res = await fetch(`/api/deals/${dealId}/dokumente`, { method: 'POST', body: form, headers: await mitToken() });
-  const body = await res.json().catch(() => null);
-  if (!res.ok) throw new ApiFehler(res.status, [body?.fehler ?? `Fehler ${res.status}`, body?.details?.hint].filter(Boolean).join(' '));
-  return body as DealDokument[];
+  // Nacheinander: ein Stapel großer Scans soll die Leitung nicht mit zwanzig parallelen Uploads belegen
+  const liegend: { key: string; name: string; typ: string }[] = [];
+  for (const f of dateien) liegend.push({ key: await direktHochladen('dokument', f), name: f.name, typ: f.type || 'application/octet-stream' });
+  try {
+    return await anfrage<DealDokument[]>(`/api/deals/${dealId}/dokumente/uebernehmen`, senden('POST', { dateien: liegend }));
+  } catch (e) {
+    if (e instanceof ApiFehler) throw new ApiFehler(e.status, [e.message, (e.details as { hint?: string } | undefined)?.hint].filter(Boolean).join(' '));
+    throw e;
+  }
 });
 export const useDokumentBezeichnen = (dealId: string) => useDokumentAendern(dealId, (e: { id: string; label: string }) => anfrage<{ ok: true }>(`/api/deals/${dealId}/dokumente/${e.id}`, senden('PATCH', { label: e.label })));
 export const useDokumentLoeschen = (dealId: string) => useDokumentAendern(dealId, (id: string) => anfrage<{ ok: true }>(`/api/deals/${dealId}/dokumente/${id}`, { method: 'DELETE' }));

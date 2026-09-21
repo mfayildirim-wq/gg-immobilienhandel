@@ -32,6 +32,27 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
     expect((await json('/api/expose/analyse', { key: '_eingang/00000000-0000-4000-8000-000000000000', dateiname: 'x.pdf' })).status).toBe(404);
   });
 
+  it('Direkt-Upload: Ticket, Datei liegt im Eingang, Übernahme prüft sie dort — und räumt ab, was kein PDF ist', async () => {
+    const hochladen = async (bytes: Uint8Array) => {
+      const t = await lies(json('/api/upload/ticket', { zweck: 'expose', groesse: bytes.byteLength }));
+      await speicher.ablegen('pdfs', t.key, bytes, 'application/pdf');
+      return t.key as string;
+    };
+    const gross = new Uint8Array(6 * 1024 * 1024).fill(0x20); // über den 4,5 MB einer Function
+    gross.set(new TextEncoder().encode('%PDF-1.7\n'));
+    const key = await hochladen(gross);
+    const r = await json('/api/expose/eingang/uebernehmen', { key });
+    expect(r.status).toBe(201);
+    expect(await r.json()).toEqual({ key, groesse: gross.byteLength });
+    expect(speicher.inhalt.has(`pdfs/${key}`)).toBe(true); // bleibt im Eingang, bis die Analyse es holt
+
+    const keinPdf = await hochladen(new TextEncoder().encode('kein pdf'));
+    expect((await json('/api/expose/eingang/uebernehmen', { key: keinPdf })).status).toBe(422);
+    expect(speicher.inhalt.has(`pdfs/${keinPdf}`)).toBe(false);
+    expect((await json('/api/expose/eingang/uebernehmen', { key: 'fremd/expose.pdf' })).status).toBe(400);
+    expect((await json('/api/expose/eingang/uebernehmen', { key: '_eingang/00000000-0000-4000-8000-000000000000' })).status).toBe(404);
+  });
+
   it('Upload → Analyse → Übernahme legt Objekt, Makler, Deal mit Einheiten und PDF an', async () => {
     const { key } = await lies(eingang(testExpose(kennung)));
     const a = await lies(json('/api/expose/analyse', { key, dateiname: `${kennung}.pdf` }));

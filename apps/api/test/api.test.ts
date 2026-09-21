@@ -578,6 +578,37 @@ describe.skipIf(!url)('Deal-Ablauf gegen die lokale Datenbank', () => {
     expect((await app.request(`/api/deals/${d.id}/dokumente/${dok.id}`, { method: 'DELETE' })).status).toBe(200);
     expect((await app.request(`/api/deals/${d.id}/dokumente/${dok.id}/datei`)).status).toBe(404);
 
+    // Direkt-Upload: Ticket → der „Browser" legt die Datei in den Eingang → Übernahme prüft die liegende Datei
+    const hochladen = async (bytes: Uint8Array) => {
+      const t = await lies(post('/api/upload/ticket', { zweck: 'dokument', groesse: bytes.byteLength }));
+      expect(t.key).toMatch(/^_eingang\/[0-9a-f-]{36}$/);
+      await speicher.ablegen('deal-docs', t.key, bytes, 'application/octet-stream');
+      return t.key as string;
+    };
+    const uebernehmen = (dateien: { key: string; name: string; typ: string }[]) => post(`/api/deals/${d.id}/dokumente/uebernehmen`, { dateien });
+    const gross = new Uint8Array(6 * 1024 * 1024).fill(0x20); // größer als die 4,5 MB, die eine Function annimmt
+    gross.set(pdf);
+    const schluesselGross = await hochladen(gross);
+    const direkt = await uebernehmen([{ key: schluesselGross, name: 'Scan groß.pdf', typ: 'application/octet-stream' }]);
+    expect(direkt.status).toBe(201);
+    const dokDirekt = ((await direkt.json()) as { id: string }[])[0]!;
+    expect(dokDirekt).toMatchObject({ dateiname: 'Scan groß.pdf', mimeType: 'application/pdf', groesseBytes: gross.byteLength });
+    expect(speicher.inhalt.has(`deal-docs/${schluesselGross}`)).toBe(false); // verschoben, nicht kopiert
+    expect((await app.request(`/api/deals/${d.id}/dokumente/${dokDirekt.id}/datei`)).status).toBe(200);
+
+    // Ein Archiv, das sich als PDF ausgibt: ganzer Stapel abgelehnt, Eingang geleert, nichts eingetragen
+    const [kOk, kZip] = [await hochladen(pdf), await hochladen(zip)];
+    expect((await uebernehmen([{ key: kOk, name: 'ok.pdf', typ: 'application/pdf' }, { key: kZip, name: 'archiv.pdf', typ: 'application/pdf' }])).status).toBe(415);
+    expect(speicher.inhalt.has(`deal-docs/${kOk}`) || speicher.inhalt.has(`deal-docs/${kZip}`)).toBe(false);
+    expect((await lies(app.request(`/api/deals/${d.id}/dokumente`))).length).toBe(1);
+
+    // Der Schlüssel kommt vom Server: ein fremdes Dokument des Buckets lässt sich nicht „übernehmen"
+    const fremd = (await lies(app.request(`/api/deals/${d.id}/dokumente`)))[0];
+    expect((await uebernehmen([{ key: `${d.id}/${fremd.id}_Scan gro_.pdf`, name: 'x.pdf', typ: 'application/pdf' }])).status).toBe(400);
+    expect((await uebernehmen([{ key: '_eingang/00000000-0000-4000-8000-000000000000', name: 'fehlt.pdf', typ: 'application/pdf' }])).status).toBe(404);
+    expect((await post('/api/upload/ticket', { zweck: 'dokument', groesse: 201 * 1024 * 1024 })).status).toBe(413);
+    expect((await post('/api/upload/ticket', { zweck: 'irgendwas' })).status).toBe(400);
+
     expect((await app.request(`/api/deals/${d.id}`, { method: 'DELETE' })).status).toBe(200);
     expect((await app.request(`/api/deals/${d.id}`)).status).toBe(404);
     expect((await lies(app.request('/api/listen'))).deals.some((x: { id: string }) => x.id === d.id)).toBe(false);

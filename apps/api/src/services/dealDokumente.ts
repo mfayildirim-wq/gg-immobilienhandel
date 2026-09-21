@@ -1,6 +1,6 @@
 import type { DealDokument } from '@gg/api-contract';
 import { type Db, schema } from '@gg/db';
-import { BUCKETS, type Dateispeicher, DOKUMENT_GRENZEN, dokumentSchluessel, einheitenExtrahieren, type ExtrahierteEinheit, type KiClient, kostenBuchung, pdfSeitenzahl, pruefeDateien } from '@gg/integrations';
+import { BUCKETS, type Dateispeicher, DOKUMENT_GRENZEN, dokumentSchluessel, einheitenExtrahieren, istEingangsSchluessel, type ExtrahierteEinheit, type KiClient, kostenBuchung, pdfSeitenzahl, pruefeDateien } from '@gg/integrations';
 import { and, desc, eq, isNull, or, sql } from 'drizzle-orm';
 import { auditSchreiben } from './audit.ts';
 import { FachFehler } from '../fehler.ts';
@@ -56,6 +56,51 @@ export async function dokumenteHochladen(db: Db, speicher: Dateispeicher, dealId
       await db.delete(schema.dealDokumente).where(eq(schema.dealDokumente.id, g.id)).catch(() => {});
       await speicher.loeschen(BUCKETS.dealDocs, [g.key]).catch(() => {});
     }
+    throw err;
+  }
+  const ids = geschrieben.map((g) => g.id);
+  return (await dokumenteListe(db, dealId)).filter((d) => ids.includes(d.id));
+}
+
+/**
+ * Direkt-Upload, Schritt 3: die Dateien liegen unter `deal-docs/_eingang/<uuid>`. Dieselben Regeln wie `dokumenteHochladen`
+ * — nur dass der Server die Bytes erst sieht, wenn sie liegen: er holt je Datei die ersten 4 KB (Signatur) und die Größe.
+ * Fällt eine Datei durch, wird der ganze Stapel aus dem Eingang gelöscht und nichts eingetragen.
+ */
+export async function dokumenteUebernehmen(db: Db, speicher: Dateispeicher, dealId: string, dateien: { key: string; name: string; typ: string }[]): Promise<DealDokument[]> {
+  await dealPruefen(db, dealId);
+  if (!dateien.length) throw new FachFehler(400, 'Keine Dateien hochgeladen');
+  if (dateien.length > DOKUMENT_GRENZEN.maxDateien) throw new FachFehler(413, `Zu viele Dateien — höchstens ${DOKUMENT_GRENZEN.maxDateien} pro Upload.`);
+  if (dateien.some((d) => !istEingangsSchluessel(d.key)) || new Set(dateien.map((d) => d.key)).size !== dateien.length) throw new FachFehler(400, 'Ungültiger Upload-Schlüssel.');
+  const eingangLeeren = () => speicher.loeschen(BUCKETS.dealDocs, dateien.map((d) => d.key)).catch(() => {});
+
+  const koepfe: { bytes: Uint8Array; groesse: number }[] = [];
+  for (const d of dateien) {
+    koepfe.push(await speicher.anfang(BUCKETS.dealDocs, d.key, 4096).catch(async () => { await eingangLeeren(); throw new FachFehler(404, `„${d.name}" wurde nicht gefunden — bitte erneut hochladen.`); }));
+  }
+  const zuGross = dateien.find((_, i) => koepfe[i]!.groesse > DOKUMENT_GRENZEN.maxBytes);
+  if (zuGross) { await eingangLeeren(); throw new FachFehler(413, `„${zuGross.name}" ist größer als ${DOKUMENT_GRENZEN.maxBytes / 1024 / 1024} MB.`); }
+  const stapel = pruefeDateien(dateien.map((d, i) => ({ name: d.name, gemeldeterTyp: d.typ, bytes: Buffer.from(koepfe[i]!.bytes) })));
+  if (!stapel.ok) {
+    await eingangLeeren();
+    throw new FachFehler(415, stapel.grund, { hint: 'Erlaubt sind PDF, Bilder, Office-Dateien und Text. Es wurde nichts gespeichert — bitte die beanstandete Datei aus der Auswahl nehmen und erneut hochladen.' });
+  }
+
+  const geschrieben: { id: string; key: string }[] = [];
+  try {
+    for (const [i, d] of dateien.entries()) {
+      const id = crypto.randomUUID();
+      const key = dokumentSchluessel(dealId, id, d.name);
+      await speicher.verschieben(BUCKETS.dealDocs, d.key, key);
+      geschrieben.push({ id, key });
+      await db.insert(schema.dealDokumente).values({ id, dealId, dateiname: d.name, mimeType: stapel.dateien[i]!.mime, groesseBytes: koepfe[i]!.groesse, label: '', istExpose: false, storageKey: key });
+    }
+  } catch (err) {
+    for (const g of geschrieben) {
+      await db.delete(schema.dealDokumente).where(eq(schema.dealDokumente.id, g.id)).catch(() => {});
+      await speicher.loeschen(BUCKETS.dealDocs, [g.key]).catch(() => {});
+    }
+    await eingangLeeren();
     throw err;
   }
   const ids = geschrieben.map((g) => g.id);
