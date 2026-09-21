@@ -39,14 +39,18 @@ geprüft. Einzelheiten in `../protokoll/sessions/2026-09-21-echter-bestand.md`.
 
 Ein zusammenhängender Arbeitsschritt; vorher hat nichts davon einen Gegenstand.
 
-- [ ] **Vercel-Projekt** und `hono/vercel`-Einstieg — existiert noch nicht
+- [x] **Host-Allowlist für `redirectUri`** — Microsoft-Anmeldung leitet nur auf freigegebene Hosts zurück
+      (`rueckwegPruefen` in `@gg/domain`, `OAUTH_HOSTS`)
+- [x] **`hono/vercel`-Einstieg, `vercel.json`, Sicherheits-Header** — vorbereitet und lokal geprüft
+      (`pnpm vercel:probe`), siehe `DEPLOYMENT.md`. CSP strenger als in der alten App: keine Inline-Skripte, kein `eval`.
+- [ ] **Vercel-Projekt anlegen und einmal wirklich deployen** — braucht Konto und Freigabe; erst das zeigt
+      Function-Größe, Kaltstart und das schreibgeschützte Dateisystem
 - [ ] **Chromium für Vercel** (`@sparticuz/chromium`) — ohne das funktioniert online **kein** PDF-Export,
       obwohl Bankgespräch, Präsentation und Kundenkalkulation fachlich fertig sind (`packages/documents/src/pdf/browser.ts:5`)
 - [ ] **Direkt-Upload** (Ticket → signierte URL → Übernahme) — sonst scheitert online jedes Exposé über
       4,5 MB; echte Exposés sind 0,7 bis 13,4 MB groß
 - [ ] **Antwort-Streaming** für PDF-Exporte — Bank-Präsentation liegt bei ~5 MB
-- [ ] **`vercel.json` + Sicherheits-Header** (CSP, X-Frame-Options, nosniff), mit Vergleichstest wie in der alten App
-- [ ] **Host-Allowlist für `redirectUri`** (`app.ts`, M365-Anmeldung) — einzige echte Sicherheits-Regression
+- [ ] Header-Vergleichstest gegen die alte App (wie dort `vercel.json` gegen Erwartung)
 
 ## Stufe 2 — ab echten Daten
 

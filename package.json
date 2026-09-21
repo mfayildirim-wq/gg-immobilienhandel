@@ -28,7 +28,8 @@
     "paritaet:wiederherstellen": "tsx -e \"import('./tests/paritaet/umgebung.ts').then(m => m.wiederherstellen())\"",
     "demo:daten": "tsx werkzeuge/demo-daten.ts",
     "ui:abgleich": "tsx werkzeuge/ui-abgleich.ts",
-    "bestand:rundgang": "tsx werkzeuge/bestand-rundgang.ts"
+    "bestand:rundgang": "tsx werkzeuge/bestand-rundgang.ts",
+    "vercel:probe": "tsx --env-file-if-exists=.env werkzeuge/vercel-probe.ts"
   },
   "devDependencies": {
     "@gg/domain": "workspace:*",
