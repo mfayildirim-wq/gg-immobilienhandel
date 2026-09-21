@@ -23,6 +23,11 @@ function schluessel(): Buffer {
     zwischengespeichert = buf;
     return buf;
   }
+  // Online gibt es kein beständiges Dateisystem: ein dort erzeugter Schlüssel lebte nur bis zum nächsten Kaltstart,
+  // und alles damit Verschlüsselte (Zugänge, Tokens) wäre danach unlesbar — still, ohne Fehlermeldung beim Speichern.
+  if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
+    throw new Error('GG_ENCRYPTION_KEY fehlt. In Produktion wird kein Schlüssel erzeugt — base64 von 32 Byte in der Umgebung hinterlegen.');
+  }
   const datei = SCHLUESSEL_DATEI();
   if (fs.existsSync(datei)) {
     const buf = fs.readFileSync(datei);
