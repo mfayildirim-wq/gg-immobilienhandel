@@ -1,18 +1,36 @@
 # Offene Punkte
 
-Stand 19.09.2026. Lebendes Dokument — beim Abarbeiten hier streichen, bei neuen Funden ergänzen.
+Stand 21.09.2026. Lebendes Dokument — beim Abarbeiten hier streichen, bei neuen Funden ergänzen.
 
 **Fachlich ist der Neubau fertig und nachgewiesen gleich** (`pnpm paritaet`: 17 Bereiche, 2.305 Merkmale,
 0 Abweichungen). Was fehlt, ist der **Betrieb**. Hintergrund in `../protokoll/13-validierung-und-vollstaendigkeit.md`.
 
 ## Wartet auf Zuarbeit
 
-- [ ] **DB-Dump der Produktion.** Soll ins alte Dev-System eingespielt werden; danach: Umzug gegen echten
-      Bestand, Feld-Inventar, Umzug scharf schalten.
+- [ ] **Fotos, Dokumente, Protokoll der Produktion.** Geliefert wurde am 21.09. der Browser-Export (nur die
+      Geschäftsschlüssel). `obj_photos`, `deal_documents`, `audit_log` und die Bucket-Dateien fehlen darin —
+      lokal ist dieser Teil **nicht prüfbar**. Entweder ein echter Abzug (`pg_dump --schema=app` + Buckets)
+      oder der Probelauf direkt gegen die Produktion (nur lesend, `pnpm umzug:probe`).
 - [ ] **`M365_ATTRAPPE=1` in die lokale `.env`.** Eine Zeile, dann ist `tests/e2e/angebote.spec.ts` grün.
       Von außen nicht setzbar: `--env-file` überschreibt Shell-Variablen.
 - [ ] **Remote für dieses Repo.** Unter `mfayildirim`, **nicht** `acania-jonas`. Sichtbarkeit (privat
       empfohlen) und Name offen. Anlegen und Pushen nur auf ausdrückliche Freigabe.
+
+## Echter Bestand (21.09.2026) — vor dem Umschalten zu entscheiden
+
+Umzug gegen 273 Deals / 285 Objekte / 141 Makler: alle 49 Prüfungen bestanden. Offen ist, was der Umzug
+**nicht** mitnimmt. Einzelheiten in `../protokoll/sessions/2026-09-21-echter-bestand.md`.
+
+- [ ] **Makler-Kontaktfelder gehen verloren**: `mobiltel` (110), `festnetztel` (109), `alleNamen` /
+      `alleEmails` / `alleTelefonnummern` (je 106), Adresse (1). Die Hauptnummer `tel` ist überall gefüllt;
+      verloren gingen 50 zusätzliche Festnetznummern, 52 weitere Nummern, 46 weitere E-Mail-Adressen,
+      37 weitere Ansprechpartner. Braucht Spalten im Schema + Umformung + Anzeige.
+- [ ] **`immo-dd-template`** (34 Zeilen DD-Vorlage) hat im Neubau kein Gegenstück.
+- [ ] **`immo-offer-uids`** (79) — Duplikatschutz des Auto-Imports; zieht mit dem Bot um.
+- [ ] Deal-Marker `_reconstructed` / `_reconstructedAt` (91) und `updatedAt` (11): bewusst auslassen
+      (in `DEAL_AUSGELASSEN` mit Begründung) oder `updatedAt` auf `updated_at` legen.
+- [ ] Eine Einheit mit `rend_k` = 655200 (Archiv-Deal) — Tippfehler im Bestand, wird beim Umzug leer. Fachfrage.
+- [ ] **Umzug scharf**: erst wenn die Punkte oben klassifiziert sind, unbekannte Felder zum Abbruchgrund machen.
 
 ## Stufe 1 — vor dem Produktivgang
 

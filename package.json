@@ -21,11 +21,13 @@
     "e2e:ui": "playwright test --ui",
     "umzug": "pnpm --filter @gg/umzug umzug",
     "umzug:probe": "pnpm --filter @gg/umzug umzug --trocken",
+    "umzug:quelle": "pnpm --filter @gg/umzug quelle",
     "golden:erzeugen": "tsx werkzeuge/golden-master/erzeugen.ts",
     "paritaet": "playwright test -c playwright.paritaet.config.ts",
     "paritaet:wiederherstellen": "tsx -e \"import('./tests/paritaet/umgebung.ts').then(m => m.wiederherstellen())\"",
     "demo:daten": "tsx werkzeuge/demo-daten.ts",
-    "ui:abgleich": "tsx werkzeuge/ui-abgleich.ts"
+    "ui:abgleich": "tsx werkzeuge/ui-abgleich.ts",
+    "bestand:rundgang": "tsx werkzeuge/bestand-rundgang.ts"
   },
   "devDependencies": {
     "@gg/domain": "workspace:*",
