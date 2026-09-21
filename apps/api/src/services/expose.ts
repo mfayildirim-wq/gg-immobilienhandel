@@ -2,7 +2,7 @@ import type { ExposeAnalyseAntwort, ExposeUebernehmen } from '@gg/api-contract';
 import { type Db, schema } from '@gg/db';
 import {
   berechneAnkauf, dealEinheitenAusExpose, dublettenDeal, dublettenMakler, dublettenObjekt, exposeVorbereiten, einheitAlsEingabe,
-  maklerHatDaten, normalisiereFrequenz, telefonErsetzen, telefonNormalisieren, wizardKalkSpeichern, wizardKalkVorbelegen,
+  maklerHatDaten, normalisiereFrequenz, telefonErsetzen, telefonNormalisieren, weitereKontakte, wizardKalkSpeichern, wizardKalkVorbelegen,
 } from '@gg/domain';
 import {
   analysiereExpose, BUCKETS, type Dateispeicher, dokumentSchluessel, EINGANG, istEingangsSchluessel, istPdf, type KiClient, kostenBuchung, pdfText,
@@ -139,6 +139,10 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
       maklerId = crypto.randomUUID();
       await tx.insert(schema.makler).values({
         id: maklerId, name: text(m.name), firma: text(m.firma), tel: text(tel), email: text(m.email), webseite: text(m.webseite),
+        mobil: text(m.mobiltel ? telefonNormalisieren(m.mobiltel) : ''), festnetz: text(m.festnetztel ? telefonNormalisieren(m.festnetztel) : ''),
+        weitereKontakte: weitereKontakte(
+          { name: m.name, tel, mobil: m.mobiltel, festnetz: m.festnetztel, email: m.email },
+          { namen: m.alleNamen, telefonnummern: m.alleTelefonnummern, emails: m.alleEmails }),
         prio: m.prio ?? 'B', kontaktFrequenz: normalisiereFrequenz(m.kontaktFreq || 'Monatlich'),
       });
       if (text(m.notizen)) {

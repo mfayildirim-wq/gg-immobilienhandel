@@ -17,6 +17,7 @@ export * from './deals/info.ts';
 export * from './vorlagen.ts';
 export * from './makler/persona.ts';
 export * from './makler/kommunikation.ts';
+export * from './makler/kontakte.ts';
 export * from './deals/kalkulationswerkzeuge.ts';
 export * from './suche.ts';
 export * from './objekte/detail.ts';

@@ -30,9 +30,17 @@ export const makler = fach
   id: text('id').primaryKey(),
       name: text('name'),
       firma: text('firma'),
+      /** Hauptnummer — die, die Wählmaschine und Briefing anrufen (alt: mobiltel || festnetztel || tel) */
       tel: text('tel'),
+      mobil: text('mobil'),
+      festnetz: text('festnetz'),
       email: text('email'),
       webseite: text('webseite'),
+      strasse: text('strasse'),
+      plz: text('plz'),
+      ort: text('ort'),
+      /** Was ein Exposé außer dem Hauptkontakt nennt: { namen: string[], telefonnummern: string[], emails: string[] } */
+      weitereKontakte: jsonb('weitere_kontakte'),
       prio: text('prio'),
       kontaktFrequenz: text('kontakt_frequenz'),
       lastContact: date('last_contact'),

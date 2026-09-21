@@ -43,7 +43,10 @@ function Profil({ m, geloescht }: { m: Detail; geloescht?: () => void }) {
   const aendern = useMaklerAendern(m.id);
   const erledigt = useMaklerErledigt(m.id);
   const loeschen = useMaklerLoeschen();
-  const [f, setF] = useState({ name: m.name ?? '', firma: m.firma ?? '', tel: m.tel ?? '', email: m.email ?? '', webseite: m.webseite ?? '' });
+  const [f, setF] = useState({
+    name: m.name ?? '', firma: m.firma ?? '', tel: m.tel ?? '', email: m.email ?? '', webseite: m.webseite ?? '',
+    mobil: m.mobil ?? '', festnetz: m.festnetz ?? '', strasse: m.strasse ?? '', plz: m.plz ?? '', ort: m.ort ?? '',
+  });
   const [prio, setPrio] = useState<'A' | 'B' | 'C'>(m.prio ?? 'B');
   const [frequenz, setFrequenz] = useState(normalisiereFrequenz(m.kontaktFrequenz));
   const [zuletzt, setZuletzt] = useState(m.lastContact ?? '');
@@ -69,7 +72,27 @@ function Profil({ m, geloescht }: { m: Detail; geloescht?: () => void }) {
         <TextInput label="Telefon" type="tel" placeholder="+49 711 123456" value={f.tel} error={telFehler} onChange={(e) => setF({ ...f, tel: e.currentTarget.value })} />
         <TextInput label="E-Mail" type="email" placeholder="name@firma.de" value={f.email} error={mailFehler} onChange={(e) => setF({ ...f, email: e.currentTarget.value })} />
         <TextInput label="Webseite" value={f.webseite} onChange={(e) => setF({ ...f, webseite: e.currentTarget.value })} />
+        <TextInput label="Mobil" type="tel" placeholder="+49 171 1234567" value={f.mobil} onChange={(e) => setF({ ...f, mobil: e.currentTarget.value })} />
+        <TextInput label="Festnetz" type="tel" placeholder="+49 711 123456" value={f.festnetz} onChange={(e) => setF({ ...f, festnetz: e.currentTarget.value })} />
       </SimpleGrid>
+      <Title order={6}>📍 Anschrift</Title>
+      <TextInput label="Straße und Hausnummer" value={f.strasse} onChange={(e) => setF({ ...f, strasse: e.currentTarget.value })} />
+      <SimpleGrid cols={2} spacing="xs">
+        <TextInput label="PLZ" value={f.plz} maxLength={10} onChange={(e) => setF({ ...f, plz: e.currentTarget.value })} />
+        <TextInput label="Ort" value={f.ort} onChange={(e) => setF({ ...f, ort: e.currentTarget.value })} />
+      </SimpleGrid>
+      {m.weitereKontakte && (
+        <Paper withBorder p="xs">
+          <Text size="xs" fw={700} c="dimmed" mb={4}>Weitere Kontakte aus Exposés</Text>
+          {m.weitereKontakte.namen.length > 0 && <Text size="xs">👤 {m.weitereKontakte.namen.join(' · ')}</Text>}
+          {m.weitereKontakte.telefonnummern.length > 0 && (
+            <Group gap={6}>{m.weitereKontakte.telefonnummern.map((t) => <Anchor key={t} size="xs" href={`tel:${t}`}>📞 {t}</Anchor>)}</Group>
+          )}
+          {m.weitereKontakte.emails.length > 0 && (
+            <Group gap={6}>{m.weitereKontakte.emails.map((x) => <Anchor key={x} size="xs" href={`mailto:${x}`}>✉️ {x}</Anchor>)}</Group>
+          )}
+        </Paper>
+      )}
       <Title order={6}>📅 Kontakt-Frequenz</Title>
       <SimpleGrid cols={2} spacing="xs">
         <Select label="Frequenz" data={MAKLER_FREQUENZ_OPTIONEN.map((o) => ({ value: o.wert, label: o.label }))} value={frequenz} allowDeselect={false}

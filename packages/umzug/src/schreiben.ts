@@ -26,6 +26,7 @@ export async function schreiben(tx: Tx, z: Zeilen) {
   await tx.delete(schema.projekte); // Einheiten, Gespräche, Aufgaben, Maßnahmen per Kaskade
   await tx.delete(schema.gespeicherteFilter);
   await tx.delete(schema.textvorlagen);
+  await tx.delete(schema.ddChecklisteVorlage);
   await tx.delete(schema.einstellungen).where(eq(schema.einstellungen.schluessel, VORLAGEN_GESPEICHERT));
   await tx.delete(schema.begleitscheinAktionen);
   await tx.delete(schema.vordrucke);
@@ -62,6 +63,7 @@ export async function schreiben(tx: Tx, z: Zeilen) {
   await einfuegen(tx, schema.projektGebaeudeMassnahmen, z.projektGebaeudeMassnahmen);
   await einfuegen(tx, schema.gespeicherteFilter, z.gespeicherteFilter);
   await einfuegen(tx, schema.textvorlagen, z.textvorlagen);
+  await einfuegen(tx, schema.ddChecklisteVorlage, z.ddChecklisteVorlage);
   for (const e of z.einstellungen) {
     await tx.insert(schema.einstellungen).values(e).onConflictDoUpdate({ target: schema.einstellungen.schluessel, set: { wert: e.wert, updatedAt: sql`now()` } });
   }

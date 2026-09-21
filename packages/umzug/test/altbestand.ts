@@ -13,6 +13,9 @@ export const ALTBESTAND = {
       ],
       importedEmailUids: ['uid-1'],
       personal: { geburtsdatum: '1970-05-01' },
+      // Reste des Exposé-Imports: tel ist die Hauptnummer (= Mobil), der Rest stand nur in den Daten
+      mobiltel: '+49 30 111', festnetztel: '030 222', strasse: 'Maklerweg 3', plz: '10115', stadt: 'Berlin', _rekonstruiert: true,
+      alleNamen: ['Anna Alt', 'Bodo Büro'], alleTelefonnummern: ['030 111', '030 222', '030 333'], alleEmails: ['ANNA@example.test', 'buero@example.test'],
     },
     { id: 'mk-2', name: 'Bernd Nie', kontaktFreq: 'Nicht kontaktieren', prio: 'X', _deleted: true, _deletedAt: 1_758_110_700_000 },
     { id: 'mk-3', name: 'Clara Komisch', kontaktFreq: 'Zweiwöchentlich', lieblingsfarbe: 'blau' },
@@ -102,6 +105,13 @@ export const ALTBESTAND = {
     { id: 'vl-a', name: 'Erstanfrage', kanal: 'email', betreff: 'Anfrage: {adresse}', text: 'Guten Tag {maklerName},\n\n…' },
     { id: 'vl-b', name: 'WA kurz', kanal: 'whatsapp', text: 'Hallo {maklerName} 👋' },
   ],
+  // Zahlen als ID und eine Zeile ohne Quelle — so steht es im echten Bestand
+  'immo-dd-template': [
+    { id: 5, dokument: 'Grundbuchauszug', quelle: 'Notariat' },
+    { id: 1, dokument: 'Fotos (professionell)', quelle: '—' },
+    { id: 35, dokument: 'Mieterliste' },
+  ],
+  'immo-offer-uids': ['AAMkAD-uid-1', '<msg-1@example.test>'],
   'immo-saved-filters': [
     { id: 'sf-1', module: 'deals', name: '🔥 Heiße Pipeline', criteria: [{ field: 'status', op: 'in', value: ['Closing Path', 'Angebot abgegeben'] }], createdAt: 1_789_630_611, updatedAt: 1_789_630_700 },
     { id: 'sf-2', module: 'deals', name: '🔥 Heiße Pipeline', criteria: [{ field: 'status', op: 'in', value: ['Closing Path', 'Angebot abgegeben'] }], createdAt: 1_789_630_900, updatedAt: 1_789_630_900 },

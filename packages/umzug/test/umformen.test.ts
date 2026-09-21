@@ -6,12 +6,34 @@ const STICHTAG = '2026-09-17T12:00:00.000Z';
 const u = umformen(ALTBESTAND, STICHTAG);
 const arten = (art: string) => u.befunde.filter((b) => b.art === art);
 
+describe('Einstellungen ohne eigenes Gegenstück in der Oberfläche', () => {
+  it('übernimmt die DD-Dokumentenliste in Listenreihenfolge, nicht nach alter Laufnummer', () => {
+    expect(u.zeilen.ddChecklisteVorlage).toEqual([
+      { dokument: 'Grundbuchauszug', quelle: 'Notariat', sort: 0 },
+      { dokument: 'Fotos (professionell)', quelle: '—', sort: 1 },
+      { dokument: 'Mieterliste', quelle: null, sort: 2 },
+    ]);
+  });
+
+  it('behält die Kennungen bereits übernommener Angebots-Mails', () => {
+    expect(u.zeilen.einstellungen.find((e) => e.schluessel === 'angebote-importierte-uids')?.wert).toEqual(['AAMkAD-uid-1', '<msg-1@example.test>']);
+  });
+});
+
 describe('Makler', () => {
   it('übernimmt Stammdaten, Frequenz und Erstellungsdatum', () => {
     expect(u.zeilen.makler.find((m) => m.id === 'mk-1')).toMatchObject({
       name: 'Anna Alt', prio: 'A', kontaktFrequenz: 'Monatlich', nextContact: '2026-09-01',
       createdAt: '2026-01-10T00:00:00.000Z', persoenlich: { geburtsdatum: '1970-05-01' },
     });
+  });
+
+  it('übernimmt Mobil, Festnetz und Anschrift; weitere Kontakte nur, soweit sie nicht schon am Makler stehen', () => {
+    expect(u.zeilen.makler.find((m) => m.id === 'mk-1')).toMatchObject({
+      tel: '+49 30 111', mobil: '+49 30 111', festnetz: '030 222', strasse: 'Maklerweg 3', plz: '10115', ort: 'Berlin',
+      weitereKontakte: { namen: ['Bodo Büro'], telefonnummern: ['030 333'], emails: ['buero@example.test'] },
+    });
+    expect(u.zeilen.makler.find((m) => m.id === 'mk-3')).toMatchObject({ mobil: null, festnetz: null, ort: null, weitereKontakte: null });
   });
 
   it('macht aus komm[] Zeilen und behält eine abweichende Notiz', () => {
@@ -137,7 +159,7 @@ describe('Deals', () => {
     });
     expect(arten('waise-kundenkalkulation').map((b) => b.id)).toEqual(['kk-2']);
     expect(arten('kundenkalkulation-bild-eingebettet')).toHaveLength(1);
-    expect(u.zeilen.einstellungen.filter((e) => !['finanzpraes-standard', 'vertriebslisten-spalten', 'textvorlagen-gespeichert'].includes(e.schluessel))).toEqual([
+    expect(u.zeilen.einstellungen.filter((e) => !['finanzpraes-standard', 'vertriebslisten-spalten', 'textvorlagen-gespeichert', 'angebote-importierte-uids'].includes(e.schluessel))).toEqual([
       { schluessel: 'kalk-standard', wert: { rp: 10 } },
       { schluessel: 'kundenkalk-hinweise', wert: ['Mietsteigerung bei Neuvermietung'] },
     ]);

@@ -56,6 +56,8 @@ export async function maklerDetail(db: Db, id: string): Promise<MaklerDetail> {
   return {
     id: m.id, name: m.name, firma: m.firma, tel: m.tel, email: m.email, prio: m.prio as 'A' | 'B' | 'C' | null,
     kontaktFrequenz: m.kontaktFrequenz, nextContact: m.nextContact, version: m.version, webseite: m.webseite,
+    mobil: m.mobil, festnetz: m.festnetz, strasse: m.strasse, plz: m.plz, ort: m.ort,
+    weitereKontakte: (m.weitereKontakte as MaklerDetail['weitereKontakte']) ?? null,
     persoenlich: (m.persoenlich as Record<string, unknown> | null) ?? null,
     lastContact: m.lastContact, beziehungsNotiz: m.beziehungsNotiz, kommunikation,
     kiSummary: m.kiSummary, kiSummaryAt: m.kiSummaryAt ? kommZeitstempel(m.kiSummaryAt) : null, erstellt: m.createdAt.slice(0, 10),
@@ -69,6 +71,8 @@ export async function maklerAendern(db: Db, id: string, eingabe: MaklerAendern) 
     const neu = await versionFortschreiben(tx, schema.makler, id, version, 'Makler');
     // mkSave: Telefon normalisiert (0049→+49, ohne Klammern)
     if (felder.tel) felder.tel = telefonNormalisieren(felder.tel);
+    for (const k of ['mobil', 'festnetz'] as const) if (felder[k]) felder[k] = telefonNormalisieren(felder[k]);
+    for (const k of ['mobil', 'festnetz', 'strasse', 'plz', 'ort'] as const) if (felder[k] === '') felder[k] = null;
     if (Object.keys(felder).length) await tx.update(schema.makler).set(felder).where(eq(schema.makler.id, id));
     return { id, version: neu };
   });

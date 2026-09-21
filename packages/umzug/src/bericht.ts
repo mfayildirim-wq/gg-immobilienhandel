@@ -1,5 +1,5 @@
 import { einheitAlsEingabe, sanierungAlsEingabe, schema } from '@gg/db';
-import { berechneAnkauf, computeKKalk, type KKalkInputs, DEAL_STATUS, DealStatus, KALK_STANDARD, type KalkStandard, START_STATUS } from '@gg/domain';
+import { berechneAnkauf, computeKKalk, type KKalkInputs, DEAL_STATUS, DealStatus, KALK_STANDARD, type KalkStandard, START_STATUS, weitereKontakte, type WeitereKontakte } from '@gg/domain';
 import { asc, count, eq, isNotNull, sql } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
 import type { Tx } from './schreiben.ts';
@@ -84,6 +84,17 @@ export async function pruefen(tx: Tx, kv: KvDaten, u: Umformung): Promise<Pruefu
       return a + komm.length + (notiz && !komm.some((k) => text(k.text) === notiz) ? 1 : 0);
     }, 0),
     await anzahl(schema.maklerKommunikation));
+  // Kontaktfelder, die die alte App am Makler ablegte, ohne sie anzuzeigen (echter Bestand 21.09.2026: 110 von 141 Maklern)
+  const zielMakler = await tx.select({ mobil: schema.makler.mobil, festnetz: schema.makler.festnetz, strasse: schema.makler.strasse, plz: schema.makler.plz, ort: schema.makler.ort, weitere: schema.makler.weitereKontakte }).from(schema.makler);
+  vergleiche('Makler mit Mobilnummer', makler.filter((m) => text(m.mobiltel)).length, zielMakler.filter((m) => m.mobil).length);
+  vergleiche('Makler mit Festnetznummer', makler.filter((m) => text(m.festnetztel)).length, zielMakler.filter((m) => m.festnetz).length);
+  vergleiche('Makler mit Anschrift', makler.filter((m) => text(m.strasse) || text(m.plz) || text(m.stadt)).length, zielMakler.filter((m) => m.strasse || m.plz || m.ort).length);
+  const weitereAnzahl = (k: WeitereKontakte | null) => (k ? k.namen.length + k.telefonnummern.length + k.emails.length : 0);
+  vergleiche('Weitere Kontaktangaben der Makler (Namen, Nummern, E-Mails)',
+    makler.reduce((a, m) => a + weitereAnzahl(weitereKontakte(
+      { name: text(m.name), tel: text(m.tel) ?? text(m.telefon), mobil: text(m.mobiltel), festnetz: text(m.festnetztel), email: text(m.email) },
+      { namen: m.alleNamen, telefonnummern: m.alleTelefonnummern, emails: m.alleEmails })), 0),
+    zielMakler.reduce((a, m) => a + weitereAnzahl(m.weitere as WeitereKontakte | null), 0));
   vergleiche('Status-Verlauf (ein Eintrag je Deal)', deals.length, await anzahl(schema.dealStatusHistorie));
 
   // Rechengrundlage erhalten? Kalkulation je Deal aus Altdaten und aus den neuen Tabellen rechnen und vergleichen.
@@ -205,6 +216,12 @@ export async function pruefen(tx: Tx, kv: KvDaten, u: Umformung): Promise<Pruefu
     liste(kv[DOKUMENT_TABELLE]).filter((f) => text(f.id) && typeof f.original_name === 'string' && dealIdsZiel.has(text(f.deal_id)!)).length,
     await anzahl(schema.dealDokumente));
 
+  // DD-Dokumentenliste: gleiche Zeilen in gleicher Reihenfolge
+  const ddAlt = liste(kv['immo-dd-template']).map((d) => [text(d.dokument), text(d.quelle)]);
+  const ddNeu = (await tx.select().from(schema.ddChecklisteVorlage).orderBy(asc(schema.ddChecklisteVorlage.sort))).map((d) => [d.dokument, d.quelle]);
+  vergleiche('DD-Dokumentenliste (Zeilen)', ddAlt.length, ddNeu.length);
+  vergleiche('DD-Dokumentenliste mit gleichem Inhalt und gleicher Reihenfolge', ddAlt.length, ddAlt.filter((d, i) => kanonisch(d) === kanonisch(ddNeu[i])).length);
+
   // Einstellungen
   const einstellungenAlt = Object.keys(EINSTELLUNGEN).filter((s) => kv[s] !== undefined && kv[s] !== null && kv[s] !== '');
   let einstellungenGleich = 0;
@@ -212,7 +229,7 @@ export async function pruefen(tx: Tx, kv: KvDaten, u: Umformung): Promise<Pruefu
     const [z] = await tx.select({ wert: schema.einstellungen.wert }).from(schema.einstellungen).where(eq(schema.einstellungen.schluessel, EINSTELLUNGEN[s]!));
     if (z && kanonisch(z.wert) === kanonisch(kv[s])) einstellungenGleich++;
   }
-  vergleiche('Einstellungen (Kalkulation, Kundenkalkulation, Hinweise, Disclaimer)', einstellungenAlt.length, einstellungenGleich);
+  vergleiche('Einstellungen (Kalkulation, Kundenkalkulation, Hinweise, Disclaimer, Angebots-Kennungen)', einstellungenAlt.length, einstellungenGleich);
 
   return p;
 }

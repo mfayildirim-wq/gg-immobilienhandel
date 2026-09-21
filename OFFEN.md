@@ -16,21 +16,24 @@ Stand 21.09.2026. Lebendes Dokument — beim Abarbeiten hier streichen, bei neue
 - [ ] **Remote für dieses Repo.** Unter `mfayildirim`, **nicht** `acania-jonas`. Sichtbarkeit (privat
       empfohlen) und Name offen. Anlegen und Pushen nur auf ausdrückliche Freigabe.
 
-## Echter Bestand (21.09.2026) — vor dem Umschalten zu entscheiden
+## Echter Bestand (21.09.2026)
 
-Umzug gegen 273 Deals / 285 Objekte / 141 Makler: alle 49 Prüfungen bestanden. Offen ist, was der Umzug
-**nicht** mitnimmt. Einzelheiten in `../protokoll/sessions/2026-09-21-echter-bestand.md`.
+Umzug gegen 273 Deals / 285 Objekte / 141 Makler: **55 Prüfungen bestanden, keine unbekannten Felder, nichts mehr
+„noch nicht umgezogen"**. `pnpm umzug:inventar` hat alle 690 Attribut-Pfade des Bestands gegen den Neubau
+geprüft. Einzelheiten in `../protokoll/sessions/2026-09-21-echter-bestand.md`.
 
-- [ ] **Makler-Kontaktfelder gehen verloren**: `mobiltel` (110), `festnetztel` (109), `alleNamen` /
-      `alleEmails` / `alleTelefonnummern` (je 106), Adresse (1). Die Hauptnummer `tel` ist überall gefüllt;
-      verloren gingen 50 zusätzliche Festnetznummern, 52 weitere Nummern, 46 weitere E-Mail-Adressen,
-      37 weitere Ansprechpartner. Braucht Spalten im Schema + Umformung + Anzeige.
-- [ ] **`immo-dd-template`** (34 Zeilen DD-Vorlage) hat im Neubau kein Gegenstück.
-- [ ] **`immo-offer-uids`** (79) — Duplikatschutz des Auto-Imports; zieht mit dem Bot um.
-- [ ] Deal-Marker `_reconstructed` / `_reconstructedAt` (91) und `updatedAt` (11): bewusst auslassen
-      (in `DEAL_AUSGELASSEN` mit Begründung) oder `updatedAt` auf `updated_at` legen.
+- [x] Makler-Kontaktfelder: `mobil`, `festnetz`, `strasse`, `plz`, `ort`, `weitere_kontakte` (Schema, Umzug,
+      API, Makler-Profil, Exposé-Übernahme)
+- [x] `immo-dd-template` → `dd_checkliste_vorlage` (34 Zeilen, Reihenfolge erhalten). **Oberfläche fehlt noch** —
+      die alte App pflegt die Liste unter Einstellungen → DD.
+- [x] `immo-offer-uids` → Einstellung `angebote-importierte-uids`. **Abnehmer fehlt noch**: die Angebots-Seite
+      kennt keinen Duplikatschutz, der kommt mit dem Auto-Import.
+- [x] Deal-Marker `_reconstructed*` begründet ausgelassen, `updatedAt` übernommen
 - [ ] Eine Einheit mit `rend_k` = 655200 (Archiv-Deal) — Tippfehler im Bestand, wird beim Umzug leer. Fachfrage.
-- [ ] **Umzug scharf**: erst wenn die Punkte oben klassifiziert sind, unbekannte Felder zum Abbruchgrund machen.
+- [ ] **API-Tests hängen am Inhalt der Datenbank.** Mit echtem Bestand (eigene Kalkulations-Standards) werden
+      4 Tests in `apps/api/test` rot, auf frischer DB sind sie grün. Vor `pnpm verify` deshalb `pnpm db:reset`,
+      danach `pnpm umzug`. Sauber wäre: Tests legen ihre Voraussetzungen selbst an.
+- [ ] **Umzug scharf**: unbekannte Felder zum Abbruchgrund machen — jetzt möglich, die Liste ist leer.
 
 ## Stufe 1 — vor dem Produktivgang
 
@@ -54,7 +57,6 @@ Ein zusammenhängender Arbeitsschritt; vorher hat nichts davon einen Gegenstand.
 - [ ] **Prod-Schutz** über alle DB-Variablen
 - [ ] **Rate-Limits** auf den teuren Wegen (KI, Mail, Export)
 - [ ] **CORS** mit Host-Prüfung, bevor Web und API getrennt ausgeliefert werden
-- [ ] **Umzug scharf**: unbekannte Felder zum Abbruchgrund machen (heute nur im Bericht, `ok` bleibt true)
 
 ## Stufe 3 — Fachentscheidungen, kein Fehler
 
@@ -74,6 +76,13 @@ Die alte App verhält sich genauso; eine Änderung ist eine bewusste Abweichung 
 - [ ] **Wählmaschine neu entwerfen.** Bis dahin ist ihr Klicktest übersprungen
       (`tests/e2e/ankauf.spec.ts`, Begründung steht dort). Beim Neuentwurf ohne Durchklicken durch die
       Warteschlange testen — der alte Test war davon abhängig, was vorherige Tests hinterlassen hatten.
+
+## Erledigt (21.09.2026)
+
+- [x] Echten Bestand eingespielt (`pnpm umzug:quelle`), umgezogen, im Browser abgelaufen (`pnpm bestand:rundgang`)
+- [x] Feld-Inventar (`pnpm umzug:inventar`)
+- [x] Sicherung einspielen scheiterte an `dd_checkliste_vorlage` (ID „generated always") — fiel erst auf, als die
+      Tabelle nicht mehr leer war
 
 ## Erledigt (19.09.2026)
 

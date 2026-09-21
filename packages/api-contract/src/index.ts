@@ -208,9 +208,18 @@ export const MaklerKommunikation = z.object({
 });
 export type MaklerKommunikation = z.infer<typeof MaklerKommunikation>;
 
+/** Was ein Exposé außer dem Hauptkontakt nennt (`weitereKontakte` in @gg/domain); nur Anzeige. */
+export const WeitereKontakte = z.object({ namen: z.array(z.string()), telefonnummern: z.array(z.string()), emails: z.array(z.string()) });
+
 export const MaklerDetail = Makler.extend({
   persoenlich: z.record(z.string(), z.unknown()).nullable(),
   webseite: z.string().nullable(),
+  mobil: z.string().nullable(),
+  festnetz: z.string().nullable(),
+  strasse: z.string().nullable(),
+  plz: z.string().nullable(),
+  ort: z.string().nullable(),
+  weitereKontakte: WeitereKontakte.nullable(),
   lastContact: IsoDatum.nullable(),
   beziehungsNotiz: z.string().nullable(),
   kommunikation: z.array(MaklerKommunikation),
@@ -232,6 +241,12 @@ export const MaklerAendern = z.object({
   prio: z.enum(['A', 'B', 'C']).optional(),
   kontaktFrequenz: Frequenz.optional(),
   webseite: Text.optional(),
+  /** Leer heißt „keine Angabe" und wird als null gespeichert. `tel` bleibt die Nummer, die gewählt wird. */
+  mobil: Text.nullable().optional(),
+  festnetz: Text.nullable().optional(),
+  strasse: Text.nullable().optional(),
+  plz: z.string().trim().max(10).nullable().optional(),
+  ort: Text.nullable().optional(),
   beziehungsNotiz: Text.nullable().optional(),
   nextContact: IsoDatum.nullable().optional(),
   lastContact: IsoDatum.nullable().optional(),
@@ -645,6 +660,11 @@ export type ExposeObjektDaten = z.infer<typeof ExposeObjektDaten>;
 export const ExposeMaklerDaten = z.object({
   name: T, firma: T, tel: T, email: T, webseite: T, prio: z.enum(['A', 'B', 'C']).nullable().optional(),
   kontaktFreq: z.string().max(40).nullable().optional(), notizen: T,
+  // Aus der Extraktion durchgereicht; die alte App legte sie ungefragt am Makler ab, der Neubau in eigenen Feldern
+  mobiltel: T, festnetztel: T,
+  alleNamen: z.array(z.string().max(300)).max(50).optional(),
+  alleTelefonnummern: z.array(z.string().max(100)).max(50).optional(),
+  alleEmails: z.array(z.string().max(300)).max(50).optional(),
 });
 export type ExposeMaklerDaten = z.infer<typeof ExposeMaklerDaten>;
 

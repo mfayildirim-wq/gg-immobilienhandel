@@ -1,7 +1,7 @@
 import { schema } from '@gg/db';
 import { STANDARD_ABSCHLUSS_BILD, STANDARD_ORGANIGRAMM_BILD } from '@gg/documents';
 import { dokumentSchluessel, fotoSchluessel } from '@gg/integrations';
-import { bsSeedAktionen, bsSeedVorlage, DealStatus, normalisiereFrequenz, SLIDE_TYP_WERTE, STANDARDBILD_ABSCHLUSS, STANDARDBILD_ORGANIGRAMM, START_STATUS } from '@gg/domain';
+import { bsSeedAktionen, bsSeedVorlage, DealStatus, normalisiereFrequenz, weitereKontakte, SLIDE_TYP_WERTE, STANDARDBILD_ABSCHLUSS, STANDARDBILD_ORGANIGRAMM, START_STATUS } from '@gg/domain';
 import {
   datum,
   ganzzahl,
@@ -48,6 +48,7 @@ export interface Zeilen {
   projektGebaeudeMassnahmen: Zeile<typeof schema.projektGebaeudeMassnahmen>[];
   gespeicherteFilter: Zeile<typeof schema.gespeicherteFilter>[];
   textvorlagen: Zeile<typeof schema.textvorlagen>[];
+  ddChecklisteVorlage: Zeile<typeof schema.ddChecklisteVorlage>[];
   einstellungen: Zeile<typeof schema.einstellungen>[];
 }
 
@@ -86,7 +87,7 @@ export const QUELL_SCHLUESSEL = [
   'immo-finanzpraes', 'immo-finanzpraes-defaults',
   'immo-begleitscheine', 'immo-bs-vorlage-ankauf', 'immo-bs-vorlage-verkauf', 'immo-bs-aktionen', 'immo-bs-vordrucke',
   'immo-vertriebslisten', 'immo-vertriebslisten-defaults',
-  'immo-projekte', 'immo-saved-filters', 'immo-vorlagen',
+  'immo-projekte', 'immo-saved-filters', 'immo-vorlagen', 'immo-dd-template', 'immo-offer-uids',
 ] as const;
 
 export const BS_TYPEN = ['ankauf', 'verkauf'] as const;
@@ -128,6 +129,10 @@ export const EINSTELLUNGEN: Record<string, string> = {
   'immo-kkalk-hinweise': 'kundenkalk-hinweise',
   'immo-kkalk-disclaimer': 'kundenkalk-disclaimer',
   'immo-vertriebslisten-defaults': 'vertriebslisten-spalten',
+  // Kennungen bereits übernommener Angebots-Mails (je Mail Graph-uid und internetMessageId). Der Neubau hat dafür
+  // noch keinen Abnehmer — der Duplikatschutz kommt mit dem Auto-Import. Verloren gehen darf die Liste trotzdem nicht:
+  // ohne sie liefe nach dem Umschalten jede alte Mail ein zweites Mal durch die KI.
+  'immo-offer-uids': 'angebote-importierte-uids',
 };
 export type KvDaten = Partial<Record<string, unknown>>;
 
@@ -135,15 +140,22 @@ export type KvDaten = Partial<Record<string, unknown>>;
 const MAKLER_FELDER = new Set([
   'id', 'name', 'firma', 'tel', 'email', 'webseite', 'website', 'prio', 'kontaktFreq', 'lastContact', 'nextContact',
   'relationshipNote', 'tags', 'personal', 'aiSummary', 'aiSummaryTs', 'erstellt', 'komm', 'notizen',
+  // Reste des Exposé-Imports, die die alte App am Makler ablegte, ohne sie je anzuzeigen (echter Bestand 21.09.2026)
+  'mobiltel', 'festnetztel', 'telefon', 'alleNamen', 'alleTelefonnummern', 'alleEmails', 'strasse', 'plz', 'stadt',
   '_deleted', '_deletedAt',
 ]);
 const MAKLER_AUSGELASSEN: Record<string, string> = {
   importedEmailUids: 'Duplikatschutz des Mail-Imports; wird mit dem Auto-Import (N5) neu gelöst',
+  _rekonstruiert: 'Marker „aus Deal-Daten wiederhergestellt" (vertrieb.ts); ohne fachliche Wirkung',
 };
 const DEAL_FELDER = new Set([
   'id', 'objId', 'maklerId', 'status', 'prio', 'angebotsDatum', 'nachfassFreq', 'lastContact', 'nextContact',
-  'kalk', '_exposeRaw', 'notizen', 'kommentare', 'einheiten', 'sanierung', 'kalkVarianten', '_deleted', '_deletedAt',
+  'kalk', '_exposeRaw', 'notizen', 'kommentare', 'einheiten', 'sanierung', 'kalkVarianten', 'updatedAt', '_deleted', '_deletedAt',
 ]);
+const DEAL_AUSGELASSEN: Record<string, string> = {
+  _reconstructed: 'Marker einer früheren Wiederherstellung aus der Sicherung; ohne fachliche Wirkung',
+  _reconstructedAt: 'Zeitpunkt dieser Wiederherstellung; ohne fachliche Wirkung',
+};
 /** Kopierte Stammdaten im Deal (07, Befund 3): werden verworfen, Abweichungen stehen im Bericht. */
 const DEAL_KOPIEN = {
   adresse: 'strasse', hausnr: 'hausnr', plz: 'plz', stadt: 'stadt', wohnflaeche: 'wohnflaeche', einheitenAnz: 'einheitenAnz',
@@ -173,6 +185,7 @@ const PM_TODO = new Set(['id', 'cat', 'text', 'status', 'kommentar', 'verantwort
 const PM_GESPRAECH = new Set(['id', 'datum', 'inhalt', 'ergebnis']);
 const PM_MASSNAHME = new Set(['text', 'status', 'verantw']);
 const PM_TODO_STATUS = ['offen', 'in progress', 'erledigt'];
+const DD_ZEILE = new Set(['id', 'dokument', 'quelle']);
 const FILTER = new Set(['id', 'name', 'module', 'criteria', 'createdAt', 'updatedAt']);
 export const FILTER_MODULE = ['deals', 'ankauf', 'makler', 'objects'];
 const VORLAGE = new Set(['id', 'name', 'kanal', 'betreff', 'text']);
@@ -211,7 +224,7 @@ export function umformen(kv: KvDaten, stichtag = new Date().toISOString()): Umfo
     dealEinheiten: [], dealSanierungen: [], dealKommentare: [], dealKalkVarianten: [], dealStatusHistorie: [],
     kundenkalkulationen: [], objektFotos: [], dealDokumente: [], finanzpraesentationen: [], praesentationFolien: [],
     begleitscheinVorlagen: [], vordrucke: [], begleitscheinAktionen: [], begleitscheine: [], vertriebslisten: [], vertriebslisteZeilen: [],
-    projekte: [], projektEinheiten: [], projektMieterhistorie: [], projektAufgaben: [], projektGebaeudeMassnahmen: [], gespeicherteFilter: [], textvorlagen: [], einstellungen: [],
+    projekte: [], projektEinheiten: [], projektMieterhistorie: [], projektAufgaben: [], projektGebaeudeMassnahmen: [], gespeicherteFilter: [], textvorlagen: [], ddChecklisteVorlage: [], einstellungen: [],
   };
   const waisen = { objekte: 0, makler: 0 };
 
@@ -258,13 +271,21 @@ export function umformen(kv: KvDaten, stichtag = new Date().toISOString()): Umfo
     const prio = text(m.prio);
     if (prio && !['A', 'B', 'C'].includes(prio)) notiz('prio', prio, 'keine gültige Prio (A/B/C)');
     const erstellt = datum(m.erstellt, 'erstellt', notiz);
+    // `tel` war alt die Hauptnummer (mobiltel || festnetztel || tel); ein einzelner Satz führt sie nur als `telefon`.
+    const haupt = { name: text(m.name), tel: text(m.tel) ?? text(m.telefon), mobil: text(m.mobiltel), festnetz: text(m.festnetztel), email: text(m.email) };
     z.makler.push({
       id,
-      name: text(m.name),
+      name: haupt.name,
       firma: text(m.firma),
-      tel: text(m.tel),
-      email: text(m.email),
+      tel: haupt.tel,
+      mobil: haupt.mobil,
+      festnetz: haupt.festnetz,
+      email: haupt.email,
       webseite: text(m.webseite ?? m.website),
+      strasse: text(m.strasse),
+      plz: text(m.plz),
+      ort: text(m.stadt),
+      weitereKontakte: weitereKontakte(haupt, { namen: m.alleNamen, telefonnummern: m.alleTelefonnummern, emails: m.alleEmails }),
       prio: prio && ['A', 'B', 'C'].includes(prio) ? prio : null,
       kontaktFrequenz: frequenz(m.kontaktFreq, 'makler', id, 'kontaktFreq'),
       lastContact: datum(m.lastContact, 'lastContact', notiz),
@@ -365,7 +386,7 @@ export function umformen(kv: KvDaten, stichtag = new Date().toISOString()): Umfo
     }
     const id = eindeutig('deals', alteId);
     const notiz = notizFuer('deals', id);
-    unbekannt('deals', d, new Set([...DEAL_FELDER, ...Object.keys(DEAL_KOPIEN), ...Object.keys(DEAL_MAKLER_KOPIEN)]));
+    unbekannt('deals', d, new Set([...DEAL_FELDER, ...Object.keys(DEAL_KOPIEN), ...Object.keys(DEAL_MAKLER_KOPIEN)]), DEAL_AUSGELASSEN);
 
     // Objekt: Pflicht. Fehlt es, entsteht es aus den kopierten Adressdaten des Deals (07, Befund 7).
     let objektId = text(d.objId);
@@ -431,6 +452,7 @@ export function umformen(kv: KvDaten, stichtag = new Date().toISOString()): Umfo
     const kommentare = liste(d.kommentare);
     const notizen = text(d.notizen);
     const angebotsDatum = datum(d.angebotsDatum, 'angebotsDatum', notiz);
+    const geaendert = zeitpunkt(d.updatedAt, 'updatedAt', notiz);
 
     z.deals.push({
       id,
@@ -446,6 +468,7 @@ export function umformen(kv: KvDaten, stichtag = new Date().toISOString()): Umfo
       exposeRohdaten: istObjekt(d._exposeRaw) ? d._exposeRaw : null,
       // Kommentare vorhanden → notizen bleiben Spalte; sonst werden sie der erste Kommentar (wie die alte App)
       notizen: kommentare.length ? notizen : null,
+      ...(geaendert ? { updatedAt: geaendert } : {}),
       deletedAt: geloeschtAm(d, stichtag),
     });
 
@@ -891,6 +914,13 @@ export function umformen(kv: KvDaten, stichtag = new Date().toISOString()): Umfo
   if (praesStandard !== undefined && praesStandard !== null && praesStandard !== '') {
     z.einstellungen.push({ schluessel: FINANZPRAES_STANDARD_SCHLUESSEL, wert: finanzpraesStandardUmformen(praesStandard) as object });
   }
+
+  // ── DD-Dokumentenliste (Einstellungen → DD) ──────────────
+  // Die alte ID ist nur die Laufnummer beim Anlegen; die Reihenfolge der Liste ist die Information.
+  liste(kv['immo-dd-template']).forEach((d, i) => {
+    unbekannt('dd_checkliste_vorlage', d, DD_ZEILE);
+    z.ddChecklisteVorlage.push({ dokument: text(d.dokument), quelle: text(d.quelle), sort: i });
+  });
 
   // ── Einstellungen ────────────────────────────────────────
   for (const [alt, neu] of Object.entries(EINSTELLUNGEN)) {

@@ -43,6 +43,13 @@
       "when": 1789670597282,
       "tag": "20260917184317_merge_protokoll",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789995152523,
+      "tag": "20260921125232_makler_kontaktfelder",
+      "breakpoints": true
     }
   ]
 }
