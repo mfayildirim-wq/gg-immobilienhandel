@@ -17,3 +17,6 @@ berichte/
 
 # Erzeugte Wissensgraphen und Zwischenstände
 graphify-out/
+
+# Verknüpfung mit dem Vercel-Projekt (Konto-IDs, OIDC-Token) — gehört zum Rechner
+.vercel
