@@ -1,6 +1,9 @@
-import { Alert, Button, Group, Loader, Paper, Stack, Table, Text, Title } from '@mantine/core';
+import { Alert, Badge, Button, Group, Loader, Paper, Stack, Table, Text, Title } from '@mantine/core';
 import { useRef, useState } from 'react';
-import { useMaklerImport, useMaklerImportVorschau, useSicherungEinspielen, useSicherungPlan, useSicherungUmfang } from '../lib/api.ts';
+import {
+  type AutoSicherung, useAutoSicherungAnlegen, useAutoSicherungEinspielen, useAutoSicherungen, useAutoSicherungPlan,
+  useMaklerImport, useMaklerImportVorschau, useSicherungEinspielen, useSicherungPlan, useSicherungUmfang,
+} from '../lib/api.ts';
 
 /** 💾 Sicherung (Einstellungen): Export als Datei, Einspielen in zwei Schritten (Plan, dann Ausführen). */
 export function SicherungEinstellungen() {
@@ -73,8 +76,88 @@ export function SicherungEinstellungen() {
           Nicht in der Sicherung: {Object.entries(umfang.ausgenommen).map(([t, grund]) => `${t} (${grund})`).join(' · ')}
         </Text>
       )}
+      <AutoSicherungen />
       <MaklerImport />
     </Stack>
+  );
+}
+
+// Die vier Stufen. `safety` gehört sichtbar dazu — die Einträge entstehen ohne Zutun, und wer sie nicht erklärt bekommt, hält sie für einen Fehler.
+const STUFEN: { stufe: AutoSicherung['stufe']; titel: string; hinweis: string }[] = [
+  { stufe: 'daily', titel: '📅 Täglich', hinweis: 'planmäßig, ein Stand je Tag' },
+  { stufe: 'weekly', titel: '📆 Wöchentlich', hinweis: 'planmäßig, montags' },
+  { stufe: 'monthly', titel: '🗓 Monatlich', hinweis: 'planmäßig, am 1. des Monats' },
+  { stufe: 'safety', titel: '🛟 Sicherheitskopien', hinweis: 'entstehen automatisch vor jeder Wiederherstellung — niemand löst sie von Hand aus' },
+];
+// Das Modul rechnet und benennt in UTC; angezeigt wird Berliner Zeit MIT Kennzeichnung — eine Uhrzeit ohne Zone
+// verleitet im Sommer zu einem Zwei-Stunden-Irrtum darüber, welcher Stand der jüngste ist.
+const berlin = (ts: string) => `${new Date(ts).toLocaleString('de-DE', { timeZone: 'Europe/Berlin', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })} Uhr (Berlin)`;
+const groesse = (b: number) => (b < 1024 * 1024 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`);
+
+/** 📦 Automatische Sicherungen verwalten (alt: „Auto-Backups verwalten"): Liste je Stufe, Download, Wiederherstellen mit Vorschau. */
+function AutoSicherungen() {
+  const { data, isLoading, error } = useAutoSicherungen();
+  const anlegen = useAutoSicherungAnlegen();
+  const plan = useAutoSicherungPlan();
+  const einspielen = useAutoSicherungEinspielen();
+
+  return (
+    <div aria-label="Automatische Sicherungen">
+      <Title order={4} mt="md">📦 Automatische Sicherungen</Title>
+      <Text size="xs" c="dimmed" mb="xs">
+        Jede Nacht legt die App eine Sicherung ab. Aufbewahrt werden {data ? `${data.aufbewahrung.daily} tägliche, ${data.aufbewahrung.weekly} wöchentliche, ${data.aufbewahrung.monthly} monatliche und ${data.aufbewahrung.safety} Sicherheitskopien` : '…'};
+        der jüngste Stand bleibt immer. Fotos und Dokumente sichert ein eigener Lauf in ein Archiv, das nie löscht.
+      </Text>
+      {isLoading && <Loader size="sm" />}
+      {error && <Alert color="orange" py={4}>{error.message}</Alert>}
+      {data && STUFEN.map((s) => {
+        const eintraege = data.eintraege.filter((e) => e.stufe === s.stufe);
+        return (
+          <div key={s.stufe} data-stufe={s.stufe}>
+            <Text size="sm" fw={600} mt={8}>{s.titel} <Text span c="dimmed" fw={400}>({eintraege.length})</Text></Text>
+            <Text fz={11} c="dimmed" mb={4}>{s.hinweis}</Text>
+            {eintraege.length === 0 && <Text size="xs" c="dimmed">– keine –</Text>}
+            {eintraege.map((e) => (
+              <Paper key={e.key} withBorder p={6} mb={4} data-sicherung={e.key}>
+                <Group justify="space-between" wrap="nowrap" gap="xs">
+                  <div style={{ minWidth: 0 }}>
+                    <Text size="xs" fw={600} component="div">{e.zahlen.deals} Deals · {e.zahlen.objekte} Objekte · {e.zahlen.makler} Makler <Badge size="xs" variant="light" color="gray">{e.zahlen.zeilen.toLocaleString('de-DE')} Zeilen</Badge></Text>
+                    <Text fz={11} c="dimmed">{berlin(e.ts)} · {groesse(e.groesseBytes)}</Text>
+                  </div>
+                  <Group gap={4} wrap="nowrap">
+                    <Button size="compact-xs" variant="default" component="a" href={`/api/sicherung/auto/datei?key=${encodeURIComponent(e.key)}`} target="_blank" rel="noopener">⬇</Button>
+                    <Button size="compact-xs" variant="default" loading={plan.isPending && plan.variables === e.key} onClick={() => plan.mutate(e.key)}>↩ Wiederherstellen</Button>
+                  </Group>
+                </Group>
+              </Paper>
+            ))}
+          </div>
+        );
+      })}
+      {plan.error && <Alert color="red" mt="xs">{plan.error.message}</Alert>}
+      {plan.data && (
+        <Paper withBorder p="sm" mt="xs" aria-label="Wiederherstellung — Vorschau">
+          <Text size="sm" fw={600}>↩ Wiederherstellung — Vorschau</Text>
+          <Text size="xs" c="dimmed" mb={6} data-auto-plan>
+            Stand {berlin(plan.data.kopf.ts)}: {plan.data.gesamtNeu} neue und {plan.data.gesamtAktualisiert} zu aktualisierende Zeilen. Es wird nichts gelöscht.
+            Vor dem Überschreiben legt die App automatisch eine Sicherheitskopie (🛟) des jetzigen Standes an.
+          </Text>
+          <Group justify="flex-end" gap="xs">
+            <Button size="xs" variant="default" onClick={() => plan.reset()}>Abbrechen</Button>
+            <Button size="xs" color="red" loading={einspielen.isPending}
+              onClick={() => window.confirm(`Stand vom ${berlin(plan.data!.kopf.ts)} wiederherstellen?\n\nVorhandene Zeilen werden mit dem Stand aus der Sicherung überschrieben.`)
+                && einspielen.mutate(plan.data!.kopf.key, { onSuccess: () => plan.reset() })}>
+              ↩ Jetzt wiederherstellen
+            </Button>
+          </Group>
+        </Paper>
+      )}
+      {einspielen.data && <Alert color="teal" mt="xs">✅ {einspielen.data.geschrieben} Zeilen wiederhergestellt. Sicherheitskopie des vorherigen Standes: {einspielen.data.sicherheitskopie}</Alert>}
+      {einspielen.error && <Alert color="red" mt="xs">{einspielen.error.message}</Alert>}
+      {anlegen.data?.aufbewahrung.hinweis && <Alert color="gray" mt="xs" py={4}>{anlegen.data.aufbewahrung.hinweis}</Alert>}
+      {anlegen.error && <Alert color="red" mt="xs">{anlegen.error.message}</Alert>}
+      <Button size="xs" mt="xs" variant="light" loading={anlegen.isPending} onClick={() => anlegen.mutate()}>🔄 Sicherung jetzt erstellen</Button>
+    </div>
   );
 }
 

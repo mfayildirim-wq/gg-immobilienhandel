@@ -35,6 +35,7 @@ export function appAusUmgebung(env: Record<string, string | undefined> = process
     openaiKey: env.OPENAI_API_KEY,
     speicher: speicher ?? undefined,
     oauthRueckweg: rueckwegRegelnAusUmgebung(env),
+    cronGeheimnis: env.CRON_SECRET,
     db,
     auth: {
       lokalOffen: env.AUTH_LOCAL_OPEN === '1',

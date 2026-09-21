@@ -92,7 +92,7 @@ import {
   StatusWechsel,
 } from '@gg/api-contract';
 import type { Db } from '@gg/db';
-import { DealStatus, rueckwegPruefen, type RueckwegRegeln } from '@gg/domain';
+import { AUFBEWAHRUNG, DealStatus, geplanteStufe, rueckwegPruefen, type RueckwegRegeln } from '@gg/domain';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import { sql } from 'drizzle-orm';
 import { bankgespraechPdf, type BilderPorts, erzeugeSchleuse, finanzpraesPdf, finanzpraesPptx, KeinBrowserError, praesentationDateiname, SCHLEUSE_STANDARD, type Schleuse } from '@gg/documents/pdf';
@@ -116,6 +116,9 @@ import { varianteAnlegen, varianteLoeschen, variantenListe } from './services/ka
 import { dokumentBezeichnen, dokumentDatei, einheitenAusMieterliste, dokumenteHochladen, dokumenteListe, dokumenteUebernehmen, dokumentLoeschen } from './services/dealDokumente.ts';
 import { uploadTicket } from './services/direktUpload.ts';
 import { alsStrom } from './strom.ts';
+import { cronErlaubt } from './cron.ts';
+import { archivSpiegeln, eingangAufraeumen } from './services/archivSpiegel.ts';
+import { autoSicherungDatei, autoSicherungEinspielen, autoSicherungErstellen, autoSicherungListe, autoSicherungPlan, geplanteSicherung } from './services/autoSicherung.ts';
 import { filterAnlegen, filterListe, filterLoeschen, filterUmbenennen, filterVorlagenEinrichten, listenAltformat } from './services/listen.ts';
 import { projektAnlegen, projektDealAuswahl, projektDetail, projekteListe, projektLoeschen, projektSpeichern } from './services/projekte.ts';
 import { fotoDatei, fotoHochladen, fotoLoeschen, fotoPort, fotosListe, fotosSortieren } from './services/fotos.ts';
@@ -185,6 +188,8 @@ export interface AppKontext {
   openaiKey?: string;
   /** Öffentliche Suche (DuckDuckGo, Google News); Standard: echte Abfragen, mit KI-Attrappe keine */
   suche?: Suchdienste;
+  /** `CRON_SECRET`: ohne dieses Geheimnis antworten die Cron-Routen immer mit 401. */
+  cronGeheimnis?: string;
   /** Wohin die Microsoft-Anmeldung zurückleiten darf; Standard: nur lokale Adressen (`rueckwegRegelnAusUmgebung`). */
   oauthRueckweg?: RueckwegRegeln;
   /** Dateiablage (Supabase Storage); ohne sie antworten Foto-Routen mit 422. */
@@ -208,7 +213,7 @@ const Version = z.object({ version: z.number().int() });
 const Geaendert = json(z.object({ id: z.string(), version: z.number().int() }), 'geändert');
 const konflikt = { 400: fehler('Eingabe ungültig'), 404: fehler('nicht gefunden'), 409: fehler('Versionskonflikt') };
 
-export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
+export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, cronGeheimnis, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
   const exposeKontext = () => {
     if (!expose) throw new FachFehler(422, 'Dateiablage ist nicht eingerichtet (SUPABASE_SERVICE_ROLE_KEY).');
     return expose;
@@ -239,6 +244,19 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   app.get('/api/health', async (c) => {
     await db.execute(sql`select 1`);
     return c.json({ ok: true });
+  });
+
+  // ── Cron (Vercel ruft per GET, ohne Nutzer-Token) — bewusst VOR der Anmeldeprüfung, dafür mit eigenem Geheimnis ──
+  const cron = (pfad: string, lauf: () => Promise<object>) => app.get(pfad, async (c) => {
+    if (!cronErlaubt(cronGeheimnis, c.req.header('authorization'))) return c.json({ fehler: 'Nicht erlaubt', details: { hint: 'CRON_SECRET im Vercel-Projekt setzen.' } }, 401);
+    return c.json({ ok: true, ...(await lauf()) }, 200);
+  });
+  cron('/api/cron/sicherung', async () => geplanteSicherung(db, ablage()));
+  cron('/api/cron/archiv', async () => {
+    const speicher = ablage();
+    // Erst aufräumen, dann spiegeln — der Eingang gehört ohnehin nicht ins Archiv
+    const eingangEntfernt = await eingangAufraeumen(speicher);
+    return { eingangEntfernt, spiegel: await archivSpiegeln(db, speicher) };
   });
 
   app.use('/api/*', auth(authOpt));
@@ -748,6 +766,29 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   app.openapi(
     createRoute({ method: 'get', path: '/api/sicherung', responses: { 200: json(z.object({ zeilen: z.array(z.object({ tabelle: z.string(), anzahl: z.number() })), gesamt: z.number(), ausgenommen: z.record(z.string(), z.string()) }), 'Umfang der Sicherung') } }),
     async (c) => c.json(await sicherungUmfang(db), 200),
+  );
+  // Automatische Sicherungen im Bucket `backups` (alt: „📦 Auto-Backups verwalten")
+  const SicherungsEintragSchema = z.object({ key: z.string(), stufe: z.enum(['daily', 'weekly', 'monthly', 'safety']), ts: z.string(), groesseBytes: z.number(), zahlen: z.object({ deals: z.number(), objekte: z.number(), makler: z.number(), zeilen: z.number() }) });
+  const SicherungsKey = z.object({ key: z.string().max(200) });
+  app.openapi(
+    createRoute({ method: 'get', path: '/api/sicherung/auto', responses: { 200: json(z.object({ eintraege: z.array(SicherungsEintragSchema), aufbewahrung: z.record(z.string(), z.number()) }), 'Sicherungen, jüngste zuerst'), 422: fehler('Dateiablage nicht eingerichtet') } }),
+    async (c) => c.json({ eintraege: await autoSicherungListe(ablage()), aufbewahrung: { ...AUFBEWAHRUNG } }, 200),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/sicherung/auto', responses: { 201: json(z.object({ eintrag: SicherungsEintragSchema, aufbewahrung: z.object({ entfernt: z.array(z.string()), behalten: z.number(), hinweis: z.string().nullable() }) }), 'angelegt') } }),
+    async (c) => c.json(await autoSicherungErstellen(db, ablage(), geplanteStufe(new Date()), '/api/sicherung/auto'), 201),
+  );
+  app.get('/api/sicherung/auto/datei', async (c) => {
+    const key = c.req.query('key') ?? '';
+    return alsStrom(await autoSicherungDatei(ablage(), key), { 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="${key.replace(/[^a-zA-Z0-9._-]/g, '_')}"` });
+  });
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/sicherung/auto/plan', request: body(SicherungsKey), responses: { 200: json(z.any(), 'was das Einspielen ändern würde'), 404: fehler('nicht gefunden') } }),
+    async (c) => c.json(await autoSicherungPlan(db, ablage(), c.req.valid('json').key), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/sicherung/auto/einspielen', request: body(SicherungsKey.extend({ bestaetigt: z.literal(true) })), responses: { 200: json(z.object({ geschrieben: z.number(), sicherheitskopie: z.string() }), 'eingespielt'), 404: fehler('nicht gefunden') } }),
+    async (c) => c.json(await autoSicherungEinspielen(db, ablage(), c.req.valid('json').key), 200),
   );
   app.post('/api/sicherung/plan', async (c) => c.json(await sicherungPlan(db, await c.req.json()), 200));
   app.post('/api/sicherung/einspielen', async (c) => c.json(await sicherungEinspielen(db, await c.req.json()), 200));

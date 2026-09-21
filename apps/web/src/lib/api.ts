@@ -216,6 +216,25 @@ export const useObjektLoeschen = () => useAendern('objekte', (id: string) => anf
 export interface SicherungUmfang { zeilen: { tabelle: string; anzahl: number }[]; gesamt: number; ausgenommen: Record<string, string> }
 export interface SicherungPlan { erzeugtAm: string; unbekannt: string[]; gesamtNeu: number; gesamtAktualisiert: number; zeilen: { tabelle: string; neu: number; aktualisiert: number; inDatei: number; imBestand: number }[] }
 export const useSicherungUmfang = () => useQuery({ queryKey: ['sicherung'], queryFn: () => anfrage<SicherungUmfang>('/api/sicherung') });
+// Automatische Sicherungen (Bucket `backups`)
+export interface AutoSicherung { key: string; stufe: 'daily' | 'weekly' | 'monthly' | 'safety'; ts: string; groesseBytes: number; zahlen: { deals: number; objekte: number; makler: number; zeilen: number } }
+export const useAutoSicherungen = () => useQuery({ queryKey: ['sicherung', 'auto'], queryFn: () => anfrage<{ eintraege: AutoSicherung[]; aufbewahrung: Record<string, number> }>('/api/sicherung/auto') });
+export function useAutoSicherungAnlegen() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => anfrage<{ eintrag: AutoSicherung; aufbewahrung: { entfernt: string[]; behalten: number; hinweis: string | null } }>('/api/sicherung/auto', { method: 'POST' }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['sicherung', 'auto'] }),
+  });
+}
+export const useAutoSicherungPlan = () => useMutation({ mutationFn: (key: string) => anfrage<SicherungPlan & { kopf: AutoSicherung }>('/api/sicherung/auto/plan', senden('POST', { key })) });
+export function useAutoSicherungEinspielen() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (key: string) => anfrage<{ geschrieben: number; sicherheitskopie: string }>('/api/sicherung/auto/einspielen', senden('POST', { key, bestaetigt: true })),
+    // Eingespielt heißt: jede Liste kann sich geändert haben
+    onSuccess: () => qc.invalidateQueries(),
+  });
+}
 export const useSicherungPlan = () => useMutation({ mutationFn: (datei: unknown) => anfrage<SicherungPlan>('/api/sicherung/plan', senden('POST', datei)) });
 export function useSicherungEinspielen() {
   const qc = useQueryClient();

@@ -3,7 +3,9 @@
  * Buckets und Schlüssel wie in der alten App (server/storage.ts): pdfs/<dealId>.pdf, deal-docs/<dealId>/<docId>_<name>,
  * obj-photos/<objId>/<photoId>.jpg; neue Uploads zunächst unter pdfs/_eingang/<uuid>.
  */
-export const BUCKETS = { pdfs: 'pdfs', dealDocs: 'deal-docs', objPhotos: 'obj-photos' } as const;
+export const BUCKETS = { pdfs: 'pdfs', dealDocs: 'deal-docs', objPhotos: 'obj-photos', backups: 'backups', archiv: 'archive' } as const;
+/** Die Buckets mit Geschäftsdateien — das, was der Archiv-Spiegel sichert. */
+export const DATEI_BUCKETS = [BUCKETS.pdfs, BUCKETS.dealDocs, BUCKETS.objPhotos] as const;
 export type Bucket = (typeof BUCKETS)[keyof typeof BUCKETS];
 
 /** Speicherschlüssel eines Objektfotos wie in der alten App (server/storage.ts photoKey): immer `.jpg`, auch bei PNG. */
@@ -36,7 +38,11 @@ export interface Dateispeicher {
   uploadTicket(bucket: Bucket, key: string): Promise<{ url: string }>;
   /** Die ersten Bytes eines liegenden Objekts und seine Gesamtgröße — zum Prüfen nach dem Direkt-Upload, ohne es ganz zu laden. */
   anfang(bucket: Bucket, key: string, bytes: number): Promise<{ bytes: Uint8Array; groesse: number }>;
+  /** Alle Objekte unter einem Präfix, auch in Unterordnern. `kennung` ändert sich, wenn sich der Inhalt ändert (ETag). */
+  auflisten(bucket: Bucket, praefix?: string): Promise<SpeicherEintrag[]>;
 }
+
+export interface SpeicherEintrag { key: string; groesse: number; /** ISO-8601 */ geaendert: string; kennung: string }
 
 /** Supabase Storage über die REST-API (Service-Schlüssel, nur serverseitig). */
 export function supabaseSpeicher(url: string, serviceKey: string): Dateispeicher & { bucketsSicherstellen(): Promise<void> } {
@@ -97,6 +103,25 @@ export function supabaseSpeicher(url: string, serviceKey: string): Dateispeicher
       const gesamt = Number(/\/(\d+)\s*$/.exec(r.headers.get('content-range') ?? '')?.[1]);
       return { bytes: teil.subarray(0, bytes), groesse: r.status === 206 && Number.isFinite(gesamt) ? gesamt : teil.byteLength };
     },
+    async auflisten(bucket, praefix = '') {
+      // Die Liste kennt nur eine Ebene; Ordner kommen als Einträge ohne `id` zurück und werden nachgeschlagen.
+      const aus: SpeicherEintrag[] = [];
+      const offen = [praefix.replace(/\/$/, '')];
+      while (offen.length) {
+        const ordner = offen.pop()!;
+        for (let offset = 0; ; offset += 1000) {
+          const r = await pruefe(await fetch(`${basis}/object/list/${bucket}`, { method: 'POST', headers: { ...kopf, 'Content-Type': 'application/json' }, body: JSON.stringify({ prefix: ordner, limit: 1000, offset, sortBy: { column: 'name', order: 'asc' } }) }), `Auflisten ${bucket}/${ordner}`);
+          const seite = (await r.json()) as { name: string; id: string | null; updated_at?: string; metadata?: { size?: number; eTag?: string; lastModified?: string } | null }[];
+          for (const e of seite) {
+            const key = ordner ? `${ordner}/${e.name}` : e.name;
+            if (e.id === null) offen.push(key);
+            else aus.push({ key, groesse: e.metadata?.size ?? 0, geaendert: e.metadata?.lastModified ?? e.updated_at ?? '', kennung: e.metadata?.eTag ?? '' });
+          }
+          if (seite.length < 1000) break;
+        }
+      }
+      return aus.sort((a, b) => a.key.localeCompare(b.key));
+    },
     async loeschen(bucket, keys) {
       if (!keys.length) return;
       await pruefe(await fetch(`${basis}/object/${bucket}`, { method: 'DELETE', headers: { ...kopf, 'Content-Type': 'application/json' }, body: JSON.stringify({ prefixes: keys }) }), `Löschen in ${bucket}`);
@@ -105,8 +130,10 @@ export function supabaseSpeicher(url: string, serviceKey: string): Dateispeicher
 }
 
 /** Im Speicher, für Tests. */
-export function speicherImSpeicher(): Dateispeicher & { inhalt: Map<string, Uint8Array> } {
+export function speicherImSpeicher(): Dateispeicher & { inhalt: Map<string, Uint8Array>; geaendert: Map<string, string> } {
   const inhalt = new Map<string, Uint8Array>();
+  const geaendert = new Map<string, string>();
+  let zaehler = 0;
   const k = (b: string, key: string) => `${b}/${key}`;
   const hole = (b: string, key: string) => {
     const d = inhalt.get(k(b, key));
@@ -115,7 +142,13 @@ export function speicherImSpeicher(): Dateispeicher & { inhalt: Map<string, Uint
   };
   return {
     inhalt,
-    async ablegen(b, key, bytes) { inhalt.set(k(b, key), bytes); },
+    geaendert,
+    async ablegen(b, key, bytes) { inhalt.set(k(b, key), bytes); geaendert.set(k(b, key), new Date(Date.UTC(2026, 0, 1) + ++zaehler * 1000).toISOString()); },
+    async auflisten(b, praefix = '') {
+      const vor = praefix ? `${b}/${praefix.replace(/\/$/, '')}/` : `${b}/`;
+      return [...inhalt.entries()].filter(([s]) => s.startsWith(vor)).map(([s, d]) => ({ key: s.slice(b.length + 1), groesse: d.byteLength, geaendert: geaendert.get(s) ?? '', kennung: `${d.byteLength}-${d[0] ?? 0}-${d[d.byteLength - 1] ?? 0}` }))
+        .sort((x, y) => x.key.localeCompare(y.key));
+    },
     async holen(b, key) { return hole(b, key); },
     async verschieben(b, von, nach) { inhalt.set(k(b, nach), hole(b, von)); inhalt.delete(k(b, von)); },
     async kopieren(b, von, zb, nach) { inhalt.set(k(zb, nach), hole(b, von)); },
