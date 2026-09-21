@@ -92,10 +92,16 @@ export async function sicherungEinspielen(db: Db, roh: unknown) {
       if (!ausDatei.length) continue;
       const t = tabelle(name);
       const schluessel = name === 'einstellungen' ? 'schluessel' : name === 'begleitscheinVorlagen' ? 'typ' : 'id';
+      // dd_checkliste_vorlage führt ihre ID als „generated always": die alte ID lässt sich nur ausdrücklich setzen und
+      // beim Aktualisieren gar nicht. Fiel erst mit echtem Bestand auf — vorher war die Tabelle immer leer.
+      const identitaet = name === 'ddChecklisteVorlage';
       for (const zeile of ausDatei) {
-        await tx.insert(t).values(zeile).onConflictDoUpdate({ target: t[schluessel], set: zeile });
+        const { id: _id, ...ohneId } = zeile;
+        if (identitaet) await tx.insert(t).overridingSystemValue().values(zeile).onConflictDoUpdate({ target: t.id, set: ohneId });
+        else await tx.insert(t).values(zeile).onConflictDoUpdate({ target: t[schluessel], set: zeile });
         geschrieben++;
       }
+      if (identitaet) await tx.execute(sql`select setval(pg_get_serial_sequence('fach.dd_checkliste_vorlage', 'id'), (select max(id) from fach.dd_checkliste_vorlage))`);
     }
   });
   await auditSchreiben(db, { type: 'backup', action: 'restore', source: '/api/sicherung/einspielen', metadata: { erzeugtAm: datei.erzeugtAm, zeilen: geschrieben } });
