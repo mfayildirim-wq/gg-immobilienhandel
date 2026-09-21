@@ -64,6 +64,7 @@ Code eines Branches gegen die echte Datenbank.
 | `GG_ENCRYPTION_KEY` | ja | base64 von 32 Byte; verschlüsselt hinterlegte Zugänge. **Ohne ihn startet die API online nicht** — ein online erzeugter Schlüssel überlebte keinen Kaltstart. Erzeugen: `openssl rand -base64 32` |
 | `ANTHROPIC_API_KEY` | für KI | Exposé-Import, Makler-Zusammenfassungen |
 | `OPENAI_API_KEY` | für Diktat | Transkription |
+| `CRON_SECRET` | ja | schützt `/api/cron/sicherung` und `/api/cron/archiv`; Vercel hängt es als `Authorization: Bearer …` an. Ohne Wert antworten beide immer mit 401 |
 | `OAUTH_HOSTS` | bei eigener Domain | zusätzliche Adressen für die Microsoft-Anmeldung; die Vercel-Domains gelten von selbst |
 
 Nicht setzen: `AUTH_LOCAL_OPEN`, `KI_ATTRAPPE`, `M365_ATTRAPPE`, `PROPSTACK_ATTRAPPE` (in Produktion ohnehin wirkungslos).
@@ -86,6 +87,17 @@ pnpm vercel:probe     # gebaute Oberfläche + gebündelte API + Header aus verce
 
 Die Probe findet Bündelfehler und alles, was die Content-Security-Policy blockiert. Sie ersetzt **kein** echtes
 Deployment: Function-Größe, Kaltstart und das schreibgeschützte Dateisystem zeigt nur Vercel selbst.
+
+## Nächtliche Läufe (`vercel.json` → `crons`)
+
+| Zeit (UTC) | Route | Was |
+|---|---|---|
+| 01:00 | `/api/cron/sicherung` | Bestand als Datei in `backups`, danach Aufbewahrung 7/4/3/3 |
+| 01:30 | `/api/cron/archiv` | Upload-Eingang aufräumen, dann Dateien nach `archive` spiegeln |
+
+Beide laufen über die lang laufende Function (`api/render.mjs`, 300 s). Buckets `backups` und `archive` müssen
+existieren (einmalig `bucketsSicherstellen`). Vercel Hobby erlaubt Crons nur einmal täglich — die alte Produktion
+spiegelt stündlich. Von Hand auslösen: `curl -H "Authorization: Bearer $CRON_SECRET" https://…/api/cron/sicherung`.
 
 ## Grenzen der Functions (4,5 MB hinein und hinaus)
 

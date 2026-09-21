@@ -3,7 +3,7 @@
 Stand 21.09.2026. Lebendes Dokument — beim Abarbeiten hier streichen, bei neuen Funden ergänzen.
 
 **Fachlich ist der Neubau fertig und nachgewiesen gleich** (`pnpm paritaet`: 17 Bereiche, 2.305 Merkmale,
-0 Abweichungen). Was fehlt, ist der **Betrieb**. Hintergrund in `../protokoll/13-validierung-und-vollstaendigkeit.md`.
+0 Abweichungen — zuletzt am 21.09.2026 mit den echten Standardwerten). Was fehlt, ist der **Betrieb**. Hintergrund in `../protokoll/13-validierung-und-vollstaendigkeit.md`.
 
 ## Wartet auf Zuarbeit
 
@@ -62,13 +62,26 @@ Ein zusammenhängender Arbeitsschritt; vorher hat nichts davon einen Gegenstand.
 
 ## Stufe 2 — ab echten Daten
 
-- [ ] **Archiv-Spiegel** der Storage-Buckets + **Cron-Absicherung** — Fotos und Dokumente stehen in
-      **keiner** Sicherung; Gelöschtes ist endgültig weg
-- [ ] **Auto-Backups verwalten** — täglicher Cron, Aufbewahrung `{daily:7, weekly:4, monthly:3, safety:3}`,
-      Liste mit Vorschau je Tabelle (aus `berichte/ui-abgleich-bewertung.md`)
-- [ ] **Prod-Schutz** über alle DB-Variablen
-- [ ] **Rate-Limits** auf den teuren Wegen (KI, Mail, Export)
-- [ ] **CORS** mit Host-Prüfung, bevor Web und API getrennt ausgeliefert werden
+Erledigt und **online geprüft** am 21.09.2026. Gesamtbild und Ablauf der Produktivsetzung:
+`../protokoll/17-prod-umgebung-mfayildirim.md`.
+
+- [x] **Auto-Backups**: Cron 01:00 UTC → Bucket `backups`, Aufbewahrung `{daily:7, weekly:4, monthly:3, safety:3}`,
+      Verwaltung mit Vorschau unter Einstellungen → Sicherung; Wiederherstellen legt vorher eine Sicherheitskopie an
+- [x] **Archiv-Spiegel** der Storage-Buckets: Cron 01:30 UTC → Bucket `archive`, löscht und überschreibt nie
+      (`_superseded/`), Verschwundenes wird datiert
+- [x] **Upload-Eingang aufräumen** (im Archiv-Lauf, älter als 24 h)
+- [x] **Cron-Absicherung**: `CRON_SECRET`, Default-Deny, Routen vor der Anmeldeprüfung
+- [x] **Prod-Schutz**: Tests und lokal offener Server verweigern eine nicht-lokale Datenbank (`verlangeLokaleDatenbank`)
+- [x] **Rate-Limits** auf KI, Diktat, Posteingang, Zugangsdaten (`middleware/begrenzung.ts`)
+- [x] **Umzug scharf**: unbekannte Felder und nicht umgezogene Sammlungen brechen ab (`--nachsichtig` berichtet nur)
+- [ ] **Archiv-Lauf stündlich** statt täglich — braucht Vercel Pro (`30 * * * *`)
+- [ ] **CORS** mit Host-Prüfung, erst wenn Web und API getrennt ausgeliefert werden (heute dieselbe Adresse)
+
+## Vor der Produktivsetzung
+
+- [ ] **Dateien über die Projektgrenze kopieren** (`pdfs`, `deal-docs`, `obj-photos` von der alten Produktion in dieses
+      Supabase-Projekt) — Werkzeug fehlt, Lesezugang fehlt. Ohne das zeigen alle Foto- und Dokument-Zeilen ins Leere.
+- [ ] KI-Schlüssel, Azure-Redirect-URI, M365/Propstack neu hinterlegen, Nutzerkonten, Tarife (siehe Protokoll 17)
 
 ## Stufe 3 — Fachentscheidungen, kein Fehler
 
@@ -90,6 +103,10 @@ Die alte App verhält sich genauso; eine Änderung ist eine bewusste Abweichung 
       Warteschlange testen — der alte Test war davon abhängig, was vorherige Tests hinterlassen hatten.
 
 ## Erledigt (21.09.2026)
+
+- [x] **Risikopuffer-Standard 0 % wurde ignoriert** (16.500 € statt 15.000 €) — gefunden von der Parallelprüfung mit den
+      echten Standardwerten; behoben mit `kalkMitStandard` vor dem Rechenkern (wie `ensure()` der alten App)
+- [x] DD-Dokumentenliste: Einstellungsseite wie in der alten App
 
 - [x] Echten Bestand eingespielt (`pnpm umzug:quelle`), umgezogen, im Browser abgelaufen (`pnpm bestand:rundgang`)
 - [x] Feld-Inventar (`pnpm umzug:inventar`)
