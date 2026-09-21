@@ -22,6 +22,7 @@
     "umzug": "pnpm --filter @gg/umzug umzug",
     "umzug:probe": "pnpm --filter @gg/umzug umzug --trocken",
     "umzug:quelle": "pnpm --filter @gg/umzug quelle",
+    "umzug:inventar": "pnpm --filter @gg/umzug inventar",
     "golden:erzeugen": "tsx werkzeuge/golden-master/erzeugen.ts",
     "paritaet": "playwright test -c playwright.paritaet.config.ts",
     "paritaet:wiederherstellen": "tsx -e \"import('./tests/paritaet/umgebung.ts').then(m => m.wiederherstellen())\"",
