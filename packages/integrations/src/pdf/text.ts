@@ -21,7 +21,12 @@
 // der Zeile nach X sortiert.
 // ──────────────────────────────────────────────────────────────
 
-import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
+// Anpassung Neubau: pdfjs wird erst beim ersten PDF geladen, nicht beim Start. Das Modul verlangt beim Laden
+// `DOMMatrix` (in Node über @napi-rs/canvas) und bricht sonst mit einem ReferenceError ab — beim ersten Deployment
+// riss das die ganze API mit, einschließlich /api/health, obwohl niemand ein PDF geöffnet hatte.
+type Pdfjs = typeof import('pdfjs-dist/legacy/build/pdf.mjs');
+let geladen: Promise<Pdfjs> | undefined;
+const pdfjsLaden = () => (geladen ??= import('pdfjs-dist/legacy/build/pdf.mjs'));
 
 export interface PdfTextResult {
   /** Der gesamte Text, zeilenweise aufgebaut, Seiten durch eine Marke getrennt. */
@@ -143,7 +148,7 @@ export async function pdfText(pdfBuffer: Buffer, maxPages = MAX_SEITEN): Promise
   };
   let doc: any;
   try {
-    doc = await pdfjs.getDocument({
+    doc = await (await pdfjsLaden()).getDocument({
       data: new Uint8Array(pdfBuffer),
       useSystemFonts: true,
       verbosity: 0,
@@ -189,7 +194,7 @@ export async function pdfText(pdfBuffer: Buffer, maxPages = MAX_SEITEN): Promise
 /** Wie viele Seiten hat das PDF? 0, wenn es sich nicht öffnen lässt. */
 export async function pdfSeitenzahl(pdfBuffer: Buffer): Promise<number> {
   try {
-    const doc = await pdfjs.getDocument({
+    const doc = await (await pdfjsLaden()).getDocument({
       data: new Uint8Array(pdfBuffer), verbosity: 0,
     }).promise;
     const n = doc.numPages;

@@ -10,11 +10,11 @@
   "functions": {
     "api/index.mjs": {
       "maxDuration": 60,
-      "includeFiles": "apps/api/dist/**"
+      "includeFiles": "{apps/api/dist/**,node_modules/.pnpm/@napi-rs+canvas*/**,node_modules/.pnpm/pdfjs-dist@*/node_modules/**}"
     },
     "api/render.mjs": {
       "maxDuration": 300,
-      "includeFiles": "{apps/api/dist/**,node_modules/.pnpm/@sparticuz+chromium@*/node_modules/@sparticuz/chromium/bin/**}"
+      "includeFiles": "{apps/api/dist/**,node_modules/.pnpm/@napi-rs+canvas*/**,node_modules/.pnpm/pdfjs-dist@*/node_modules/**,node_modules/.pnpm/@sparticuz+chromium@*/node_modules/@sparticuz/chromium/bin/**}"
     }
   },
   "rewrites": [
