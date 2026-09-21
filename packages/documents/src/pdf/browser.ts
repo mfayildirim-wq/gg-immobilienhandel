@@ -2,7 +2,12 @@
  * Startet ein Chromium für den PDF-Druck. Einzige Stelle, die entscheidet, welcher Browser läuft.
  *
  * Lokal: `CHROME_PFAD` oder ein installiertes Google Chrome / Chromium an den üblichen Orten.
- * Online (Vercel) fehlt noch der Weg über `@sparticuz/chromium` (executablePath + args); er kommt mit dem Hosting-Schritt.
+ * Online (Vercel) gibt es keinen installierten Browser und keinen Platz für einen: dort läuft das gepackte Chromium
+ * aus `@sparticuz/chromium`, das sich beim ersten Aufruf nach /tmp entpackt — derselbe Weg wie `launchBrowser` in
+ * `server/platform.ts` der alten App.
+ *
+ * Versionskopplung: `playwright-core` 1.63 spricht mit Chromium 153; `@sparticuz/chromium` ist deshalb fest auf
+ * 153.0.0 gepinnt. Wer eines von beiden anhebt, hebt das andere mit (`node_modules/playwright-core/browsers.json`).
  *
  * Playwright statt Puppeteer (alte App): gleiche Chromium-Druckfunktion (page.pdf mit Kopf/Fuß-Vorlagen), aber nur
  * noch ein Browser-Werkzeug im Repo, dieselbe Version wie die Klicktests (@playwright/test).
@@ -32,7 +37,15 @@ export function chromePfad(env: NodeJS.ProcessEnv = process.env): string | null 
   return KANDIDATEN.find((p) => existsSync(p)) ?? null;
 }
 
+/** Online = auf Vercel. `CHROME_PFAD` gewinnt trotzdem: damit lässt sich der gepackte Weg gezielt umgehen. */
+export const brauchtGepacktesChromium = (env: NodeJS.ProcessEnv = process.env) => !!env.VERCEL && !env.CHROME_PFAD;
+
 export async function browserStarten(): Promise<Browser> {
+  if (brauchtGepacktesChromium()) {
+    // Dynamisch: lokal wird das Paket (67 MB, Linux-Binärdatei) nie geladen
+    const { default: gepackt } = await import('@sparticuz/chromium');
+    return chromium.launch({ executablePath: await gepackt.executablePath(), headless: true, args: gepackt.args });
+  }
   const pfad = chromePfad();
   if (!pfad) throw new KeinBrowserError();
   return chromium.launch({ executablePath: pfad, headless: true, args: ['--no-sandbox'] });

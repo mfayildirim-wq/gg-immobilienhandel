@@ -10,7 +10,8 @@ Ein Vercel-Projekt, eine Adresse:
 | Teil | Woher | Wie |
 |---|---|---|
 | Oberfläche | `apps/web/dist` (Vite-Build) | statische Dateien; alles außer `/api/*` und `/assets/*` fällt auf `index.html` (SPA) |
-| API | `api/index.mjs` → `apps/api/dist/vercel.mjs` | **eine** Function für alle `/api/*`-Routen, Region `fra1`, 60 s |
+| API | `api/index.mjs` → `apps/api/dist/vercel.mjs` | Function für alle `/api/*`-Routen, Region `fra1`, 60 s |
+| PDF/PPTX | `api/render.mjs` → dasselbe Bündel | zweite Function für die drei Export-Routen: 300 s, mit gepacktem Chromium (`@sparticuz/chromium` 153, passend zu `playwright-core` 1.63). Speichergröße im Vercel-Dashboard einstellen (alte App: `docs/GO-LIVE-RUNBOOK.md`) |
 
 Die Oberfläche ruft die API relativ (`/api/...`) — gleiche Adresse, kein CORS.
 
@@ -59,6 +60,6 @@ Deployment: Function-Größe, Kaltstart und das schreibgeschützte Dateisystem z
 
 ## Was online noch nicht geht
 
-- **PDF-Export** (Bankgespräch, Präsentation, Kundenkalkulation): braucht Chromium in der Function (`@sparticuz/chromium`).
+- **PDF-Export**: der Weg über `@sparticuz/chromium` ist eingebaut, aber **online noch nie gelaufen** — die Linux-Binärdatei startet auf dem Mac nicht, prüfbar ist das nur im echten Deployment.
 - **Uploads über 4,5 MB** (Grenze der Functions): braucht den Direkt-Upload über signierte Adressen.
 - **Große Antworten** (PDF ~5 MB): braucht Streaming.

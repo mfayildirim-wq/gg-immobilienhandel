@@ -18,6 +18,7 @@
     "@gg/integrations": "workspace:*",
     "@hono/node-server": "^2.1.1",
     "@hono/zod-openapi": "^1.6.3",
+    "@sparticuz/chromium": "153.0.0",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.13.8",
     "jose": "^6.2.12",
