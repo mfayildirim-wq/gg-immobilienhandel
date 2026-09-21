@@ -229,7 +229,9 @@ export function useDdVorlageSpeichern() {
 
 // Automatische Sicherungen (Bucket `backups`)
 export interface AutoSicherung { key: string; stufe: 'daily' | 'weekly' | 'monthly' | 'safety'; ts: string; groesseBytes: number; zahlen: { deals: number; objekte: number; makler: number; zeilen: number } }
-export const useAutoSicherungen = () => useQuery({ queryKey: ['sicherung', 'auto'], queryFn: () => anfrage<{ eintraege: AutoSicherung[]; aufbewahrung: Record<string, number> }>('/api/sicherung/auto') });
+// `retry: false`: ohne Dateiablage antwortet die Route mit 422 — drei Wiederholungen mit Wartezeit hielten jede Aktion
+// der Seite gut sieben Sekunden im Ladezustand, weil deren `invalidateQueries()` auf diese Abfrage mitwartet.
+export const useAutoSicherungen = () => useQuery({ retry: false, queryKey: ['sicherung', 'auto'], queryFn: () => anfrage<{ eintraege: AutoSicherung[]; aufbewahrung: Record<string, number> }>('/api/sicherung/auto') });
 export function useAutoSicherungAnlegen() {
   const qc = useQueryClient();
   return useMutation({

@@ -18,9 +18,16 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
-      # Lokaler Supabase-Stack in CI: braucht keine Secrets
-      - run: pnpm exec supabase start -x realtime,storage-api,imgproxy,studio,edge-runtime,logflare,vector,supavisor,mailpit
+      # Lokaler Supabase-Stack in CI: braucht keine Secrets. Die Dateiablage (storage-api) gehört dazu — Uploads, Fotos,
+      # Exposé-Import und Sicherungen laufen darüber; ohne sie waren elf Klicktests von Anfang an rot.
+      - run: pnpm exec supabase start -x realtime,imgproxy,studio,edge-runtime,logflare,vector,supavisor,mailpit
       - run: cp .env.example .env
+      # Der Dienstschlüssel des lokalen Stacks ist der öffentlich bekannte Demo-Schlüssel, kein Geheimnis
+      # (leere Vorgabe aus .env.example erst entfernen — sonst stünde der Schlüssel zweimal in der Datei)
+      - run: |
+          sed -i '/^SUPABASE_SERVICE_ROLE_KEY=/d' .env
+          pnpm exec supabase status -o env | grep '^SERVICE_ROLE_KEY=' | sed 's/^/SUPABASE_/' >> .env
+          grep -c '^SUPABASE_SERVICE_ROLE_KEY=.\{20,\}' .env
 
       - run: pnpm --filter @gg/db exec drizzle-kit check
       - run: pnpm typecheck
@@ -28,6 +35,11 @@ jobs:
       - run: pnpm build
 
       - run: pnpm exec playwright install --with-deps chromium
+      # Der PDF-Export sucht Chrome an den üblichen Orten eines Arbeitsplatzes; in CI liegt nur das Chromium von Playwright vor
+      - run: |
+          sed -i '/^CHROME_PFAD=/d' .env
+          echo "CHROME_PFAD=$(node -e "console.log(require('@playwright/test').chromium.executablePath())")" >> .env
+          grep '^CHROME_PFAD=' .env
       - run: pnpm e2e
         env:
           CI: '1'
