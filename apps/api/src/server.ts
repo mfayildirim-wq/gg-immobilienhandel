@@ -1,5 +1,6 @@
 import { serve } from '@hono/node-server';
 import { createDb } from '@gg/db';
+import { rueckwegRegelnAusUmgebung } from '@gg/domain';
 import { anthropicClient, kiAttrappe, supabaseSpeicher, graphAttrappe, propstackAttrappe } from '@gg/integrations';
 import { createApp } from './app.ts';
 
@@ -30,6 +31,7 @@ const app = createApp({
   propstack,
   openaiKey: process.env.OPENAI_API_KEY,
   speicher: speicher ?? undefined,
+  oauthRueckweg: rueckwegRegelnAusUmgebung(process.env),
   db,
   auth: {
     lokalOffen: process.env.AUTH_LOCAL_OPEN === '1',

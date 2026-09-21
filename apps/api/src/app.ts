@@ -92,7 +92,7 @@ import {
   StatusWechsel,
 } from '@gg/api-contract';
 import type { Db } from '@gg/db';
-import { DealStatus } from '@gg/domain';
+import { DealStatus, rueckwegPruefen, type RueckwegRegeln } from '@gg/domain';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import { sql } from 'drizzle-orm';
 import { bankgespraechPdf, type BilderPorts, erzeugeSchleuse, finanzpraesPdf, finanzpraesPptx, KeinBrowserError, praesentationDateiname, SCHLEUSE_STANDARD, type Schleuse } from '@gg/documents/pdf';
@@ -183,6 +183,8 @@ export interface AppKontext {
   openaiKey?: string;
   /** Öffentliche Suche (DuckDuckGo, Google News); Standard: echte Abfragen, mit KI-Attrappe keine */
   suche?: Suchdienste;
+  /** Wohin die Microsoft-Anmeldung zurückleiten darf; Standard: nur lokale Adressen (`rueckwegRegelnAusUmgebung`). */
+  oauthRueckweg?: RueckwegRegeln;
   /** Dateiablage (Supabase Storage); ohne sie antworten Foto-Routen mit 422. */
   speicher?: Dateispeicher;
   /** PDF-Druck; Standard: lokales Chrome hinter der Render-Schleuse. Tests setzen einen Ersatz. */
@@ -204,7 +206,7 @@ const Version = z.object({ version: z.number().int() });
 const Geaendert = json(z.object({ id: z.string(), version: z.number().int() }), 'geändert');
 const konflikt = { 400: fehler('Eingabe ungültig'), 404: fehler('nicht gefunden'), 409: fehler('Versionskonflikt') };
 
-export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
+export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
   const exposeKontext = () => {
     if (!expose) throw new FachFehler(422, 'Dateiablage ist nicht eingerichtet (SUPABASE_SERVICE_ROLE_KEY).');
     return expose;
@@ -651,8 +653,13 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
     async (c) => c.json(await m365OrdnerSpeichern(db, c.req.valid('json').ordner), 200),
   );
   app.openapi(
-    createRoute({ method: 'post', path: '/api/m365/anmeldung', request: body(z.object({ redirectUri: z.string().url() })), responses: { 200: json(z.object({ url: z.string() }), 'Anmeldeadresse'), 422: fehler('nicht eingerichtet') } }),
-    async (c) => c.json(await m365AnmeldungStarten(db, c.req.valid('json').redirectUri), 200),
+    createRoute({ method: 'post', path: '/api/m365/anmeldung', request: body(z.object({ redirectUri: z.string().url() })), responses: { 200: json(z.object({ url: z.string() }), 'Anmeldeadresse'), 400: fehler('Rücksprung-Adresse nicht freigegeben'), 422: fehler('nicht eingerichtet') } }),
+    async (c) => {
+      // Die Adresse kommt vom Client — nur freigegebene Hosts dürfen in einen Anmeldeversuch geraten
+      const rueckweg = rueckwegPruefen(c.req.valid('json').redirectUri, oauthRueckweg);
+      if (!rueckweg.ok) throw new FachFehler(400, rueckweg.grund);
+      return c.json(await m365AnmeldungStarten(db, rueckweg.uri), 200);
+    },
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/m365/rueckweg', request: body(z.object({ code: z.string().min(1), state: z.string().min(1) })), responses: { 200: json(z.object({ email: z.string() }), 'verbunden'), 400: fehler('Anmeldeversuch unbekannt'), 422: fehler('nicht eingerichtet') } }),

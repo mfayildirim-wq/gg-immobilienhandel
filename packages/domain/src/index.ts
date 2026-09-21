@@ -26,6 +26,7 @@ export * from './dubletten/index.ts';
 export * from './audit/kette.ts';
 export * from './makler/xlsxImport.ts';
 export * from './outward/gate.ts';
+export * from './outward/oauthRueckweg.ts';
 export * from './propstack.ts';
 export * from './mail/auswertung.ts';
 export * from './mcp/zugang.ts';

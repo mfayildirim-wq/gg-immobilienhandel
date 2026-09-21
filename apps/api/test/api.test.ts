@@ -880,7 +880,17 @@ describe.skipIf(!url)('Deal-Ablauf gegen die lokale Datenbank', () => {
     expect(JSON.stringify(stand)).not.toContain('geheim-5678');
 
     // Anmeldeadresse mit State; ein fremder State wird abgelehnt
-    const { url } = await lies(post('/api/m365/anmeldung', { redirectUri: 'https://app.example.test/m365/rueckweg' }));
+    // Die Rücksprung-Adresse kommt vom Client: fremde Hosts werden abgewiesen, online zählt nur die Liste
+    const fremd = await post('/api/m365/anmeldung', { redirectUri: 'https://app.example.test/m365/rueckweg' });
+    expect(fremd.status).toBe(400);
+    expect(((await fremd.json()) as { fehler: string }).fehler).toContain('nicht freigegeben');
+    const online = createApp({ db, auth: offen, oauthRueckweg: { online: true, erlaubteHosts: ['app.example.test'] } });
+    const anmelden = (app2: typeof app, redirectUri: string) => app2.request('/api/m365/anmeldung', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ redirectUri }) });
+    expect((await anmelden(online, 'http://localhost:5273/m365/rueckweg')).status).toBe(400);
+    expect((await anmelden(online, 'https://app.example.test/m365/rueckweg')).status).toBe(200);
+
+    const { url } = await lies(post('/api/m365/anmeldung', { redirectUri: 'http://localhost:5273/m365/rueckweg' }));
+    expect(url).toContain(encodeURIComponent('http://localhost:5273/m365/rueckweg'));
     expect(url).toContain('https://login.microsoftonline.com/contoso.onmicrosoft.com/oauth2/v2.0/authorize');
     expect(url).toContain('client_id=app-1234');
     expect(url).toContain('prompt=select_account');
