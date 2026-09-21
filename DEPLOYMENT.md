@@ -3,6 +3,23 @@
 Stand 21.09.2026 — **vorbereitet, noch nie ausgeführt.** Es gibt kein Vercel-Projekt; alles hier ist lokal geprüft
 (`pnpm vercel:probe`), nicht online. Offene Punkte stehen in `OFFEN.md` unter „Stufe 1".
 
+## Stand der Einrichtung (21.09.2026)
+
+| | |
+|---|---|
+| GitHub | `mfayildirim-wq/gg-immobilienhandel`, privat |
+| Supabase | Projekt `gg-immobilienhandel`, Ref `zbqdkfqsqdocrxxrtjow`, Frankfurt (`eu-central-1`), Organisation MFY. 7 Migrationen angewendet (37 Tabellen in `fach`), Buckets `pdfs`, `deal-docs`, `obj-photos` privat angelegt. **Noch leer** — kein Umzug. |
+| Vercel | Team `mfy` (Hobby), Projekt `gg-immobilienhandel`, mit dem Repo verbunden, 7 Variablen für Production gesetzt |
+| Zugangsdaten | nur lokal in `~/Documents/ivtag/.geheim/cloud.env` (Rechte 600) und verschlüsselt bei Vercel — nicht im Repo |
+
+**Blockiert:** Beide Deployments (Push und CLI) stehen auf `BLOCKED / COMMIT_AUTHOR_REQUIRED`: Vercel findet zum
+Commit-Autor `mefatyil@gmail.com` kein GitHub-Konto. Abhilfe ist Kontoeinrichtung, kein Code: im Vercel-Konto unter
+Settings → Authentication GitHub (`mfayildirim-wq`) verbinden, und die Commit-Adresse muss eine bestätigte Adresse
+dieses GitHub-Kontos sein (GitHub → Settings → Emails) — oder `git config user.email` auf eine solche umstellen.
+
+**Noch offen nach dem ersten erfolgreichen Deployment:** Registrierung in Supabase Auth schließen (ist offen; die
+E-Mail-Allowlist der API schützt trotzdem), Anmeldekonto anlegen, `site_url` auf die Vercel-Adresse, Umzug.
+
 ## Zuschnitt
 
 Ein Vercel-Projekt, eine Adresse:
