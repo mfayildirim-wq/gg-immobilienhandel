@@ -78,15 +78,31 @@ export async function mailAlsPdf(mail: { von: string; betreff: string; datum: st
     { text: winAnsi(mail.betreff).slice(0, 90), fett: true }, { text: `Von: ${winAnsi(mail.von)} · ${mail.datum.slice(0, 10)}` },
     { text: 'Angebot aus dem Text dieser E-Mail (kein Exposé-Dokument).' }, { text: '' },
   ];
-  for (const absatz of winAnsi(mail.text).split('\n')) {
-    let rest = absatz.trimEnd();
-    if (!rest) { zeilen.push({ text: '' }); continue; }
-    while (rest) {
-      let schnitt = rest.length;
-      while (schnitt > 1 && schrift.widthOfTextAtSize(rest.slice(0, schnitt), groesse) > breite - 2 * rand) schnitt = rest.lastIndexOf(' ', schnitt - 1) > 0 ? rest.lastIndexOf(' ', schnitt - 1) : schnitt - 1;
-      zeilen.push({ text: rest.slice(0, schnitt) });
-      rest = rest.slice(schnitt).trimStart();
+  // Umbruch wortweise mit gemessener Breite je Wort — nicht zeichenweise die ganze Zeile neu messen: bei einer langen
+  // Mail dauerte das Sekunden (in der CI lief der Test dazu ins Zeitlimit).
+  const platz = breite - 2 * rand;
+  const leer = schrift.widthOfTextAtSize(' ', groesse);
+  const weite = (t: string) => schrift.widthOfTextAtSize(t, groesse);
+  for (const absatz of winAnsi(mail.text).slice(0, 200_000).split('\n')) {
+    if (!absatz.trim()) { zeilen.push({ text: '' }); continue; }
+    let zeile = '';
+    let zeilenBreite = 0;
+    const schieben = () => { if (zeile) zeilen.push({ text: zeile }); zeile = ''; zeilenBreite = 0; };
+    for (let wort of absatz.trim().split(/\s+/)) {
+      // Ein Wort, das allein nicht in die Zeile passt (lange Adressen, Token): hart teilen
+      while (weite(wort) > platz) {
+        schieben();
+        let n = Math.max(1, Math.floor(wort.length * platz / weite(wort)));
+        while (n > 1 && weite(wort.slice(0, n)) > platz) n--;
+        zeilen.push({ text: wort.slice(0, n) });
+        wort = wort.slice(n);
+      }
+      const w = weite(wort);
+      if (zeile && zeilenBreite + leer + w > platz) schieben();
+      zeilenBreite += (zeile ? leer : 0) + w;
+      zeile = zeile ? `${zeile} ${wort}` : wort;
     }
+    schieben();
   }
   let seite = doc.addPage([breite, hoehe]);
   let y = hoehe - rand;
