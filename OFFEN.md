@@ -48,11 +48,11 @@ Ein zusammenhängender Arbeitsschritt; vorher hat nichts davon einen Gegenstand.
 - [ ] **KI-Schlüssel bei Vercel** (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) — ohne sie online kein Exposé-Import, kein Diktat
 - [ ] **Azure-Redirect-URI** `https://gg-immobilienhandel.vercel.app/m365/rueckweg` registrieren
 - [x] **Direkt-Upload** für Exposés und Deal-Dokumente (Ticket → Browser lädt direkt in den Speicher → Übernahme
-      prüft die liegende Datei). Gegen lokalen und Cloud-Speicher mit 6 MB geprüft. *Auf Branch
-      `direkt-upload-streaming`, noch nicht online.*
+      prüft die liegende Datei). Gegen lokalen und Cloud-Speicher mit 6 MB geprüft. **Online geprüft am 21.09.2026.**
 - [x] **Antwort-Streaming** für alle Datei-Antworten: PDF/PPTX-Exporte, Deal-Dokumente, Fotos, Sicherungs- und
-      Audit-Export (`apps/api/src/strom.ts`, keine Längenangabe). *Gleicher Branch.*
-- [ ] **Nach dem Deployment online prüfen**: Exposé > 4,5 MB hochladen, Dokument > 4,5 MB herunterladen
+      Audit-Export (`apps/api/src/strom.ts`, keine Längenangabe).
+- [x] Online im echten Browser geprüft: 13,4-MB-Exposé hochgeladen (Eingang und Deal-Dokument), als Strom ohne
+      Längenangabe in 1,2 s zurückgeladen, Byte für Byte gleich; keine CSP- oder CORS-Fehler
 - [ ] **Noch durch die Function** (Grenze 4,5 MB): Sicherung einspielen (Bestand heute 3,5 MB — knapp), Fotos
       (nach Kompression meist klein), Diktat-Audio, Makler-Tabelle, Einheiten aus Mieterliste
 - [ ] **Eingang aufräumen**: bricht der Browser zwischen Upload und Übernahme ab, bleibt ein Objekt unter
