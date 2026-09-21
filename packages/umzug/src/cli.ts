@@ -7,6 +7,7 @@ import { umzugAusfuehren } from './umzug.ts';
 /**
  * pnpm umzug            → schreibt in die Zieldatenbank (nur wenn alle Prüfungen bestehen)
  * pnpm umzug --trocken  → Probelauf: alles wird geschrieben, geprüft und zurückgerollt
+ * … --nachsichtig      → unbekannte Felder nur berichten statt abbrechen (Standard ist scharf)
  *
  * QUELLE_DATABASE_URL  alte App (Standard: lokale gg-immohandel-Supabase, Port 54322)
  * DATABASE_URL         Neubau (Schema fach)
@@ -28,7 +29,7 @@ console.log(`Quelle: ${host(quelleUrl)} (nur lesend) → Ziel: ${host(zielUrl)}$
 const kv = await quelleLaden(quelleUrl);
 const { db, client } = createDb(zielUrl);
 try {
-  const bericht = await umzugAusfuehren(db, kv, { trocken });
+  const bericht = await umzugAusfuehren(db, kv, { trocken, streng: !process.argv.includes('--nachsichtig') });
   console.log(berichtText(bericht));
   mkdirSync('berichte', { recursive: true });
   const datei = `berichte/umzug-${bericht.zeitpunkt.replace(/[:.]/g, '-')}.json`;

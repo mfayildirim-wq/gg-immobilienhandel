@@ -29,4 +29,13 @@ describe.skipIf(!url)('Umzug gegen die lokale Datenbank (Probelauf, wird zurück
     expect(bericht.geschrieben).toBe(false);
     expect(bericht.befundeJeArt['ohne-id']?.anzahl).toBe(1);
   });
+
+  it('scharf: ein unbekanntes Feld oder eine nicht umgezogene Sammlung bricht ab, obwohl alle Prüfungen bestehen', async () => {
+    const nachsichtig = await umzugAusfuehren(db, ALTBESTAND, { trocken: true, stichtag: '2026-09-17T12:00:00.000Z' });
+    expect(nachsichtig.ok).toBe(true);
+    const scharf = await umzugAusfuehren(db, { ...ALTBESTAND, 'immo-neue-sammlung': [1, 2] }, { trocken: true, streng: true, stichtag: '2026-09-17T12:00:00.000Z' });
+    expect(scharf.pruefungen.every((p) => p.ok)).toBe(true);
+    expect(scharf.ok).toBe(false);
+    expect(scharf.abbruchgruende).toEqual(expect.arrayContaining(['unbekanntes Feld makler.lieblingsfarbe (1×)', 'Sammlung immo-neue-sammlung wird nicht umgezogen (2)']));
+  });
 });

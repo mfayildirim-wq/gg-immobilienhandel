@@ -17,7 +17,7 @@ class Zurueckrollen extends Error {
 export async function umzugAusfuehren(
   db: Db,
   kv: KvDaten,
-  opt: { trocken: boolean; stichtag?: string },
+  opt: { trocken: boolean; stichtag?: string; /** unbekannte Felder und nicht umgezogene Sammlungen sind Abbruchgründe */ streng?: boolean },
 ): Promise<Bericht> {
   const stichtag = opt.stichtag ?? new Date().toISOString();
   const u = umformen(kv, stichtag);
@@ -32,11 +32,20 @@ export async function umzugAusfuehren(
       await schreiben(tx, u.zeilen);
       const pruefungen = await pruefen(tx, kv, u);
       const fehler = u.befunde.some((b) => b.schwere === 'fehler');
+      // Scharf: was der Umzug nicht kennt, nimmt er nicht mit — und das soll niemand erst im Bericht lesen, nachdem
+      // geschrieben wurde. Am echten Bestand vom 21.09.2026 waren das die Kontaktfelder von 110 der 141 Makler.
+      const abbruchgruende = opt.streng
+        ? [
+            ...Object.entries(u.unbekannteFelder).flatMap(([entitaet, felder]) => Object.entries(felder).map(([f, n]) => `unbekanntes Feld ${entitaet}.${f} (${n}×)`)),
+            ...Object.entries(nochNichtUmgezogen).map(([k, n]) => `Sammlung ${k} wird nicht umgezogen (${n})`),
+          ]
+        : [];
       const bericht: Bericht = {
         zeitpunkt: stichtag,
         trocken: opt.trocken,
         geschrieben: false,
-        ok: pruefungen.every((p) => p.ok) && !fehler,
+        ok: pruefungen.every((p) => p.ok) && !fehler && abbruchgruende.length === 0,
+        abbruchgruende,
         pruefungen,
         befundeJeArt: befundeGruppieren(u.befunde),
         unbekannteFelder: u.unbekannteFelder,

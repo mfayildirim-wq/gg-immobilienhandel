@@ -18,6 +18,8 @@ export interface Bericht {
   trocken: boolean;
   geschrieben: boolean;
   ok: boolean;
+  /** nur im scharfen Lauf gefüllt: warum trotz bestandener Prüfungen nicht geschrieben wurde */
+  abbruchgruende: string[];
   pruefungen: Pruefung[];
   befundeJeArt: Record<string, { schwere: Befund['schwere']; anzahl: number; beispiele: Befund[] }>;
   unbekannteFelder: Umformung['unbekannteFelder'];
@@ -270,6 +272,7 @@ export function berichtText(b: Bericht): string {
     zeilen.push('', 'Noch nicht umgezogen (spätere Etappen):');
     zeilen.push(`  ${offen.map(([k, n]) => `${k}: ${n}`).join(' · ')}`);
   }
+  if (b.abbruchgruende.length) zeilen.push('', 'Abbruchgründe (scharfer Lauf — erst klassifizieren, dann umziehen):', ...b.abbruchgruende.map((g) => `  ✗ ${g}`));
   zeilen.push('', b.ok ? 'ERGEBNIS: alle Prüfungen bestanden ✓' : 'ERGEBNIS: Abweichungen oder Fehler ✗');
   return zeilen.join('\n');
 }
