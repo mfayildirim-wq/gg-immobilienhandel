@@ -7,8 +7,7 @@ import {
   KALK_STANDARD,
   type KalkStandard,
   margenAmpel,
-  sanierungAlsEingabe,
-} from '@gg/domain';
+  sanierungAlsEingabe, kalkMitStandard } from '@gg/domain';
 import {
   ActionIcon,
   Alert,
@@ -69,7 +68,7 @@ export function DealKalkulation({ deal }: { deal: DealDetail }) {
   const [sanierungen, setSanierungen] = useState<Sanierung[]>(deal.sanierungen);
 
   const ergebnis = useMemo(
-    () => berechneAnkauf(kalk, einheiten.map(einheitAlsEingabe), sanierungen.map(sanierungAlsEingabe), standard),
+    () => berechneAnkauf(kalkMitStandard(kalk, standard), einheiten.map(einheitAlsEingabe), sanierungen.map(sanierungAlsEingabe), standard),
     [kalk, einheiten, sanierungen, standard],
   );
   const geaendert =

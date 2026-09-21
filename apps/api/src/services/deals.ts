@@ -8,7 +8,7 @@ import type {
 } from '@gg/api-contract';
 import { DealAnlegen as DealAnlegenSchema } from '@gg/api-contract';
 import { type Db, einheitAlsEingabe, sanierungAlsEingabe, schema } from '@gg/db';
-import { berechneAnkauf, dealVorbelegungAusObjekt, erledigtTermin, pruefeStatuswechsel, START_STATUS, STATUS_SORT, type DealStatus } from '@gg/domain';
+import { berechneAnkauf, dealVorbelegungAusObjekt, erledigtTermin, pruefeStatuswechsel, START_STATUS, STATUS_SORT, type DealStatus, kalkMitStandard } from '@gg/domain';
 import { and, asc, desc, eq, isNull, notInArray, sql } from 'drizzle-orm';
 import { kalkStandardLesen } from './einstellungen.ts';
 import { versionFortschreiben } from './version.ts';
@@ -209,7 +209,7 @@ export async function kalkulationSpeichern(db: Db, id: string, eingabe: Kalkulat
     const einheiten = eingabe.einheiten.map((e, sort) => ({ ...e, id: e.id ?? `${id}:${crypto.randomUUID()}`, dealId: id, sort }));
     const sanierungen = eingabe.sanierungen.map((s, sort) => ({ ...s, id: s.id ?? `${id}:${crypto.randomUUID()}`, dealId: id, sort }));
     const standard = await kalkStandardLesen(tx);
-    const { kennzahlen } = berechneAnkauf(eingabe.kalkulation, einheiten.map(einheitAlsEingabe), sanierungen.map(sanierungAlsEingabe), standard);
+    const { kennzahlen } = berechneAnkauf(kalkMitStandard(eingabe.kalkulation, standard), einheiten.map(einheitAlsEingabe), sanierungen.map(sanierungAlsEingabe), standard);
     const kalkulation = { ...eingabe.kalkulation, ...kennzahlen };
 
     await tx.update(schema.deals).set({ kalkulation }).where(eq(schema.deals.id, id));
