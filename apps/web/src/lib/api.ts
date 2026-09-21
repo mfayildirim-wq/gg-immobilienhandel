@@ -216,6 +216,17 @@ export const useObjektLoeschen = () => useAendern('objekte', (id: string) => anf
 export interface SicherungUmfang { zeilen: { tabelle: string; anzahl: number }[]; gesamt: number; ausgenommen: Record<string, string> }
 export interface SicherungPlan { erzeugtAm: string; unbekannt: string[]; gesamtNeu: number; gesamtAktualisiert: number; zeilen: { tabelle: string; neu: number; aktualisiert: number; inDatei: number; imBestand: number }[] }
 export const useSicherungUmfang = () => useQuery({ queryKey: ['sicherung'], queryFn: () => anfrage<SicherungUmfang>('/api/sicherung') });
+// DD-Dokumentenliste
+interface DdVorlage { zeilen: { dokument: string; quelle: string }[]; gespeichert: boolean }
+export const useDdVorlage = () => useQuery({ queryKey: ['einstellungen', 'dd-vorlage'], queryFn: () => anfrage<DdVorlage>('/api/einstellungen/dd-vorlage') });
+export function useDdVorlageSpeichern() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (zeilen: { dokument: string; quelle: string }[]) => anfrage<DdVorlage>('/api/einstellungen/dd-vorlage', senden('PUT', { zeilen })),
+    onSuccess: (neu) => qc.setQueryData(['einstellungen', 'dd-vorlage'], neu),
+  });
+}
+
 // Automatische Sicherungen (Bucket `backups`)
 export interface AutoSicherung { key: string; stufe: 'daily' | 'weekly' | 'monthly' | 'safety'; ts: string; groesseBytes: number; zahlen: { deals: number; objekte: number; makler: number; zeilen: number } }
 export const useAutoSicherungen = () => useQuery({ queryKey: ['sicherung', 'auto'], queryFn: () => anfrage<{ eintraege: AutoSicherung[]; aufbewahrung: Record<string, number> }>('/api/sicherung/auto') });

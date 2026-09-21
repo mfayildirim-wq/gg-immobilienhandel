@@ -117,6 +117,7 @@ import { dokumentBezeichnen, dokumentDatei, einheitenAusMieterliste, dokumenteHo
 import { uploadTicket } from './services/direktUpload.ts';
 import { alsStrom } from './strom.ts';
 import { cronErlaubt } from './cron.ts';
+import { ddVorlageLesen, ddVorlageSpeichern } from './services/ddVorlage.ts';
 import { begrenzung, GRENZEN } from './middleware/begrenzung.ts';
 import { archivSpiegeln, eingangAufraeumen } from './services/archivSpiegel.ts';
 import { autoSicherungDatei, autoSicherungEinspielen, autoSicherungErstellen, autoSicherungListe, autoSicherungPlan, geplanteSicherung } from './services/autoSicherung.ts';
@@ -1133,6 +1134,15 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   app.get('/api/expose/bekannte-dateien', async (c) => c.json(await bekannteExposeDateien(db)));
 
   // ── Einstellungen ────────────────────────────────────────
+  const DdListe = z.object({ zeilen: z.array(z.object({ dokument: z.string().max(500), quelle: z.string().max(300) })).max(500), gespeichert: z.boolean() });
+  app.openapi(
+    createRoute({ method: 'get', path: '/api/einstellungen/dd-vorlage', responses: { 200: json(DdListe, 'DD-Dokumentenliste') } }),
+    async (c) => c.json(await ddVorlageLesen(db), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'put', path: '/api/einstellungen/dd-vorlage', request: body(z.object({ zeilen: z.array(z.object({ dokument: z.string().max(500), quelle: z.string().max(300).optional() })).max(500) })), responses: { 200: json(DdListe, 'gespeichert') } }),
+    async (c) => c.json(await ddVorlageSpeichern(db, c.req.valid('json').zeilen), 200),
+  );
   app.openapi(
     createRoute({ method: 'get', path: '/api/einstellungen/kalk-standard', responses: { 200: json(KalkStandardSchema, 'Standardwerte') } }),
     async (c) => c.json(await kalkStandardLesen(db), 200),

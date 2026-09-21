@@ -13,6 +13,7 @@ import { AuditEinstellungen } from '../components/AuditEinstellungen.tsx';
 import { DublettenEinstellungen } from '../components/DublettenEinstellungen.tsx';
 import { PapierkorbEinstellungen } from '../components/PapierkorbEinstellungen.tsx';
 import { VorlagenEinstellungen } from '../components/VorlagenEinstellungen.tsx';
+import { DdEinstellungen } from '../components/DdEinstellungen.tsx';
 import { KalkulationEinstellungen, KundenkalkEinstellungenFormular } from '../pages/EinstellungenSeite.tsx';
 
 /** Unterseiten der Einstellungen: eine Seite je Bereich, als Untermenü in der Seitenleiste. */
@@ -23,6 +24,7 @@ export const EINSTELLUNGEN_SEITEN: { pfad: string; label: string; icon: Componen
   { pfad: 'vertriebslisten', label: 'Vertriebslisten', icon: IconTableShare, komponente: VertriebslistenEinstellungen },
   { pfad: 'begleitscheine', label: 'Begleitscheine', icon: IconChecklist, komponente: BegleitscheinEinstellungen },
   { pfad: 'vorlagen', label: 'Vorlagen-Texte', icon: IconTemplate, komponente: VorlagenEinstellungen },
+  { pfad: 'dd', label: 'DD-Dokumentenliste', icon: IconChecklist, komponente: DdEinstellungen },
   { pfad: 'sicherung', label: 'Sicherung', icon: IconDatabaseExport, komponente: SicherungEinstellungen },
   { pfad: 'zugaenge', label: 'Zugänge', icon: IconKey, komponente: ZugaengeEinstellungen },
   { pfad: 'werkzeuge', label: 'Werkzeuge', icon: IconTool, komponente: WerkzeugeEinstellungen },
