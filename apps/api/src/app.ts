@@ -115,6 +115,7 @@ import {
 import { varianteAnlegen, varianteLoeschen, variantenListe } from './services/kalkVarianten.ts';
 import { dokumentBezeichnen, dokumentDatei, einheitenAusMieterliste, dokumenteHochladen, dokumenteListe, dokumenteUebernehmen, dokumentLoeschen } from './services/dealDokumente.ts';
 import { uploadTicket } from './services/direktUpload.ts';
+import { alsStrom } from './strom.ts';
 import { filterAnlegen, filterListe, filterLoeschen, filterUmbenennen, filterVorlagenEinrichten, listenAltformat } from './services/listen.ts';
 import { projektAnlegen, projektDealAuswahl, projektDetail, projekteListe, projektLoeschen, projektSpeichern } from './services/projekte.ts';
 import { fotoDatei, fotoHochladen, fotoLoeschen, fotoPort, fotosListe, fotosSortieren } from './services/fotos.ts';
@@ -520,7 +521,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
       throw e;
     }
     await pdfExportProtokollieren(db, id, payload);
-    return c.body(datei as Uint8Array<ArrayBuffer>, 200, {
+    return alsStrom(datei, {
       'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename="${pdfDateiname(payload.kalkName)}"`,
       'Cache-Control': 'no-store',
@@ -589,7 +590,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   });
   app.get('/api/deals/:id/dokumente/:dokId/datei', async (c) => {
     const d = await dokumentDatei(db, ablage(), c.req.param('id'), c.req.param('dokId'));
-    return c.body(d.bytes as Uint8Array<ArrayBuffer>, 200, { 'Content-Type': d.mime, 'Content-Disposition': d.disposition, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store' });
+    return alsStrom(d.bytes, { 'Content-Type': d.mime, 'Content-Disposition': d.disposition, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store' });
   });
   app.openapi(
     createRoute({ method: 'patch', path: '/api/deals/{id}/dokumente/{dokId}', request: { params: DokParam, ...body(z.object({ label: z.string().max(500) })) }, responses: { 200: json(z.object({ ok: z.literal(true) }), 'Bezeichnung gespeichert'), 404: fehler('nicht gefunden') } }),
@@ -742,7 +743,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   // ── Sicherung (alt: Einstellungen → Sicherung & Datenimport) ──
   app.get('/api/sicherung/export', async (c) => {
     const e = await sicherungExport(db);
-    return c.body(e.inhalt, 200, { 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="${e.name}"` });
+    return alsStrom(e.inhalt, { 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="${e.name}"` });
   });
   app.openapi(
     createRoute({ method: 'get', path: '/api/sicherung', responses: { 200: json(z.object({ zeilen: z.array(z.object({ tabelle: z.string(), anzahl: z.number() })), gesamt: z.number(), ausgenommen: z.record(z.string(), z.string()) }), 'Umfang der Sicherung') } }),
@@ -789,7 +790,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   for (const format of ['json', 'csv'] as const) {
     app.get(`/api/audit/export.${format}`, async (c) => {
       const e = await auditExport(db, format);
-      return c.body(e.inhalt, 200, { 'Content-Type': e.mime, 'Content-Disposition': `attachment; filename="${e.name}"` });
+      return alsStrom(e.inhalt, { 'Content-Type': e.mime, 'Content-Disposition': `attachment; filename="${e.name}"` });
     });
   }
   app.openapi(
@@ -991,7 +992,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
       throw e;
     }
     await praesentationExportProtokollieren(db, praes, art);
-    return c.body(datei as Uint8Array<ArrayBuffer>, 200, {
+    return alsStrom(datei, {
       'Content-Type': art === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       'Content-Disposition': `${art === 'pdf' ? 'inline' : 'attachment'}; filename="${praesentationDateiname(praes.bankName, art)}"`,
       'Cache-Control': 'no-store',
@@ -1044,7 +1045,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
     const { bytes, mimeType } = await fotoDatei(db, ablage(), c.req.param('objektId'), c.req.param('fotoId'));
     // Das Titelbild wechselt beim Umsortieren: nur kurz zwischenspeichern
     const dauer = c.req.param('fotoId') === 'cover' ? 60 : 86400;
-    return c.body(bytes as Uint8Array<ArrayBuffer>, 200, { 'Content-Type': mimeType, 'Cache-Control': `private, max-age=${dauer}`, 'X-Content-Type-Options': 'nosniff' });
+    return alsStrom(bytes, { 'Content-Type': mimeType, 'Cache-Control': `private, max-age=${dauer}`, 'X-Content-Type-Options': 'nosniff' });
   });
 
   // ── Exposé-Import ────────────────────────────────────────

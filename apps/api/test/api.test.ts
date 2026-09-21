@@ -5,6 +5,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { erzeugeSchleuse, SCHLEUSE_STANDARD } from '@gg/documents/pdf';
 import { graphAttrappe, kiAttrappe, propstackAttrappe, speicherImSpeicher } from '@gg/integrations';
 import { createApp } from '../src/app.ts';
+import { mitAusgeliefertenStandards } from './standardwerte.ts';
 
 /**
  * Integrationstests gegen die lokale Supabase-Datenbank (`pnpm db:start && pnpm db:reset`).
@@ -64,6 +65,7 @@ describe.skipIf(!url)('Deal-Ablauf gegen die lokale Datenbank', () => {
     },
   });
   const angelegt: { objekte: string[]; makler: string[] } = { objekte: [], makler: [] };
+  mitAusgeliefertenStandards(url!);
 
   afterAll(async () => {
     if (angelegt.objekte.length) await db.delete(schema.deals).where(inArray(schema.deals.objektId, angelegt.objekte));

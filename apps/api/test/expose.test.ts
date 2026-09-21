@@ -4,6 +4,7 @@ import { kiAttrappe, speicherImSpeicher, testExpose } from '@gg/integrations';
 import { eq, inArray, like } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.ts';
+import { mitAusgeliefertenStandards } from './standardwerte.ts';
 
 const url = process.env.DATABASE_URL;
 
@@ -13,6 +14,7 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
   const app = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, expose: { speicher, ki: kiAttrappe(), attrappe: true } });
   const kennung = `Imp${Date.now()}`;
   const angelegt = { deals: [] as string[], objekte: [] as string[], makler: [] as string[] };
+  mitAusgeliefertenStandards(url!);
 
   afterAll(async () => {
     if (angelegt.deals.length) await db.delete(schema.deals).where(inArray(schema.deals.id, angelegt.deals));

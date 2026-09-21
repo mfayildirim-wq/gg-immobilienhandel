@@ -87,7 +87,10 @@ pnpm vercel:probe     # gebaute Oberfläche + gebündelte API + Header aus verce
 Die Probe findet Bündelfehler und alles, was die Content-Security-Policy blockiert. Sie ersetzt **kein** echtes
 Deployment: Function-Größe, Kaltstart und das schreibgeschützte Dateisystem zeigt nur Vercel selbst.
 
-## Was online noch nicht geht
+## Grenzen der Functions (4,5 MB hinein und hinaus)
 
-- **Uploads über 4,5 MB** (Grenze der Functions): braucht den Direkt-Upload über signierte Adressen.
-- **Große Antworten** (PDF ~5 MB): braucht Streaming.
+- **Hinein:** Exposés und Deal-Dokumente gehen per Direkt-Upload an der Function vorbei (`/api/upload/ticket` →
+  PUT an den Speicher → `…/uebernehmen`). Die CSP erlaubt dem Browser dafür `https://*.supabase.co`.
+- **Hinaus:** jede Datei-Antwort ist ein Strom ohne `Content-Length` (`apps/api/src/strom.ts`) — nur so nimmt
+  Vercel sie von der Grenze aus.
+- **Noch durch die Function:** Sicherung einspielen, Fotos, Diktat, Makler-Tabelle, Mieterliste — siehe `OFFEN.md`.

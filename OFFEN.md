@@ -30,9 +30,8 @@ geprüft. Einzelheiten in `../protokoll/sessions/2026-09-21-echter-bestand.md`.
       kennt keinen Duplikatschutz, der kommt mit dem Auto-Import.
 - [x] Deal-Marker `_reconstructed*` begründet ausgelassen, `updatedAt` übernommen
 - [ ] Eine Einheit mit `rend_k` = 655200 (Archiv-Deal) — Tippfehler im Bestand, wird beim Umzug leer. Fachfrage.
-- [ ] **API-Tests hängen am Inhalt der Datenbank.** Mit echtem Bestand (eigene Kalkulations-Standards) werden
-      4 Tests in `apps/api/test` rot, auf frischer DB sind sie grün. Vor `pnpm verify` deshalb `pnpm db:reset`,
-      danach `pnpm umzug`. Sauber wäre: Tests legen ihre Voraussetzungen selbst an.
+- [x] API-Tests hingen an den gespeicherten Kalkulations-Standards — sie legen sie jetzt für ihre Dauer beiseite
+      (`apps/api/test/standardwerte.ts`); `pnpm verify` ist auch mit echtem Bestand grün
 - [ ] **Umzug scharf**: unbekannte Felder zum Abbruchgrund machen — jetzt möglich, die Liste ist leer.
 
 ## Stufe 1 — vor dem Produktivgang
@@ -48,9 +47,17 @@ Ein zusammenhängender Arbeitsschritt; vorher hat nichts davon einen Gegenstand.
 - [x] **Chromium für Vercel** — `@sparticuz/chromium` 153 + eigene Function `api/render.mjs`; PDF-Export online geprüft
 - [ ] **KI-Schlüssel bei Vercel** (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) — ohne sie online kein Exposé-Import, kein Diktat
 - [ ] **Azure-Redirect-URI** `https://gg-immobilienhandel.vercel.app/m365/rueckweg` registrieren
-- [ ] **Direkt-Upload** (Ticket → signierte URL → Übernahme) — sonst scheitert online jedes Exposé über
-      4,5 MB; echte Exposés sind 0,7 bis 13,4 MB groß
-- [ ] **Antwort-Streaming** für PDF-Exporte — Bank-Präsentation liegt bei ~5 MB
+- [x] **Direkt-Upload** für Exposés und Deal-Dokumente (Ticket → Browser lädt direkt in den Speicher → Übernahme
+      prüft die liegende Datei). Gegen lokalen und Cloud-Speicher mit 6 MB geprüft. *Auf Branch
+      `direkt-upload-streaming`, noch nicht online.*
+- [x] **Antwort-Streaming** für alle Datei-Antworten: PDF/PPTX-Exporte, Deal-Dokumente, Fotos, Sicherungs- und
+      Audit-Export (`apps/api/src/strom.ts`, keine Längenangabe). *Gleicher Branch.*
+- [ ] **Nach dem Deployment online prüfen**: Exposé > 4,5 MB hochladen, Dokument > 4,5 MB herunterladen
+- [ ] **Noch durch die Function** (Grenze 4,5 MB): Sicherung einspielen (Bestand heute 3,5 MB — knapp), Fotos
+      (nach Kompression meist klein), Diktat-Audio, Makler-Tabelle, Einheiten aus Mieterliste
+- [ ] **Eingang aufräumen**: bricht der Browser zwischen Upload und Übernahme ab, bleibt ein Objekt unter
+      `_eingang/` liegen — unsichtbar, aber es sammelt sich. Gehört zum Cron-Paket (Stufe 2).
+- [ ] **Supabase-Dateigrenze**: im Free-Plan 50 MB je Datei; die App erlaubt 200 MB
 - [ ] Header-Vergleichstest gegen die alte App (wie dort `vercel.json` gegen Erwartung)
 
 ## Stufe 2 — ab echten Daten
