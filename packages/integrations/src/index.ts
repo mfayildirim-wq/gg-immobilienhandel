@@ -17,3 +17,6 @@ export * from './geheimnis.ts';
 export * from './tabelle.ts';
 export * from './propstack.ts';
 export * from './m365/graph.ts';
+export { autoImportFromMail, klemmeZeitlimit, zielPruefen, type ImportOptions, type ImportOutcome, type ImportResult, type ImportStep } from './autoimport/engine.ts';
+export { pdfEinordnen, ersteSeiten, type PdfEinordnung } from './autoimport/pdfPruefung.ts';
+export type { AgbFreigabe } from './autoimport/seite.ts';
