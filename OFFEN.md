@@ -43,10 +43,11 @@ Ein zusammenhängender Arbeitsschritt; vorher hat nichts davon einen Gegenstand.
       (`rueckwegPruefen` in `@gg/domain`, `OAUTH_HOSTS`)
 - [x] **`hono/vercel`-Einstieg, `vercel.json`, Sicherheits-Header** — vorbereitet und lokal geprüft
       (`pnpm vercel:probe`), siehe `DEPLOYMENT.md`. CSP strenger als in der alten App: keine Inline-Skripte, kein `eval`.
-- [ ] **Vercel-Projekt anlegen und einmal wirklich deployen** — braucht Konto und Freigabe; erst das zeigt
-      Function-Größe, Kaltstart und das schreibgeschützte Dateisystem
-- [ ] **Chromium für Vercel** (`@sparticuz/chromium`) — ohne das funktioniert online **kein** PDF-Export,
-      obwohl Bankgespräch, Präsentation und Kundenkalkulation fachlich fertig sind (`packages/documents/src/pdf/browser.ts:5`)
+- [x] **Online auf eigenem Vercel- und Supabase-Konto** — <https://gg-immobilienhandel.vercel.app>, echter Bestand
+      umgezogen, Anmeldung, API und Header geprüft. Einzelheiten und Stolpersteine in `DEPLOYMENT.md`.
+- [x] **Chromium für Vercel** — `@sparticuz/chromium` 153 + eigene Function `api/render.mjs`; PDF-Export online geprüft
+- [ ] **KI-Schlüssel bei Vercel** (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) — ohne sie online kein Exposé-Import, kein Diktat
+- [ ] **Azure-Redirect-URI** `https://gg-immobilienhandel.vercel.app/m365/rueckweg` registrieren
 - [ ] **Direkt-Upload** (Ticket → signierte URL → Übernahme) — sonst scheitert online jedes Exposé über
       4,5 MB; echte Exposés sind 0,7 bis 13,4 MB groß
 - [ ] **Antwort-Streaming** für PDF-Exporte — Bank-Präsentation liegt bei ~5 MB

@@ -1,24 +1,36 @@
 # Deployment auf Vercel
 
-Stand 21.09.2026 — **vorbereitet, noch nie ausgeführt.** Es gibt kein Vercel-Projekt; alles hier ist lokal geprüft
-(`pnpm vercel:probe`), nicht online. Offene Punkte stehen in `OFFEN.md` unter „Stufe 1".
+Stand 21.09.2026 — **läuft online** auf dem Konto des Auftraggebers (eigenes Vercel- und Supabase-Projekt, getrennt
+von der echten Produktion der alten App). Offene Punkte stehen in `OFFEN.md` unter „Stufe 1".
 
 ## Stand der Einrichtung (21.09.2026)
 
 | | |
 |---|---|
 | GitHub | `mfayildirim-wq/gg-immobilienhandel`, privat |
-| Supabase | Projekt `gg-immobilienhandel`, Ref `zbqdkfqsqdocrxxrtjow`, Frankfurt (`eu-central-1`), Organisation MFY. 7 Migrationen angewendet (37 Tabellen in `fach`), Buckets `pdfs`, `deal-docs`, `obj-photos` privat angelegt. **Noch leer** — kein Umzug. |
+| Supabase | Projekt `gg-immobilienhandel`, Ref `zbqdkfqsqdocrxxrtjow`, Frankfurt (`eu-central-1`), Organisation MFY. 7 Migrationen angewendet (37 Tabellen in `fach`), Buckets `pdfs`, `deal-docs`, `obj-photos` privat angelegt. Echter Bestand umgezogen am 21.09.2026. |
 | Vercel | Team `mfy` (Hobby), Projekt `gg-immobilienhandel`, mit dem Repo verbunden, 7 Variablen für Production gesetzt |
 | Zugangsdaten | nur lokal in `~/Documents/ivtag/.geheim/cloud.env` (Rechte 600) und verschlüsselt bei Vercel — nicht im Repo |
 
-**Blockiert:** Beide Deployments (Push und CLI) stehen auf `BLOCKED / COMMIT_AUTHOR_REQUIRED`: Vercel findet zum
-Commit-Autor `mefatyil@gmail.com` kein GitHub-Konto. Abhilfe ist Kontoeinrichtung, kein Code: im Vercel-Konto unter
-Settings → Authentication GitHub (`mfayildirim-wq`) verbinden, und die Commit-Adresse muss eine bestätigte Adresse
-dieses GitHub-Kontos sein (GitHub → Settings → Emails) — oder `git config user.email` auf eine solche umstellen.
+**Online seit 21.09.2026:** <https://gg-immobilienhandel.vercel.app> — geprüft: Oberfläche, Anmeldung
+(Supabase Auth, Registrierung geschlossen, E-Mail-Allowlist), API (ohne Token 401), Sicherheits-Header,
+**PDF-Export mit dem gepackten Chromium** (Kundenkalkulation: 239 KB in 6,4 s), echter Bestand umgezogen
+(alle Prüfungen bestanden). Vercel Hobby hat die 300 s der PDF-Function angenommen.
 
-**Noch offen nach dem ersten erfolgreichen Deployment:** Registrierung in Supabase Auth schließen (ist offen; die
-E-Mail-Allowlist der API schützt trotzdem), Anmeldekonto anlegen, `site_url` auf die Vercel-Adresse, Umzug.
+**Drei Stolpersteine des ersten Deployments — für das nächste Mal:**
+
+1. **`BLOCKED / COMMIT_AUTHOR_REQUIRED`** (auch per CLI): Vercel braucht zum Commit-Autor ein GitHub-Konto.
+   Das Vercel-Konto muss mit GitHub verbunden sein **und** die Commit-Adresse muss GitHub einem Konto zuordnen.
+   In diesem Repo steht deshalb `git config user.email` auf der GitHub-Adresse `…+mfayildirim-wq@users.noreply.github.com`.
+   `vercel inspect` zeigt dabei nur „UNKNOWN" — der Grund steht in der API (`readyStateReason`).
+2. **`FUNCTION_INVOCATION_FAILED` auf jeder Route:** pdfjs verlangt beim Laden `DOMMatrix` aus `@napi-rs/canvas`;
+   das Paket fehlte in der Function. Jetzt wird pdfjs erst beim ersten PDF geladen, und `includeFiles` nimmt
+   Canvas und pdfjs mit. Lokal unsichtbar — dort ist das Paket installiert.
+3. **`vercel link` schreibt `.env*` in die `.gitignore`** — das verschluckt `.env.example`. Eingegrenzt auf `.vercel`.
+
+**Noch offen:** `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` bei Vercel (ohne sie kein Exposé-Import, kein Diktat),
+Azure-Redirect-URI für M365, Fotos und Dokumente der Produktion (nicht im Export), Direkt-Upload über 4,5 MB,
+Streaming großer PDFs. Für gewerblichen Betrieb Vercel Pro; Supabase Free pausiert nach einer Woche ohne Zugriff.
 
 ## Zuschnitt
 
@@ -77,6 +89,5 @@ Deployment: Function-Größe, Kaltstart und das schreibgeschützte Dateisystem z
 
 ## Was online noch nicht geht
 
-- **PDF-Export**: der Weg über `@sparticuz/chromium` ist eingebaut, aber **online noch nie gelaufen** — die Linux-Binärdatei startet auf dem Mac nicht, prüfbar ist das nur im echten Deployment.
 - **Uploads über 4,5 MB** (Grenze der Functions): braucht den Direkt-Upload über signierte Adressen.
 - **Große Antworten** (PDF ~5 MB): braucht Streaming.
