@@ -1,4 +1,4 @@
-import { createDb } from '@gg/db';
+import { createDb, verlangeLokaleDatenbank } from '@gg/db';
 import { rueckwegRegelnAusUmgebung } from '@gg/domain';
 import { anthropicClient, kiAttrappe, supabaseSpeicher, graphAttrappe, propstackAttrappe } from '@gg/integrations';
 import { createApp } from './app.ts';
@@ -11,8 +11,11 @@ export function appAusUmgebung(env: Record<string, string | undefined> = process
   const url = env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL fehlt (siehe .env.example)');
 
-  const { db } = createDb(url);
   const produktion = env.NODE_ENV === 'production';
+  // Ein lokal gestarteter Server ist meist offen (AUTH_LOCAL_OPEN=1) und wird von Klicktests und Demo-Daten beschrieben.
+  // Zeigt seine .env auf die Cloud, träfe das alles den echten Bestand — ohne dass irgendwo eine Anmeldung stünde.
+  if (!produktion && !env.VERCEL && env.FREMDE_DB_FREIGABE !== 'ja') verlangeLokaleDatenbank(url, 'Lokaler API-Server');
+  const { db } = createDb(url);
   const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
   const speicher = env.SUPABASE_URL && serviceKey ? supabaseSpeicher(env.SUPABASE_URL, serviceKey) : null;
   /**

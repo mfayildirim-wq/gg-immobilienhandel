@@ -1,4 +1,4 @@
-import { createDb, schema } from '@gg/db';
+import { createDb, schema, verlangeLokaleDatenbank } from '@gg/db';
 import { KALK_STANDARD } from '@gg/domain';
 import { kiAttrappe, speicherImSpeicher, testExpose } from '@gg/integrations';
 import { eq, inArray, like } from 'drizzle-orm';
@@ -6,7 +6,8 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.ts';
 import { mitAusgeliefertenStandards } from './standardwerte.ts';
 
-const url = process.env.DATABASE_URL;
+// Nie gegen die Cloud: ein Testlauf löscht und überschreibt Zeilen
+const url = process.env.DATABASE_URL ? verlangeLokaleDatenbank(process.env.DATABASE_URL, 'Testlauf') : undefined;
 
 describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, Ablage im Speicher)', () => {
   const { db, client } = createDb(url!);

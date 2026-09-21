@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { createDb, schema } from '@gg/db';
+import { createDb, schema, verlangeLokaleDatenbank } from '@gg/db';
 import { eq, inArray } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
 import { erzeugeSchleuse, SCHLEUSE_STANDARD } from '@gg/documents/pdf';
@@ -11,7 +11,8 @@ import { mitAusgeliefertenStandards } from './standardwerte.ts';
  * Integrationstests gegen die lokale Supabase-Datenbank (`pnpm db:start && pnpm db:reset`).
  * Ohne DATABASE_URL werden sie übersprungen.
  */
-const url = process.env.DATABASE_URL;
+// Nie gegen die Cloud: ein Testlauf löscht und überschreibt Zeilen
+const url = process.env.DATABASE_URL ? verlangeLokaleDatenbank(process.env.DATABASE_URL, 'Testlauf') : undefined;
 const offen = { lokalOffen: true, produktion: false, erlaubteEmails: [] };
 
 describe('Eingabeprüfung ohne Datenbank', () => {

@@ -1,10 +1,11 @@
-import { createDb, schema } from '@gg/db';
+import { createDb, schema, verlangeLokaleDatenbank } from '@gg/db';
 import { count } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
 import { umzugAusfuehren } from '../src/umzug.ts';
 import { ALTBESTAND } from './altbestand.ts';
 
-const url = process.env.DATABASE_URL;
+// Nie gegen die Cloud: ein Testlauf löscht und überschreibt Zeilen
+const url = process.env.DATABASE_URL ? verlangeLokaleDatenbank(process.env.DATABASE_URL, 'Testlauf') : undefined;
 
 describe.skipIf(!url)('Umzug gegen die lokale Datenbank (Probelauf, wird zurückgerollt)', () => {
   const { db, client } = createDb(url!);

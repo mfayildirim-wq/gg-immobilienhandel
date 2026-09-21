@@ -1,4 +1,4 @@
-import { createDb, schema } from '@gg/db';
+import { createDb, schema, verlangeLokaleDatenbank } from '@gg/db';
 import { sicherungSchluessel } from '@gg/domain';
 import { speicherImSpeicher } from '@gg/integrations';
 import { eq, inArray, like } from 'drizzle-orm';
@@ -6,7 +6,8 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.ts';
 import { archivSpiegeln, eingangAufraeumen } from '../src/services/archivSpiegel.ts';
 
-const url = process.env.DATABASE_URL;
+// Nie gegen die Cloud: ein Testlauf löscht und überschreibt Zeilen
+const url = process.env.DATABASE_URL ? verlangeLokaleDatenbank(process.env.DATABASE_URL, 'Testlauf') : undefined;
 const offen = { lokalOffen: true, produktion: false, erlaubteEmails: [] };
 
 describe.skipIf(!url)('Cron: Sicherung, Archiv-Spiegel, Eingang (lokale Datenbank, Ablage im Speicher)', () => {

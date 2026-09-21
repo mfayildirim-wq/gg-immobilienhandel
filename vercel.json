@@ -19,6 +19,10 @@
   },
   "rewrites": [
     {
+      "source": "/api/cron/(.*)",
+      "destination": "/api/render"
+    },
+    {
       "source": "/api/kundenkalkulationen/:id/pdf",
       "destination": "/api/render"
     },
@@ -64,6 +68,16 @@
           "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; media-src 'self' data: blob:; worker-src 'self' blob:; frame-src 'self' data: blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co"
         }
       ]
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/sicherung",
+      "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/archiv",
+      "schedule": "30 1 * * *"
     }
   ]
 }
