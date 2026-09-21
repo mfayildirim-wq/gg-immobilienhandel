@@ -96,13 +96,22 @@ Die alte App verhält sich genauso; eine Änderung ist eine bewusste Abweichung 
 
 ## Bewusst offen
 
-- [ ] **Auto-Import-Bot** — 1.972 Zeilen, mehr als die Hälfte der gesamten Code-Lücke. Triage ist portiert,
-      das Gate steht.
+- [x] **Auto-Import-Bot** — portiert am 21.09.2026 (`packages/integrations/src/autoimport/`, `services/autoImport.ts`,
+      Angebots-Seite). Ablauf, Grenzen, Textmuster und KI-Prompts wörtlich aus der alten App; neu: Ports, Zielprüfung
+      gegen interne Adressen, eigener Browser-Kontext je Mail, PDF-Prüfung ohne Rasterung, Ergebnis im Exposé-Eingang,
+      Duplikatschutz auf dem Server. 12 Engine-Tests gegen Testseiten im echten Browser, 5 API-Tests, 1 Klicktest.
+- [ ] **Auto-Import gegen echte Maklerseiten prüfen.** Die Testseiten bilden die Seitenformen nach, an denen die alte
+      Engine gewachsen ist — ob jede echte Seite noch passt, zeigt nur ein Lauf mit echten Mails (braucht M365-Zugang,
+      KI-Schlüssel und für AGB-Seiten die Freigabe unter Einstellungen → Freigaben).
+- [ ] Auto-Import: Zeitlimit in den Einstellungen einstellbar machen (`auto-import-zeitlimit-sek`, Standard 180 s;
+      die alte App hatte dafür ein Feld)
 - [ ] **Wählmaschine neu entwerfen.** Bis dahin ist ihr Klicktest übersprungen
       (`tests/e2e/ankauf.spec.ts`, Begründung steht dort). Beim Neuentwurf ohne Durchklicken durch die
       Warteschlange testen — der alte Test war davon abhängig, was vorherige Tests hinterlassen hatten.
 
 ## Erledigt (21.09.2026)
+
+- [x] CI grün — sie lief erst seit dem Anlegen des Remotes und war von Anfang an rot (keine Dateiablage, kein Chrome-Pfad)
 
 - [x] **Risikopuffer-Standard 0 % wurde ignoriert** (16.500 € statt 15.000 €) — gefunden von der Parallelprüfung mit den
       echten Standardwerten; behoben mit `kalkMitStandard` vor dem Rechenkern (wie `ensure()` der alten App)

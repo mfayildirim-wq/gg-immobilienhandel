@@ -29,6 +29,30 @@ test('Angebote: Posteingang aus Microsoft 365, Sperren und Sperre aufheben, Anha
   await expect(page.getByText(/Analyse abgeschlossen|Claude liest das Exposé/)).toBeVisible({ timeout: 20_000 });
 });
 
+test('Auto-Import: der Bot holt das Exposé aus der Mail, zeigt Ausgang und Schritte, der Assistent übernimmt', async ({ page }) => {
+  test.setTimeout(120_000);
+  for (const uid of ['mail-1', 'mail-2']) await page.request.delete(`/api/m365/mails/${uid}/sperren`);
+  await page.goto('/angebote');
+  await expect(page.getByLabel('Auto-Import').getByRole('button', { name: /Alle offenen importieren/ })).toBeVisible();
+
+  const mail = page.locator('[data-mail="mail-1"]');
+  await mail.getByRole('button', { name: /Auto-Import|erneut versuchen/ }).click();
+  // Der Lauf gehört zur Anfrage: die Antwort kommt, wenn der Bot fertig ist
+  await expect(mail.locator('[data-ausgang="sicher"]')).toBeVisible({ timeout: 90_000 });
+  await mail.getByText(/\d+ Schritte/).click();
+  await expect(mail.locator('[data-auto-import]')).toContainText('✓ triage');
+  await expect(mail.locator('[data-auto-import]')).toContainText('✓ classify-attachment');
+
+  // Das Ergebnis liegt im Exposé-Eingang — der vorhandene Assistent macht ohne Sonderweg weiter
+  await mail.getByRole('button', { name: '→ Im Assistenten prüfen' }).click();
+  await expect(page).toHaveURL(/\/expose-import\?key=/);
+  await expect(page.getByText(/Analyse abgeschlossen|Claude liest das Exposé/)).toBeVisible({ timeout: 30_000 });
+
+  // Duplikatschutz auf dem Server: nach dem Neuladen ist die Mail als importiert gekennzeichnet
+  await page.goto('/angebote');
+  await expect(page.locator('[data-mail="mail-1"]').getByText('importiert', { exact: true })).toBeVisible();
+});
+
 test('Microsoft 365: Zugang in den Einstellungen eintragen und Status sehen', async ({ page }) => {
   await page.goto('/einstellungen/m365');
   await page.getByLabel('Client-ID').fill('app-klicktest');
