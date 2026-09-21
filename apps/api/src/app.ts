@@ -117,6 +117,7 @@ import { dokumentBezeichnen, dokumentDatei, einheitenAusMieterliste, dokumenteHo
 import { uploadTicket } from './services/direktUpload.ts';
 import { alsStrom } from './strom.ts';
 import { cronErlaubt } from './cron.ts';
+import { begrenzung, GRENZEN } from './middleware/begrenzung.ts';
 import { archivSpiegeln, eingangAufraeumen } from './services/archivSpiegel.ts';
 import { autoSicherungDatei, autoSicherungEinspielen, autoSicherungErstellen, autoSicherungListe, autoSicherungPlan, geplanteSicherung } from './services/autoSicherung.ts';
 import { filterAnlegen, filterListe, filterLoeschen, filterUmbenennen, filterVorlagenEinrichten, listenAltformat } from './services/listen.ts';
@@ -260,6 +261,17 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   });
 
   app.use('/api/*', auth(authOpt));
+
+  // Begrenzung der teuren und der zugangsnahen Wege (alt: rate-limits.ts) — nach der Anmeldeprüfung, vor den Routen
+  app.use('/api/makler/:id/ki/*', begrenzung(GRENZEN.ki));
+  app.use('/api/persona/analyse', begrenzung(GRENZEN.ki));
+  app.use('/api/expose/analyse', begrenzung(GRENZEN.ki));
+  app.use('/api/deals/:id/einheiten-aus-pdf', begrenzung(GRENZEN.ki));
+  app.use('/api/transkription', begrenzung(GRENZEN.diktat));
+  app.use('/api/m365/posteingang', begrenzung(GRENZEN.abruf));
+  app.use('/api/m365/konfiguration', begrenzung(GRENZEN.zugang));
+  app.use('/api/m365/anmeldung', begrenzung(GRENZEN.zugang));
+  app.use('/api/propstack/konfiguration', begrenzung(GRENZEN.zugang));
 
   // ── Makler ───────────────────────────────────────────────
   app.openapi(
