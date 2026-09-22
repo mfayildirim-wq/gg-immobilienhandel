@@ -329,6 +329,8 @@ export const M365Stand = z.object({
   email: z.string(), verbundenSeit: z.string().nullable(), ordner: z.string(), scopes: z.array(z.string()),
   /** Test-Modus: eine Attrappe liefert den Posteingang (M365_ATTRAPPE=1) */
   testModus: z.boolean(),
+  /** Auto-Import-Bot freigeschaltet (`AUTO_IMPORT_AKTIV`; online standardmäßig aus) — sonst zeigt die Oberfläche keine Bot-Knöpfe */
+  autoImport: z.boolean(),
 });
 export type M365Stand = z.infer<typeof M365Stand>;
 export const M365Mail = z.object({

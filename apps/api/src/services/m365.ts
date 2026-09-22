@@ -56,10 +56,11 @@ async function tokenZeile(db: Db) {
 }
 
 /** Stand für die Oberfläche: eingerichtet, verbunden, mit wem und seit wann. Im Test-Modus liest die Attrappe. */
-export async function m365Stand(db: Db, graph?: GraphClient | null): Promise<M365Stand> {
+export async function m365Stand(db: Db, graph?: GraphClient | null, autoImport = true): Promise<M365Stand> {
   const cfg = await m365KonfigurationLesen(db);
   const z = await tokenZeile(db);
   return {
+    autoImport,
     eingerichtet: Boolean(cfg?.clientId && cfg.clientSecret),
     clientId: cfg?.clientId ?? '',
     tenantId: cfg?.tenantId ?? '',

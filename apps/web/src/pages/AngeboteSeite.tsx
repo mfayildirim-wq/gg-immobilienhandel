@@ -35,6 +35,8 @@ type Zustand = { laeuft: true } | { laeuft: false; lauf?: AutoImportLauf; fehler
 /** 📧 Angebote: Exposé-Mails aus dem Posteingang übernehmen oder sperren (alt: Angebote-Panel). */
 export function AngeboteSeite() {
   const { data: stand } = useM365();
+  // Abgeschaltet (AUTO_IMPORT_AKTIV, online der Standard) gibt es keine Bot-Knöpfe — die Mails lassen sich weiter von Hand übernehmen
+  const botAktiv = stand?.autoImport === true;
   const [alle, setAlle] = useState(false);
   const { data, isLoading, error, refetch, isFetching } = useM365Posteingang(alle, Boolean(stand?.verbunden || stand?.testModus));
   const sperren = useMailSperren();
@@ -97,7 +99,7 @@ export function AngeboteSeite() {
       {error && <Alert color="red">{error.message}</Alert>}
       {isLoading && <Loader size="sm" />}
       {data?.mails.length === 0 && <Text c="dimmed" size="sm">Keine offenen Mails.</Text>}
-      {data && data.mails.length > 0 && (
+      {botAktiv && data && data.mails.length > 0 && (
         <Card withBorder padding="xs" aria-label="Auto-Import">
           <Group justify="space-between" wrap="wrap" gap="xs">
             <Text size="xs" c="dimmed" style={{ flex: 1, minWidth: 260 }}>
@@ -148,9 +150,9 @@ export function AngeboteSeite() {
               <Anchor key={l} href={l} target="_blank" rel="noopener" size="xs">🔗 {new URL(l).hostname}</Anchor>
             ))}
           </Group>
-          <AutoImportZeile uid={m.uid} zustand={zustand[m.uid]} schonImportiert={m.importiert} starten={() => void importieren(m.uid)}
+          {botAktiv && <AutoImportZeile uid={m.uid} zustand={zustand[m.uid]} schonImportiert={m.importiert} starten={() => void importieren(m.uid)}
             offen={offenSchritte === m.uid} umschalten={() => setOffenSchritte(offenSchritte === m.uid ? null : m.uid)}
-            oeffnen={(lauf) => void navigate({ to: '/expose-import', search: { key: lauf.eingangKey!, name: lauf.dateiname ?? 'expose.pdf' } })} />
+            oeffnen={(lauf) => void navigate({ to: '/expose-import', search: { key: lauf.eingangKey!, name: lauf.dateiname ?? 'expose.pdf' } })} />}
         </Card>
       ))}
     </Stack>

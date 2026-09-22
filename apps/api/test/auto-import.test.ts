@@ -95,4 +95,21 @@ describe.skipIf(!url || !CHROME)('Auto-Import über die API (lokale Datenbank, T
     expect(Buffer.from(pdf.subarray(0, 5)).toString()).toBe('%PDF-');
     expect(pdf.byteLength).toBeGreaterThan(1500);
   });
+
+  it('abgeschaltet (AUTO_IMPORT_AKTIV): kein Lauf, kein Abbruch, kein Browser — Stand meldet es, der Verlauf bleibt lesbar', async () => {
+    let browserGestartet = false;
+    const aus = createApp({
+      db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, speicher, graph, ki: kiAttrappeAutoImport() as never,
+      autoImport: { aktiv: false, lokaleZieleErlaubt: true, browserStarten: async () => { browserGestartet = true; throw new Error('darf nicht starten'); } },
+    });
+    const postAus = (pfad: string, body: unknown) => aus.request(pfad, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    expect((await lies(aus.request('/api/m365'))).autoImport).toBe(false);
+    expect((await lies(app.request('/api/m365'))).autoImport).toBe(true);
+    const lauf = await postAus('/api/auto-import/lauf', { mailUid: `${kennung}-liste` });
+    expect(lauf.status).toBe(503);
+    expect((await lauf.json() as { fehler: string }).fehler).toMatch(/abgeschaltet/);
+    expect((await postAus('/api/auto-import/abbrechen', { mailUid: `${kennung}-liste` })).status).toBe(503);
+    expect((await aus.request('/api/auto-import/verlauf')).status).toBe(200);
+    expect(browserGestartet).toBe(false);
+  });
 });

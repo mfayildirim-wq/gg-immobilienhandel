@@ -192,8 +192,11 @@ export interface AppKontext {
   openaiKey?: string;
   /** Öffentliche Suche (DuckDuckGo, Google News); Standard: echte Abfragen, mit KI-Attrappe keine */
   suche?: Suchdienste;
-  /** Auto-Import: Browser-Start (Standard: wie der PDF-Export) und Grenzen. `lokaleZieleErlaubt` ist NUR für Tests. */
-  autoImport?: { browserStarten?: () => Promise<import('playwright-core').Browser>; maxZeitlimitSek?: number; lokaleZieleErlaubt?: boolean };
+  /**
+   * Auto-Import: Browser-Start (Standard: wie der PDF-Export) und Grenzen. `lokaleZieleErlaubt` ist NUR für Tests.
+   * `aktiv: false` schaltet den Bot ab: die Routen antworten 503, die Oberfläche zeigt keine Bot-Knöpfe (Standard: an).
+   */
+  autoImport?: { aktiv?: boolean; browserStarten?: () => Promise<import('playwright-core').Browser>; maxZeitlimitSek?: number; lokaleZieleErlaubt?: boolean };
   /** `CRON_SECRET`: ohne dieses Geheimnis antworten die Cron-Routen immer mit 401. */
   cronGeheimnis?: string;
   /** Wohin die Microsoft-Anmeldung zurückleiten darf; Standard: nur lokale Adressen (`rueckwegRegelnAusUmgebung`). */
@@ -220,6 +223,7 @@ const Geaendert = json(z.object({ id: z.string(), version: z.number().int() }), 
 const konflikt = { 400: fehler('Eingabe ungültig'), 404: fehler('nicht gefunden'), 409: fehler('Versionskonflikt') };
 
 export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, cronGeheimnis, autoImport, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
+  const autoImportAktiv = autoImport?.aktiv ?? true;
   const exposeKontext = () => {
     if (!expose) throw new FachFehler(422, 'Dateiablage ist nicht eingerichtet (SUPABASE_SERVICE_ROLE_KEY).');
     return expose;
@@ -680,7 +684,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   // ── Microsoft 365: Zugang und Posteingang (alt: /api/oauth/*, /api/offers) ──
   app.openapi(
     createRoute({ method: 'get', path: '/api/m365', responses: { 200: json(M365Stand, 'Zugang und Verbindung') } }),
-    async (c) => c.json(await m365Stand(db, graphOpt), 200),
+    async (c) => c.json(await m365Stand(db, graphOpt, autoImportAktiv), 200),
   );
   app.openapi(
     createRoute({ method: 'put', path: '/api/m365/konfiguration', request: body(z.object({ clientId: z.string().max(200), tenantId: z.string().max(200), clientSecret: z.string().max(500).optional() })), responses: { 200: json(z.object({ ok: z.literal(true) }), 'gespeichert') } }),
@@ -701,16 +705,21 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   );
   // ── Auto-Import: aus einer Angebots-Mail selbstständig das Exposé holen ──
   // Der Lauf gehört zur Anfrage (online: lang laufende Function); das Ergebnis steht in der Tabelle und im Exposé-Eingang.
+  // Abgeschaltet (AUTO_IMPORT_AKTIV) startet und bricht nichts — der Verlauf bleibt lesbar.
+  const botFreigeschaltet = () => { if (!autoImportAktiv) throw new FachFehler(503, 'Der Auto-Import ist in dieser Umgebung abgeschaltet (AUTO_IMPORT_AKTIV).'); };
   app.openapi(
-    createRoute({ method: 'post', path: '/api/auto-import/lauf', request: body(z.object({ mailUid: z.string().min(1).max(500) })), responses: { 200: json(AutoImportLauf, 'Ergebnis des Laufs'), 404: fehler('Mail fehlt'), 422: fehler('nicht eingerichtet'), 429: fehler('alle Plätze belegt'), 503: fehler('Anhänge unvollständig') } }),
-    async (c) => c.json(await autoImportAusfuehren(db, {
-      speicher: ablage(), ki: kiOpt ?? expose?.ki ?? null, graph: await m365Client(db, graphOpt), ordner: await m365OrdnerLesen(db),
-      browserStarten: autoImport?.browserStarten ?? browserStarten, maxZeitlimitSek: autoImport?.maxZeitlimitSek, lokaleZieleErlaubt: autoImport?.lokaleZieleErlaubt,
-    }, c.req.valid('json').mailUid), 200),
+    createRoute({ method: 'post', path: '/api/auto-import/lauf', request: body(z.object({ mailUid: z.string().min(1).max(500) })), responses: { 200: json(AutoImportLauf, 'Ergebnis des Laufs'), 404: fehler('Mail fehlt'), 422: fehler('nicht eingerichtet'), 429: fehler('alle Plätze belegt'), 503: fehler('abgeschaltet oder Anhänge unvollständig') } }),
+    async (c) => {
+      botFreigeschaltet();
+      return c.json(await autoImportAusfuehren(db, {
+        speicher: ablage(), ki: kiOpt ?? expose?.ki ?? null, graph: await m365Client(db, graphOpt), ordner: await m365OrdnerLesen(db),
+        browserStarten: autoImport?.browserStarten ?? browserStarten, maxZeitlimitSek: autoImport?.maxZeitlimitSek, lokaleZieleErlaubt: autoImport?.lokaleZieleErlaubt,
+      }, c.req.valid('json').mailUid), 200);
+    },
   );
   app.openapi(
-    createRoute({ method: 'post', path: '/api/auto-import/abbrechen', request: body(z.object({ mailUid: z.string().min(1).max(500) })), responses: { 200: json(z.object({ abgebrochen: z.number() }), 'Abbruch angefordert') } }),
-    async (c) => c.json(await autoImportAbbrechen(db, c.req.valid('json').mailUid), 200),
+    createRoute({ method: 'post', path: '/api/auto-import/abbrechen', request: body(z.object({ mailUid: z.string().min(1).max(500) })), responses: { 200: json(z.object({ abgebrochen: z.number() }), 'Abbruch angefordert'), 503: fehler('abgeschaltet') } }),
+    async (c) => { botFreigeschaltet(); return c.json(await autoImportAbbrechen(db, c.req.valid('json').mailUid), 200); },
   );
   app.openapi(
     createRoute({ method: 'get', path: '/api/auto-import/verlauf', responses: { 200: json(z.array(AutoImportLauf), 'letzte Läufe, jüngste zuerst') } }),
