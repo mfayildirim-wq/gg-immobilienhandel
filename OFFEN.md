@@ -99,10 +99,13 @@ Die alte App verhält sich genauso; eine Änderung ist eine bewusste Abweichung 
 - [x] **Auto-Import-Bot** — portiert am 21.09.2026 (`packages/integrations/src/autoimport/`, `services/autoImport.ts`,
       Angebots-Seite). Ablauf, Grenzen, Textmuster und KI-Prompts wörtlich aus der alten App; neu: Ports, Zielprüfung
       gegen interne Adressen, eigener Browser-Kontext je Mail, PDF-Prüfung ohne Rasterung, Ergebnis im Exposé-Eingang,
-      Duplikatschutz auf dem Server. 12 Engine-Tests gegen Testseiten im echten Browser, 5 API-Tests, 1 Klicktest.
+      Duplikatschutz auf dem Server. 12 Engine-Tests gegen Testseiten im echten Browser, 6 API-Tests, 1 Klicktest.
+- [ ] **Auto-Import online freischalten.** Entscheidung des Auftraggebers vom 22.09.2026: der Bot bleibt online vorerst
+      **aus** (`AUTO_IMPORT_AKTIV` nicht gesetzt → Routen 503, keine Bot-Knöpfe), kein `ANTHROPIC_API_KEY` bei Vercel.
+      Freischalten heißt: KI-Schlüssel und `AUTO_IMPORT_AKTIV=ja` bei Vercel, M365 verbunden, Freigabe für AGB-Seiten.
 - [ ] **Auto-Import gegen echte Maklerseiten prüfen.** Die Testseiten bilden die Seitenformen nach, an denen die alte
-      Engine gewachsen ist — ob jede echte Seite noch passt, zeigt nur ein Lauf mit echten Mails (braucht M365-Zugang,
-      KI-Schlüssel und für AGB-Seiten die Freigabe unter Einstellungen → Freigaben).
+      Engine gewachsen ist — ob jede echte Seite noch passt, zeigt nur ein Lauf mit echten Mails (setzt das Freischalten
+      voraus).
 - [ ] Auto-Import: Zeitlimit in den Einstellungen einstellbar machen (`auto-import-zeitlimit-sek`, Standard 180 s;
       die alte App hatte dafür ein Feld)
 - [ ] **Wählmaschine neu entwerfen.** Bis dahin ist ihr Klicktest übersprungen
