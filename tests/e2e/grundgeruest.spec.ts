@@ -34,10 +34,11 @@ test.describe('App-Rahmen', () => {
     expect(await gewicht('Objekte')).not.toBe('700');
   });
 
-  test('Wählmaschine öffnet als Schubfach', async ({ page }) => {
+  test('Wählmaschine öffnet von „Nächste Kontakte“ aus — im Kopf der App gibt es keinen Knopf mehr', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByRole('dialog', { name: 'Wählmaschine' })).toBeHidden();
-    await page.getByRole('button', { name: 'Wählmaschine öffnen' }).click();
+    await expect(page.getByRole('banner').getByRole('button', { name: 'Wählmaschine öffnen' })).toHaveCount(0);
+    await page.getByLabel('Nächste Kontakte').getByRole('button', { name: 'Wählmaschine öffnen' }).click();
     await expect(page.getByRole('dialog', { name: 'Wählmaschine' })).toBeVisible();
   });
 });

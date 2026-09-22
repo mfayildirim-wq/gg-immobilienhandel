@@ -48,9 +48,9 @@ const ANLEITUNGEN: { wert: string; titel: string; inhalt: ReactNode }[] = [
     titel: '🚀 Wählmaschine',
     inhalt: (
       <Text size="sm">
-        Das Telefonhörer-Symbol im Kopf öffnet die Wählmaschine als Schubfach: fällige Makler nach Dringlichkeit und Prio,
-        mit Anruf-Link, Ergebnis-Knöpfen und Notizfeld. Sie rechnet nur mit letztem Kontakt und Frequenz — ein gesetzter
-        „nächster Kontakt“ zählt dort bewusst nicht (Ist-Verhalten der alten App).
+        „📞 Liste durchwählen“ neben „Nächste Kontakte“ auf der Ankaufseite telefoniert genau diese Liste von oben nach
+        unten ab: heute, überfällig, diese Woche — darin nach Termin, dann Prio. Mit Anruf-Link, Ergebnis-Knöpfen und
+        Notizfeld. Ein vereinbarter Rückruf zählt als Termin (anders als in der alten App, Entscheidung vom 22.09.2026).
       </Text>
     ),
   },

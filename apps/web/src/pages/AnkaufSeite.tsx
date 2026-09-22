@@ -113,6 +113,10 @@ export function AnkaufSeite() {
       </Group>
       <Paper withBorder p="sm" aria-label="Nächste Kontakte">
         <Group gap="lg">
+          {/* Der Knopf steht vor der Überschrift: die Wählmaschine telefoniert genau diese Liste von oben nach unten ab. */}
+          <Button size="sm" leftSection={<IconPhoneCall size={18} />} onClick={() => setWmOffen(true)} aria-label="Wählmaschine öffnen">
+            Liste durchwählen ({data.makler.length})
+          </Button>
           <Text fw={600}>Nächste Kontakte</Text>
           <Group gap={6}><Badge color="red" size="lg" circle>{zaehle('heute')}</Badge><Text size="sm" c="dimmed">heute zu kontaktieren</Text></Group>
           <Group gap={6}><Badge color="orange" size="lg" circle>{zaehle('ueberfaellig')}</Badge><Text size="sm" c="dimmed">überfällig</Text></Group>

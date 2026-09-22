@@ -108,6 +108,10 @@ Die alte App verhält sich genauso; eine Änderung ist eine bewusste Abweichung 
       voraus).
 - [ ] Auto-Import: Zeitlimit in den Einstellungen einstellbar machen (`auto-import-zeitlimit-sek`, Standard 180 s;
       die alte App hatte dafür ein Feld)
+- [x] **Wählmaschine = Liste „Nächste Kontakte“** (22.09.2026, Fachfrage 7 entschieden): dieselbe Liste wie „Makler
+      kontaktieren“, in der Reihenfolge der Ankaufseite (heute → überfällig → diese Woche, darin Termin, dann Prio); ein
+      Rückruf-Datum zählt. Der Knopf „📞 Liste durchwählen“ steht links neben „Nächste Kontakte“, der Telefonhörer im Kopf
+      der App ist weg.
 - [ ] **Wählmaschine neu entwerfen.** Bis dahin ist ihr Klicktest übersprungen
       (`tests/e2e/ankauf.spec.ts`, Begründung steht dort). Beim Neuentwurf ohne Durchklicken durch die
       Warteschlange testen — der alte Test war davon abhängig, was vorherige Tests hinterlassen hatten.

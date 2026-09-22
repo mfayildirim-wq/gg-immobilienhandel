@@ -114,22 +114,19 @@ export function cockpitMakler<T extends MaklerNachfass>(makler: readonly T[], he
   return ergebnis.sort((a, b) => (a.termin !== b.termin ? (a.termin < b.termin ? -1 : 1) : maklerPrioRang(a.prio) - maklerPrioRang(b.prio)));
 }
 
+/** Reihenfolge der Abschnitte in „Nächste Kontakte“ und in der Wählmaschine: heute → überfällig → diese Woche. */
+export const ABSCHNITT_REIHENFOLGE: readonly FaelligkeitsKlasse[] = ['heute', 'ueberfaellig', 'woche'];
+
 /**
- * Wählmaschinen-Warteschlange. Ist-Verhalten: nur letzter Kontakt + Frequenz, ein gesetztes
- * „nächster Kontakt“ (z. B. Rückruf-Datum) zählt hier NICHT – anders als in der Cockpit-Spalte (Befund).
- * Sortiert: überfällig → heute → Woche, dann Prio A/B/C.
+ * Wählmaschinen-Warteschlange = die Liste „Makler kontaktieren“ (`cockpitMakler`), in der Reihenfolge, in der sie
+ * auf der Ankaufseite steht: Abschnitte heute → überfällig → diese Woche, darin nach Termin, dann Prio A/B/C.
+ * Entscheidung des Auftraggebers vom 22.09.2026 (Fachfrage 7): ein gesetztes „nächster Kontakt“, etwa ein
+ * vereinbarter Rückruf, zählt damit auch hier. Die alte App rechnete nur mit letztem Kontakt + Frequenz und
+ * sortierte nach Klasse, dann Prio – die Wählmaschine zeigte deshalb eine andere Liste als das Cockpit.
  */
 export function waehlmaschinenQueue<T extends MaklerNachfass>(makler: readonly T[], heute: string): MitFaelligkeit<T>[] {
-  const ergebnis: MitFaelligkeit<T>[] = [];
-  for (const m of makler) {
-    const frequenz = m.kontaktFrequenz || 'Monatlich';
-    if (nieKontaktieren(frequenz)) continue;
-    const termin = terminAusFrequenz(m.lastContact, frequenz);
-    const faellig = faelligkeit(termin, heute);
-    if (!termin || !faellig) continue;
-    ergebnis.push({ ...m, termin, faellig });
-  }
-  return ergebnis.sort((a, b) => a.faellig.sort - b.faellig.sort || maklerPrioRang(a.prio) - maklerPrioRang(b.prio));
+  const liste = cockpitMakler(makler, heute);
+  return ABSCHNITT_REIHENFOLGE.flatMap((klasse) => liste.filter((m) => m.faellig.klasse === klasse));
 }
 
 /**
