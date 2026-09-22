@@ -108,11 +108,17 @@ Die alte App verhält sich genauso; eine Änderung ist eine bewusste Abweichung 
       voraus).
 - [ ] Auto-Import: Zeitlimit in den Einstellungen einstellbar machen (`auto-import-zeitlimit-sek`, Standard 180 s;
       die alte App hatte dafür ein Feld)
-- [x] **Wählmaschine: Deals durchwählen** (22.09.2026): „📞 Deals durchwählen“ links neben „Nächste Kontakte“ telefoniert
-      „Deals nachverfolgen“ in der angezeigten Reihenfolge ab (heute → überfällig → diese Woche, darin Termin, dann Status),
-      je Halt der Makler des Deals, Ergebnis am Deal (`POST /api/deals/{id}/anruf-ergebnis`, Notiz als Kommentar). Das
-      Durchwählen der Makler bleibt im Schubfach „Makler kontaktieren“ und folgt seit heute derselben Liste wie das Cockpit
-      (Fachfrage 7: A, ein Rückruf-Datum zählt). Der Telefonhörer im Kopf der App ist weg.
+- [x] **Ankaufseite mit zwei Reitern** (22.09.2026): „Deals kontaktieren“ und „Makler kontaktieren“ statt Deal-Liste plus
+      Schubfach. Der Knopf neben „Nächste Kontakte“ wählt die Liste des aktiven Reiters in der angezeigten Reihenfolge
+      durch (heute → überfällig → diese Woche, darin Termin, dann Status bzw. Prio); Zahlen und Fortschritt gelten je
+      Reiter. Deals: je Halt der Makler des Deals, Ergebnis am Deal (`POST /api/deals/{id}/anruf-ergebnis`, Notiz als
+      Kommentar). Makler: wie die alte Wählmaschine, jetzt mit derselben Liste wie das Cockpit (Fachfrage 7: A, ein
+      Rückruf-Datum zählt). Der Telefonhörer im Kopf der App ist weg.
+- [ ] **KI-Anlässe je Makler-Karte laufen mit echtem Bestand in die Begrenzung.** Jede fällige Makler-Karte fragt beim
+      Öffnen `/ki/anlaesse` ab (wie die alte App, Zwischenspeicher 24 h im Prozess). Mit >100 überfälligen Maklern sind das
+      >100 Web-Suchen + KI-Aufrufe auf einmal; ab 60/min antwortet die Begrenzung mit 429 — auch der Nachrichtenentwurf
+      scheitert dann. Lokal deshalb `cockpit-ki.spec.ts` rot, in der CI (leere DB) grün. Vorschlag: Anlässe erst für die
+      gewählte Karte oder gestaffelt laden, Zwischenspeicher in die Datenbank (online startet jede Function-Instanz leer).
 - [ ] **Wählmaschine neu entwerfen.** Bis dahin ist ihr Klicktest übersprungen
       (`tests/e2e/ankauf.spec.ts`, Begründung steht dort). Beim Neuentwurf ohne Durchklicken durch die
       Warteschlange testen — der alte Test war davon abhängig, was vorherige Tests hinterlassen hatten.

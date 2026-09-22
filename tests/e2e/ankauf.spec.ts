@@ -25,7 +25,7 @@ test.describe('Ankauf-Cockpit', () => {
     const name = `Heute ${Date.now()}`;
     await makler(page, name, { nextContact: heute() });
     await page.goto('/');
-    await page.getByRole('button', { name: 'Makler kontaktieren öffnen' }).click();
+    await page.getByRole('tab', { name: /Makler kontaktieren/ }).click();
     const spalte = page.getByRole('region', { name: '🤝 Makler kontaktieren' });
     const karte = spalte.getByLabel(`Makler ${name}`);
     await expect(karte.getByText('Heute kontaktieren')).toBeVisible();
@@ -89,8 +89,8 @@ test.describe('Ankauf-Cockpit', () => {
     const name = `WM ${Date.now()}`;
     const id = await makler(page, name, { kontaktFrequenz: 'Wöchentlich', lastContact: plus(-30), prio: 'A' });
     await page.goto('/');
-    await page.getByRole('button', { name: 'Makler kontaktieren öffnen' }).click();
-    await page.getByRole('button', { name: 'Makler durchwählen', exact: true }).click();
+    await page.getByRole('tab', { name: /Makler kontaktieren/ }).click();
+    await page.getByLabel('Nächste Kontakte').getByRole('button', { name: 'Wählmaschine öffnen' }).click();
     const dialog = page.getByRole('dialog', { name: 'Wählmaschine' });
     // bis zu unserem Makler überspringen (andere fällige Makler aus früheren Läufen).
     // Die Grenze liegt über dem Bestand: in einer lange genutzten Test-Datenbank stehen leicht 50+ fällige Makler.
@@ -117,7 +117,7 @@ test.describe('Ankauf-Cockpit', () => {
     const id = await makler(page, name, { nextContact: heute() });
     await page.request.post(`/api/makler/${id}/kommunikation`, { data: { kanal: 'notiz', text: 'Mag Altbau' } });
     await page.goto('/');
-    await page.getByRole('button', { name: 'Makler kontaktieren öffnen' }).click();
+    await page.getByRole('tab', { name: /Makler kontaktieren/ }).click();
     await page.getByLabel(`Makler ${name}`).getByRole('button', { name: /anrufen$/ }).click();
     const briefing = page.getByRole('dialog', { name });
     await expect(briefing.getByLabel('Letzte Kommunikation').getByText('Mag Altbau')).toBeVisible();
@@ -136,14 +136,22 @@ test.describe('Ankauf-Cockpit', () => {
     await expect(deals).toHaveAttribute('data-layout', 'untereinander');
     await expect(page.getByRole('region', { name: 'Deal-Detail' })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Makler kontaktieren öffnen' }).click();
-    const schubfach = page.getByRole('dialog', { name: '🤝 Makler kontaktieren' });
-    await expect(schubfach.getByRole('region', { name: 'Makler-Detail' })).toBeVisible();
+    // Reiter „Makler kontaktieren“: eigene Ansicht, eigener Durchwähl-Knopf, eigene Zahlen
+    await page.getByRole('tab', { name: /Makler kontaktieren/ }).click();
+    const makler = page.getByRole('tabpanel');
+    await expect(makler.getByRole('region', { name: 'Makler-Detail' })).toBeVisible();
+    await expect(makler.locator('[data-layout]')).toHaveAttribute('data-layout', 'nebeneinander');
     await page.getByLabel('Ansicht Makler').getByLabel('untereinander').click();
-    await expect(schubfach.locator('[data-layout]')).toHaveAttribute('data-layout', 'untereinander');
+    await expect(makler.locator('[data-layout]')).toHaveAttribute('data-layout', 'untereinander');
+    await expect(page.getByLabel('Nächste Kontakte').getByRole('button', { name: 'Wählmaschine öffnen' })).toHaveText(/Makler durchwählen/);
 
+    // Reiter und Ansichten bleiben über das Neuladen gemerkt
     await page.reload();
-    await expect(page.locator('[data-layout]').first()).toHaveAttribute('data-layout', 'untereinander');
+    await expect(page.getByRole('tab', { name: /Makler kontaktieren/ })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('[data-layout]')).toHaveAttribute('data-layout', 'untereinander');
+    await page.getByRole('tab', { name: /Deals kontaktieren/ }).click();
+    await expect(page.locator('[data-layout]')).toHaveAttribute('data-layout', 'untereinander');
+    await expect(page.getByLabel('Nächste Kontakte').getByRole('button', { name: 'Wählmaschine öffnen' })).toHaveText(/Deals durchwählen/);
   });
 
   test('Karten: Überfahren färbt den Hintergrund, die gewählte Karte bleibt hervorgehoben', async ({ page }) => {
@@ -162,7 +170,7 @@ test.describe('Ankauf-Cockpit', () => {
     expect(await farbe(0)).not.toBe(ruhe);
 
     // Dasselbe für die Makler-Karten im Schubfach
-    await page.getByRole('button', { name: 'Makler kontaktieren öffnen' }).click();
+    await page.getByRole('tab', { name: /Makler kontaktieren/ }).click();
     const makler = page.locator('[data-karte^="makler:"]');
     await makler.first().waitFor();
     test.skip((await makler.count()) < 2, 'braucht mindestens zwei fällige Makler');

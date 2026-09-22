@@ -54,11 +54,11 @@ export async function neuBegleitschein(page: Page, id: string) {
   });
 }
 
-/** Makler-Karten liegen im Schubfach „Makler kontaktieren"; zum Lesen muss es offen sein. */
+/** Makler-Karten liegen im Reiter „Makler kontaktieren"; zum Lesen muss er aktiv sein. */
 async function maklerSchubfach(page: Page) {
-  const knopf = page.getByRole('button', { name: 'Makler kontaktieren öffnen' });
-  await knopf.waitFor();
-  await knopf.click();
+  const reiter = page.getByRole('tab', { name: /Makler kontaktieren/ });
+  await reiter.waitFor();
+  await reiter.click();
   await page.getByRole('region', { name: '🤝 Makler kontaktieren' }).waitFor();
 }
 

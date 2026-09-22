@@ -14,7 +14,7 @@ test('Cockpit: KI-Stil analysieren, Nachricht entwerfen, Mail-Vorlage wählen, G
   await page.request.patch(`/api/makler/${m.id}`, { data: { version: d2.version, nextContact: heute } });
 
   await page.goto('/');
-  await page.getByRole('button', { name: 'Makler kontaktieren öffnen' }).click();
+  await page.getByRole('tab', { name: /Makler kontaktieren/ }).click();
   await page.getByRole('button', { name: '🧠 KI-Stil' }).click();
   const stil = page.getByRole('dialog', { name: '🧠 Kommunikationsstil' });
   await stil.getByRole('button', { name: /Kommunikationsstil analysieren|Neu analysieren/ }).click();

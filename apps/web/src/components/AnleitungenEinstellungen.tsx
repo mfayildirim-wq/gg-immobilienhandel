@@ -48,10 +48,11 @@ const ANLEITUNGEN: { wert: string; titel: string; inhalt: ReactNode }[] = [
     titel: '🚀 Wählmaschine',
     inhalt: (
       <Text size="sm">
-        „📞 Deals durchwählen“ neben „Nächste Kontakte“ telefoniert die Liste „Deals nachverfolgen“ von oben nach unten
-        ab: heute, überfällig, diese Woche — je Halt der Makler des Deals; das Ergebnis (Erreicht, Nicht erreicht, Rückruf,
-        Notiz, Frequenz) wird am Deal gebucht. „Makler durchwählen“ im Schubfach „Makler kontaktieren“ macht dasselbe mit
-        der Makler-Liste, gebucht am Makler; ein vereinbarter Rückruf zählt dort als Termin (Entscheidung vom 22.09.2026).
+        Die Ankaufseite hat zwei Reiter, „Deals kontaktieren“ und „Makler kontaktieren“. Der Knopf neben „Nächste
+        Kontakte“ telefoniert die Liste des aktiven Reiters von oben nach unten ab: heute, überfällig, diese Woche.
+        Bei Deals ist je Halt der Makler des Deals dran, das Ergebnis (Erreicht, Nicht erreicht, Rückruf, Notiz, Frequenz)
+        wird am Deal gebucht; bei Maklern am Makler. Zahlen und Fortschritt gelten für den aktiven Reiter. Ein
+        vereinbarter Rückruf zählt als Termin (Entscheidung vom 22.09.2026).
       </Text>
     ),
   },
