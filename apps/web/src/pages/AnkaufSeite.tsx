@@ -10,7 +10,7 @@ import { PersonaDialog } from '../components/ankauf/PersonaDialog.tsx';
 import { DealKarte } from '../components/ankauf/DealKarte.tsx';
 import { MaklerKarte } from '../components/ankauf/MaklerKarte.tsx';
 import { ABSCHNITTE, FAELLIG_FARBE } from '../components/ankauf/Termin.tsx';
-import { Waehlmaschine } from '../components/ankauf/Waehlmaschine.tsx';
+import { Waehlmaschine, type WaehlQuelle } from '../components/ankauf/Waehlmaschine.tsx';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { GespeicherteFilterLeiste, useAktiverFilter } from '../components/GespeicherteFilterLeiste.tsx';
 import { useAnkauf, useEinplanen, useListen } from '../lib/api.ts';
@@ -73,7 +73,7 @@ export function AnkaufSeite() {
     else setAnrufHinweis(eingehendUnbekannt(eingehend));
     void navigate({ to: '/', search: {}, replace: true });
   }, [eingehend, data, navigate]);
-  const [wmOffen, setWmOffen] = useState(false);
+  const [wmQuelle, setWmQuelle] = useState<WaehlQuelle | null>(null);
   const [stilOffen, setStilOffen] = useState(false);
   const [maklerOffen, setMaklerOffen] = useState(false);
   // Deals in der Reihenfolge der Abschnitte (heute, überfällig, diese Woche) — der erste ist vorgewählt
@@ -113,9 +113,9 @@ export function AnkaufSeite() {
       </Group>
       <Paper withBorder p="sm" aria-label="Nächste Kontakte">
         <Group gap="lg">
-          {/* Der Knopf steht vor der Überschrift: die Wählmaschine telefoniert genau diese Liste von oben nach unten ab. */}
-          <Button size="sm" leftSection={<IconPhoneCall size={18} />} onClick={() => setWmOffen(true)} aria-label="Wählmaschine öffnen">
-            Liste durchwählen ({data.makler.length})
+          {/* Der Knopf steht vor der Überschrift: die Wählmaschine telefoniert „Deals nachverfolgen“ von oben nach unten ab. */}
+          <Button size="sm" leftSection={<IconPhoneCall size={18} />} onClick={() => setWmQuelle({ art: 'deals', deals: dealsGeordnet })} aria-label="Wählmaschine öffnen">
+            Deals durchwählen ({dealsGeordnet.length})
           </Button>
           <Text fw={600}>Nächste Kontakte</Text>
           <Group gap={6}><Badge color="red" size="lg" circle>{zaehle('heute')}</Badge><Text size="sm" c="dimmed">heute zu kontaktieren</Text></Group>
@@ -180,7 +180,7 @@ export function AnkaufSeite() {
               kopf={<Stack gap={6}>
                 <Button size="xs" variant="light" onClick={() => setStilOffen(true)}>🧠 KI-Stil</Button>
                 {/* Die Wählmaschine löst das Schubfach ab, statt sich darüberzulegen. */}
-                {data.makler.length > 0 && <Button fullWidth size="md" leftSection={<IconPhoneCall />} onClick={() => { setMaklerOffen(false); setWmOffen(true); }}>Wählmaschine</Button>}
+                {data.makler.length > 0 && <Button fullWidth size="md" leftSection={<IconPhoneCall />} onClick={() => { setMaklerOffen(false); setWmQuelle({ art: 'makler' }); }}>Makler durchwählen</Button>}
               </Stack>}
             >
               {ABSCHNITTE.map(({ klasse, titel }) => (
@@ -201,7 +201,7 @@ export function AnkaufSeite() {
         </Alert>
       )}
       <AnrufBriefing makler={briefing} heute={data.heute} schliessen={() => setBriefing(null)} />
-      <Waehlmaschine offen={wmOffen} schliessen={() => setWmOffen(false)} heute={data.heute} />
+      <Waehlmaschine offen={wmQuelle !== null} schliessen={() => setWmQuelle(null)} heute={data.heute} quelle={wmQuelle ?? undefined} />
       <PersonaDialog offen={stilOffen} schliessen={() => setStilOffen(false)} />
     </Stack>
   );

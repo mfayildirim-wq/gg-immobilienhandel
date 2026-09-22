@@ -117,16 +117,28 @@ export function cockpitMakler<T extends MaklerNachfass>(makler: readonly T[], he
 /** Reihenfolge der Abschnitte in „Nächste Kontakte“ und in der Wählmaschine: heute → überfällig → diese Woche. */
 export const ABSCHNITT_REIHENFOLGE: readonly FaelligkeitsKlasse[] = ['heute', 'ueberfaellig', 'woche'];
 
+/** Eine Liste in der Reihenfolge, in der sie auf der Ankaufseite steht: abschnittsweise, innerhalb unverändert. */
+export const inAbschnittsreihenfolge = <T extends { faellig: Faelligkeit }>(liste: readonly T[]): T[] =>
+  ABSCHNITT_REIHENFOLGE.flatMap((klasse) => liste.filter((e) => e.faellig.klasse === klasse));
+
 /**
- * Wählmaschinen-Warteschlange = die Liste „Makler kontaktieren“ (`cockpitMakler`), in der Reihenfolge, in der sie
- * auf der Ankaufseite steht: Abschnitte heute → überfällig → diese Woche, darin nach Termin, dann Prio A/B/C.
+ * Wählmaschinen-Warteschlange der Makler = die Liste „Makler kontaktieren“ (`cockpitMakler`), in der Reihenfolge, in
+ * der sie auf der Ankaufseite steht: Abschnitte heute → überfällig → diese Woche, darin nach Termin, dann Prio A/B/C.
  * Entscheidung des Auftraggebers vom 22.09.2026 (Fachfrage 7): ein gesetztes „nächster Kontakt“, etwa ein
  * vereinbarter Rückruf, zählt damit auch hier. Die alte App rechnete nur mit letztem Kontakt + Frequenz und
  * sortierte nach Klasse, dann Prio – die Wählmaschine zeigte deshalb eine andere Liste als das Cockpit.
  */
 export function waehlmaschinenQueue<T extends MaklerNachfass>(makler: readonly T[], heute: string): MitFaelligkeit<T>[] {
-  const liste = cockpitMakler(makler, heute);
-  return ABSCHNITT_REIHENFOLGE.flatMap((klasse) => liste.filter((m) => m.faellig.klasse === klasse));
+  return inAbschnittsreihenfolge(cockpitMakler(makler, heute));
+}
+
+/**
+ * „Liste durchwählen“ auf der Ankaufseite (22.09.2026): die Deals aus „Deals nachverfolgen“ in der angezeigten
+ * Reihenfolge – heute → überfällig → diese Woche, darin nach Termin, dann Status. Je Halt wird der Makler des Deals
+ * angerufen; das Ergebnis wird am Deal gebucht. Die alte App kannte nur das Durchwählen der Makler.
+ */
+export function dealWaehlliste<T extends NachfassDaten & { status: DealStatus; nachfassFrequenz: string | null }>(deals: readonly T[], heute: string): MitFaelligkeit<T>[] {
+  return inAbschnittsreihenfolge(cockpitDeals(deals, heute));
 }
 
 /**

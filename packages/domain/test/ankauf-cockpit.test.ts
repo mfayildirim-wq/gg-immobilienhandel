@@ -3,6 +3,7 @@ import {
   anrufErgebnisAnwenden,
   cockpitDeals,
   cockpitMakler,
+  dealWaehlliste,
   dealStagnation,
   deutschesDatum,
   erledigtTermin,
@@ -85,6 +86,22 @@ describe('Wählmaschine', () => {
       mk('woche-frueh-c', { prio: 'C', lastContact: '2026-09-11' }), // 18.09.
     ], HEUTE);
     expect(r.map((m) => m.id)).toEqual(['heute-a', 'heute-c', 'ueber-alt-c', 'ueber-jung-a', 'woche-frueh-c', 'woche-a']);
+  });
+
+  it('Deals durchwählen: „Deals nachverfolgen“ in der angezeigten Reihenfolge — heute → überfällig → Woche, darin Termin, dann Status', () => {
+    const deal = (id: string, teil: object) => ({ id, status: 'In Prüfung' as const, nachfassFrequenz: 'Wöchentlich', nextContact: null, lastContact: null, ...teil });
+    const deals = [
+      deal('woche', { nextContact: '2026-09-20' }),
+      deal('ueber-jung', { nextContact: '2026-09-15' }),
+      deal('heute-pruefung', { nextContact: HEUTE }),
+      deal('heute-closing', { status: 'Closing Path', nextContact: HEUTE }),
+      deal('ueber-alt', { lastContact: '2026-09-01' }), // +7 → 08.09.
+      deal('archiv', { status: 'Archiv', nextContact: HEUTE }),
+      deal('zu-weit', { nextContact: '2026-10-30' }),
+    ];
+    const r = dealWaehlliste(deals, HEUTE);
+    expect(r.map((d) => d.id)).toEqual(['heute-closing', 'heute-pruefung', 'ueber-alt', 'ueber-jung', 'woche']);
+    expect(new Set(r.map((d) => d.id))).toEqual(new Set(cockpitDeals(deals, HEUTE).map((d) => d.id)));
   });
 });
 

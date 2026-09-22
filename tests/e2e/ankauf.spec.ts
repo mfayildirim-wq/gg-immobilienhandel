@@ -46,6 +46,41 @@ test.describe('Ankauf-Cockpit', () => {
     await expect(detail.getByRole('heading', { name: `${strasse} 4` })).toBeVisible();
   });
 
+  test('„Deals durchwählen“ beginnt mit der ersten Karte aus „Deals nachverfolgen“ und bucht das Ergebnis am Deal', async ({ page }) => {
+    const name = `Wahl ${Date.now()}`;
+    const maklerId = await makler(page, name, { kontaktFrequenz: 'Monatlich' });
+    const objekt = await (await page.request.post('/api/objekte', { data: { strasse: name, hausnr: '9', stadt: 'Wahlstadt' } })).json();
+    const deal = await (await page.request.post('/api/deals', { data: { objektId: objekt.id, maklerId } })).json();
+    expect((await page.request.put(`/api/deals/${deal.id}/termin`, { data: { version: 1, nextContact: plus(-1) } })).ok()).toBe(true);
+    await page.goto('/');
+    const liste = page.getByRole('region', { name: '🎯 Deals nachverfolgen' });
+    await expect(liste.getByLabel(`Deal ${name} 9`)).toBeVisible();
+    const ersteKarte = await liste.locator('[data-karte^="deal:"]').first().getAttribute('data-karte');
+    const anzahl = await liste.locator('[data-karte^="deal:"]').count();
+
+    await page.getByLabel('Nächste Kontakte').getByRole('button', { name: 'Wählmaschine öffnen' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Wählmaschine' });
+    await expect(dialog.getByLabel('Fortschritt')).toHaveText(`1 von ${anzahl} Deals`);
+    await expect(dialog.locator('[data-halt]')).toHaveAttribute('data-halt', ersteKarte!);
+
+    // gezielt zu unserem Deal: die Liste ist eingefroren, Überspringen ändert nichts am Bestand
+    for (let i = 0; i < anzahl && (await dialog.locator('[data-halt]').getAttribute('data-halt')) !== `deal:${deal.id}`; i++) {
+      await dialog.getByRole('button', { name: 'Überspringen' }).click();
+    }
+    await expect(dialog.getByRole('heading', { name: `📍 ${name} 9, Wahlstadt` })).toBeVisible();
+    await expect(dialog.getByText(name, { exact: true })).toBeVisible(); // der Makler des Deals
+    await dialog.getByRole('button', { name: /Erreicht/ }).click();
+    await dialog.getByLabel('Gesprächsnotiz').fill('Besichtigung Freitag');
+    await dialog.getByRole('button', { name: 'Erledigt → Nächster Deal' }).click();
+    await expect(dialog.locator(`[data-halt="deal:${deal.id}"]`)).toHaveCount(0);
+
+    const gespeichert = await (await page.request.get(`/api/deals/${deal.id}`)).json();
+    expect(gespeichert).toMatchObject({ lastContact: heute(), nextContact: plus(7) });
+    expect(gespeichert.kommentare.map((k: { text: string }) => k.text)).toContainEqual(expect.stringMatching(/– Erreicht\] Besichtigung Freitag$/));
+    const maklerDanach = await (await page.request.get(`/api/makler/${maklerId}`)).json();
+    expect(maklerDanach.lastContact).toBeNull(); // am Makler wird nichts gebucht
+  });
+
   // Übersprungen (19.09.2026): Der Test arbeitet sich durch die Warteschlange, bis er seinen Makler findet.
   // Einzeln läuft er, im Gesamtlauf nicht — abhängig davon, was vorherige Tests an fälligen Maklern hinterlassen.
   // An der Überspring-Schleife zu drehen hat dreimal nicht geholfen; die Wählmaschine wird ohnehin neu entworfen.
@@ -55,7 +90,7 @@ test.describe('Ankauf-Cockpit', () => {
     const id = await makler(page, name, { kontaktFrequenz: 'Wöchentlich', lastContact: plus(-30), prio: 'A' });
     await page.goto('/');
     await page.getByRole('button', { name: 'Makler kontaktieren öffnen' }).click();
-    await page.getByRole('button', { name: 'Wählmaschine', exact: true }).click();
+    await page.getByRole('button', { name: 'Makler durchwählen', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Wählmaschine' });
     // bis zu unserem Makler überspringen (andere fällige Makler aus früheren Läufen).
     // Die Grenze liegt über dem Bestand: in einer lange genutzten Test-Datenbank stehen leicht 50+ fällige Makler.

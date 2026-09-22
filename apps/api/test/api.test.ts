@@ -219,6 +219,21 @@ describe.skipIf(!url)('Deal-Ablauf gegen die lokale Datenbank', () => {
     expect((await post(`/api/makler/${m2.id}/whatsapp`, {})).status).toBe(200);
     const c3 = await lies(app.request('/api/ankauf'));
     expect(c3.tageslog.filter((e: { titel: string }) => e.titel.startsWith(`${kennung} WM`)).map((e: { kanal: string }) => e.kanal)).toEqual(['whatsapp', 'anruf']);
+
+    // „Liste durchwählen“: das Anruf-Ergebnis wird am Deal gebucht — Frequenz, Kontakte, Notiz als Kommentar; der Makler bleibt unberührt
+    const objekt2 = await lies(post('/api/objekte', { strasse: `${kennung} Wahl`, hausnr: '1' }));
+    angelegt.objekte.push(objekt2.id);
+    const { id: deal2 } = await lies(post('/api/deals', { objektId: objekt2.id, maklerId: m2.id }));
+    expect((await post(`/api/deals/${deal2}/termin`, { version: 1, nextContact: heute }, 'PUT')).status).toBe(200);
+    const maklerVorher = await lies(app.request(`/api/makler/${m2.id}`));
+    const rd = await lies(post(`/api/deals/${deal2}/anruf-ergebnis`, { version: 2, ergebnis: 'erreicht', notiz: 'Preis verhandelbar', frequenz: 'Monatlich', rueckrufDatum: null }));
+    expect(rd).toMatchObject({ id: deal2, version: 3, nextContact: plus(30) });
+    const dd = await lies(app.request(`/api/deals/${deal2}`));
+    expect(dd).toMatchObject({ nachfassFrequenz: 'Monatlich', lastContact: heute, nextContact: plus(30) });
+    expect(dd.kommentare.map((k: { text: string }) => k.text)).toContain(`[${t}.${mo}.${y} – Erreicht] Preis verhandelbar`);
+    expect(await lies(app.request(`/api/makler/${m2.id}`))).toMatchObject({ version: maklerVorher.version, lastContact: maklerVorher.lastContact, nextContact: maklerVorher.nextContact });
+    expect((await post(`/api/deals/${deal2}/anruf-ergebnis`, { version: 2, ergebnis: 'nicht', notiz: '', frequenz: 'Monatlich', rueckrufDatum: null })).status).toBe(409);
+    expect((await lies(app.request('/api/ankauf'))).deals.some((d: { id: string }) => d.id === deal2)).toBe(false);
   });
 
   it('Kundenkalkulation: Vorbelegung Aufteiler mit Stellplatz, Liste, Speichern mit Version, Kopie, Papierkorb', async () => {

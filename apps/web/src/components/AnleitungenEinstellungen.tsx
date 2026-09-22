@@ -48,9 +48,10 @@ const ANLEITUNGEN: { wert: string; titel: string; inhalt: ReactNode }[] = [
     titel: '🚀 Wählmaschine',
     inhalt: (
       <Text size="sm">
-        „📞 Liste durchwählen“ neben „Nächste Kontakte“ auf der Ankaufseite telefoniert genau diese Liste von oben nach
-        unten ab: heute, überfällig, diese Woche — darin nach Termin, dann Prio. Mit Anruf-Link, Ergebnis-Knöpfen und
-        Notizfeld. Ein vereinbarter Rückruf zählt als Termin (anders als in der alten App, Entscheidung vom 22.09.2026).
+        „📞 Deals durchwählen“ neben „Nächste Kontakte“ telefoniert die Liste „Deals nachverfolgen“ von oben nach unten
+        ab: heute, überfällig, diese Woche — je Halt der Makler des Deals; das Ergebnis (Erreicht, Nicht erreicht, Rückruf,
+        Notiz, Frequenz) wird am Deal gebucht. „Makler durchwählen“ im Schubfach „Makler kontaktieren“ macht dasselbe mit
+        der Makler-Liste, gebucht am Makler; ein vereinbarter Rückruf zählt dort als Termin (Entscheidung vom 22.09.2026).
       </Text>
     ),
   },

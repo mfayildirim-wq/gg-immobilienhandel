@@ -155,6 +155,7 @@ import {
   ankaufCockpit,
   anrufErgebnis,
   briefingAbschliessen,
+  dealAnrufErgebnis,
   terminloseEinplanen,
   terminSetzen,
   waehlmaschine,
@@ -502,6 +503,10 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/anruf-ergebnis', request: { params: IdParam, ...body(AnrufErgebnisSpeichern) }, responses: { 200: json(z.object({ id: z.string(), version: z.number().int(), nextContact: z.string().nullable() }), 'gespeichert'), ...konflikt } }),
     async (c) => c.json(await anrufErgebnis(db, c.req.valid('param').id, c.req.valid('json'), heuteBerlin()), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/deals/{id}/anruf-ergebnis', request: { params: IdParam, ...body(AnrufErgebnisSpeichern) }, responses: { 200: json(z.object({ id: z.string(), version: z.number().int(), nextContact: z.string().nullable() }), 'gespeichert'), ...konflikt } }),
+    async (c) => c.json(await dealAnrufErgebnis(db, c.req.valid('param').id, c.req.valid('json'), heuteBerlin()), 200),
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/briefing-abschluss', request: { params: IdParam, ...body(TerminSetzen) }, responses: { 200: Geaendert, ...konflikt } }),
