@@ -329,12 +329,16 @@ export const M365Stand = z.object({
   email: z.string(), verbundenSeit: z.string().nullable(), ordner: z.string(), scopes: z.array(z.string()),
   /** Test-Modus: eine Attrappe liefert den Posteingang (M365_ATTRAPPE=1) */
   testModus: z.boolean(),
+  /** Auto-Import-Bot freigeschaltet (`AUTO_IMPORT_AKTIV`; online standardmäßig aus) — sonst zeigt die Oberfläche keine Bot-Knöpfe */
+  autoImport: z.boolean(),
 });
 export type M365Stand = z.infer<typeof M365Stand>;
 export const M365Mail = z.object({
   uid: z.string(), datum: z.string(), von: z.string(), vonName: z.string(), betreff: z.string(), vorschau: z.string(),
   anhaenge: z.array(z.object({ id: z.string(), name: z.string(), groesseMb: z.number(), art: z.string(), auswertbar: z.boolean() })),
   links: z.array(z.string()), anhaengeUnvollstaendig: z.boolean(), gesperrt: z.boolean(),
+  /** Schon verarbeitet — von einem erfolgreichen Auto-Import hier oder (umgezogen) in der alten App */
+  importiert: z.boolean(),
   /** Triage (Stufe 0): wo steckt das Exposé, und warum */
   triage: z.object({
     verdict: z.string(),
@@ -342,6 +346,15 @@ export const M365Mail = z.object({
     gruende: z.array(z.string()), objektnummern: z.array(z.string()), rechtsdokumente: z.array(z.string()),
   }),
 });
+/** Ein Lauf des Auto-Imports: was geprüft wurde, wie es ausging und — bei Erfolg — wo das Exposé im Eingang liegt. */
+export const AutoImportLauf = z.object({
+  runId: z.string(), mailUid: z.string(), von: z.string(), betreff: z.string(),
+  status: z.string(), ausgang: z.string().nullable(), einordnung: z.string().nullable(), grund: z.string().nullable(),
+  eingangKey: z.string().nullable(), dateiname: z.string().nullable(), dauerMs: z.number().nullable(), gestartet: z.string().nullable(),
+  schritte: z.array(z.object({ schritt: z.string(), ok: z.boolean(), dauerMs: z.number(), fehler: z.string().optional(), details: z.record(z.string(), z.unknown()).optional() })),
+});
+export type AutoImportLauf = z.infer<typeof AutoImportLauf>;
+
 export const M365Posteingang = z.object({ ordner: z.string(), mails: z.array(M365Mail) });
 export type M365Posteingang = z.infer<typeof M365Posteingang>;
 

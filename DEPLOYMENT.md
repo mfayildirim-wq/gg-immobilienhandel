@@ -40,7 +40,7 @@ Ein Vercel-Projekt, eine Adresse:
 |---|---|---|
 | Oberfläche | `apps/web/dist` (Vite-Build) | statische Dateien; alles außer `/api/*` und `/assets/*` fällt auf `index.html` (SPA) |
 | API | `api/index.mjs` → `apps/api/dist/vercel.mjs` | Function für alle `/api/*`-Routen, Region `fra1`, 60 s |
-| PDF/PPTX | `api/render.mjs` → dasselbe Bündel | zweite Function für die drei Export-Routen: 300 s, mit gepacktem Chromium (`@sparticuz/chromium` 153, passend zu `playwright-core` 1.63). Speichergröße im Vercel-Dashboard einstellen (alte App: `docs/GO-LIVE-RUNBOOK.md`) |
+| PDF/PPTX | `api/render.mjs` → dasselbe Bündel | zweite Function für die drei Export-Routen, die Cron-Läufe und den Auto-Import (`/api/auto-import/*`): 300 s, mit gepacktem Chromium (`@sparticuz/chromium` 153, passend zu `playwright-core` 1.63). Speichergröße im Vercel-Dashboard einstellen (alte App: `docs/GO-LIVE-RUNBOOK.md`) |
 
 Die Oberfläche ruft die API relativ (`/api/...`) — gleiche Adresse, kein CORS.
 
@@ -66,6 +66,7 @@ Code eines Branches gegen die echte Datenbank.
 | `OPENAI_API_KEY` | für Diktat | Transkription |
 | `CRON_SECRET` | ja | schützt `/api/cron/sicherung` und `/api/cron/archiv`; Vercel hängt es als `Authorization: Bearer …` an. Ohne Wert antworten beide immer mit 401 |
 | `OAUTH_HOSTS` | bei eigener Domain | zusätzliche Adressen für die Microsoft-Anmeldung; die Vercel-Domains gelten von selbst |
+| `AUTO_IMPORT_AKTIV` | zum Freischalten | Auto-Import-Bot. **Online ist er aus, bis hier `ja` steht** — dann antworten `/api/auto-import/lauf` und `…/abbrechen` mit 503 und die Oberfläche zeigt keine Bot-Knöpfe. Braucht zusätzlich `ANTHROPIC_API_KEY`, die M365-Verbindung und für AGB-Seiten die Freigabe unter Einstellungen → Freigaben |
 
 Nicht setzen: `AUTH_LOCAL_OPEN`, `KI_ATTRAPPE`, `M365_ATTRAPPE`, `PROPSTACK_ATTRAPPE` (in Produktion ohnehin wirkungslos).
 

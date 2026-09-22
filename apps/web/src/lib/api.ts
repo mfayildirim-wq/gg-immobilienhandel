@@ -68,7 +68,7 @@ import type {
   Objekt,
   ObjektAnlegen,
   StatusHistorieEintrag,
-  StatusWechsel,
+  StatusWechsel, AutoImportLauf,
 } from '@gg/api-contract';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { sitzungErneuern, zugriffsToken } from './sitzung.ts';
@@ -256,6 +256,11 @@ export function useSicherungEinspielen() {
 
 // ── Microsoft 365 ─────────────────────────────────────────
 export const useM365 = () => useQuery({ queryKey: ['m365'], queryFn: () => anfrage<M365Stand>('/api/m365') });
+// Auto-Import: der Lauf gehört zur Anfrage — die Antwort kommt, wenn der Bot fertig ist (bis zu einigen Minuten)
+export const autoImportLauf = (mailUid: string) => anfrage<AutoImportLauf>('/api/auto-import/lauf', senden('POST', { mailUid }));
+export const autoImportAbbrechen = (mailUid: string) => anfrage<{ abgebrochen: number }>('/api/auto-import/abbrechen', senden('POST', { mailUid }));
+export const useAutoImportVerlauf = (aktiv: boolean) => useQuery({ queryKey: ['auto-import', 'verlauf'], enabled: aktiv, queryFn: () => anfrage<AutoImportLauf[]>('/api/auto-import/verlauf') });
+
 export const useM365Posteingang = (alle: boolean, aktiv: boolean) =>
   useQuery({ queryKey: ['m365', 'posteingang', alle], queryFn: () => anfrage<M365Posteingang>(`/api/m365/posteingang${alle ? '?alle=true' : ''}`), enabled: aktiv });
 function useM365Aendern<E, R>(aufruf: (e: E) => Promise<R>) {

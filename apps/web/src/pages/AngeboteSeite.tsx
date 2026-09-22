@@ -1,7 +1,8 @@
-import { Alert, Anchor, Badge, Button, Card, Group, Loader, Stack, Switch, Text, Title } from '@mantine/core';
+import { Alert, Anchor, Badge, Button, Card, Collapse, Group, Loader, SegmentedControl, Stack, Switch, Text, Title } from '@mantine/core';
+import type { AutoImportLauf } from '@gg/api-contract';
 import { useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
-import { useM365, useM365Posteingang, useMailEntsperren, useMailSperren, useMailUebernehmen } from '../lib/api.ts';
+import { useRef, useState } from 'react';
+import { ApiFehler, autoImportAbbrechen, autoImportLauf, useM365, useM365Posteingang, useMailEntsperren, useMailSperren, useMailUebernehmen } from '../lib/api.ts';
 import { zeitpunktDe } from '../lib/format.ts';
 
 /** Triage-Ergebnis in Worten (Stufe 0 der Exposé-Erkennung). */
@@ -20,15 +21,60 @@ const TRIAGE_FARBE: Record<string, string> = {
   LINK_LANDING_LOCKED: 'orange', SUPPLEMENT: 'gray', ANNOUNCEMENT: 'gray', NONE: 'gray',
 };
 
+// Ausgang eines Laufs (R10 — es gibt nie einen stummen Fehler)
+const AUSGANG: Record<string, { label: string; farbe: string }> = {
+  sicher: { label: '✅ Exposé gefunden', farbe: 'teal' },
+  unsicher: { label: '⚠️ unvollständig — bitte prüfen', farbe: 'yellow' },
+  wiedervorlage: { label: '📣 Wiedervorlage — noch keine Daten', farbe: 'blue' },
+  'nichts-gefunden': { label: '✗ nichts gefunden', farbe: 'red' },
+};
+/** Wie die alte App: nacheinander oder drei gleichzeitig — mehr Plätze gibt der Server nicht her. */
+const GLEICHZEITIG = { nacheinander: 1, parallel: 3 } as const;
+type Zustand = { laeuft: true } | { laeuft: false; lauf?: AutoImportLauf; fehler?: string };
+
 /** 📧 Angebote: Exposé-Mails aus dem Posteingang übernehmen oder sperren (alt: Angebote-Panel). */
 export function AngeboteSeite() {
   const { data: stand } = useM365();
+  // Abgeschaltet (AUTO_IMPORT_AKTIV, online der Standard) gibt es keine Bot-Knöpfe — die Mails lassen sich weiter von Hand übernehmen
+  const botAktiv = stand?.autoImport === true;
   const [alle, setAlle] = useState(false);
   const { data, isLoading, error, refetch, isFetching } = useM365Posteingang(alle, Boolean(stand?.verbunden || stand?.testModus));
   const sperren = useMailSperren();
   const entsperren = useMailEntsperren();
   const uebernehmen = useMailUebernehmen();
   const navigate = useNavigate();
+
+  // ── Auto-Import: Zustand je Mail, Warteschlange, Abbruch ──
+  const [zustand, setZustand] = useState<Record<string, Zustand>>({});
+  const [modus, setModus] = useState<keyof typeof GLEICHZEITIG>('nacheinander');
+  const [schlange, setSchlange] = useState<{ gesamt: number; fertig: number } | null>(null);
+  const [offenSchritte, setOffenSchritte] = useState<string | null>(null);
+  const gestoppt = useRef(false);
+
+  const importieren = async (uid: string) => {
+    setZustand((z) => ({ ...z, [uid]: { laeuft: true } }));
+    try {
+      const lauf = await autoImportLauf(uid);
+      setZustand((z) => ({ ...z, [uid]: { laeuft: false, lauf } }));
+    } catch (e) {
+      setZustand((z) => ({ ...z, [uid]: { laeuft: false, fehler: e instanceof ApiFehler || e instanceof Error ? e.message : String(e) } }));
+    }
+  };
+  const alleImportieren = async (uids: string[]) => {
+    gestoppt.current = false;
+    setSchlange({ gesamt: uids.length, fertig: 0 });
+    const offen = [...uids];
+    const arbeiter = async () => {
+      for (let uid = offen.shift(); uid && !gestoppt.current; uid = offen.shift()) {
+        await importieren(uid);
+        setSchlange((s) => (s ? { ...s, fertig: s.fertig + 1 } : s));
+      }
+    };
+    await Promise.all(Array.from({ length: GLEICHZEITIG[modus] }, arbeiter));
+    setSchlange(null);
+    void refetch();
+  };
+  const offeneUids = (data?.mails ?? []).filter((m) => !m.gesperrt && !m.importiert && !zustand[m.uid]).map((m) => m.uid);
 
   if (stand && !stand.verbunden && !stand.testModus) {
     return (
@@ -53,11 +99,22 @@ export function AngeboteSeite() {
       {error && <Alert color="red">{error.message}</Alert>}
       {isLoading && <Loader size="sm" />}
       {data?.mails.length === 0 && <Text c="dimmed" size="sm">Keine offenen Mails.</Text>}
-      {data && data.mails.some((m) => m.triage.verdict === 'LINK_LANDING_LOCKED') && (
-        <Alert color="orange" py={6}>
-          Für Landing-Pages mit Freischaltung („AGB bestätigen“) gibt es im Neubau noch keinen Bot — der Link lässt sich
-          von Hand öffnen, das Exposé dann als Datei importieren. Die Freigabe dafür steht bereit (Einstellungen → Aktionen nach außen).
-        </Alert>
+      {botAktiv && data && data.mails.length > 0 && (
+        <Card withBorder padding="xs" aria-label="Auto-Import">
+          <Group justify="space-between" wrap="wrap" gap="xs">
+            <Text size="xs" c="dimmed" style={{ flex: 1, minWidth: 260 }}>
+              🤖 Der Auto-Import holt das Exposé selbst: aus dem Anhang, aus dem Mailtext oder von der Seite des Maklers.
+              Eine AGB-/Provisionsbestätigung sendet er nur ab, wenn sie unter Einstellungen → Freigaben erlaubt ist.
+            </Text>
+            <Group gap="xs" wrap="nowrap">
+              <SegmentedControl size="xs" value={modus} onChange={(v) => setModus(v as keyof typeof GLEICHZEITIG)} disabled={!!schlange}
+                data={[{ value: 'nacheinander', label: 'nacheinander' }, { value: 'parallel', label: '3 gleichzeitig' }]} />
+              {schlange
+                ? <Button size="xs" color="red" variant="light" onClick={() => { gestoppt.current = true; }}>⏹ Stopp ({schlange.fertig}/{schlange.gesamt})</Button>
+                : <Button size="xs" disabled={offeneUids.length === 0} onClick={() => void alleImportieren(offeneUids)}>🤖 Alle offenen importieren ({offeneUids.length})</Button>}
+            </Group>
+          </Group>
+        </Card>
       )}
       {data?.mails.map((m) => (
         <Card key={m.uid} withBorder padding="sm" data-mail={m.uid}>
@@ -67,6 +124,7 @@ export function AngeboteSeite() {
               <Text size="xs" c="dimmed">{m.vonName || m.von} · {zeitpunktDe(m.datum)}</Text>
             </div>
             <Group gap={6} wrap="nowrap">
+              {m.importiert && <Badge size="xs" variant="light" color="teal" tt="none">importiert</Badge>}
               {m.gesperrt && <Badge size="xs" variant="light" color="gray" tt="none">gesperrt</Badge>}
               {m.gesperrt
                 ? <Button size="compact-xs" variant="default" onClick={() => entsperren.mutate(m.uid)}>↩ Sperre aufheben</Button>
@@ -92,8 +150,41 @@ export function AngeboteSeite() {
               <Anchor key={l} href={l} target="_blank" rel="noopener" size="xs">🔗 {new URL(l).hostname}</Anchor>
             ))}
           </Group>
+          {botAktiv && <AutoImportZeile uid={m.uid} zustand={zustand[m.uid]} schonImportiert={m.importiert} starten={() => void importieren(m.uid)}
+            offen={offenSchritte === m.uid} umschalten={() => setOffenSchritte(offenSchritte === m.uid ? null : m.uid)}
+            oeffnen={(lauf) => void navigate({ to: '/expose-import', search: { key: lauf.eingangKey!, name: lauf.dateiname ?? 'expose.pdf' } })} />}
         </Card>
       ))}
+    </Stack>
+  );
+}
+
+/** Eine Mail im Auto-Import: Start, Abbruch, Ausgang im Klartext, Schritte zum Nachvollziehen, Weg in den Assistenten. */
+function AutoImportZeile({ uid, zustand, schonImportiert, starten, offen, umschalten, oeffnen }: {
+  uid: string; zustand: Zustand | undefined; schonImportiert: boolean; starten: () => void; offen: boolean; umschalten: () => void; oeffnen: (lauf: AutoImportLauf) => void;
+}) {
+  const lauf = zustand && !zustand.laeuft ? zustand.lauf : undefined;
+  const ausgang = lauf ? AUSGANG[lauf.ausgang ?? ''] ?? (lauf.status === 'aborted' ? { label: '⏹ abgebrochen', farbe: 'gray' } : { label: '✗ fehlgeschlagen', farbe: 'red' }) : null;
+  return (
+    <Stack gap={4} mt={8} data-auto-import={uid}>
+      <Group gap={6} wrap="wrap">
+        {zustand?.laeuft
+          ? <><Button size="compact-xs" loading>🤖 läuft…</Button><Button size="compact-xs" variant="default" onClick={() => void autoImportAbbrechen(uid)}>⏹ Abbrechen</Button></>
+          : <Button size="compact-xs" variant="light" onClick={starten}>{lauf || schonImportiert ? '🤖 erneut versuchen' : '🤖 Auto-Import'}</Button>}
+        {ausgang && <Badge size="xs" variant="light" tt="none" color={ausgang.farbe} data-ausgang={lauf?.ausgang ?? lauf?.status}>{ausgang.label}</Badge>}
+        {lauf?.eingangKey && <Button size="compact-xs" onClick={() => oeffnen(lauf)}>→ Im Assistenten prüfen</Button>}
+        {lauf && lauf.schritte.length > 0 && <Anchor size="xs" onClick={umschalten}>{offen ? 'Schritte ausblenden' : `${lauf.schritte.length} Schritte`}</Anchor>}
+      </Group>
+      {zustand && !zustand.laeuft && zustand.fehler && <Alert color="red" py={4}>{zustand.fehler}</Alert>}
+      {lauf?.grund && <Text size="xs" c={lauf.eingangKey ? 'dimmed' : 'red.7'}>{lauf.grund}</Text>}
+      <Collapse expanded={offen}>
+        {lauf?.schritte.map((s, i) => (
+          // eslint-disable-next-line react/no-array-index-key -- Schritte haben keine Kennung, die Reihenfolge ist die Information
+          <Text key={i} fz={11} c={s.ok ? 'dimmed' : 'red.7'} ff="monospace">
+            {s.ok ? '✓' : '✗'} {s.schritt} · {s.dauerMs} ms{s.fehler ? ` · ${s.fehler}` : ''}
+          </Text>
+        ))}
+      </Collapse>
     </Stack>
   );
 }

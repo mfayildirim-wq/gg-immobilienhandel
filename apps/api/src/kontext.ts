@@ -39,6 +39,12 @@ export function appAusUmgebung(env: Record<string, string | undefined> = process
     speicher: speicher ?? undefined,
     oauthRueckweg: rueckwegRegelnAusUmgebung(env),
     cronGeheimnis: env.CRON_SECRET,
+    // Der Bot ist online ausgeschaltet, bis AUTO_IMPORT_AKTIV=ja gesetzt ist (lokal an, AUTO_IMPORT_AKTIV=nein schaltet ab).
+    // Online endet die Function nach 300 s — das Zeitlimit des Bots bleibt darunter, damit das Ergebnis noch geschrieben wird
+    autoImport: {
+      aktiv: env.AUTO_IMPORT_AKTIV ? env.AUTO_IMPORT_AKTIV === 'ja' : !env.VERCEL,
+      maxZeitlimitSek: env.VERCEL ? 240 : undefined,
+    },
     db,
     auth: {
       lokalOffen: env.AUTH_LOCAL_OPEN === '1',

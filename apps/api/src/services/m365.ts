@@ -10,6 +10,7 @@ import {
 import { geheimnisAuspacken, geheimnisVerpacken } from '@gg/integrations';
 import { eq, sql } from 'drizzle-orm';
 import { FachFehler } from '../fehler.ts';
+import { bereitsImportiert } from './autoImport.ts';
 import { auditSchreiben } from './audit.ts';
 
 const KONTO = 'ms-mail';
@@ -55,10 +56,11 @@ async function tokenZeile(db: Db) {
 }
 
 /** Stand für die Oberfläche: eingerichtet, verbunden, mit wem und seit wann. Im Test-Modus liest die Attrappe. */
-export async function m365Stand(db: Db, graph?: GraphClient | null): Promise<M365Stand> {
+export async function m365Stand(db: Db, graph?: GraphClient | null, autoImport = true): Promise<M365Stand> {
   const cfg = await m365KonfigurationLesen(db);
   const z = await tokenZeile(db);
   return {
+    autoImport,
     eingerichtet: Boolean(cfg?.clientId && cfg.clientSecret),
     clientId: cfg?.clientId ?? '',
     tenantId: cfg?.tenantId ?? '',
@@ -132,13 +134,15 @@ async function zugriffsToken(db: Db): Promise<string> {
   return t.accessToken;
 }
 
-const client = async (db: Db, vorgegeben?: GraphClient | null): Promise<GraphClient> =>
+/** Der Graph-Client dieser Verbindung — vorgegeben (Attrappe) oder mit dem hinterlegten Zugang gebaut. */
+export const m365Client = async (db: Db, vorgegeben?: GraphClient | null): Promise<GraphClient> =>
   vorgegeben ?? graphClient(() => zugriffsToken(db));
 
 /** Posteingang: die letzten Mails des eingestellten Ordners, gesperrte ausgeblendet. */
 export async function m365Posteingang(db: Db, graph: GraphClient | null | undefined, nurNeue = true): Promise<M365Posteingang> {
-  const mails = await (await client(db, graph)).angebote(await m365OrdnerLesen(db));
+  const mails = await (await m365Client(db, graph)).angebote(await m365OrdnerLesen(db));
   const gesehen = new Set((await db.select({ uid: schema.mailImportGesehen.uid }).from(schema.mailImportGesehen)).map((g) => g.uid));
+  const importiert = await bereitsImportiert(db);
   await db.update(schema.oauthTokens).set({ lastUsedAt: Date.now() }).where(eq(schema.oauthTokens.account, KONTO));
   return {
     ordner: await m365OrdnerLesen(db),
@@ -154,6 +158,7 @@ export async function m365Posteingang(db: Db, graph: GraphClient | null | undefi
         uid: m.uid, datum: m.datum, von: m.von, vonName: m.vonName, betreff: m.betreff, vorschau: m.vorschau,
         anhaenge: m.anhaenge.map((a) => ({ id: a.partId, name: a.filename, groesseMb: a.sizeMB, art: a.kind, auswertbar: a.processable })),
         links: m.links.slice(0, 5), anhaengeUnvollstaendig: m.anhaengeUnvollstaendig, gesperrt: gesehen.has(m.uid),
+        importiert: importiert.has(m.uid) || importiert.has(m.messageId),
         triage: {
           verdict: t.verdict,
           kandidat: bester ? { quelle: bester.source, ref: bester.ref, code: bester.code, score: bester.score, warum: bester.why } : null,
@@ -185,5 +190,5 @@ export async function m365Entsperren(db: Db, uid: string) {
 
 /** Anhang holen (für den Exposé-Import). */
 export async function m365Anhang(db: Db, graph: GraphClient | null | undefined, uid: string, anhangId: string) {
-  return (await client(db, graph)).anhang(uid, anhangId);
+  return (await m365Client(db, graph)).anhang(uid, anhangId);
 }

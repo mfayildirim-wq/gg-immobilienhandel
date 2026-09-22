@@ -27,6 +27,22 @@ export function kiAttrappe(): KiClient {
         });
         return { content: [{ type: 'tool_use', name: 'extract_einheiten', input: { einheiten } }], usage: { input_tokens: 0, output_tokens: 0 } };
       }
+      // Auto-Import: die vier engen Fragen des Bots, nach festen Regeln am Dateinamen beantwortet (Test-Modus)
+      const werkzeug = body.tools[0]?.name as string | undefined;
+      const ohneKosten = { input_tokens: 0, output_tokens: 0 };
+      if (werkzeug === 'classify') {
+        const dateiname = /Dateiname: ([^\\\n"]*)/.exec(JSON.stringify(body.messages))?.[1] ?? '';
+        const input = /agb|widerruf|datenschutz/i.test(dateiname)
+          ? { type: 'agb', confidence: 0.95, completeness: 'unklar', missingFields: [], extractedAddress: '', reason: 'Rechtsdokument (Test-Modus)' }
+          : /vorschau|teaser/i.test(dateiname)
+            ? { type: 'expose', confidence: 0.8, completeness: 'eingeschraenkt', missingFields: ['adresse', 'fotos'], extractedAddress: '', reason: 'Vorschau (Test-Modus)' }
+            : { type: 'expose', confidence: 0.9, completeness: 'vollstaendig', missingFields: [], extractedAddress: 'Musterweg 1, 89073 Ulm', reason: 'vollständig (Test-Modus)' };
+        return { content: [{ type: 'tool_use', name: werkzeug, input }], usage: ohneKosten };
+      }
+      if (werkzeug === 'classify_page') return { content: [{ type: 'tool_use', name: werkzeug, input: { type: 'agb-form' } }], usage: ohneKosten };
+      if (werkzeug === 'rank') return { content: [{ type: 'tool_use', name: werkzeug, input: { orderedIndices: [] } }], usage: ohneKosten };
+      if (werkzeug === 'pick_link') return { content: [{ type: 'tool_use', name: werkzeug, input: { selectedIndex: 0, reason: 'Test-Modus' } }], usage: ohneKosten };
+
       const text = JSON.stringify(body?.messages ?? []).replace(/\\n/g, '\n');
       const feld = (name: string) => new RegExp(`${name}:\\s*([^\\n"]+)`).exec(text)?.[1]?.trim();
       const adresse = /^(.+?)\s+(\d+\s*\w?),\s*(\d{5})\s+(.+)$/.exec(feld('Adresse') ?? '');
