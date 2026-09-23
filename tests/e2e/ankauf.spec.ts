@@ -29,6 +29,10 @@ test.describe('Ankauf-Cockpit', () => {
     const spalte = page.getByRole('region', { name: '🤝 Makler kontaktieren' });
     const karte = spalte.getByLabel(`Makler ${name}`);
     await expect(karte.getByText('Heute kontaktieren')).toBeVisible();
+    // Klick auf den Namen lädt den Makler rechts — kein Sprung zur Makler-Seite
+    await karte.getByText(`🤝 ${name}`).click();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByRole('region', { name: 'Makler-Detail' }).getByLabel('Name', { exact: true })).toHaveValue(name);
     await karte.getByRole('button', { name: 'Erledigt' }).click();
     await expect(spalte.getByLabel(`Makler ${name}`)).toBeHidden();
   });
