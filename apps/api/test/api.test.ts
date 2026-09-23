@@ -1064,6 +1064,12 @@ describe.skipIf(!url)('Deal-Ablauf gegen die lokale Datenbank', () => {
 
     // Anlässe (Suche im Test leer → keine), Gesprächsöffner, OSINT
     expect(await lies(post(`/api/makler/${m.id}/ki/anlaesse`, {}))).toEqual({ anlaesse: [] });
+    // … 24 h in der Datenbank zwischengespeichert: ein zweiter Aufruf liest die Zeile, ein abgelaufener ermittelt neu
+    const anlass = { emoji: '🏢', text: 'Neues Objekt inseriert', priority: 'hoch' };
+    await db.update(schema.maklerAnlaesse).set({ anlaesse: [anlass] }).where(eq(schema.maklerAnlaesse.maklerId, m.id));
+    expect(await lies(post(`/api/makler/${m.id}/ki/anlaesse`, {}))).toEqual({ anlaesse: [anlass] });
+    await db.update(schema.maklerAnlaesse).set({ ermitteltAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString() }).where(eq(schema.maklerAnlaesse.maklerId, m.id));
+    expect(await lies(post(`/api/makler/${m.id}/ki/anlaesse`, {}))).toEqual({ anlaesse: [] });
     expect((await lies(post(`/api/makler/${m.id}/ki/gespraechsoeffner`, {}))).text).toContain('Test-Modus');
     const osint = await lies(post(`/api/makler/${m.id}/osint`, {}));
     expect(osint.persoenlich).toMatchObject({ geburtsdatum: '03-15', personenInfo: { allgemein: [] } });

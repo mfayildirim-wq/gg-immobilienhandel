@@ -154,20 +154,29 @@ export async function transkription(db: Db, openaiKey: string | undefined, audio
 // ── Anreicherung: Kontakt-Anlässe, Gesprächsöffner, OSINT ─────
 export interface Suchdienste { web: (q: string) => Promise<WebTreffer[]>; news: (q: string) => Promise<Nachricht[]> }
 
-/** Anlässe 24 Stunden je Makler zwischenspeichern (alt: localStorage immo-hooks-<id>). */
-const anlassCache = new Map<string, { ts: number; anlaesse: KontaktAnlass[] }>();
+/**
+ * Anlässe 24 Stunden je Makler zwischenspeichern — in der Datenbank (alt: localStorage immo-hooks-<id>, je Browser).
+ * So kostet ein Makler einen Aufruf am Tag, egal wie oft, wo und von welcher Function-Instanz er angesehen wird.
+ */
 const TAG_MS = 24 * 60 * 60 * 1000;
+
+async function anlaesseAusSpeicher(db: Db, id: string, jetzt = Date.now()): Promise<KontaktAnlass[] | null> {
+  const [z] = await db.select({ am: schema.maklerAnlaesse.ermitteltAt, anlaesse: schema.maklerAnlaesse.anlaesse }).from(schema.maklerAnlaesse).where(eq(schema.maklerAnlaesse.maklerId, id));
+  if (!z || jetzt - Date.parse(z.am) >= TAG_MS) return null;
+  return z.anlaesse as KontaktAnlass[];
+}
 
 /** fetchAiHooks: Web-Suche + News → Haiku; ohne Treffer keine Anlässe. */
 export async function kontaktAnlaesseErmitteln(db: Db, ki: KiClient | null | undefined, suche: Suchdienste, id: string, heute: string) {
-  const gecacht = anlassCache.get(id);
-  if (gecacht && Date.now() - gecacht.ts < TAG_MS) return { anlaesse: gecacht.anlaesse };
+  const gecacht = await anlaesseAusSpeicher(db, id);
+  if (gecacht) return { anlaesse: gecacht };
   const { m } = await maklerMitKomm(db, id);
   const persoenlich = (m.persoenlich ?? {}) as { geburtsdatum?: string };
   const a = await kontaktAnlaesse(kiPruefen(ki), m.name ?? '', m.firma ?? undefined, persoenlich.geburtsdatum, new Date(`${heute}T12:00:00`), suche.web, suche.news);
   if (a) await kostenBuchen(db, a, 'makler/anlaesse', { makler_id: id });
   const anlaesse = a?.wert ?? [];
-  anlassCache.set(id, { ts: Date.now(), anlaesse });
+  await db.insert(schema.maklerAnlaesse).values({ maklerId: id, anlaesse, ermitteltAt: sql`now()` })
+    .onConflictDoUpdate({ target: schema.maklerAnlaesse.maklerId, set: { anlaesse, ermitteltAt: sql`now()` } });
   return { anlaesse };
 }
 
@@ -176,9 +185,9 @@ export async function gespraechsoeffnerErstellen(db: Db, ki: KiClient | null | u
   const { m, komm } = await maklerMitKomm(db, id);
   const persoenlich = (m.persoenlich ?? {}) as { geburtsdatum?: string; letzteErwaehnung?: { thema: string; detail: string }[] };
   const gb = geburtstagHinweis(persoenlich.geburtsdatum, heute);
-  const gecacht = anlassCache.get(id);
+  const gecacht = await anlaesseAusSpeicher(db, id);
   const a = await gespraechsoeffner(kiPruefen(ki), { name: m.name, firma: m.firma, relationshipNote: m.beziehungsNotiz }, {
-    geburtstagLabel: gb?.label ?? null, anlaesse: gecacht && Date.now() - gecacht.ts < TAG_MS ? gecacht.anlaesse : [],
+    geburtstagLabel: gb?.label ?? null, anlaesse: gecacht ?? [],
     erwaehnungen: persoenlich.letzteErwaehnung ?? [], letzteKommunikation: komm[0]?.text ?? null,
   });
   await kostenBuchen(db, a, 'makler/gespraechsoeffner', { makler_id: id });

@@ -50,6 +50,13 @@
       "when": 1789995152523,
       "tag": "20260921125232_makler_kontaktfelder",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790156818375,
+      "tag": "20260923094658_makler_anlaesse",
+      "breakpoints": true
     }
   ]
 }
