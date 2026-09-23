@@ -1,4 +1,4 @@
-import { ActionIcon, AppShell, Burger, Button, Group, NavLink, Title, Tooltip, useMantineColorScheme } from '@mantine/core';
+import { ActionIcon, AppShell, Box, Burger, Button, Group, NavLink, Title, Tooltip, useMantineColorScheme } from '@mantine/core';
 import { useDisclosure, useMediaQuery } from '@mantine/hooks';
 import {
   IconBuildingCommunity,
@@ -76,7 +76,6 @@ export function AppRahmen() {
                 <IconSearch />
               </ActionIcon>
             </Tooltip>
-            <AbmeldenKnopf />
             <ActionIcon variant="subtle" onClick={toggleColorScheme} aria-label="Hell/Dunkel">
               <IconMoonStars />
             </ActionIcon>
@@ -138,17 +137,20 @@ export function AppRahmen() {
           </Tooltip>
         </div>
 
-        {/* Auf- und Zuklappen steht immer unten in der Leiste, in beiden Zuständen an derselben Stelle. */}
-        <Group justify={schmal ? 'center' : 'flex-end'} pt="xs" style={{ borderTop: '1px solid var(--mantine-color-default-border)' }} visibleFrom="sm">
-          <Tooltip label={leisteOffen ? 'Seitenleiste einklappen' : 'Seitenleiste ausklappen'} position="right">
-            <ActionIcon
-              variant="subtle"
-              onClick={() => { leisteUmschalten(); setUeberfahren(false); }}
-              aria-label={leisteOffen ? 'Seitenleiste einklappen' : 'Seitenleiste ausklappen'}
-            >
-              {leisteOffen ? <IconLayoutSidebarLeftCollapse /> : <IconLayoutSidebarLeftExpand />}
-            </ActionIcon>
-          </Tooltip>
+        {/* Abmelden und Auf-/Zuklappen stehen immer unten in der Leiste; eingeklappt untereinander, sonst nebeneinander. */}
+        <Group justify={schmal ? 'center' : 'space-between'} gap="xs" pt="xs" style={{ borderTop: '1px solid var(--mantine-color-default-border)', flexDirection: schmal ? 'column' : 'row' }}>
+          <AbmeldenKnopf schmal={schmal} />
+          <Box visibleFrom="sm">
+            <Tooltip label={leisteOffen ? 'Seitenleiste einklappen' : 'Seitenleiste ausklappen'} position="right">
+              <ActionIcon
+                variant="subtle"
+                onClick={() => { leisteUmschalten(); setUeberfahren(false); }}
+                aria-label={leisteOffen ? 'Seitenleiste einklappen' : 'Seitenleiste ausklappen'}
+              >
+                {leisteOffen ? <IconLayoutSidebarLeftCollapse /> : <IconLayoutSidebarLeftExpand />}
+              </ActionIcon>
+            </Tooltip>
+          </Box>
         </Group>
       </AppShell.Navbar>
 

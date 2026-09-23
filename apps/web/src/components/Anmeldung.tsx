@@ -1,4 +1,5 @@
-import { Alert, Button, Center, Paper, PasswordInput, Stack, Text, TextInput, Title } from '@mantine/core';
+import { ActionIcon, Alert, Button, Center, Paper, PasswordInput, Stack, Text, TextInput, Title, Tooltip } from '@mantine/core';
+import { IconLogout } from '@tabler/icons-react';
 import type { Session } from '@supabase/supabase-js';
 import { useEffect, useState } from 'react';
 import { abmelden, anmelden, anmeldungEingerichtet, sitzungStarten } from '../lib/sitzung.ts';
@@ -54,10 +55,19 @@ function Anmeldemaske() {
 }
 
 /** Abmelden im Kopfbereich — nur sichtbar, wenn eine Anmeldung eingerichtet ist. */
-export function AbmeldenKnopf() {
+/** Abmelden — unten in der Seitenleiste (23.09.2026); `schmal`: nur das Symbol, mit Tooltip. Ohne Anmeldung (lokal offen) nichts. */
+export function AbmeldenKnopf({ schmal = false }: { schmal?: boolean }) {
   if (!anmeldungEingerichtet()) return null;
+  const raus = () => void abmelden().then(() => location.reload());
+  if (schmal) {
+    return (
+      <Tooltip label="Abmelden" position="right">
+        <ActionIcon variant="subtle" color="gray" onClick={raus} aria-label="Abmelden"><IconLogout size={18} /></ActionIcon>
+      </Tooltip>
+    );
+  }
   return (
-    <Button size="compact-sm" variant="subtle" onClick={() => void abmelden().then(() => location.reload())}>
+    <Button size="compact-sm" variant="subtle" color="gray" leftSection={<IconLogout size={16} />} onClick={raus} aria-label="Abmelden">
       Abmelden
     </Button>
   );
