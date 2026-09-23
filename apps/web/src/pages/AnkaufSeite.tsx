@@ -99,8 +99,20 @@ export function AnkaufSeite() {
 
   return (
     <Stack h="calc(100dvh - 56px - 2 * var(--mantine-spacing-md))" gap="sm">
-      <Group justify="space-between">
-        <Title order={2}>Ankauf</Title>
+      {/* Eine Kopfzeile: Titel, Durchwählen und die Zahlen des aktiven Reiters — Deals und Makler sind zwei Listen, nicht eine. */}
+      <Group justify="space-between" wrap="wrap" gap="sm">
+        <Group gap="md" wrap="wrap" aria-label="Nächste Kontakte">
+          <Title order={2}>Ankauf</Title>
+          <Button size="sm" leftSection={<IconPhoneCall size={18} />} aria-label="Wählmaschine öffnen"
+            onClick={() => setWmQuelle(reiter === 'deals' ? { art: 'deals', deals: dealsGeordnet } : { art: 'makler' })}>
+            {reiter === 'deals' ? `Deals durchwählen (${dealsGeordnet.length})` : `Makler durchwählen (${maklerGeordnet.length})`}
+          </Button>
+          <Text fw={600}>Nächste Kontakte</Text>
+          <Group gap={6}><Badge color="red" size="lg">{zaehle('heute')}</Badge><Text size="sm" c="dimmed">heute</Text></Group>
+          <Group gap={6}><Badge color="orange" size="lg">{zaehle('ueberfaellig')}</Badge><Text size="sm" c="dimmed">überfällig</Text></Group>
+          <Group gap={6}><Badge color="green" size="lg">{zaehle('woche')}</Badge><Text size="sm" c="dimmed">diese Woche</Text></Group>
+          {dringend === 0 && <Text size="sm" c="green">✅ Alles erledigt!</Text>}
+        </Group>
         <Group gap="xs">
           <GespeicherteFilterLeiste modul="ankauf" />
           {reiter === 'makler' && <Button size="xs" variant="light" onClick={() => setStilOffen(true)}>🧠 KI-Stil</Button>}
@@ -109,26 +121,12 @@ export function AnkaufSeite() {
             : <Ansichtswahl label="Ansicht Makler" wert={maklerLayout} setzen={setMaklerLayout} />}
         </Group>
       </Group>
-      {/* Zahlen, Balken und Durchwählen gelten für den aktiven Reiter — Deals und Makler sind zwei Listen, nicht eine. */}
-      <Paper withBorder p="sm" aria-label="Nächste Kontakte">
-        <Group gap="lg">
-          <Button size="sm" leftSection={<IconPhoneCall size={18} />} aria-label="Wählmaschine öffnen"
-            onClick={() => setWmQuelle(reiter === 'deals' ? { art: 'deals', deals: dealsGeordnet } : { art: 'makler' })}>
-            {reiter === 'deals' ? `Deals durchwählen (${dealsGeordnet.length})` : `Makler durchwählen (${maklerGeordnet.length})`}
-          </Button>
-          <Text fw={600}>Nächste Kontakte</Text>
-          <Group gap={6}><Badge color="red" size="lg">{zaehle('heute')}</Badge><Text size="sm" c="dimmed">heute zu kontaktieren</Text></Group>
-          <Group gap={6}><Badge color="orange" size="lg">{zaehle('ueberfaellig')}</Badge><Text size="sm" c="dimmed">überfällig</Text></Group>
-          <Group gap={6}><Badge color="green" size="lg">{zaehle('woche')}</Badge><Text size="sm" c="dimmed">diese Woche</Text></Group>
-          {dringend === 0 && <Text size="sm" c="green" ml="auto">✅ Alles erledigt!</Text>}
+      {fortschritt.start > 0 && (
+        <Group gap="xs">
+          <Progress value={(fortschritt.erledigt / fortschritt.start) * 100} color="green" style={{ flex: 1 }} size="sm" />
+          <Text size="xs" c="dimmed">{fortschritt.erledigt}/{fortschritt.start} erledigt</Text>
         </Group>
-        {fortschritt.start > 0 && (
-          <Group gap="xs" mt="xs">
-            <Progress value={(fortschritt.erledigt / fortschritt.start) * 100} color="green" style={{ flex: 1 }} size="sm" />
-            <Text size="xs" c="dimmed">{fortschritt.erledigt}/{fortschritt.start} erledigt</Text>
-          </Group>
-        )}
-      </Paper>
+      )}
 
       <Tabs value={reiter} onChange={(v) => v && setReiter(v as Reiter)} keepMounted={false} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <Tabs.List>
