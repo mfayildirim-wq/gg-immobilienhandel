@@ -151,7 +151,7 @@ export function AnkaufSeite() {
             </ScrollArea>
             <Box component="section" style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }} aria-label="Deal-Detail">
               {dealAuswahl
-                ? <DealDetail key={dealAuswahl} id={dealAuswahl} />
+                ? <DealDetail key={dealAuswahl} id={dealAuswahl} start="kommunikation" />
                 : <Text c="dimmed">Deal in der Liste wählen.</Text>}
             </Box>
           </Box>
@@ -171,7 +171,7 @@ export function AnkaufSeite() {
               </Spalte>
             </ScrollArea>
             <Box component="section" style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }} aria-label="Makler-Detail">
-              {maklerAuswahl ? <MaklerDetail key={maklerAuswahl} id={maklerAuswahl} /> : <Text c="dimmed">Makler in der Liste wählen.</Text>}
+              {maklerAuswahl ? <MaklerDetail key={maklerAuswahl} id={maklerAuswahl} start="komm" /> : <Text c="dimmed">Makler in der Liste wählen.</Text>}
             </Box>
           </Box>
         </Tabs.Panel>

@@ -32,7 +32,11 @@ test.describe('Ankauf-Cockpit', () => {
     // Klick auf den Namen lädt den Makler rechts — kein Sprung zur Makler-Seite
     await karte.getByText(`🤝 ${name}`).click();
     await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByRole('region', { name: 'Makler-Detail' }).getByLabel('Name', { exact: true })).toHaveValue(name);
+    // … und öffnet mit dem Reiter „Kommunikation“ (auf der Makler-Liste wäre es das Profil)
+    const detail = page.getByRole('region', { name: 'Makler-Detail' });
+    await expect(detail.getByRole('tab', { name: /Kommunikation/ })).toHaveAttribute('aria-selected', 'true');
+    await detail.getByRole('tab', { name: /Profil/ }).click();
+    await expect(detail.getByLabel('Name', { exact: true })).toHaveValue(name);
     await karte.getByRole('button', { name: 'Erledigt' }).click();
     await expect(spalte.getByLabel(`Makler ${name}`)).toBeHidden();
   });
@@ -48,6 +52,10 @@ test.describe('Ankauf-Cockpit', () => {
     await karte.getByText(`📍 ${strasse} 4`, { exact: false }).click();
     const detail = page.getByRole('region', { name: 'Deal-Detail' });
     await expect(detail.getByRole('heading', { name: `${strasse} 4` })).toBeVisible();
+    // Auf der Ankaufseite öffnet der Deal mit „Kommunikation“: Nachfassen und Gesprächslog
+    await expect(detail.getByRole('tab', { name: 'Kommunikation' })).toHaveAttribute('aria-selected', 'true');
+    await expect(detail.getByLabel('Nächster Kontakt')).toHaveValue(plus(-3));
+    await expect(detail.getByRole('textbox', { name: 'Neue Gesprächsnotiz' })).toBeVisible();
   });
 
   test('„Deals durchwählen“ beginnt mit der ersten Karte aus „Deals nachverfolgen“ und bucht das Ergebnis am Deal', async ({ page }) => {

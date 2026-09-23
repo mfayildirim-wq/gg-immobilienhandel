@@ -51,7 +51,7 @@ test.describe('Deal-Kalkulation', () => {
     await objektUndDealAnlegen(page, kennung);
     await page.goto('/deals');
     await page.getByRole('button', { name: new RegExp(kennung) }).click();
-    await page.getByRole('tab', { name: 'Übersicht' }).click();
+    await page.getByRole('tab', { name: 'Kommunikation' }).click();
     await page.getByRole('textbox', { name: 'Neue Gesprächsnotiz' }).fill('Exposé angefordert');
     await page.getByRole('button', { name: '+ Eintrag' }).click();
     await expect(page.getByLabel('Kommentare').getByText('Exposé angefordert')).toBeVisible();

@@ -234,10 +234,16 @@ export async function neuDealInfo(page: Page, dealId: string) {
   await detail.getByRole('combobox', { name: 'Status' }).waitFor();
   await page.waitForTimeout(300);
   const wert = async (name: string) => detail.getByRole('combobox', { name, exact: true }).or(detail.getByLabel(name, { exact: true })).first().inputValue();
-  return {
+  const uebersicht = {
     objekt: await wert('🏢 Objekt'), makler: await wert('🤝 Makler'), status: await wert('Status'), angebotsDatum: await wert('Angebotsdatum'),
-    frequenz: await wert('Frequenz'), naechsterKontakt: await wert('Nächster Kontakt'),
     mail: (await detail.getByRole('link', { name: 'E-Mail an Makler' }).count()) ? await detail.getByRole('link', { name: 'E-Mail an Makler' }).getAttribute('href') ?? '' : '',
+  };
+  // Nachfassen und Gesprächslog stehen seit dem 23.09.2026 im Reiter „Kommunikation“
+  await detail.getByRole('tab', { name: 'Kommunikation' }).click();
+  await detail.getByRole('combobox', { name: 'Frequenz' }).waitFor();
+  return {
+    ...uebersicht,
+    frequenz: await wert('Frequenz'), naechsterKontakt: await wert('Nächster Kontakt'),
     log: await detail.getByRole('region', { name: 'Kommentare' }).locator('.mantine-Paper-root').evaluateAll((es) => es.map((e) => ({ ts: e.children[0]?.textContent ?? '', text: e.children[1]?.textContent ?? '' }))),
   };
 }
