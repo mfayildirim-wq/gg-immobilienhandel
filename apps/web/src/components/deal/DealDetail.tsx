@@ -1,4 +1,5 @@
 import { Alert, Group, Loader, Stack, Tabs, Text, Title } from '@mantine/core';
+import { Reiterleiste } from '../Reiterleiste.tsx';
 import { IconBriefcase, IconBuildingBank, IconCalculator, IconFolder, IconInfoCircle, IconMessages } from '@tabler/icons-react';
 import { useDealDetail } from '../../lib/api.ts';
 import { useEinstellung } from '../../lib/ansicht.ts';
@@ -36,7 +37,7 @@ export function DealDetail({ id, start = 'uebersicht' }: { id: string; start?: R
         <StatusBadge status={deal.status} />
       </Group>
       <Tabs value={reiter} onChange={(v) => v && setReiter(v as Reiter)} keepMounted={false}>
-        <Tabs.List>
+        <Reiterleiste>
           <Tabs.Tab value="uebersicht" leftSection={<IconInfoCircle size={16} />}>
             Übersicht
           </Tabs.Tab>
@@ -55,7 +56,7 @@ export function DealDetail({ id, start = 'uebersicht' }: { id: string; start?: R
           <Tabs.Tab value="praesentation" leftSection={<IconBuildingBank size={16} />}>
             Bank-Präsentation
           </Tabs.Tab>
-        </Tabs.List>
+        </Reiterleiste>
         <Tabs.Panel value="uebersicht" pt="md">
           <DateiLeiste dealId={deal.id} />
           <DealUebersicht deal={deal} />

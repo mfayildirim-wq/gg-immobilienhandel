@@ -1,0 +1,16 @@
+/* Reiter in einer Zeile: seitlich scrollen statt umbrechen; die Bildlaufleiste bleibt unsichtbar, Pfeile übernehmen. */
+.liste {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: 1;
+  min-width: 0;
+  scroll-behavior: smooth;
+}
+.liste::-webkit-scrollbar {
+  display: none;
+}
+.liste > * {
+  flex-shrink: 0;
+  white-space: nowrap;
+}

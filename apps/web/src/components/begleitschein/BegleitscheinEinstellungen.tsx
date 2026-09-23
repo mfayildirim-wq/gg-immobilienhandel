@@ -4,6 +4,7 @@ import {
   type BsRow, type BsVorlage as BsVorlageDomain,
 } from '@gg/domain';
 import { ActionIcon, Alert, Badge, Button, Checkbox, Code, Group, Paper, ScrollArea, SegmentedControl, Select, Stack, Tabs, Text, Textarea, TextInput, Title } from '@mantine/core';
+import { Reiterleiste } from '../Reiterleiste.tsx';
 import { IconArrowDown, IconArrowUp, IconPlus, IconRestore, IconX } from '@tabler/icons-react';
 import { useMemo, useState } from 'react';
 import { useSofortSpeichern } from '../../lib/sofortSpeichern.ts';
@@ -23,11 +24,11 @@ export function BegleitscheinEinstellungen() {
       <Text size="sm" c="dimmed" mb="sm">Hier wird festgelegt, welcher Punkt welche Aktion bekommt, wie die Vorlage aussieht und welche Vordrucke zur Verfügung stehen.</Text>
       <SegmentedControl mb="sm" value={typ} onChange={(v) => setTyp(v as Typ)} data={[{ value: 'ankauf', label: 'Ankaufsvorlage' }, { value: 'verkauf', label: 'Verkaufsvorlage' }]} />
       <Tabs defaultValue="aktionen" keepMounted={false}>
-        <Tabs.List>
+        <Reiterleiste>
           <Tabs.Tab value="aktionen">Aktionen</Tabs.Tab>
           <Tabs.Tab value="vorlage">Vorlage</Tabs.Tab>
           <Tabs.Tab value="vordrucke">Vordrucke</Tabs.Tab>
-        </Tabs.List>
+        </Reiterleiste>
         <Tabs.Panel value="aktionen" pt="sm"><Aktionen key={typ} typ={typ} /></Tabs.Panel>
         <Tabs.Panel value="vorlage" pt="sm"><Vorlage key={typ} typ={typ} /></Tabs.Panel>
         <Tabs.Panel value="vordrucke" pt="sm"><Vordrucke /></Tabs.Panel>
