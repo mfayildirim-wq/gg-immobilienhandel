@@ -48,9 +48,11 @@ const ANLEITUNGEN: { wert: string; titel: string; inhalt: ReactNode }[] = [
     titel: '🚀 Wählmaschine',
     inhalt: (
       <Text size="sm">
-        Das Telefonhörer-Symbol im Kopf öffnet die Wählmaschine als Schubfach: fällige Makler nach Dringlichkeit und Prio,
-        mit Anruf-Link, Ergebnis-Knöpfen und Notizfeld. Sie rechnet nur mit letztem Kontakt und Frequenz — ein gesetzter
-        „nächster Kontakt“ zählt dort bewusst nicht (Ist-Verhalten der alten App).
+        Die Ankaufseite hat zwei Reiter, „Deals kontaktieren“ und „Makler kontaktieren“. Der Knopf neben „Nächste
+        Kontakte“ telefoniert die Liste des aktiven Reiters von oben nach unten ab: heute, überfällig, diese Woche.
+        Bei Deals ist je Halt der Makler des Deals dran, das Ergebnis (Erreicht, Nicht erreicht, Rückruf, Notiz, Frequenz)
+        wird am Deal gebucht; bei Maklern am Makler. Zahlen und Fortschritt gelten für den aktiven Reiter. Ein
+        vereinbarter Rückruf zählt als Termin (Entscheidung vom 22.09.2026).
       </Text>
     ),
   },

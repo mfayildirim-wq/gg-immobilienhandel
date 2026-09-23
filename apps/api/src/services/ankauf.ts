@@ -158,6 +158,24 @@ export async function anrufErgebnis(db: Db, maklerId: string, e: AnrufErgebnisSp
   });
 }
 
+/**
+ * „Liste durchwählen“ (22.09.2026): dieselbe Regel wie beim Makler, gebucht am Deal — Nachfassfrequenz, letzter und
+ * nächster Kontakt; die Notiz wird ein Deal-Kommentar im Format „[T.M.JJJJ – Ergebnis] …“. Der Makler bleibt unberührt.
+ */
+export async function dealAnrufErgebnis(db: Db, dealId: string, e: AnrufErgebnisSpeichern, heute: string) {
+  return db.transaction(async (tx) => {
+    const [d] = await tx.select({ next: schema.deals.nextContact }).from(schema.deals).where(and(eq(schema.deals.id, dealId), isNull(schema.deals.deletedAt)));
+    if (!d) throw new FachFehler(404, 'Deal nicht gefunden');
+    const version = await versionFortschreiben(tx, schema.deals, dealId, e.version, 'Deal');
+    const r = anrufErgebnisAnwenden({ ergebnis: e.ergebnis, notiz: e.notiz, frequenz: e.frequenz, rueckrufDatum: e.rueckrufDatum, bestehenderTermin: d.next, heute });
+    await tx.update(schema.deals).set({ nachfassFrequenz: r.kontaktFrequenz, lastContact: r.lastContact, nextContact: r.nextContact }).where(eq(schema.deals.id, dealId));
+    if (r.notizEintrag) {
+      await tx.insert(schema.dealKommentare).values({ id: `${dealId}:${crypto.randomUUID()}`, dealId, text: r.notizEintrag, zeitpunkt: sql`now()` });
+    }
+    return { id: dealId, version, nextContact: r.nextContact };
+  });
+}
+
 /** Anruf-Briefing schließen: mit Datum → nächster Kontakt = Datum, letzter Kontakt = heute. */
 export async function briefingAbschliessen(db: Db, maklerId: string, version: number, nextContact: string | null, heute: string) {
   if (!nextContact) return { id: maklerId, version };

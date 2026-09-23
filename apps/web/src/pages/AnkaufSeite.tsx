@@ -1,16 +1,15 @@
 import type { AnkaufCockpit, CockpitDeal, CockpitMakler, ListenAltformat } from '@gg/api-contract';
 import { applyFilter, eingehendUnbekannt, maklerZuTelefon } from '@gg/domain';
-import { Alert, Badge, Box, Button, Group, Paper, Progress, ScrollArea, SegmentedControl, Stack, Text, Title } from '@mantine/core';
-import { IconLayoutColumns, IconLayoutRows, IconPhoneCall, IconUsers } from '@tabler/icons-react';
+import { Alert, Badge, Box, Button, Group, Paper, Progress, ScrollArea, SegmentedControl, Stack, Tabs, Text, Title } from '@mantine/core';
+import { IconLayoutColumns, IconLayoutRows, IconPhoneCall, IconTarget, IconUsers } from '@tabler/icons-react';
 import { useEffect, useRef, useState } from 'react';
 import { AnrufBriefing } from '../components/ankauf/AnrufBriefing.tsx';
 import { DealDetail } from '../components/deal/DealDetail.tsx';
-import { Seitenschublade } from '../components/Seitenschublade.tsx';
 import { PersonaDialog } from '../components/ankauf/PersonaDialog.tsx';
 import { DealKarte } from '../components/ankauf/DealKarte.tsx';
 import { MaklerKarte } from '../components/ankauf/MaklerKarte.tsx';
 import { ABSCHNITTE, FAELLIG_FARBE } from '../components/ankauf/Termin.tsx';
-import { Waehlmaschine } from '../components/ankauf/Waehlmaschine.tsx';
+import { Waehlmaschine, type WaehlQuelle } from '../components/ankauf/Waehlmaschine.tsx';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { GespeicherteFilterLeiste, useAktiverFilter } from '../components/GespeicherteFilterLeiste.tsx';
 import { useAnkauf, useEinplanen, useListen } from '../lib/api.ts';
@@ -18,11 +17,15 @@ import { LAYOUTS, type Layout, useAuswahl, useEinstellung } from '../lib/ansicht
 import { MaklerDetail } from '../components/MaklerDetail.tsx';
 import { alsDatum } from '../lib/format.ts';
 
+/** Die beiden Listen der Ankaufseite als Reiter; der zuletzt gewählte wird gemerkt. */
+const REITER = ['deals', 'makler'] as const;
+type Reiter = (typeof REITER)[number];
+
 const KANAL_ICON: Record<string, string> = { whatsapp: '📱', email: '✉️', anruf: '📞', notiz: '📝' };
 
 /** Tagesfortschritt: höchste Zahl dringender Kontakte dieser Sitzung (sessionStorage, nur Komfort). */
-function useFortschritt(heute: string | undefined, dringend: number) {
-  const schluessel = `gg.ankauf.start.${heute}`;
+function useFortschritt(heute: string | undefined, reiter: Reiter, dringend: number) {
+  const schluessel = `gg.ankauf.start.${reiter}.${heute}`;
   let start = dringend;
   try {
     start = Math.max(dringend, Number(sessionStorage.getItem(schluessel) ?? 0));
@@ -73,9 +76,9 @@ export function AnkaufSeite() {
     else setAnrufHinweis(eingehendUnbekannt(eingehend));
     void navigate({ to: '/', search: {}, replace: true });
   }, [eingehend, data, navigate]);
-  const [wmOffen, setWmOffen] = useState(false);
+  const [wmQuelle, setWmQuelle] = useState<WaehlQuelle | null>(null);
   const [stilOffen, setStilOffen] = useState(false);
-  const [maklerOffen, setMaklerOffen] = useState(false);
+  const [reiter, setReiter] = useEinstellung<Reiter>('ankauf.reiter', REITER, 'deals');
   // Deals in der Reihenfolge der Abschnitte (heute, überfällig, diese Woche) — der erste ist vorgewählt
   const dealsGeordnet = ABSCHNITTE.flatMap(({ klasse }) => data?.deals.filter((d) => d.faellig.klasse === klasse) ?? []);
   const [dealAuswahl, setDealAuswahl] = useAuswahl(dealsGeordnet.map((d) => d.id));
@@ -86,65 +89,91 @@ export function AnkaufSeite() {
   const dealsNebeneinander = dealLayout === 'nebeneinander';
   const maklerNebeneinander = maklerLayout === 'nebeneinander';
 
-  const zaehle = (k: string) => (data?.deals.filter((d) => d.faellig.klasse === k).length ?? 0) + (data?.makler.filter((m) => m.faellig.klasse === k).length ?? 0);
+  const liste: readonly { faellig: { klasse: string } }[] = (reiter === 'deals' ? data?.deals : data?.makler) ?? [];
+  const zaehle = (k: string) => liste.filter((e) => e.faellig.klasse === k).length;
   const dringend = zaehle('heute') + zaehle('ueberfaellig');
-  const fortschritt = useFortschritt(data?.heute, dringend);
+  const fortschritt = useFortschritt(data?.heute, reiter, dringend);
 
   if (error) return <Alert color="red">{error.message}</Alert>;
   if (isLoading || !data) return <Text c="dimmed">Lädt …</Text>;
 
   return (
     <Stack h="calc(100dvh - 56px - 2 * var(--mantine-spacing-md))" gap="sm">
-      <Group justify="space-between">
-        <Title order={2}>Ankauf</Title>
+      {/* Eine Kopfzeile: Titel, Durchwählen und die Zahlen des aktiven Reiters — Deals und Makler sind zwei Listen, nicht eine. */}
+      <Group justify="space-between" wrap="wrap" gap="sm">
+        <Group gap="md" wrap="wrap" aria-label="Nächste Kontakte">
+          <Title order={2}>Ankauf</Title>
+          <Button size="sm" leftSection={<IconPhoneCall size={18} />} aria-label="Wählmaschine öffnen"
+            onClick={() => setWmQuelle(reiter === 'deals' ? { art: 'deals', deals: dealsGeordnet } : { art: 'makler' })}>
+            {reiter === 'deals' ? `Deals durchwählen (${dealsGeordnet.length})` : `Makler durchwählen (${maklerGeordnet.length})`}
+          </Button>
+          <Text fw={600}>Nächste Kontakte</Text>
+          <Group gap={6}><Badge color="red" size="lg">{zaehle('heute')}</Badge><Text size="sm" c="dimmed">heute</Text></Group>
+          <Group gap={6}><Badge color="orange" size="lg">{zaehle('ueberfaellig')}</Badge><Text size="sm" c="dimmed">überfällig</Text></Group>
+          <Group gap={6}><Badge color="green" size="lg">{zaehle('woche')}</Badge><Text size="sm" c="dimmed">diese Woche</Text></Group>
+          {dringend === 0 && <Text size="sm" c="green">✅ Alles erledigt!</Text>}
+        </Group>
         <Group gap="xs">
           <GespeicherteFilterLeiste modul="ankauf" />
-          <Ansichtswahl label="Ansicht Deals" wert={dealLayout} setzen={setDealLayout} />
-        <Button
-          variant="light"
-          aria-label="Makler kontaktieren öffnen"
-          leftSection={<IconUsers size={18} />}
-          rightSection={<Badge size="sm" circle color={data.makler.length ? 'red' : 'gray'}>{data.makler.length}</Badge>}
-          onClick={() => setMaklerOffen(true)}
-        >
-          Makler kontaktieren
-        </Button>
+          {reiter === 'makler' && <Button size="xs" variant="light" onClick={() => setStilOffen(true)}>🧠 KI-Stil</Button>}
+          {reiter === 'deals'
+            ? <Ansichtswahl label="Ansicht Deals" wert={dealLayout} setzen={setDealLayout} />
+            : <Ansichtswahl label="Ansicht Makler" wert={maklerLayout} setzen={setMaklerLayout} />}
         </Group>
       </Group>
-      <Paper withBorder p="sm" aria-label="Nächste Kontakte">
-        <Group gap="lg">
-          <Text fw={600}>Nächste Kontakte</Text>
-          <Group gap={6}><Badge color="red" size="lg" circle>{zaehle('heute')}</Badge><Text size="sm" c="dimmed">heute zu kontaktieren</Text></Group>
-          <Group gap={6}><Badge color="orange" size="lg" circle>{zaehle('ueberfaellig')}</Badge><Text size="sm" c="dimmed">überfällig</Text></Group>
-          <Group gap={6}><Badge color="green" size="lg" circle>{zaehle('woche')}</Badge><Text size="sm" c="dimmed">diese Woche</Text></Group>
-          {dringend === 0 && <Text size="sm" c="green" ml="auto">✅ Alles erledigt!</Text>}
+      {fortschritt.start > 0 && (
+        <Group gap="xs">
+          <Progress value={(fortschritt.erledigt / fortschritt.start) * 100} color="green" style={{ flex: 1 }} size="sm" />
+          <Text size="xs" c="dimmed">{fortschritt.erledigt}/{fortschritt.start} erledigt</Text>
         </Group>
-        {fortschritt.start > 0 && (
-          <Group gap="xs" mt="xs">
-            <Progress value={(fortschritt.erledigt / fortschritt.start) * 100} color="green" style={{ flex: 1 }} size="sm" />
-            <Text size="xs" c="dimmed">{fortschritt.erledigt}/{fortschritt.start} erledigt</Text>
-          </Group>
-        )}
-      </Paper>
+      )}
 
-      <Box
-        data-layout={dealLayout}
-        style={{ display: 'flex', flexDirection: dealsNebeneinander ? 'row' : 'column', gap: 12, flex: 1, minHeight: 0 }}
-      >
-        <ScrollArea type="auto" style={dealsNebeneinander ? { width: 430, flexShrink: 0 } : { height: '42%', flexShrink: 0 }} aria-label="Deal-Liste">
-          <Spalte titel="🎯 Deals nachverfolgen" anzahl={data.deals.length} leer="Keine Deals diese Woche">
-            {ABSCHNITTE.map(({ klasse, titel }) => (
-              <Abschnitt key={klasse} klasse={klasse} titel={titel} eintraege={data.deals.filter((d) => d.faellig.klasse === klasse)}
-                karte={(d: CockpitDeal) => <DealKarte key={d.id} d={d} heute={data.heute} aktiv={d.id === dealAuswahl} waehlen={setDealAuswahl} />} />
-            ))}
-          </Spalte>
-        </ScrollArea>
-        <Box component="section" style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }} aria-label="Deal-Detail">
-          {dealAuswahl
-            ? <DealDetail key={dealAuswahl} id={dealAuswahl} />
-            : <Text c="dimmed">Deal in der Liste wählen.</Text>}
-        </Box>
-      </Box>
+      <Tabs value={reiter} onChange={(v) => v && setReiter(v as Reiter)} keepMounted={false} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <Tabs.List>
+          <Tabs.Tab value="deals" leftSection={<IconTarget size={16} />} rightSection={<Badge size="sm" color={data.deals.length ? 'red' : 'gray'}>{data.deals.length}</Badge>}>Deals kontaktieren</Tabs.Tab>
+          <Tabs.Tab value="makler" leftSection={<IconUsers size={16} />} rightSection={<Badge size="sm" color={data.makler.length ? 'red' : 'gray'}>{data.makler.length}</Badge>}>Makler kontaktieren</Tabs.Tab>
+        </Tabs.List>
+
+        <Tabs.Panel value="deals" pt="sm" style={{ flex: 1, minHeight: 0 }}>
+          <Box
+            data-layout={dealLayout}
+            style={{ display: 'flex', flexDirection: dealsNebeneinander ? 'row' : 'column', gap: 12, height: '100%', minHeight: 0 }}
+          >
+            <ScrollArea type="auto" style={dealsNebeneinander ? { width: 430, flexShrink: 0 } : { height: '42%', flexShrink: 0 }} aria-label="Deal-Liste">
+              <Spalte titel="🎯 Deals nachverfolgen" anzahl={data.deals.length} leer="Keine Deals diese Woche">
+                {ABSCHNITTE.map(({ klasse, titel }) => (
+                  <Abschnitt key={klasse} klasse={klasse} titel={titel} eintraege={data.deals.filter((d) => d.faellig.klasse === klasse)}
+                    karte={(d: CockpitDeal) => <DealKarte key={d.id} d={d} heute={data.heute} aktiv={d.id === dealAuswahl} waehlen={setDealAuswahl} />} />
+                ))}
+              </Spalte>
+            </ScrollArea>
+            <Box component="section" style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }} aria-label="Deal-Detail">
+              {dealAuswahl
+                ? <DealDetail key={dealAuswahl} id={dealAuswahl} start="kommunikation" />
+                : <Text c="dimmed">Deal in der Liste wählen.</Text>}
+            </Box>
+          </Box>
+        </Tabs.Panel>
+
+        <Tabs.Panel value="makler" pt="sm" style={{ flex: 1, minHeight: 0 }}>
+          <Box
+            data-layout={maklerLayout}
+            style={{ display: 'flex', flexDirection: maklerNebeneinander ? 'row' : 'column', gap: 12, height: '100%', minHeight: 0 }}
+          >
+            <ScrollArea type="auto" style={maklerNebeneinander ? { width: 430, flexShrink: 0 } : { height: '42%', flexShrink: 0 }} aria-label="Makler-Liste">
+              <Spalte titel="🤝 Makler kontaktieren" anzahl={data.makler.length} leer="Keine Makler diese Woche">
+                {ABSCHNITTE.map(({ klasse, titel }) => (
+                  <Abschnitt key={klasse} klasse={klasse} titel={titel} eintraege={data.makler.filter((m) => m.faellig.klasse === klasse)}
+                    karte={(m: CockpitMakler) => <MaklerKarte key={m.id} m={m} heute={data.heute} anrufen={setBriefing} stilOeffnen={() => setStilOffen(true)} aktiv={m.id === maklerAuswahl} waehlen={setMaklerAuswahl} />} />
+                ))}
+              </Spalte>
+            </ScrollArea>
+            <Box component="section" style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }} aria-label="Makler-Detail">
+              {maklerAuswahl ? <MaklerDetail key={maklerAuswahl} id={maklerAuswahl} start="komm" /> : <Text c="dimmed">Makler in der Liste wählen.</Text>}
+            </Box>
+          </Box>
+        </Tabs.Panel>
+      </Tabs>
 
       {data.tageslog.length > 0 && (
         <Paper withBorder p="sm" aria-label="Heute erledigt" style={{ flexShrink: 0, maxHeight: '22%', overflow: 'auto' }}>
@@ -160,44 +189,13 @@ export function AnkaufSeite() {
         </Paper>
       )}
 
-      <Seitenschublade offen={maklerOffen} schliessen={() => setMaklerOffen(false)} titel="🤝 Makler kontaktieren" breite="92%">
-        <Group justify="flex-end" mb="xs">
-          <Ansichtswahl label="Ansicht Makler" wert={maklerLayout} setzen={setMaklerLayout} />
-        </Group>
-        <Box
-          data-layout={maklerLayout}
-          style={{ display: 'flex', flexDirection: maklerNebeneinander ? 'row' : 'column', gap: 12, height: 'calc(100dvh - 150px)' }}
-        >
-          <ScrollArea type="auto" style={maklerNebeneinander ? { width: 430, flexShrink: 0 } : { height: '42%', flexShrink: 0 }} aria-label="Makler-Liste">
-            <Spalte
-              titel="🤝 Makler kontaktieren"
-              anzahl={data.makler.length}
-              leer="Keine Makler diese Woche"
-              kopf={<Stack gap={6}>
-                <Button size="xs" variant="light" onClick={() => setStilOffen(true)}>🧠 KI-Stil</Button>
-                {/* Die Wählmaschine löst das Schubfach ab, statt sich darüberzulegen. */}
-                {data.makler.length > 0 && <Button fullWidth size="md" leftSection={<IconPhoneCall />} onClick={() => { setMaklerOffen(false); setWmOffen(true); }}>Wählmaschine</Button>}
-              </Stack>}
-            >
-              {ABSCHNITTE.map(({ klasse, titel }) => (
-                <Abschnitt key={klasse} klasse={klasse} titel={titel} eintraege={data.makler.filter((m) => m.faellig.klasse === klasse)}
-                  karte={(m: CockpitMakler) => <MaklerKarte key={m.id} m={m} heute={data.heute} anrufen={setBriefing} stilOeffnen={() => setStilOffen(true)} aktiv={m.id === maklerAuswahl} waehlen={setMaklerAuswahl} />} />
-              ))}
-            </Spalte>
-          </ScrollArea>
-          <Box component="section" style={{ flex: 1, minWidth: 0, overflow: 'auto' }} aria-label="Makler-Detail">
-            {maklerAuswahl ? <MaklerDetail key={maklerAuswahl} id={maklerAuswahl} /> : <Text c="dimmed">Makler in der Liste wählen.</Text>}
-          </Box>
-        </Box>
-      </Seitenschublade>
-
       {anrufHinweis && (
         <Alert color="blue" withCloseButton onClose={() => setAnrufHinweis('')} data-anruf-hinweis>
           {anrufHinweis}
         </Alert>
       )}
       <AnrufBriefing makler={briefing} heute={data.heute} schliessen={() => setBriefing(null)} />
-      <Waehlmaschine offen={wmOffen} schliessen={() => setWmOffen(false)} heute={data.heute} />
+      <Waehlmaschine offen={wmQuelle !== null} schliessen={() => setWmQuelle(null)} heute={data.heute} quelle={wmQuelle ?? undefined} />
       <PersonaDialog offen={stilOffen} schliessen={() => setStilOffen(false)} />
     </Stack>
   );
@@ -218,14 +216,10 @@ function Ansichtswahl({ label, wert, setzen }: { label: string; wert: Layout; se
   );
 }
 
-function Spalte({ titel, anzahl, leer, kopf, children }: { titel: string; anzahl: number; leer: string; kopf?: React.ReactNode; children: React.ReactNode }) {
+/** Die Liste eines Reiters. Der Titel ist nur der Name des Bereichs — sichtbar stehen Titel und Zahl schon am Reiter. */
+function Spalte({ titel, anzahl, leer, children }: { titel: string; anzahl: number; leer: string; children: React.ReactNode }) {
   return (
     <Paper withBorder p="sm" component="section" aria-label={titel}>
-      <Group justify="space-between" mb="xs">
-        <Title order={4}>{titel}</Title>
-        <Badge variant="light" color={anzahl ? 'red' : 'gray'}>{anzahl}</Badge>
-      </Group>
-      {kopf && <div style={{ marginBottom: 12 }}>{kopf}</div>}
       {anzahl === 0 ? (
         <Stack align="center" py="xl" gap={4}><Text size="xl">✅</Text><Text fw={600}>Alles erledigt</Text><Text size="sm" c="dimmed">{leer}</Text></Stack>
       ) : (

@@ -114,22 +114,31 @@ export function cockpitMakler<T extends MaklerNachfass>(makler: readonly T[], he
   return ergebnis.sort((a, b) => (a.termin !== b.termin ? (a.termin < b.termin ? -1 : 1) : maklerPrioRang(a.prio) - maklerPrioRang(b.prio)));
 }
 
+/** Reihenfolge der Abschnitte in „Nächste Kontakte“ und in der Wählmaschine: heute → überfällig → diese Woche. */
+export const ABSCHNITT_REIHENFOLGE: readonly FaelligkeitsKlasse[] = ['heute', 'ueberfaellig', 'woche'];
+
+/** Eine Liste in der Reihenfolge, in der sie auf der Ankaufseite steht: abschnittsweise, innerhalb unverändert. */
+export const inAbschnittsreihenfolge = <T extends { faellig: Faelligkeit }>(liste: readonly T[]): T[] =>
+  ABSCHNITT_REIHENFOLGE.flatMap((klasse) => liste.filter((e) => e.faellig.klasse === klasse));
+
 /**
- * Wählmaschinen-Warteschlange. Ist-Verhalten: nur letzter Kontakt + Frequenz, ein gesetztes
- * „nächster Kontakt“ (z. B. Rückruf-Datum) zählt hier NICHT – anders als in der Cockpit-Spalte (Befund).
- * Sortiert: überfällig → heute → Woche, dann Prio A/B/C.
+ * Wählmaschinen-Warteschlange der Makler = die Liste „Makler kontaktieren“ (`cockpitMakler`), in der Reihenfolge, in
+ * der sie auf der Ankaufseite steht: Abschnitte heute → überfällig → diese Woche, darin nach Termin, dann Prio A/B/C.
+ * Entscheidung des Auftraggebers vom 22.09.2026 (Fachfrage 7): ein gesetztes „nächster Kontakt“, etwa ein
+ * vereinbarter Rückruf, zählt damit auch hier. Die alte App rechnete nur mit letztem Kontakt + Frequenz und
+ * sortierte nach Klasse, dann Prio – die Wählmaschine zeigte deshalb eine andere Liste als das Cockpit.
  */
 export function waehlmaschinenQueue<T extends MaklerNachfass>(makler: readonly T[], heute: string): MitFaelligkeit<T>[] {
-  const ergebnis: MitFaelligkeit<T>[] = [];
-  for (const m of makler) {
-    const frequenz = m.kontaktFrequenz || 'Monatlich';
-    if (nieKontaktieren(frequenz)) continue;
-    const termin = terminAusFrequenz(m.lastContact, frequenz);
-    const faellig = faelligkeit(termin, heute);
-    if (!termin || !faellig) continue;
-    ergebnis.push({ ...m, termin, faellig });
-  }
-  return ergebnis.sort((a, b) => a.faellig.sort - b.faellig.sort || maklerPrioRang(a.prio) - maklerPrioRang(b.prio));
+  return inAbschnittsreihenfolge(cockpitMakler(makler, heute));
+}
+
+/**
+ * „Liste durchwählen“ auf der Ankaufseite (22.09.2026): die Deals aus „Deals nachverfolgen“ in der angezeigten
+ * Reihenfolge – heute → überfällig → diese Woche, darin nach Termin, dann Status. Je Halt wird der Makler des Deals
+ * angerufen; das Ergebnis wird am Deal gebucht. Die alte App kannte nur das Durchwählen der Makler.
+ */
+export function dealWaehlliste<T extends NachfassDaten & { status: DealStatus; nachfassFrequenz: string | null }>(deals: readonly T[], heute: string): MitFaelligkeit<T>[] {
+  return inAbschnittsreihenfolge(cockpitDeals(deals, heute));
 }
 
 /**

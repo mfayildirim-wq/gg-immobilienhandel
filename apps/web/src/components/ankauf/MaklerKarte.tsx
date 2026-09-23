@@ -45,7 +45,8 @@ export function MaklerKarte({ m, heute, anrufen, stilOeffnen, aktiv, waehlen }: 
       data-faellig-klasse={m.faellig.klasse}
     >
       <Stack gap={6}>
-        <Group justify="space-between" wrap="nowrap" align="flex-start" style={{ cursor: 'pointer' }} onClick={() => navigate({ to: '/makler', search: { makler: m.id } })}>
+        {/* Die ganze Karte wählt den Makler rechts aus — kein Sprung zur Makler-Seite (Wunsch vom 23.09.2026) */}
+        <Group justify="space-between" wrap="nowrap" align="flex-start">
           <div style={{ minWidth: 0 }}>
             <Text fw={700} size="md" truncate>🤝 {m.name ?? '–'}</Text>
             {m.firma && <Text size="xs" c="dimmed" truncate>{m.firma}</Text>}

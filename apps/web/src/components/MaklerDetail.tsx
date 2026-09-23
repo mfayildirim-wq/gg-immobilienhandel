@@ -17,9 +17,10 @@ import { heuteIso } from '../lib/ansicht.ts';
 import { datumDe } from '../lib/format.ts';
 import { StatusBadge } from './StatusBadge.tsx';
 
-export function MaklerDetail({ id, geloescht }: { id: string; geloescht?: () => void }) {
+/** `start`: der Reiter beim Öffnen — auf der Ankaufseite „Kommunikation“, auf der Makler-Liste das Profil. */
+export function MaklerDetail({ id, geloescht, start = 'profil' }: { id: string; geloescht?: () => void; start?: 'profil' | 'komm' }) {
   const { data: m, isLoading, error } = useMaklerDetail(id);
-  const [reiter, setReiter] = useState<string | null>('profil');
+  const [reiter, setReiter] = useState<string | null>(start);
   if (isLoading) return <Loader size="sm" />;
   if (error || !m) return <Alert color="red">{error?.message ?? 'Makler nicht gefunden'}</Alert>;
   return (

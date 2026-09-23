@@ -6,7 +6,6 @@ import {
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconMoonStars,
-  IconPhoneCall,
   IconReportMoney,
   IconSettings,
   IconBriefcase,
@@ -16,10 +15,8 @@ import {
   IconUsers, IconChecklist, IconTableShare, IconChartBar } from '@tabler/icons-react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
-import { Waehlmaschine } from './ankauf/Waehlmaschine.tsx';
 import { AbmeldenKnopf } from './Anmeldung.tsx';
 import { GlobaleSuche } from './GlobaleSuche.tsx';
-import { heuteIso } from '../lib/ansicht.ts';
 import { EINSTELLUNGEN_SEITEN } from '../lib/einstellungenSeiten.tsx';
 
 const NAVIGATION = [
@@ -34,13 +31,12 @@ const NAVIGATION = [
   { to: '/angebote', label: 'Angebote', icon: IconMail },
 ] as const;
 
-/** App-Rahmen im neuen Design: einklappbare Seitenleiste links, Wählmaschine als Schubfach rechts. */
+/** App-Rahmen im neuen Design: einklappbare Seitenleiste links. Die Wählmaschine gehört zur Ankaufseite (Knopf bei „Nächste Kontakte“). */
 export function AppRahmen() {
   const [mobilOffen, { toggle: mobilUmschalten, close: mobilSchliessen }] = useDisclosure(false);
   const [leisteOffen, { toggle: leisteUmschalten }] = useDisclosure(true);
   // Eingeklappt bleibt die Leiste als Symbolspalte stehen; die Maus darüber klappt sie vorübergehend aus.
   const [ueberfahren, setUeberfahren] = useState(false);
-  const [waehlOffen, waehl] = useDisclosure(false);
   const [sucheOffen, suche] = useDisclosure(false);
   const { toggleColorScheme } = useMantineColorScheme();
   const navigate = useNavigate();
@@ -78,11 +74,6 @@ export function AppRahmen() {
             <Tooltip label="Suche (⌘F)">
               <ActionIcon variant="light" size="lg" color="green" onClick={suche.open} aria-label="Suche öffnen">
                 <IconSearch />
-              </ActionIcon>
-            </Tooltip>
-            <Tooltip label="Wählmaschine">
-              <ActionIcon variant="light" size="lg" onClick={waehl.open} aria-label="Wählmaschine öffnen">
-                <IconPhoneCall />
               </ActionIcon>
             </Tooltip>
             <AbmeldenKnopf />
@@ -166,7 +157,6 @@ export function AppRahmen() {
       </AppShell.Main>
 
       <GlobaleSuche offen={sucheOffen} schliessen={suche.close} />
-      <Waehlmaschine offen={waehlOffen} schliessen={waehl.close} heute={heuteIso()} />
     </AppShell>
   );
 }
