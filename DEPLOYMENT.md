@@ -17,6 +17,27 @@ von der echten Produktion der alten App). Offene Punkte stehen in `OFFEN.md` unt
 **PDF-Export mit dem gepackten Chromium** (Kundenkalkulation: 239 KB in 6,4 s), echter Bestand umgezogen
 (alle Prüfungen bestanden). Vercel Hobby hat die 300 s der PDF-Function angenommen.
 
+## Testumgebung (seit 23.09.2026)
+
+Zweite, vollständig getrennte Umgebung zum Prüfen vor dem Produktivgang — **ohne Änderung am Code**: die
+`vercel.json` lässt nur Builds mit `VERCEL_ENV=production` zu, und im Testprojekt ist der Branch `test` die Produktion.
+
+| | |
+|---|---|
+| Adresse | <https://gg-immobilienhandel-test.vercel.app> |
+| Branch | `test` — Sammelbranch: `main` plus alle offenen Pull Requests, die geprüft werden sollen |
+| Vercel | Projekt `gg-immobilienhandel-test` (Team `mfy`), Produktions-Branch `test`, Node 24, eigene 8 Variablen (nur Production) |
+| Supabase | Projekt `gg-immobilienhandel-test`, Ref `kpvlmvkyvickqtdswzmh`, Frankfurt, Organisation MFY; 8 Migrationen, 38 Tabellen, 5 Buckets, Registrierung geschlossen |
+| Zugangsdaten | `~/Documents/ivtag/.geheim/cloud-test.env` (eigenes Passwort, eigener `GG_ENCRYPTION_KEY`, eigenes `CRON_SECRET`) |
+| Bestand | per `pnpm umzug` aus der alten lokalen DB (55/55 Prüfungen); Fotos und Dokumente fehlen wie online |
+
+**Ablauf:** Branch → Pull Request → in `test` mergen (`git merge --no-ff`) → Push baut die Testumgebung (~2 min) →
+online prüfen → erst dann Pull Request nach `main` mergen. **Migrationen** laufen auch hier nicht mit dem Deploy:
+`npx supabase db push --db-url "$DATABASE_URL_SESSION"` aus `cloud-test.env`, vorher `--dry-run`.
+
+Was dort anders ist: kein KI-Schlüssel (KI-Funktionen aus), kein M365, Auto-Import aus. Die nächtlichen Crons laufen
+auch dort (sichern nur Testdaten). Supabase Free pausiert das Projekt nach einer Woche ohne Zugriff — im Dashboard wecken.
+
 **Drei Stolpersteine des ersten Deployments — für das nächste Mal:**
 
 1. **`BLOCKED / COMMIT_AUTHOR_REQUIRED`** (auch per CLI): Vercel braucht zum Commit-Autor ein GitHub-Konto.
