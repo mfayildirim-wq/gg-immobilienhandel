@@ -69,7 +69,7 @@ scripts/          schema-aus-protokoll.py (erzeugt das Drizzle-Schema aus Protok
 
 ## Schema ändern
 
-1. `packages/db/src/schema.ts` anpassen (Erstfassung wurde aus `../protokoll/werkzeuge/er_gen.py` erzeugt)
+1. `packages/db/src/schema.ts` anpassen (Erstfassung wurde aus `../immohandel-doks/protokoll/werkzeuge/er_gen.py` erzeugt)
 2. `pnpm db:generate` → neue Datei in `supabase/migrations/` prüfen
 3. `pnpm db:reset` → Tests
 

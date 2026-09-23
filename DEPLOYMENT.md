@@ -29,6 +29,7 @@ Zweite, vollständig getrennte Umgebung zum Prüfen vor dem Produktivgang — **
 | Vercel | Projekt `gg-immobilienhandel-test` (Team `mfy`), Produktions-Branch `test`, Node 24, eigene 8 Variablen (nur Production) |
 | Supabase | Projekt `gg-immobilienhandel-test`, Ref `kpvlmvkyvickqtdswzmh`, Frankfurt, Organisation MFY; 8 Migrationen, 38 Tabellen, 5 Buckets, Registrierung geschlossen |
 | Zugangsdaten | `~/Documents/ivtag/.geheim/cloud-test.env` (eigenes Passwort, eigener `GG_ENCRYPTION_KEY`, eigenes `CRON_SECRET`) |
+| Alle Adressen | Dev, Test, Prod mit Konsolen: `../immohandel-doks/protokoll/18-umgebungen-mfayildirim.md` |
 | Bestand | per `pnpm umzug` aus der alten lokalen DB (55/55 Prüfungen); Fotos und Dokumente fehlen wie online |
 
 **Ablauf:** Branch → Pull Request → in `test` mergen (`git merge --no-ff`) → Push baut die Testumgebung (~2 min) →
