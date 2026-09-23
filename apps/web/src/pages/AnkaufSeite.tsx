@@ -100,8 +100,8 @@ export function AnkaufSeite() {
   return (
     <Stack h="calc(100dvh - 56px - 2 * var(--mantine-spacing-md))" gap="sm">
       {/* Eine Kopfzeile: Titel, Durchwählen und die Zahlen des aktiven Reiters — Deals und Makler sind zwei Listen, nicht eine. */}
-      <Group justify="space-between" wrap="wrap" gap="sm">
-        <Group gap="md" wrap="wrap" aria-label="Nächste Kontakte">
+      <Group justify="space-between" wrap="nowrap" gap="sm" align="flex-start">
+        <Group gap="md" wrap="wrap" aria-label="Nächste Kontakte" style={{ flex: 1, minWidth: 0 }}>
           <Title order={2}>Ankauf</Title>
           <Button size="sm" leftSection={<IconPhoneCall size={18} />} aria-label="Wählmaschine öffnen"
             onClick={() => setWmQuelle(reiter === 'deals' ? { art: 'deals', deals: dealsGeordnet } : { art: 'makler' })}>
@@ -113,7 +113,7 @@ export function AnkaufSeite() {
           <Group gap={6}><Badge color="green" size="lg">{zaehle('woche')}</Badge><Text size="sm" c="dimmed">diese Woche</Text></Group>
           {dringend === 0 && <Text size="sm" c="green">✅ Alles erledigt!</Text>}
         </Group>
-        <Group gap="xs">
+        <Group gap="xs" wrap="nowrap">
           <GespeicherteFilterLeiste modul="ankauf" />
           {reiter === 'makler' && <Button size="xs" variant="light" onClick={() => setStilOffen(true)}>🧠 KI-Stil</Button>}
           {reiter === 'deals'

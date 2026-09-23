@@ -29,9 +29,18 @@ export function MaklerSeite() {
 
   return (
     <Stack h="calc(100dvh - 56px - 2 * var(--mantine-spacing-md))" gap="sm">
-      <Group justify="space-between">
-        <Title order={2}>Makler</Title>
-        <Group gap="xs">
+      <Group justify="space-between" wrap="nowrap" gap="sm" align="flex-start">
+        {/* Titel und Zähler nehmen den Platz links; die Zähler brechen bei Bedarf um, die Knöpfe rechts bleiben in der ersten Zeile */}
+        <Group gap="md" wrap="wrap" style={{ flex: 1, minWidth: 0 }}>
+          <Title order={2}>Makler</Title>
+          <Zaehlerleiste waehlen={setPrio} kennzahlen={[
+            { wert: 'alle', label: '● Gesamt', anzahl: liste.zaehler.gesamt, klickbar: false },
+            { wert: 'A', label: '▲ A-Makler', anzahl: liste.zaehler.A ?? 0, farbe: 'teal' },
+            { wert: 'B', label: '◆ B-Makler', anzahl: liste.zaehler.B ?? 0, farbe: 'orange' },
+            { wert: 'C', label: '○ C-Makler', anzahl: liste.zaehler.C ?? 0 },
+          ]} />
+        </Group>
+        <Group gap="xs" wrap="nowrap">
           <GespeicherteFilterLeiste modul="makler" aktuelleKriterien={maklerAktuelleKriterien(prio, text)} />
           <SegmentedControl
             aria-label="Ansicht"
@@ -47,12 +56,6 @@ export function MaklerSeite() {
           </Button>
         </Group>
       </Group>
-      <Zaehlerleiste waehlen={setPrio} kennzahlen={[
-        { wert: 'alle', label: '● Gesamt', anzahl: liste.zaehler.gesamt, klickbar: false },
-        { wert: 'A', label: '▲ A-Makler', anzahl: liste.zaehler.A ?? 0, farbe: 'teal' },
-        { wert: 'B', label: '◆ B-Makler', anzahl: liste.zaehler.B ?? 0, farbe: 'orange' },
-        { wert: 'C', label: '○ C-Makler', anzahl: liste.zaehler.C ?? 0 },
-      ]} />
       <Chipleiste chips={MAKLER_PRIO_CHIPS.map((w) => ({ wert: w, label: w === 'alle' ? 'Alle' : `${w}-Makler` }))} aktiv={prio} waehlen={setPrio}
         suche={text} setSuche={setText} platzhalter="Name, Firma, Region…" />
       <Box
