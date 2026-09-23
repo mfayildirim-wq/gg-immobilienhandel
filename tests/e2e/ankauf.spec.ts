@@ -37,6 +37,13 @@ test.describe('Ankauf-Cockpit', () => {
     await expect(detail.getByRole('tab', { name: /Kommunikation/ })).toHaveAttribute('aria-selected', 'true');
     await detail.getByRole('tab', { name: /Profil/ }).click();
     await expect(detail.getByLabel('Name', { exact: true })).toHaveValue(name);
+    // … und der gewählte Reiter bleibt beim Wechsel zu einem anderen Makler (kein Rücksprung auf „Kommunikation“)
+    const andere = spalte.locator('[data-karte^="makler:"]').filter({ hasNot: page.getByText(name) }).first();
+    if (await andere.count()) {
+      await andere.click();
+      await expect(detail.getByRole('tab', { name: /Profil/ })).toHaveAttribute('aria-selected', 'true');
+      await karte.getByText(`🤝 ${name}`).click();
+    }
     await karte.getByRole('button', { name: 'Erledigt' }).click();
     await expect(spalte.getByLabel(`Makler ${name}`)).toBeHidden();
   });
