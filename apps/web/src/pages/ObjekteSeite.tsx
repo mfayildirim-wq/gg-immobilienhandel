@@ -36,9 +36,13 @@ export function ObjekteSeite() {
 
   return (
     <Stack h="calc(100dvh - 56px - 2 * var(--mantine-spacing-md))" gap="sm">
-      <Group justify="space-between">
-        <Title order={2}>Objekte</Title>
-        <Group gap="xs">
+      <Group justify="space-between" wrap="nowrap" gap="sm" align="flex-start">
+        {/* Titel und Zähler nehmen den Platz links; die Zähler brechen bei Bedarf um, die Knöpfe rechts bleiben in der ersten Zeile */}
+        <Group gap="md" wrap="wrap" style={{ flex: 1, minWidth: 0 }}>
+          <Title order={2}>Objekte</Title>
+          <Zaehlerleiste waehlen={setStatus} kennzahlen={LISTEN_STATUS.map((s) => ({ wert: s, label: s, anzahl: liste.zaehler[s] ?? 0, farbe: STATUS_FARBE[s] }))} />
+        </Group>
+        <Group gap="xs" wrap="nowrap">
           <GespeicherteFilterLeiste modul="objects" aktuelleKriterien={objektAktuelleKriterien(status, text)} />
           <SegmentedControl
             aria-label="Ansicht"
@@ -54,7 +58,6 @@ export function ObjekteSeite() {
           </Button>
         </Group>
       </Group>
-      <Zaehlerleiste waehlen={setStatus} kennzahlen={LISTEN_STATUS.map((s) => ({ wert: s, label: s, anzahl: liste.zaehler[s] ?? 0, farbe: STATUS_FARBE[s] }))} />
       <Chipleiste chips={STATUS_CHIPS} aktiv={status} waehlen={setStatus} suche={text} setSuche={setText} platzhalter="Suchen…" />
       <Box
         data-layout={layout}

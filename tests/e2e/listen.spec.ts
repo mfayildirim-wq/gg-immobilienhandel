@@ -79,7 +79,9 @@ test('Deal- und Objektliste: Zähler, Status-Chip, Suche, Tabellenansicht untere
 
   await page.goto('/deals');
   await page.getByLabel('untereinander').click();
-  const vorher = Number(await page.locator('[data-zaehler="Closing Path"] [data-anzahl]').textContent());
+  const zaehler = page.locator('[data-zaehler="Closing Path"] [data-anzahl]');
+  await expect(zaehler).not.toHaveText('0'); // erst wenn die Liste geladen ist — vorher steht überall 0
+  const vorher = Number(await zaehler.textContent());
   expect(vorher).toBeGreaterThan(0);
   await page.locator('[data-zaehler="Closing Path"]').click();
   await expect(page.getByRole('button', { name: 'Closing Path', exact: true })).toHaveAttribute('aria-pressed', 'true');
