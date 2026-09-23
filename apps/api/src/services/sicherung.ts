@@ -33,6 +33,7 @@ export const SICHERUNG_AUSGENOMMEN: Record<string, string> = {
   mailImportGesehen: 'Merkliste gesehener Mails; entsteht beim nächsten Lauf neu.',
   autoImportRuns: 'Protokoll der Importläufe; keine Geschäftsdaten.',
   archiveLedger: 'Ablage-Journal; wird aus den Dateien wieder aufgebaut.',
+  maklerAnlaesse: 'Zwischenspeicher der KI-Kontaktanlässe, 24 Stunden gültig; entsteht beim nächsten Ansehen neu.',
 };
 
 type Tabellenname = (typeof SICHERUNG_TABELLEN)[number];

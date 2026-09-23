@@ -19,9 +19,11 @@ export function MaklerKarte({ m, heute, anrufen, stilOeffnen, aktiv, waehlen }: 
   const navigate = useNavigate();
   const wa = whatsappNummer(m.tel);
   const { data: ki } = useKiStatus();
-  // Anlässe nur für heute/überfällig fällige Makler — nur dort zeigt die Karte sie (vtMaklerCard)
+  // Anlässe nur für heute/überfällig fällige Makler — nur dort zeigt die Karte sie (vtMaklerCard).
+  // Und nur für die gewählte Karte (23.09.2026): die alte App fragte für jede fällige Karte Web-Suche und KI ab —
+  // mit echtem Bestand über 100 Aufrufe beim Öffnen der Liste. Im Anruf-Briefing werden sie ebenfalls geladen.
   const faellig = m.faellig.klasse === 'heute' || m.faellig.klasse === 'ueberfaellig';
-  const { data: anlaesse } = useAnlaesse(m.id, faellig && !!ki?.verfuegbar);
+  const { data: anlaesse } = useAnlaesse(m.id, faellig && !!aktiv && !!ki?.verfuegbar);
   const geburtstag = m.hinweise.filter((h) => h.art === 'geburtstag');
   const stagnation = m.hinweise.filter((h) => h.art === 'stagnation');
   const hinweise = [...geburtstag.map((h) => ({ emoji: '', text: h.text, hoch: h.dringend })), ...(faellig ? anlaesse?.anlaesse ?? [] : []).map((a) => ({ emoji: a.emoji, text: a.text, hoch: a.priority === 'hoch' })), ...stagnation.map((h) => ({ emoji: '📊', text: h.text, hoch: true }))];
