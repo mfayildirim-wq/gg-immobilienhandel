@@ -3,7 +3,7 @@
 Stand 21.09.2026. Lebendes Dokument — beim Abarbeiten hier streichen, bei neuen Funden ergänzen.
 
 **Fachlich ist der Neubau fertig und nachgewiesen gleich** (`pnpm paritaet`: 17 Bereiche, 2.305 Merkmale,
-0 Abweichungen — zuletzt am 21.09.2026 mit den echten Standardwerten). Was fehlt, ist der **Betrieb**. Hintergrund in `../protokoll/13-validierung-und-vollstaendigkeit.md`.
+0 Abweichungen — zuletzt am 21.09.2026 mit den echten Standardwerten). Was fehlt, ist der **Betrieb**. Hintergrund in `../immohandel-doks/protokoll/13-validierung-und-vollstaendigkeit.md`.
 
 ## Wartet auf Zuarbeit
 
@@ -20,7 +20,7 @@ Stand 21.09.2026. Lebendes Dokument — beim Abarbeiten hier streichen, bei neue
 
 Umzug gegen 273 Deals / 285 Objekte / 141 Makler: **55 Prüfungen bestanden, keine unbekannten Felder, nichts mehr
 „noch nicht umgezogen"**. `pnpm umzug:inventar` hat alle 690 Attribut-Pfade des Bestands gegen den Neubau
-geprüft. Einzelheiten in `../protokoll/sessions/2026-09-21-echter-bestand.md`.
+geprüft. Einzelheiten in `../immohandel-doks/protokoll/sessions/2026-09-21-echter-bestand.md`.
 
 - [x] Makler-Kontaktfelder: `mobil`, `festnetz`, `strasse`, `plz`, `ort`, `weitere_kontakte` (Schema, Umzug,
       API, Makler-Profil, Exposé-Übernahme)
@@ -63,7 +63,7 @@ Ein zusammenhängender Arbeitsschritt; vorher hat nichts davon einen Gegenstand.
 ## Stufe 2 — ab echten Daten
 
 Erledigt und **online geprüft** am 21.09.2026. Gesamtbild und Ablauf der Produktivsetzung:
-`../protokoll/17-prod-umgebung-mfayildirim.md`.
+`../immohandel-doks/protokoll/17-prod-umgebung-mfayildirim.md`.
 
 - [x] **Auto-Backups**: Cron 01:00 UTC → Bucket `backups`, Aufbewahrung `{daily:7, weekly:4, monthly:3, safety:3}`,
       Verwaltung mit Vorschau unter Einstellungen → Sicherung; Wiederherstellen legt vorher eine Sicherheitskopie an
