@@ -6,6 +6,7 @@ import {
   pmTodoInKategorie, pmTodoLoeschen, pmTodoStatistik, pmZahlEingabe, pmZahlFeld,
 } from '@gg/domain';
 import { ActionIcon, Alert, Badge, Button, Group, Loader, Modal, Paper, Progress, Stack, Tabs, Text, Title } from '@mantine/core';
+import { Reiterleiste } from '../components/Reiterleiste.tsx';
 import { IconArrowLeft, IconTrash } from '@tabler/icons-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from '@tanstack/react-router';
@@ -82,10 +83,10 @@ function Projektansicht({ start }: { start: Projekt }) {
       </Group>
       {typeof zustand === 'object' && <Alert color="red" title="Nicht gespeichert">{zustand.fehler} – Seite neu laden, um den aktuellen Stand zu holen.</Alert>}
       <Tabs value={reiter} onChange={setReiter} keepMounted={false}>
-        <Tabs.List>
+        <Reiterleiste>
           <Tabs.Tab value="todo">✅ Checkliste</Tabs.Tab>
           <Tabs.Tab value="einh">📊 Einheitenliste</Tabs.Tab>
-        </Tabs.List>
+        </Reiterleiste>
         <Tabs.Panel value="todo" pt="sm"><Checkliste todos={stand.todos} aendern={setStand} /></Tabs.Panel>
         <Tabs.Panel value="einh" pt="sm"><Einheitenliste p={p} aendern={setStand} /></Tabs.Panel>
       </Tabs>

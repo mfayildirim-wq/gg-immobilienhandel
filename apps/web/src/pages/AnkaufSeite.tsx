@@ -1,6 +1,7 @@
 import type { AnkaufCockpit, CockpitDeal, CockpitMakler, ListenAltformat } from '@gg/api-contract';
 import { applyFilter, eingehendUnbekannt, maklerZuTelefon } from '@gg/domain';
 import { Alert, Badge, Box, Button, Group, Paper, Progress, ScrollArea, SegmentedControl, Stack, Tabs, Text, Title } from '@mantine/core';
+import { Reiterleiste } from '../components/Reiterleiste.tsx';
 import { IconLayoutColumns, IconLayoutRows, IconPhoneCall, IconTarget, IconUsers } from '@tabler/icons-react';
 import { useEffect, useRef, useState } from 'react';
 import { AnrufBriefing } from '../components/ankauf/AnrufBriefing.tsx';
@@ -129,10 +130,10 @@ export function AnkaufSeite() {
       )}
 
       <Tabs value={reiter} onChange={(v) => v && setReiter(v as Reiter)} keepMounted={false} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        <Tabs.List>
+        <Reiterleiste>
           <Tabs.Tab value="deals" leftSection={<IconTarget size={16} />} rightSection={<Badge size="sm" color={data.deals.length ? 'red' : 'gray'}>{data.deals.length}</Badge>}>Deals kontaktieren</Tabs.Tab>
           <Tabs.Tab value="makler" leftSection={<IconUsers size={16} />} rightSection={<Badge size="sm" color={data.makler.length ? 'red' : 'gray'}>{data.makler.length}</Badge>}>Makler kontaktieren</Tabs.Tab>
-        </Tabs.List>
+        </Reiterleiste>
 
         <Tabs.Panel value="deals" pt="sm" style={{ flex: 1, minHeight: 0 }}>
           <Box

@@ -4,6 +4,7 @@ import {
   VERMIETUNG_OPTIONEN,
 } from '@gg/domain';
 import { ActionIcon, Alert, Anchor, Button, Group, Loader, NativeSelect, NumberInput, Paper, SimpleGrid, Stack, Table, Tabs, Text, Textarea, TextInput, Title } from '@mantine/core';
+import { Reiterleiste } from './Reiterleiste.tsx';
 import { IconDeviceFloppy, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useState } from 'react';
 import { useObjektAendern, useObjektDetail, useObjektLoeschen } from '../lib/api.ts';
@@ -43,10 +44,10 @@ function ObjektInhalt({ o, geloescht }: { o: Detail; geloescht?: () => void }) {
       </Group>
 
       <Tabs value={reiter} onChange={setReiter} keepMounted={false}>
-        <Tabs.List>
+        <Reiterleiste>
           <Tabs.Tab value="details">📋 Details</Tabs.Tab>
           <Tabs.Tab value="bearbeiten">✏️ Bearbeiten</Tabs.Tab>
-        </Tabs.List>
+        </Reiterleiste>
         <Tabs.Panel value="details" pt="sm"><Details o={o} /></Tabs.Panel>
         <Tabs.Panel value="bearbeiten" pt="sm"><Formular o={o} /></Tabs.Panel>
       </Tabs>
