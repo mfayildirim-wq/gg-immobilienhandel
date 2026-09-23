@@ -119,12 +119,35 @@ export function DealUebersicht({ deal }: { deal: DealDetail }) {
         <Select label="Priorität" clearable data={['A', 'B', 'C']} value={deal.prio} onChange={(v) => speichern({ prio: v })} />
       </SimpleGrid>
 
+      <Altbestand deal={deal} />
       <Verlauf dealId={deal.id} />
       <Group justify="flex-end">
         <Button color="red" variant="light" leftSection={<IconTrash size={16} />} loading={loeschen.isPending}
           onClick={() => window.confirm('Deal in den Papierkorb verschieben?') && loeschen.mutate(deal.id, { onSuccess: () => navigate({ to: '/deals', search: {} }) })}>Löschen</Button>
       </Group>
     </Stack>
+  );
+}
+
+/** Undatierte Notizen aus der alten App (Objektbeschreibungen, Hinweise) — gehören zur Übersicht, nicht ins Gesprächslog (23.09.2026). */
+function Altbestand({ deal }: { deal: DealDetail }) {
+  const notizen = deal.kommentare.filter((k) => !k.zeitpunkt);
+  if (notizen.length === 0) return null;
+  return (
+    <section aria-label="Altbestand">
+      <Title order={5} mb="xs">
+        📜 Altbestand
+      </Title>
+      <Stack gap={6}>
+        {notizen.map((k) => (
+          <Paper key={k.id} withBorder p="xs">
+            <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
+              {k.text}
+            </Text>
+          </Paper>
+        ))}
+      </Stack>
+    </section>
   );
 }
 

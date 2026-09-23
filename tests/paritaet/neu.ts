@@ -238,13 +238,15 @@ export async function neuDealInfo(page: Page, dealId: string) {
     objekt: await wert('🏢 Objekt'), makler: await wert('🤝 Makler'), status: await wert('Status'), angebotsDatum: await wert('Angebotsdatum'),
     mail: (await detail.getByRole('link', { name: 'E-Mail an Makler' }).count()) ? await detail.getByRole('link', { name: 'E-Mail an Makler' }).getAttribute('href') ?? '' : '',
   };
+  // Undatierte Notizen der alten App stehen seit dem 23.09.2026 als „Altbestand“ in der Übersicht — im alten Gesprächslog stehen sie mit drin
+  const altbestand = await detail.getByRole('region', { name: 'Altbestand' }).locator('.mantine-Paper-root').evaluateAll((es) => es.map((e) => ({ ts: 'Altbestand', text: e.children[0]?.textContent ?? '' })));
   // Nachfassen und Gesprächslog stehen seit dem 23.09.2026 im Reiter „Kommunikation“
   await detail.getByRole('tab', { name: 'Kommunikation' }).click();
   await detail.getByRole('combobox', { name: 'Frequenz' }).waitFor();
   return {
     ...uebersicht,
     frequenz: await wert('Frequenz'), naechsterKontakt: await wert('Nächster Kontakt'),
-    log: await detail.getByRole('region', { name: 'Kommentare' }).locator('.mantine-Paper-root').evaluateAll((es) => es.map((e) => ({ ts: e.children[0]?.textContent ?? '', text: e.children[1]?.textContent ?? '' }))),
+    log: [...(await detail.getByRole('region', { name: 'Kommentare' }).locator('.mantine-Paper-root').evaluateAll((es) => es.map((e) => ({ ts: e.children[0]?.textContent ?? '', text: e.children[1]?.textContent ?? '' })))), ...altbestand],
   };
 }
 

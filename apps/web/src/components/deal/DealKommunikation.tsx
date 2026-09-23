@@ -78,9 +78,11 @@ export function DealKommunikation({ deal }: { deal: DealDetail }) {
   );
 }
 
+/** Nur datierte Einträge — die undatierten Notizen aus der alten App („Altbestand“) stehen in der Übersicht. */
 function Kommentare({ deal }: { deal: DealDetail }) {
   const anlegen = useKommentarAnlegen(deal.id);
   const [text, setText] = useState('');
+  const gespraeche = deal.kommentare.filter((k) => k.zeitpunkt);
   return (
     <section aria-label="Kommentare">
       <Title order={5} mb="xs">
@@ -93,12 +95,12 @@ function Kommentare({ deal }: { deal: DealDetail }) {
         </Button>
       </Group>
       <Stack gap={6}>
-        {deal.kommentare.length === 0 && (
+        {gespraeche.length === 0 && (
           <Text c="dimmed" size="sm">
             Noch keine Einträge.
           </Text>
         )}
-        {deal.kommentare.map((k) => (
+        {gespraeche.map((k) => (
           <Paper key={k.id} withBorder p="xs">
             <Text size="xs" c="dimmed">
               {zeitpunktLog(k.zeitpunkt)}
