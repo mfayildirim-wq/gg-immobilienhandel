@@ -40,7 +40,7 @@ test.describe('Ankauf-Cockpit', () => {
     // … und der gewählte Reiter bleibt beim Wechsel zu einem anderen Makler (kein Rücksprung auf „Kommunikation“)
     const andere = spalte.locator('[data-karte^="makler:"]').filter({ hasNot: page.getByText(name) }).first();
     if (await andere.count()) {
-      await andere.click();
+      await andere.getByText(/^🤝 /).click(); // auf den Namen, nicht in die Kartenmitte — dort kann ein Knopf liegen
       await expect(detail.getByRole('tab', { name: /Profil/ })).toHaveAttribute('aria-selected', 'true');
       await karte.getByText(`🤝 ${name}`).click();
     }
