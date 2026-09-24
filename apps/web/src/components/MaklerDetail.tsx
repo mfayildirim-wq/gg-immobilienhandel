@@ -14,18 +14,24 @@ import {
   transkribieren, useKommunikationAnlegen, useListen, useMaklerAendern, useMaklerDetail, useMaklerErledigt, useMaklerKi, useMaklerLoeschen, useMaklerPersoenlich,
   useOsint, useVorlagen, useWhatsappProtokoll,
 } from '../lib/api.ts';
-import { heuteIso } from '../lib/ansicht.ts';
+import { heuteIso, useEinstellung } from '../lib/ansicht.ts';
 import { datumDe } from '../lib/format.ts';
 import { StatusBadge } from './StatusBadge.tsx';
 
-/** `start`: der Reiter beim Öffnen — auf der Ankaufseite „Kommunikation“, auf der Makler-Liste das Profil. */
+const REITER = ['profil', 'komm', 'persoenlich', 'deals'] as const;
+type Reiter = (typeof REITER)[number];
+
+/**
+ * `start`: der Reiter beim ersten Öffnen — auf der Ankaufseite „Kommunikation“, auf der Makler-Liste das Profil.
+ * Der zuletzt gewählte Reiter wird je Kontext gemerkt und bleibt beim Wechsel zum nächsten Makler (wie beim Deal).
+ */
 export function MaklerDetail({ id, geloescht, start = 'profil' }: { id: string; geloescht?: () => void; start?: 'profil' | 'komm' }) {
   const { data: m, isLoading, error } = useMaklerDetail(id);
-  const [reiter, setReiter] = useState<string | null>(start);
+  const [reiter, setReiter] = useEinstellung<Reiter>(`makler.reiter.${start}`, REITER, start);
   if (isLoading) return <Loader size="sm" />;
   if (error || !m) return <Alert color="red">{error?.message ?? 'Makler nicht gefunden'}</Alert>;
   return (
-    <Tabs value={reiter} onChange={setReiter} keepMounted={false}>
+    <Tabs value={reiter} onChange={(v) => v && setReiter(v as Reiter)} keepMounted={false}>
       <Reiterleiste>
         <Tabs.Tab value="profil">👤 Profil</Tabs.Tab>
         <Tabs.Tab value="komm">💬 Kommunikation</Tabs.Tab>
