@@ -74,7 +74,9 @@ Nicht setzen: `AUTH_LOCAL_OPEN`, `KI_ATTRAPPE`, `M365_ATTRAPPE`, `PROPSTACK_ATTR
 
 1. Vercel-Projekt anlegen, Repository verbinden, Root = Wurzel des Repos (die `vercel.json` liegt dort).
 2. Variablen oben eintragen.
-3. Migrationen gegen die Zieldatenbank anwenden — **laufen nicht mit dem Deploy mit**, bewusst von Hand.
+3. Migrationen gegen die Zieldatenbank anwenden — **laufen nicht mit dem Deploy mit**, bewusst von Hand:
+   `npx supabase db push --dry-run`, dann ohne `--dry-run`. **Offen online:** `20260923094658_makler_anlaesse`
+   (Zwischenspeicher der KI-Anlässe) — ohne sie antwortet `/api/makler/{id}/ki/anlaesse` mit 500.
 4. Storage-Buckets anlegen (lokal macht das `server.ts` beim Start, online niemand).
 5. In Azure AD die Redirect-URI `https://<adresse>/m365/rueckweg` registrieren.
 6. Erst danach: `pnpm umzug:probe` gegen die Produktion (nur lesend), dann der Umzug.

@@ -623,6 +623,18 @@ export const autoImportRuns = fach
   })
   .enableRLS();
 
+/**
+ * Zwischenspeicher der KI-Kontaktanlässe je Makler (alt: localStorage `immo-hooks-<id>`, 24 h im Browser).
+ * In der Datenbank zählt ein Aufruf je Makler und Tag — egal wie oft, wo und von welcher Function-Instanz die Seite geöffnet wird.
+ */
+export const maklerAnlaesse = fach
+  .table('makler_anlaesse', {
+  maklerId: text('makler_id').primaryKey().references((): AnyPgColumn => makler.id, { onDelete: 'cascade' }),
+  ermitteltAt: timestamp('ermittelt_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+  anlaesse: jsonb('anlaesse').notNull(),
+  })
+  .enableRLS();
+
 export const archiveLedger = fach
   .table(
     'archive_ledger',

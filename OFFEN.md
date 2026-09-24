@@ -114,11 +114,11 @@ Die alte App verhält sich genauso; eine Änderung ist eine bewusste Abweichung 
       Reiter. Deals: je Halt der Makler des Deals, Ergebnis am Deal (`POST /api/deals/{id}/anruf-ergebnis`, Notiz als
       Kommentar). Makler: wie die alte Wählmaschine, jetzt mit derselben Liste wie das Cockpit (Fachfrage 7: A, ein
       Rückruf-Datum zählt). Der Telefonhörer im Kopf der App ist weg.
-- [ ] **KI-Anlässe je Makler-Karte laufen mit echtem Bestand in die Begrenzung.** Jede fällige Makler-Karte fragt beim
-      Öffnen `/ki/anlaesse` ab (wie die alte App, Zwischenspeicher 24 h im Prozess). Mit >100 überfälligen Maklern sind das
-      >100 Web-Suchen + KI-Aufrufe auf einmal; ab 60/min antwortet die Begrenzung mit 429 — auch der Nachrichtenentwurf
-      scheitert dann. Lokal deshalb `cockpit-ki.spec.ts` rot, in der CI (leere DB) grün. Vorschlag: Anlässe erst für die
-      gewählte Karte oder gestaffelt laden, Zwischenspeicher in die Datenbank (online startet jede Function-Instanz leer).
+- [x] **KI-Anlässe sparsam** (23.09.2026, Branch `ki-anlaesse-sparsam`): Anlässe werden nur noch für die gewählte
+      Makler-Karte und im Anruf-Briefing geladen (die alte App fragte für jede fällige Karte Web-Suche + KI ab — mit echtem
+      Bestand >100 Aufrufe beim Öffnen, ab 60/min 429). Zwischenspeicher 24 h in der Tabelle `makler_anlaesse` statt im
+      Prozess (online startet jede Function-Instanz leer). Gemessen: 1 Aufruf beim Öffnen statt >100. **Migration
+      `20260923094658_makler_anlaesse` muss online von Hand eingespielt werden** (`npx supabase db push`).
 - [ ] **Wählmaschine neu entwerfen.** Bis dahin ist ihr Klicktest übersprungen
       (`tests/e2e/ankauf.spec.ts`, Begründung steht dort). Beim Neuentwurf ohne Durchklicken durch die
       Warteschlange testen — der alte Test war davon abhängig, was vorherige Tests hinterlassen hatten.

@@ -6,8 +6,9 @@ import * as schema from '../src/schema.ts';
 const tabellen: PgTable[] = Object.values(schema as Record<string, unknown>).filter((v): v is PgTable => is(v, PgTable));
 
 describe('Fachschema', () => {
-  it('enthält die 37 Tabellen aus Protokoll 07', () => {
-    expect(tabellen).toHaveLength(37);
+  it('enthält die 37 Tabellen aus Protokoll 07 plus den Anlässe-Zwischenspeicher (23.09.2026)', () => {
+    expect(tabellen).toHaveLength(38);
+    expect(tabellen.map((t) => getTableConfig(t).name)).toContain('makler_anlaesse');
   });
 
   it('legt alle Tabellen im Schema „fach“ mit RLS an', () => {
