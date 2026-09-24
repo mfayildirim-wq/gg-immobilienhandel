@@ -6,6 +6,7 @@ import {
 import {
   Alert, Anchor, Badge, Button, Group, Loader, Paper, SegmentedControl, Select, SimpleGrid, Stack, Tabs, Text, Textarea, TextInput, Title,
 } from '@mantine/core';
+import { Reiterleiste } from './Reiterleiste.tsx';
 import { IconCheck, IconDeviceFloppy, IconTrash } from '@tabler/icons-react';
 import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
@@ -25,12 +26,12 @@ export function MaklerDetail({ id, geloescht, start = 'profil' }: { id: string; 
   if (error || !m) return <Alert color="red">{error?.message ?? 'Makler nicht gefunden'}</Alert>;
   return (
     <Tabs value={reiter} onChange={setReiter} keepMounted={false}>
-      <Tabs.List>
+      <Reiterleiste>
         <Tabs.Tab value="profil">👤 Profil</Tabs.Tab>
         <Tabs.Tab value="komm">💬 Kommunikation</Tabs.Tab>
         <Tabs.Tab value="persoenlich">🎯 Persönlich</Tabs.Tab>
         <Tabs.Tab value="deals">🤝 Deals</Tabs.Tab>
-      </Tabs.List>
+      </Reiterleiste>
       <Tabs.Panel value="profil" pt="md"><Profil key={m.version} m={m} geloescht={geloescht} /></Tabs.Panel>
       <Tabs.Panel value="komm" pt="md"><Kommunikation m={m} /></Tabs.Panel>
       <Tabs.Panel value="persoenlich" pt="md"><Persoenlich key={m.version} m={m} /></Tabs.Panel>
