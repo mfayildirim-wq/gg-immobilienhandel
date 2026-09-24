@@ -1,22 +1,26 @@
-import { Group, Paper, SimpleGrid, Text, TextInput, UnstyledButton } from '@mantine/core';
+import { Badge, Group, Text, TextInput, UnstyledButton } from '@mantine/core';
 import { IconSearch } from '@tabler/icons-react';
 import type { ReactNode } from 'react';
 
 export interface Kennzahl { wert: string; label: string; anzahl: number; farbe?: string; klickbar?: boolean }
 
-/** Statusleiste (statsbar): Zahl je Status, Klick setzt den Filter wie ein Chip. */
+/**
+ * Statusleiste (statsbar): Zahl je Status, Klick setzt den Filter wie ein Chip. Seit dem 23.09.2026 als Zahl-Pillen in
+ * der Kopfzeile hinter dem Seitentitel — dieselbe Form wie „Nächste Kontakte“ auf der Ankaufseite, statt großer Kästen.
+ */
 export function Zaehlerleiste({ kennzahlen, waehlen }: { kennzahlen: Kennzahl[]; waehlen: (wert: string) => void }) {
   return (
-    <SimpleGrid cols={{ base: 2, sm: 3, lg: kennzahlen.length }} spacing="xs" aria-label="Zähler">
+    // display: contents — die Zähler stehen als einzelne Kinder in der Kopfzeile und brechen einzeln um, nicht als Block
+    <Group aria-label="Zähler" style={{ display: 'contents' }}>
       {kennzahlen.map((k) => (
         <UnstyledButton key={k.label} onClick={() => k.klickbar !== false && waehlen(k.wert)} data-zaehler={k.label} style={{ cursor: k.klickbar === false ? 'default' : 'pointer' }}>
-          <Paper withBorder px="sm" py={6}>
-            <Text fz={11} c={k.farbe ?? 'dimmed'} truncate>{k.label}</Text>
-            <Text fz={20} fw={700} data-anzahl>{k.anzahl}</Text>
-          </Paper>
+          <Group gap={4} wrap="nowrap">
+            <Badge size="md" color={k.farbe ?? 'gray'} data-anzahl>{k.anzahl}</Badge>
+            <Text size="xs" c="dimmed">{k.label}</Text>
+          </Group>
         </UnstyledButton>
       ))}
-    </SimpleGrid>
+    </Group>
   );
 }
 
