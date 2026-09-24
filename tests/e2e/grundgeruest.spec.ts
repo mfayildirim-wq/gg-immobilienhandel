@@ -15,7 +15,9 @@ test.describe('App-Rahmen', () => {
     await page.waitForTimeout(250);
     expect((await nav.boundingBox())?.width).toBe(64);
 
-    // Maus darüber klappt vorübergehend aus
+    // Maus darüber klappt vorübergehend aus — erst hinaus (der Klapp-Knopf liegt eingeklappt innerhalb der 64 px), dann hinein
+    await page.mouse.move(900, 400);
+    await page.waitForTimeout(100);
     await nav.hover();
     await expect(nav).not.toHaveAttribute('data-schmal', 'true');
     await page.waitForTimeout(250);
