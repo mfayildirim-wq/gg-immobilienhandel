@@ -3,6 +3,7 @@ import {
   anrufErgebnisAnwenden,
   cockpitDeals,
   cockpitMakler,
+  dealWaehlliste,
   dealStagnation,
   deutschesDatum,
   erledigtTermin,
@@ -62,19 +63,45 @@ describe('Cockpit: Makler kontaktieren', () => {
 describe('Wählmaschine', () => {
   const mk = (id: string, teil: object) => ({ id, prio: 'B', kontaktFrequenz: 'Wöchentlich', nextContact: null, lastContact: null, ...teil });
 
-  it('Ist-Verhalten: nur letzter Kontakt + Frequenz, ein Rückruf-Datum zählt nicht (Befund)', () => {
-    const r = waehlmaschinenQueue([mk('rueckruf', { nextContact: HEUTE }), mk('frequenz', { lastContact: '2026-09-10' })], HEUTE);
-    expect(r.map((m) => m.id)).toEqual(['frequenz']);
+  it('ist dieselbe Liste wie „Makler kontaktieren“: ein Rückruf-Datum zählt, heute Erledigtes fällt heraus (Entscheidung 22.09.2026, Fachfrage 7)', () => {
+    const makler = [
+      mk('rueckruf-heute', { nextContact: HEUTE, lastContact: '2026-09-01' }),          // Frequenz sagte 08.09., Rückruf sagt heute
+      mk('rueckruf-spaeter', { nextContact: '2026-10-30', lastContact: '2026-09-01' }), // Rückruf weit weg: nicht in der Liste, obwohl per Frequenz überfällig
+      mk('frequenz', { lastContact: '2026-09-10' }),
+      mk('heute-erledigt', { lastContact: HEUTE }),                                     // +7 → Woche, aber heute schon kontaktiert
+      mk('nie', { kontaktFrequenz: 'Nicht kontaktieren', lastContact: '2026-09-01' }),
+    ];
+    const r = waehlmaschinenQueue(makler, HEUTE);
+    expect(r.map((m) => m.id)).toEqual(['rueckruf-heute', 'frequenz']);
+    expect(new Set(r.map((m) => m.id))).toEqual(new Set(cockpitMakler(makler, HEUTE).map((m) => m.id)));
   });
 
-  it('sortiert überfällig → heute → Woche, dann Prio', () => {
+  it('Reihenfolge wie auf der Ankaufseite: heute → überfällig → diese Woche, darin nach Termin, dann Prio', () => {
     const r = waehlmaschinenQueue([
-      mk('woche-a', { prio: 'A', lastContact: '2026-09-12' }),
+      mk('woche-a', { prio: 'A', lastContact: '2026-09-12' }),        // 19.09.
       mk('heute-c', { prio: 'C', lastContact: '2026-09-10' }),
       mk('heute-a', { prio: 'A', lastContact: '2026-09-10' }),
-      mk('ueber', { prio: 'C', lastContact: '2026-09-01' }),
+      mk('ueber-jung-a', { prio: 'A', lastContact: '2026-09-08' }),  // 15.09.
+      mk('ueber-alt-c', { prio: 'C', lastContact: '2026-09-01' }),   // 08.09. — ältester Verzug vor der Prio
+      mk('woche-frueh-c', { prio: 'C', lastContact: '2026-09-11' }), // 18.09.
     ], HEUTE);
-    expect(r.map((m) => m.id)).toEqual(['ueber', 'heute-a', 'heute-c', 'woche-a']);
+    expect(r.map((m) => m.id)).toEqual(['heute-a', 'heute-c', 'ueber-alt-c', 'ueber-jung-a', 'woche-frueh-c', 'woche-a']);
+  });
+
+  it('Deals durchwählen: „Deals nachverfolgen“ in der angezeigten Reihenfolge — heute → überfällig → Woche, darin Termin, dann Status', () => {
+    const deal = (id: string, teil: object) => ({ id, status: 'In Prüfung' as const, nachfassFrequenz: 'Wöchentlich', nextContact: null, lastContact: null, ...teil });
+    const deals = [
+      deal('woche', { nextContact: '2026-09-20' }),
+      deal('ueber-jung', { nextContact: '2026-09-15' }),
+      deal('heute-pruefung', { nextContact: HEUTE }),
+      deal('heute-closing', { status: 'Closing Path', nextContact: HEUTE }),
+      deal('ueber-alt', { lastContact: '2026-09-01' }), // +7 → 08.09.
+      deal('archiv', { status: 'Archiv', nextContact: HEUTE }),
+      deal('zu-weit', { nextContact: '2026-10-30' }),
+    ];
+    const r = dealWaehlliste(deals, HEUTE);
+    expect(r.map((d) => d.id)).toEqual(['heute-closing', 'heute-pruefung', 'ueber-alt', 'ueber-jung', 'woche']);
+    expect(new Set(r.map((d) => d.id))).toEqual(new Set(cockpitDeals(deals, HEUTE).map((d) => d.id)));
   });
 });
 

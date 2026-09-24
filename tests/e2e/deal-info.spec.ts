@@ -13,7 +13,8 @@ test('Deal-Info: Frequenz belegt Termin vor, Schnellknopf, E-Mail an Makler, Obj
   await detail.getByRole('tab', { name: 'Übersicht' }).click();
   await expect(detail.getByRole('link', { name: 'E-Mail an Makler' })).toHaveAttribute('href', `mailto:info@example.test?subject=${encodeURIComponent(`Anfrage: ${kennung} A 1, Ulm`)}`);
 
-  // Frequenzwechsel ohne Termin: Vorschlag heute + 30 Tage
+  // Nachfassen steht im Reiter „Kommunikation“ — Frequenzwechsel ohne Termin: Vorschlag heute + 30 Tage
+  await detail.getByRole('tab', { name: 'Kommunikation' }).click();
   const termin = detail.getByLabel('Nächster Kontakt');
   await expect(termin).toHaveValue('');
   await detail.getByRole('combobox', { name: 'Frequenz' }).click();
@@ -24,6 +25,7 @@ test('Deal-Info: Frequenz belegt Termin vor, Schnellknopf, E-Mail an Makler, Obj
   await expect(termin).toHaveValue(inTagen(7));
 
   // Objekt wechseln: Kaufpreis aus dem neuen Objekt
+  await detail.getByRole('tab', { name: 'Übersicht' }).click();
   await detail.getByRole('combobox', { name: '🏢 Objekt' }).click();
   await page.getByRole('option', { name: new RegExp(`${kennung} B`) }).click();
   await expect(detail.getByRole('heading', { name: `${kennung} B 2` })).toBeVisible();

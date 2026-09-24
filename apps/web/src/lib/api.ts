@@ -387,6 +387,8 @@ export const useAnkauf = () => useQuery({ queryKey: ['ankauf'], queryFn: () => a
 export const useEinplanen = () => useAendern('makler', () => anfrage<{ eingeplant: number }>('/api/ankauf/einplanen', senden('POST', {})));
 export const useAnrufErgebnis = (id: string) =>
   useAendern('makler', (e: AnrufErgebnisSpeichern) => anfrage<{ nextContact: string | null }>(`/api/makler/${id}/anruf-ergebnis`, senden('POST', e)));
+export const useDealAnrufErgebnis = (id: string) =>
+  useAendern('deals', (e: AnrufErgebnisSpeichern) => anfrage<{ nextContact: string | null }>(`/api/deals/${id}/anruf-ergebnis`, senden('POST', e)));
 export const useBriefingAbschluss = (id: string) =>
   useAendern('makler', (e: { version: number; nextContact: string | null }) => anfrage(`/api/makler/${id}/briefing-abschluss`, senden('POST', e)));
 export const useWhatsappProtokoll = (id: string) => useAendern('makler', () => anfrage(`/api/makler/${id}/whatsapp`, senden('POST', {})));
