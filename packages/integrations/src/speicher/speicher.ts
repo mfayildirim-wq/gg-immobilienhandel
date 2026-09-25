@@ -35,12 +35,18 @@ export interface Dateispeicher {
    * Direkt-Upload: eine signierte Adresse, an die der **Browser** die Datei per PUT schickt — an der Function vorbei,
    * die höchstens 4,5 MB annimmt. Die Adresse gilt nur für genau diesen Schlüssel und läuft nach kurzer Zeit ab.
    */
-  uploadTicket(bucket: Bucket, key: string): Promise<{ url: string }>;
+  uploadTicket(bucket: Bucket, key: string): Promise<UploadTicket>;
   /** Die ersten Bytes eines liegenden Objekts und seine Gesamtgröße — zum Prüfen nach dem Direkt-Upload, ohne es ganz zu laden. */
   anfang(bucket: Bucket, key: string, bytes: number): Promise<{ bytes: Uint8Array; groesse: number }>;
   /** Alle Objekte unter einem Präfix, auch in Unterordnern. `kennung` ändert sich, wenn sich der Inhalt ändert (ETag). */
   auflisten(bucket: Bucket, praefix?: string): Promise<SpeicherEintrag[]>;
 }
+
+/**
+ * Wie der Browser die Datei an die Adresse schickt: `put` — ein PUT mit dem ganzen Inhalt (Supabase, signierte URL);
+ * `upload-session` — in Stücken mit `Content-Range`, wie Graph es für SharePoint verlangt. Ohne Angabe: `put`.
+ */
+export interface UploadTicket { url: string; art?: 'put' | 'upload-session' }
 
 export interface SpeicherEintrag { key: string; groesse: number; /** ISO-8601 */ geaendert: string; kennung: string }
 

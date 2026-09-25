@@ -6,6 +6,8 @@ export { EXTRACT_TOOL as EXPOSE_TOOL, SYSTEM_PROMPT as EXPOSE_SYSTEM_PROMPT } fr
 export { extractExposeFromText, hasCompleteAddress, missingCoreFields, type ExtractedExpose } from './expose/mailtext.ts';
 export * from './ki/attrappe.ts';
 export * from './speicher/speicher.ts';
+export * from './sharepoint/graphDrive.ts';
+export * from './sharepoint/speicher.ts';
 export * from './speicher/bild.ts';
 export * from './test/pdf-basteln.ts';
 export * from './expose/triage.ts';

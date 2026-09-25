@@ -21,6 +21,6 @@ export async function uploadTicket(speicher: Dateispeicher, zweck: UploadZweck, 
   // Die Größe kommt vom Browser und ist keine Zusage — sie erspart nur den vergeblichen Upload. Verbindlich ist die Übernahme.
   if (groesse !== undefined && groesse > maxBytes) throw new FachFehler(413, `Datei zu groß — höchstens ${maxBytes / 1024 / 1024} MB.`);
   const key = `${EINGANG}/${crypto.randomUUID()}`;
-  const { url } = await speicher.uploadTicket(bucket, key);
-  return { url, key };
+  const { url, art = 'put' } = await speicher.uploadTicket(bucket, key);
+  return { url, key, art };
 }

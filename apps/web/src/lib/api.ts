@@ -443,11 +443,24 @@ export const useBekannteExposeDateien = () => useQuery({ queryKey: ['expose', 'b
  * durch die API — online nimmt eine Function höchstens 4,5 MB an, echte Exposés haben bis zu 13 MB und mehr.
  * Geprüft wird danach vom Server, bei der Übernahme (`…/uebernehmen`).
  */
+/** Stückgröße für Upload-Sessions (SharePoint): Vielfaches von 320 KiB, wie Graph es verlangt. */
+const UPLOAD_STUECK = 10 * 320 * 1024 * 4;
+
 async function direktHochladen(zweck: 'expose' | 'dokument', datei: File): Promise<string> {
-  const { url, key } = await anfrage<{ url: string; key: string }>('/api/upload/ticket', senden('POST', { zweck, groesse: datei.size }));
+  const { url, key, art } = await anfrage<{ url: string; key: string; art: 'put' | 'upload-session' }>('/api/upload/ticket', senden('POST', { zweck, groesse: datei.size }));
+  const fehler = (status: number) => new ApiFehler(status, `„${datei.name}" ließ sich nicht hochladen (${status}). Bitte erneut versuchen.`);
   // Ohne Anmelde-Token: die Adresse selbst ist die Berechtigung, für genau diese eine Datei
+  if (art === 'upload-session') {
+    // SharePoint: in Stücken mit Content-Range; die letzte Antwort (200/201) trägt das fertige Item
+    for (let von = 0; von < datei.size; von += UPLOAD_STUECK) {
+      const bis = Math.min(von + UPLOAD_STUECK, datei.size);
+      const res = await fetch(url, { method: 'PUT', body: datei.slice(von, bis), headers: { 'content-range': `bytes ${von}-${bis - 1}/${datei.size}` } });
+      if (!res.ok) throw fehler(res.status);
+    }
+    return key;
+  }
   const res = await fetch(url, { method: 'PUT', body: datei, headers: { 'content-type': datei.type || 'application/octet-stream' } });
-  if (!res.ok) throw new ApiFehler(res.status, `„${datei.name}" ließ sich nicht hochladen (${res.status}). Bitte erneut versuchen.`);
+  if (!res.ok) throw fehler(res.status);
   return key;
 }
 
