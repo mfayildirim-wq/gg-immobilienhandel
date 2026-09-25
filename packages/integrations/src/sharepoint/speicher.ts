@@ -32,14 +32,32 @@ export const sharepointPfad = (key: string) => key.split('/').filter(Boolean).ma
 export interface SharepointSpeicherOptionen {
   /** Wurzelordner der App in der Bibliothek, z. B. „GG Immohandel“ */
   wurzel: string;
+  /**
+   * Ordnername je Bucket; Standard ist der Bucket-Name. Leer (`''`) heißt: kein eigener Ordner — der Schlüssel liegt
+   * direkt unter der Wurzel. So landen Dokumente unter `<wurzel>/Objekte/…` statt `<wurzel>/dokumente/Objekte/…`.
+   */
+  ordner?: Partial<Record<Bucket, string>>;
+}
+
+/** Der Adapter samt Zugriff auf Item-Kennung, Link und Download-Adresse — die Datenbank merkt sich die Kennung. */
+export interface SharepointAblage {
+  speicher: Dateispeicher;
+  item(bucket: Bucket, key: string): Promise<{ id: string; pfad: string; webUrl: string; eTag: string } | null>;
+  downloadUrl(bucket: Bucket, key: string): Promise<string | null>;
 }
 
 export function sharepointSpeicher(drive: GraphDrive, opt: SharepointSpeicherOptionen): Dateispeicher {
-  const wurzel = sharepointPfad(opt.wurzel);
-  const pfad = (bucket: Bucket, key: string) => `${wurzel}/${bucket}/${sharepointPfad(key)}`;
-  const praefixPfad = (bucket: Bucket, praefix: string) => (praefix ? `${wurzel}/${bucket}/${sharepointPfad(praefix)}` : `${wurzel}/${bucket}`);
+  return sharepointAblage(drive, opt).speicher;
+}
 
-  return {
+export function sharepointAblage(drive: GraphDrive, opt: SharepointSpeicherOptionen): SharepointAblage {
+  const wurzel = sharepointPfad(opt.wurzel);
+  const ordnerVon = (bucket: Bucket) => { const o = opt.ordner?.[bucket]; return o === undefined ? bucket : o; };
+  const bucketPfad = (bucket: Bucket) => [wurzel, sharepointPfad(ordnerVon(bucket))].filter(Boolean).join('/');
+  const pfad = (bucket: Bucket, key: string) => `${bucketPfad(bucket)}/${sharepointPfad(key)}`;
+  const praefixPfad = (bucket: Bucket, praefix: string) => (praefix ? `${bucketPfad(bucket)}/${sharepointPfad(praefix)}` : bucketPfad(bucket));
+
+  const speicher: Dateispeicher = {
     async ablegen(bucket, key, bytes, typ) {
       await drive.ablegen(pfad(bucket, key), bytes, typ);
     },
@@ -66,12 +84,24 @@ export function sharepointSpeicher(drive: GraphDrive, opt: SharepointSpeicherOpt
       return { bytes: teil.subarray(0, bytes), groesse: it.groesse };
     },
     async auflisten(bucket, praefix = '') {
-      const basis = `${wurzel}/${bucket}/`;
+      const basis = `${bucketPfad(bucket)}/`;
       const dateien = await drive.dateienUnter(praefixPfad(bucket, praefix));
       const aus: SpeicherEintrag[] = dateien
         .filter((d) => d.pfad.startsWith(basis))
         .map((d) => ({ key: d.pfad.slice(basis.length), groesse: d.groesse, geaendert: d.geaendert, kennung: d.eTag }));
       return aus.sort((a, b) => a.key.localeCompare(b.key));
+    },
+  };
+
+  return {
+    speicher,
+    async item(bucket, key) {
+      const it = await drive.item(pfad(bucket, key));
+      return it && !it.ordner ? { id: it.id, pfad: it.pfad, webUrl: it.webUrl, eTag: it.eTag } : null;
+    },
+    async downloadUrl(bucket, key) {
+      const it = await drive.item(pfad(bucket, key));
+      return it?.downloadUrl ?? null;
     },
   };
 }

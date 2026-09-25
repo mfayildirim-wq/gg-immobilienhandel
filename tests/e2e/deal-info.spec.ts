@@ -50,7 +50,7 @@ test('Deal-Info: Frequenz belegt Termin vor, Schnellknopf, E-Mail an Makler, Obj
   await txt.getByLabel('Bezeichnung').fill('Notiz Besichtigung');
   await txt.getByLabel('Bezeichnung').blur();
   await expect.poll(async () => (await (await page.request.get(`/api/deals/${d.id}/dokumente`)).json()).find((x: { dateiname: string }) => x.dateiname === 'notiz.txt').label).toBe('Notiz Besichtigung');
-  const oeffnen = zeilen.filter({ hasText: 'Exposé.pdf' }).getByRole('link', { name: 'Öffnen' });
+  const oeffnen = zeilen.filter({ hasText: 'Exposé.pdf' }).getByRole('link', { name: 'Anzeigen' });
   const antwort = await page.request.get((await oeffnen.getAttribute('href'))!);
   expect(antwort.headers()['content-type']).toBe('application/pdf');
   await txt.getByRole('button', { name: 'Löschen' }).click();

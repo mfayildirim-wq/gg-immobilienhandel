@@ -8,7 +8,7 @@ import type {
   KundenkalkulationSpeichern,
   KundenkalkEinstellungen,
   ObjektFoto,
-  DealDokument,
+  Dokument,
   PapierkorbEintrag,
   DublettenPaarSicht,
   AuditBefund,
@@ -617,25 +617,32 @@ export const useFilterAnlegen = () => useFilterAendern((e: GespeicherterFilterAn
 export const useFilterUmbenennen = () => useFilterAendern((e: { id: string; name: string }) => anfrage<GespeicherterFilter>(`/api/filter/${e.id}`, senden('PUT', { name: e.name })));
 export const useFilterLoeschen = () => useFilterAendern((id: string) => anfrage<{ id: string }>(`/api/filter/${id}`, { method: 'DELETE' }));
 
-// ── Deal-Dokumente ────────────────────────────────────────
-export const useDokumente = (dealId: string) => useQuery({ queryKey: ['dokumente', dealId], queryFn: () => anfrage<DealDokument[]>(`/api/deals/${dealId}/dokumente`) });
-function useDokumentAendern<E, R>(dealId: string, aufruf: (e: E) => Promise<R>) {
+// ── Dokumente an Deal und Objekt (Protokoll 19) ───────────
+export type DokumentBezug = { art: 'deal' | 'objekt'; id: string };
+const bezugPfad = (b: DokumentBezug) => `/api/${b.art === 'deal' ? 'deals' : 'objekte'}/${b.id}/dokumente`;
+/** Adresse zum Öffnen über die App — bei SharePoint leitet sie auf die kurzlebige Download-Adresse weiter */
+export const dokumentDateiUrl = (b: DokumentBezug, dokId: string) => `${bezugPfad(b)}/${dokId}/datei`;
+/** `mitDeals`: am Objekt auch die Dokumente seiner Deals */
+export const useDokumente = (b: DokumentBezug, mitDeals = false, aktiv = true) =>
+  useQuery({ queryKey: ['dokumente', b.art, b.id, mitDeals], enabled: aktiv, queryFn: () => anfrage<Dokument[]>(`${bezugPfad(b)}${mitDeals ? '?mitDeals=1' : ''}`) });
+function useDokumentAendern<E, R>(b: DokumentBezug, aufruf: (e: E) => Promise<R>) {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: aufruf, onSettled: () => qc.invalidateQueries({ queryKey: ['dokumente', dealId] }) });
+  // Ein Deal-Dokument ändert auch die Liste des Objekts — alle Dokumentlisten neu laden
+  return useMutation({ mutationFn: aufruf, onSettled: () => qc.invalidateQueries({ queryKey: ['dokumente'] }) });
 }
-export const useDokumenteHochladen = (dealId: string) => useDokumentAendern(dealId, async (dateien: File[]) => {
+export const useDokumenteHochladen = (b: DokumentBezug) => useDokumentAendern(b, async (dateien: File[]) => {
   // Nacheinander: ein Stapel großer Scans soll die Leitung nicht mit zwanzig parallelen Uploads belegen
   const liegend: { key: string; name: string; typ: string }[] = [];
   for (const f of dateien) liegend.push({ key: await direktHochladen('dokument', f), name: f.name, typ: f.type || 'application/octet-stream' });
   try {
-    return await anfrage<DealDokument[]>(`/api/deals/${dealId}/dokumente/uebernehmen`, senden('POST', { dateien: liegend }));
+    return await anfrage<Dokument[]>(`${bezugPfad(b)}/uebernehmen`, senden('POST', { dateien: liegend }));
   } catch (e) {
     if (e instanceof ApiFehler) throw new ApiFehler(e.status, [e.message, (e.details as { hint?: string } | undefined)?.hint].filter(Boolean).join(' '));
     throw e;
   }
 });
-export const useDokumentBezeichnen = (dealId: string) => useDokumentAendern(dealId, (e: { id: string; label: string }) => anfrage<{ ok: true }>(`/api/deals/${dealId}/dokumente/${e.id}`, senden('PATCH', { label: e.label })));
-export const useDokumentLoeschen = (dealId: string) => useDokumentAendern(dealId, (id: string) => anfrage<{ ok: true }>(`/api/deals/${dealId}/dokumente/${id}`, { method: 'DELETE' }));
+export const useDokumentBezeichnen = (b: DokumentBezug) => useDokumentAendern(b, (e: { id: string; label: string }) => anfrage<{ ok: true }>(`${bezugPfad(b)}/${e.id}`, senden('PATCH', { label: e.label })));
+export const useDokumentLoeschen = (b: DokumentBezug) => useDokumentAendern(b, (id: string) => anfrage<{ ok: true }>(`${bezugPfad(b)}/${id}`, { method: 'DELETE' }));
 
 // ── Kalkulationsvarianten und Einheiten aus Mieterliste ───
 export const useVarianten = (dealId: string) => useQuery({ queryKey: ['varianten', dealId], queryFn: () => anfrage<KalkVariante[]>(`/api/deals/${dealId}/varianten`) });
@@ -658,7 +665,7 @@ export function useEinheitenAusPdf(dealId: string) {
       return body as ErkannteEinheiten;
     },
     // Das PDF liegt auch bei einem Fehler der KI in den Dokumenten des Deals
-    onSettled: () => qc.invalidateQueries({ queryKey: ['dokumente', dealId] }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['dokumente'] }),
   });
 }
 

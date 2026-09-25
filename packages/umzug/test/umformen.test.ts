@@ -293,11 +293,13 @@ describe('Gespeicherte Filter und Listenreihenfolge', () => {
 
 describe('Deal-Dokumente', () => {
   it('übernimmt Metadaten mit dem Speicherschlüssel der alten App, erkennt Exposés, meldet Dokumente ohne Deal', () => {
-    expect(u.zeilen.dealDokumente.map((d) => [d.id, d.dealId, d.storageKey, d.label, d.istExpose, d.groesseBytes, d.hochgeladenAm])).toEqual([
+    expect(u.zeilen.dokumente.map((d) => [d.id, d.dealId, d.storageKey, d.label, d.istExpose, d.groesseBytes, d.hochgeladenAm])).toEqual([
       ['doc-1', 'deal-1', 'deal-1/doc-1_Expos_ Musterstra_e.pdf', '', true, 512000, new Date(1_758_110_700_000).toISOString()],
       ['doc-2', 'deal-1', 'deal-1/doc-2_Teilungserkl_rung _neu_.pdf', 'TE', false, 1024, new Date(1_758_110_800_000).toISOString()],
     ]);
     expect(arten('waise-dokument').map((b) => b.id)).toEqual(['doc-waise']);
+    // Bezug zum Objekt aus dem Deal — so erscheinen Deal-Dokumente auch am Objekt (Protokoll 19)
+    expect(u.zeilen.dokumente.map((d) => d.objektId)).toEqual(['obj-1', 'obj-1']);
   });
 });
 

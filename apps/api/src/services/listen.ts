@@ -3,7 +3,7 @@ import { type Db, schema } from '@gg/db';
 import { fehlendeVorlagen, type Module, type SavedFilter } from '@gg/domain';
 import { asc, eq, isNull, sql } from 'drizzle-orm';
 import { FachFehler } from '../fehler.ts';
-import { exposeDokumentIds } from './dealDokumente.ts';
+import { exposeDokumentIds } from './dateien.ts';
 
 /** Felder ohne Wert weglassen: die alte Sammlung kannte sie dann nicht (wichtig für is_set/is_empty der Filter). */
 const ohneLeer = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null && v !== undefined));

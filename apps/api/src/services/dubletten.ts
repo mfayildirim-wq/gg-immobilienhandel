@@ -82,7 +82,7 @@ async function aggregat(db: Db, typ: DublettenEntitaet, id: string): Promise<Agg
   const kommentare = await db.select().from(schema.dealKommentare).where(eq(schema.dealKommentare.dealId, id));
   const einheiten = await db.select().from(schema.dealEinheiten).where(eq(schema.dealEinheiten.dealId, id));
   const sanierungen = await db.select().from(schema.dealSanierungen).where(eq(schema.dealSanierungen.dealId, id));
-  const dokumente = await db.select().from(schema.dealDokumente).where(eq(schema.dealDokumente.dealId, id));
+  const dokumente = await db.select().from(schema.dokumente).where(eq(schema.dokumente.dealId, id));
   return { datensatz: { ...d, kommentare, einheiten, sanierungen }, listen: { kommentare, einheiten, sanierungen, dokumente } };
 }
 
@@ -102,7 +102,7 @@ const UNTERLISTEN: Record<DublettenEntitaet, { name: string; tabelle: any; spalt
     { name: 'kommentare', tabelle: schema.dealKommentare, spalte: schema.dealKommentare.dealId },
     { name: 'einheiten', tabelle: schema.dealEinheiten, spalte: schema.dealEinheiten.dealId },
     { name: 'sanierungen', tabelle: schema.dealSanierungen, spalte: schema.dealSanierungen.dealId },
-    { name: 'dokumente', tabelle: schema.dealDokumente, spalte: schema.dealDokumente.dealId },
+    { name: 'dokumente', tabelle: schema.dokumente, spalte: schema.dokumente.dealId },
   ],
 };
 

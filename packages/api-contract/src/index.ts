@@ -937,8 +937,22 @@ export const ListenAltformat = z.object({
 export type ListenAltformat = z.infer<typeof ListenAltformat>;
 
 // ── Deal-Dokumente ─────────────────────────────────────────
-export const DealDokument = z.object({ id: z.string(), dateiname: z.string(), mimeType: z.string(), groesseBytes: z.number(), label: z.string(), hochgeladenAm: z.string() });
-export type DealDokument = z.infer<typeof DealDokument>;
+/** Woran ein Dokument hängt (Protokoll 19): Deal oder Objekt — Makler und Projekt folgen. */
+export const DokumentBezug = z.object({ art: z.enum(['deal', 'objekt']), id: z.string().min(1) });
+export type DokumentBezug = z.infer<typeof DokumentBezug>;
+export const Dokument = z.object({
+  id: z.string(), dateiname: z.string(), mimeType: z.string(), groesseBytes: z.number(), label: z.string(), hochgeladenAm: z.string(),
+  istExpose: z.boolean(),
+  /** wo die Datei liegt; `pfad` ist bei SharePoint der Pfad in der Bibliothek, sonst Bucket/Schlüssel */
+  ablage: z.enum(['supabase', 'sharepoint']), pfad: z.string(),
+  /** „In SharePoint öffnen“ — nur bei SharePoint */
+  webUrl: z.string().nullable(),
+  bezug: DokumentBezug,
+});
+export type Dokument = z.infer<typeof Dokument>;
+/** @deprecated Name aus der Zeit, als Dokumente nur am Deal hingen */
+export const DealDokument = Dokument;
+export type DealDokument = Dokument;
 
 // ── Textvorlagen ───────────────────────────────────────────
 export const Textvorlage = z.object({ id: z.string().max(100), name: z.string().max(300), kanal: z.enum(['email', 'whatsapp', 'beide']), betreff: z.string().max(1000).optional(), text: z.string().max(20000) });

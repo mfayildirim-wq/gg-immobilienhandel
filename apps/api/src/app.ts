@@ -8,7 +8,8 @@ import {
   KundenkalkulationSpeichern,
   KundenkalkEinstellungen,
   FotoReihenfolge,
-  DealDokument,
+  Dokument,
+  DokumentBezug,
   PapierkorbEintrag,
   DublettenPaarSicht,
   AuditBefund,
@@ -95,6 +96,7 @@ import {
 import type { Db } from '@gg/db';
 import { AUFBEWAHRUNG, DealStatus, geplanteStufe, rueckwegPruefen, type RueckwegRegeln } from '@gg/domain';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
+import type { Context } from 'hono';
 import { sql } from 'drizzle-orm';
 import { bankgespraechPdf, type BilderPorts, browserStarten, erzeugeSchleuse, finanzpraesPdf, finanzpraesPptx, KeinBrowserError, praesentationDateiname, SCHLEUSE_STANDARD, type Schleuse } from '@gg/documents/pdf';
 import type { FinanzPraes } from '@gg/domain';
@@ -114,7 +116,7 @@ import {
   vertriebslisteAnlegen, vertriebslisteDetail, vertriebslisteLoeschen, vertriebslistenUebersicht, vertriebslisteSpeichern, vlEinstellungenLesen, vlEinstellungenSpeichern,
 } from './services/vertriebslisten.ts';
 import { varianteAnlegen, varianteLoeschen, variantenListe } from './services/kalkVarianten.ts';
-import { dokumentBezeichnen, dokumentDatei, einheitenAusMieterliste, dokumenteHochladen, dokumenteListe, dokumenteUebernehmen, dokumentLoeschen } from './services/dealDokumente.ts';
+import { dokumentBezeichnen, dokumentDatei, einheitenAusMieterliste, dokumenteHochladen, dokumenteListe, dokumenteUebernehmen, dokumentLoeschen } from './services/dateien.ts';
 import { uploadTicket } from './services/direktUpload.ts';
 import { alsStrom } from './strom.ts';
 import { cronErlaubt } from './cron.ts';
@@ -126,7 +128,7 @@ import { autoSicherungDatei, autoSicherungEinspielen, autoSicherungErstellen, au
 import { filterAnlegen, filterListe, filterLoeschen, filterUmbenennen, filterVorlagenEinrichten, listenAltformat } from './services/listen.ts';
 import { projektAnlegen, projektDealAuswahl, projektDetail, projekteListe, projektLoeschen, projektSpeichern } from './services/projekte.ts';
 import { fotoDatei, fotoHochladen, fotoLoeschen, fotoPort, fotosListe, fotosSortieren } from './services/fotos.ts';
-import { type Dateispeicher, type GraphClient, type KiClient, type PropstackClient, nachrichtenSuche, webSuche, anthropicClient } from '@gg/integrations';
+import { type Dateispeicher, type GraphClient, type KiClient, type PropstackClient, type SharepointAblage, nachrichtenSuche, webSuche, anthropicClient } from '@gg/integrations';
 import { bekannteExposeDateien, exposeAnalysieren, exposeEingang, exposeEingangUebernehmen, type ExposeKontext, exposeUebernehmen, MAX_EXPOSE_BYTES } from './services/expose.ts';
 import { auth, type AuthOptionen } from './middleware/auth.ts';
 import {
@@ -200,6 +202,8 @@ export interface AppKontext {
   autoImport?: { aktiv?: boolean; browserStarten?: () => Promise<import('playwright-core').Browser>; maxZeitlimitSek?: number; lokaleZieleErlaubt?: boolean };
   /** `CRON_SECRET`: ohne dieses Geheimnis antworten die Cron-Routen immer mit 401. */
   cronGeheimnis?: string;
+  /** SharePoint als Ablage neuer Dokumente (Protokoll 19); ohne Angabe bleibt alles in Supabase. */
+  sharepoint?: SharepointAblage | null;
   /** Wohin die Microsoft-Anmeldung zurückleiten darf; Standard: nur lokale Adressen (`rueckwegRegelnAusUmgebung`). */
   oauthRueckweg?: RueckwegRegeln;
   /** Dateiablage (Supabase Storage); ohne sie antworten Foto-Routen mit 422. */
@@ -223,12 +227,13 @@ const Version = z.object({ version: z.number().int() });
 const Geaendert = json(z.object({ id: z.string(), version: z.number().int() }), 'geändert');
 const konflikt = { 400: fehler('Eingabe ungültig'), 404: fehler('nicht gefunden'), 409: fehler('Versionskonflikt') };
 
-export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, cronGeheimnis, autoImport, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
+export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, cronGeheimnis, autoImport, sharepoint = null, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
   const autoImportAktiv = autoImport?.aktiv ?? true;
   const exposeKontext = () => {
     if (!expose) throw new FachFehler(422, 'Dateiablage ist nicht eingerichtet (SUPABASE_SERVICE_ROLE_KEY).');
-    return expose;
+    return { ...expose, sharepoint };
   };
+  const dateien = () => ({ db, speicher: ablage(), sharepoint });
   const ablage = () => {
     const s = speicherOpt ?? expose?.speicher;
     if (!s) throw new FachFehler(422, 'Dateiablage ist nicht eingerichtet (SUPABASE_SERVICE_ROLE_KEY).');
@@ -619,39 +624,48 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
     async (c) => c.json(await vlEinstellungenSpeichern(db, c.req.valid('json')), 200),
   );
 
-  // ── Deal-Dokumente (alt: /api/docs/:dealId) ─────────────
+  // ── Dokumente an Deal und Objekt (alt: /api/docs/:dealId; Protokoll 19) ─────────────
   const DokParam = z.object({ id: z.string().min(1), dokId: z.string().min(1) });
-  app.openapi(
-    createRoute({ method: 'get', path: '/api/deals/{id}/dokumente', request: { params: IdParam }, responses: { 200: json(z.array(DealDokument), 'Dokumente, neueste zuerst'), 404: fehler('Deal fehlt') } }),
-    async (c) => c.json(await dokumenteListe(db, c.req.valid('param').id), 200),
-  );
-  // Mehrteilige Formulardaten (Feld „dateien“, bis 20 Dateien); Prüfung der Signatur im Service
-  app.post('/api/deals/:id/dokumente', async (c) => {
+  const dateiAntwort = async (c: Context, bezug: DokumentBezug, dokId: string) => {
+    const d = await dokumentDatei(dateien(), bezug, dokId);
+    if (d.art === 'weiterleitung') return c.redirect(d.url, 302);
+    return alsStrom(d.bytes, { 'Content-Type': d.mime, 'Content-Disposition': d.disposition, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store' });
+  };
+  const formularDateien = async (c: Context) => {
     const form = await c.req.parseBody({ all: true });
     const roh = form['dateien'];
-    const dateien = await Promise.all((Array.isArray(roh) ? roh : roh ? [roh] : []).filter((f): f is File => typeof f !== 'string')
+    return Promise.all((Array.isArray(roh) ? roh : roh ? [roh] : []).filter((f): f is File => typeof f !== 'string')
       .map(async (f) => ({ name: f.name, typ: f.type, bytes: new Uint8Array(await f.arrayBuffer()) })));
-    return c.json(await dokumenteHochladen(db, ablage(), c.req.param('id'), dateien), 201);
-  });
-  app.get('/api/deals/:id/dokumente/:dokId/datei', async (c) => {
-    const d = await dokumentDatei(db, ablage(), c.req.param('id'), c.req.param('dokId'));
-    return alsStrom(d.bytes, { 'Content-Type': d.mime, 'Content-Disposition': d.disposition, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store' });
-  });
-  app.openapi(
-    createRoute({ method: 'patch', path: '/api/deals/{id}/dokumente/{dokId}', request: { params: DokParam, ...body(z.object({ label: z.string().max(500) })) }, responses: { 200: json(z.object({ ok: z.literal(true) }), 'Bezeichnung gespeichert'), 404: fehler('nicht gefunden') } }),
-    async (c) => { const p = c.req.valid('param'); return c.json(await dokumentBezeichnen(db, p.id, p.dokId, c.req.valid('json').label), 200); },
-  );
-  app.openapi(
-    createRoute({ method: 'delete', path: '/api/deals/{id}/dokumente/{dokId}', request: { params: DokParam }, responses: { 200: json(z.object({ ok: z.literal(true) }), 'gelöscht'), 404: fehler('nicht gefunden') } }),
-    async (c) => { const p = c.req.valid('param'); return c.json(await dokumentLoeschen(db, ablage(), p.id, p.dokId), 200); },
-  );
+  };
+  for (const [art, pfad, fehlt] of [['deal', 'deals', 'Deal fehlt'], ['objekt', 'objekte', 'Objekt fehlt']] as const) {
+    const bezug = (id: string): DokumentBezug => ({ art, id });
+    app.openapi(
+      createRoute({ method: 'get', path: `/api/${pfad}/{id}/dokumente`, request: { params: IdParam, query: z.object({ mitDeals: z.enum(['1']).optional() }) }, responses: { 200: json(z.array(Dokument), 'Dokumente, neueste zuerst'), 404: fehler(fehlt) } }),
+      async (c) => c.json(await dokumenteListe(db, bezug(c.req.valid('param').id), c.req.valid('query').mitDeals === '1'), 200),
+    );
+    // Mehrteilige Formulardaten (Feld „dateien“, bis 20 Dateien); Prüfung der Signatur im Service
+    app.post(`/api/${pfad}/:id/dokumente`, async (c) => c.json(await dokumenteHochladen(dateien(), bezug(c.req.param('id')), await formularDateien(c)), 201));
+    app.get(`/api/${pfad}/:id/dokumente/:dokId/datei`, (c) => dateiAntwort(c, bezug(c.req.param('id')), c.req.param('dokId')));
+    app.openapi(
+      createRoute({ method: 'patch', path: `/api/${pfad}/{id}/dokumente/{dokId}`, request: { params: DokParam, ...body(z.object({ label: z.string().max(500) })) }, responses: { 200: json(z.object({ ok: z.literal(true) }), 'Bezeichnung gesetzt'), 404: fehler('nicht gefunden') } }),
+      async (c) => { const p = c.req.valid('param'); return c.json(await dokumentBezeichnen(db, bezug(p.id), p.dokId, c.req.valid('json').label), 200); },
+    );
+    app.openapi(
+      createRoute({ method: 'delete', path: `/api/${pfad}/{id}/dokumente/{dokId}`, request: { params: DokParam }, responses: { 200: json(z.object({ ok: z.literal(true) }), 'gelöscht'), 404: fehler('nicht gefunden') } }),
+      async (c) => { const p = c.req.valid('param'); return c.json(await dokumentLoeschen(dateien(), bezug(p.id), p.dokId), 200); },
+    );
+    app.openapi(
+      createRoute({ method: 'post', path: `/api/${pfad}/{id}/dokumente/uebernehmen`, request: { params: IdParam, ...body(z.object({ dateien: z.array(z.object({ key: z.string(), name: z.string().min(1).max(300), typ: z.string().max(200) })).max(20) })) }, responses: { 201: json(z.array(Dokument), 'übernommen'), 400: fehler('Schlüssel ungültig'), 404: fehler('nicht gefunden'), 413: fehler('zu groß'), 415: fehler('Typ nicht erlaubt') } }),
+      async (c) => c.json(await dokumenteUebernehmen(dateien(), bezug(c.req.valid('param').id), c.req.valid('json').dateien), 201),
+    );
+  }
 
   // Einheiten aus Mieterliste-PDF (alt POST /api/deals/:dealId/extract-units, Feld „file“)
   app.post('/api/deals/:id/einheiten-aus-pdf', async (c) => {
     const form = await c.req.parseBody();
     const f = form['file'];
     const datei = f && typeof f !== 'string' ? { name: f.name, typ: f.type, bytes: new Uint8Array(await f.arrayBuffer()) } : null;
-    return c.json(await einheitenAusMieterliste(db, ablage(), await kiMitSchluessel(), c.req.param('id'), datei), 200);
+    return c.json(await einheitenAusMieterliste(dateien(), await kiMitSchluessel(), c.req.param('id'), datei), 200);
   });
 
   // ── Kalkulationsvarianten (alt d.kalkVarianten) ─────────
@@ -1149,15 +1163,11 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   // Direkt-Upload (Function-Grenze 4,5 MB): Ticket → Browser lädt in den Speicher → Übernahme prüft die liegende Datei
   app.openapi(
     createRoute({ method: 'post', path: '/api/upload/ticket', request: body(z.object({ zweck: z.enum(['expose', 'dokument']), groesse: z.number().int().nonnegative().optional() })), responses: { 200: json(z.object({ url: z.string(), key: z.string(), art: z.enum(['put', 'upload-session']) }), 'Upload-Adresse'), 413: fehler('zu groß'), 422: fehler('Dateiablage nicht eingerichtet') } }),
-    async (c) => { const b = c.req.valid('json'); return c.json(await uploadTicket(ablage(), b.zweck, b.groesse), 200); },
+    async (c) => { const b = c.req.valid('json'); return c.json(await uploadTicket(dateien(), b.zweck, b.groesse), 200); },
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/expose/eingang/uebernehmen', request: body(z.object({ key: z.string() })), responses: { 201: json(z.object({ key: z.string(), groesse: z.number() }), 'im Eingang'), 404: fehler('Datei fehlt'), 422: fehler('kein PDF') } }),
     async (c) => c.json(await exposeEingangUebernehmen(exposeKontext(), c.req.valid('json').key), 201),
-  );
-  app.openapi(
-    createRoute({ method: 'post', path: '/api/deals/{id}/dokumente/uebernehmen', request: { params: IdParam, ...body(z.object({ dateien: z.array(z.object({ key: z.string(), name: z.string().min(1).max(300), typ: z.string().max(200) })).min(1).max(50) })) }, responses: { 201: json(z.array(DealDokument), 'übernommen'), 404: fehler('nicht gefunden'), 413: fehler('zu groß'), 415: fehler('Dateiart nicht erlaubt') } }),
-    async (c) => c.json(await dokumenteUebernehmen(db, ablage(), c.req.valid('param').id, c.req.valid('json').dateien), 201),
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/expose/analyse', ...{ request: body(z.object({ key: z.string(), dateiname: z.string().max(300) })) }, responses: { 200: json(ExposeAnalyseAntwort, 'ausgewertet'), 404: fehler('Datei fehlt'), 422: fehler('nicht auswertbar') } }),
