@@ -85,7 +85,7 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
     expect(makler).toMatchObject({ tel: `+49 ${a.makler.tel.slice(1)}`, kontaktFrequenz: 'Monatlich', prio: 'B' });
     const verlauf = await lies(app.request(`/api/deals/${erg.dealId}/status-historie`));
     expect(verlauf[0]).toMatchObject({ nachStatus: 'In Prüfung', quelle: 'wizard' });
-    const [dok] = await db.select().from(schema.dealDokumente).where(eq(schema.dealDokumente.dealId, erg.dealId));
+    const [dok] = await db.select().from(schema.dokumente).where(eq(schema.dokumente.dealId, erg.dealId));
     expect(dok).toMatchObject({ label: 'Exposé (Import)', istExpose: true, dateiname: `Exposé_${kennung}strasse 12.pdf` });
     expect(speicher.inhalt.has(`pdfs/${erg.dealId}.pdf`)).toBe(true);
     expect(speicher.inhalt.has(`pdfs/${key}`)).toBe(false);

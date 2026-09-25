@@ -21,6 +21,7 @@ export interface GraphNachbau {
 
 export async function graphNachbauStarten(): Promise<GraphNachbau> {
   const eintraege = new Map<string, Eintrag>();
+  const geloeschte: Eintrag[] = [];
   const sessions = new Map<string, { pfad: string; teile: Uint8Array[]; erwartet: number }>();
   const monitore = new Set<string>();
   const anfragen: string[] = [];
@@ -99,7 +100,7 @@ export async function graphNachbauStarten(): Promise<GraphNachbau> {
 
     // Delta
     if (req.method === 'GET' && p === `/v1.0/drives/${DRIVE}/root/delta`) {
-      return antwort(res, 200, { value: [...eintraege.values()].map((e) => ({ ...alsGraph(e), ...(e.geloescht ? { deleted: { state: 'deleted' } } : {}) })), '@odata.deltaLink': `${basis}/v1.0/drives/${DRIVE}/root/delta?token=t1` });
+      return antwort(res, 200, { value: [...eintraege.values(), ...geloeschte].map((e) => ({ ...alsGraph(e), ...(e.geloescht ? { deleted: { state: 'deleted' } } : {}) })), '@odata.deltaLink': `${basis}/v1.0/drives/${DRIVE}/root/delta?token=t1` });
     }
     if (req.method === 'GET' && p === `/v1.0/drives/${DRIVE}/root/delta` && url.searchParams.get('token')) return antwort(res, 200, { value: [], '@odata.deltaLink': `${basis}${p}?token=t2` });
 
@@ -147,7 +148,7 @@ export async function graphNachbauStarten(): Promise<GraphNachbau> {
     }
     if (!aktion) {
       if (req.method === 'GET') return e && !e.geloescht ? antwort(res, 200, alsGraph(e)) : antwort(res, 404, { error: { code: 'itemNotFound' } });
-      if (req.method === 'DELETE') { if (!e) return antwort(res, 404, {}); for (const [k, x] of eintraege) if (k === pfad || k.startsWith(`${pfad}/`)) { x.geloescht = true; eintraege.delete(k); eintraege.set(`\u0000${k}`, x); } return antwort(res, 204); }
+      if (req.method === 'DELETE') { if (!e) return antwort(res, 404, {}); for (const [k, x] of eintraege) if (k === pfad || k.startsWith(`${pfad}/`)) { x.geloescht = true; eintraege.delete(k); geloeschte.push(x); } return antwort(res, 204); }
       if (req.method === 'PATCH') {
         if (!e) return antwort(res, 404, {});
         const body = JSON.parse((await lesen(req)).toString()) as { parentReference?: { id: string }; name?: string };

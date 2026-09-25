@@ -216,7 +216,7 @@ export async function pruefen(tx: Tx, kv: KvDaten, u: Umformung): Promise<Pruefu
   const dealIdsZiel = new Set((await tx.select({ id: schema.deals.id }).from(schema.deals)).map((d) => d.id));
   vergleiche('Deal-Dokumente (Metadaten)',
     liste(kv[DOKUMENT_TABELLE]).filter((f) => text(f.id) && typeof f.original_name === 'string' && dealIdsZiel.has(text(f.deal_id)!)).length,
-    await anzahl(schema.dealDokumente));
+    await anzahl(schema.dokumente));
 
   // DD-Dokumentenliste: gleiche Zeilen in gleicher Reihenfolge
   const ddAlt = liste(kv['immo-dd-template']).map((d) => [text(d.dokument), text(d.quelle)]);

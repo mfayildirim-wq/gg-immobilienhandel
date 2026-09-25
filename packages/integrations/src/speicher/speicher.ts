@@ -3,9 +3,9 @@
  * Buckets und Schlüssel wie in der alten App (server/storage.ts): pdfs/<dealId>.pdf, deal-docs/<dealId>/<docId>_<name>,
  * obj-photos/<objId>/<photoId>.jpg; neue Uploads zunächst unter pdfs/_eingang/<uuid>.
  */
-export const BUCKETS = { pdfs: 'pdfs', dealDocs: 'deal-docs', objPhotos: 'obj-photos', backups: 'backups', archiv: 'archive' } as const;
+export const BUCKETS = { pdfs: 'pdfs', dealDocs: 'deal-docs', objPhotos: 'obj-photos', backups: 'backups', archiv: 'archive', dokumente: 'dokumente' } as const;
 /** Die Buckets mit Geschäftsdateien — das, was der Archiv-Spiegel sichert. */
-export const DATEI_BUCKETS = [BUCKETS.pdfs, BUCKETS.dealDocs, BUCKETS.objPhotos] as const;
+export const DATEI_BUCKETS = [BUCKETS.pdfs, BUCKETS.dealDocs, BUCKETS.objPhotos, BUCKETS.dokumente] as const;
 export type Bucket = (typeof BUCKETS)[keyof typeof BUCKETS];
 
 /** Speicherschlüssel eines Objektfotos wie in der alten App (server/storage.ts photoKey): immer `.jpg`, auch bei PNG. */
