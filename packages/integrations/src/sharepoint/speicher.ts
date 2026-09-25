@@ -44,6 +44,10 @@ export interface SharepointAblage {
   speicher: Dateispeicher;
   item(bucket: Bucket, key: string): Promise<{ id: string; pfad: string; webUrl: string; eTag: string } | null>;
   downloadUrl(bucket: Bucket, key: string): Promise<string | null>;
+  /** Item über die gemerkte Kennung — für den Abgleich; Pfad relativ zur Bibliothek */
+  itemNachId(id: string): Promise<{ id: string; pfad: string; webUrl: string; eTag: string; downloadUrl?: string } | null>;
+  /** Speicherschlüssel zu einem Bibliothekspfad — null, wenn die Datei außerhalb des Bucket-Ordners liegt */
+  schluessel(bucket: Bucket, pfad: string): string | null;
 }
 
 export function sharepointSpeicher(drive: GraphDrive, opt: SharepointSpeicherOptionen): Dateispeicher {
@@ -102,6 +106,14 @@ export function sharepointAblage(drive: GraphDrive, opt: SharepointSpeicherOptio
     async downloadUrl(bucket, key) {
       const it = await drive.item(pfad(bucket, key));
       return it?.downloadUrl ?? null;
+    },
+    async itemNachId(id) {
+      const it = await drive.itemNachId(id);
+      return it && !it.ordner ? { id: it.id, pfad: it.pfad, webUrl: it.webUrl, eTag: it.eTag, downloadUrl: it.downloadUrl } : null;
+    },
+    schluessel(bucket, pfad) {
+      const basis = `${bucketPfad(bucket)}/`;
+      return pfad.startsWith(basis) ? pfad.slice(basis.length) : null;
     },
   };
 }

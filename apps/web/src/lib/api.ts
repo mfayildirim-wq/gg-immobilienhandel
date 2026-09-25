@@ -276,6 +276,15 @@ export const useSharepointKonfiguration = () => {
   const qc = useQueryClient();
   return useMutation({ mutationFn: (e: { siteUrl: string; wurzel: string; aktiv: boolean }) => anfrage('/api/sharepoint/konfiguration', senden('PUT', e)), onSettled: () => qc.invalidateQueries({ queryKey: ['sharepoint'] }) });
 };
+export const useSharepointMigration = () => useQuery({ queryKey: ['sharepoint', 'migration'], queryFn: () => anfrage<{ inSupabase: number; inSharepoint: number; fehlend: number }>('/api/sharepoint/migration') });
+export const useSharepointMigrieren = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (limit: number) => anfrage<{ migriert: number; offen: number; fehler: string[] }>('/api/sharepoint/migration', senden('POST', { limit })), onSettled: () => { void qc.invalidateQueries({ queryKey: ['sharepoint'] }); void qc.invalidateQueries({ queryKey: ['dokumente'] }); } });
+};
+export const useSharepointAbgleich = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: () => anfrage<{ geprueft: number; verschoben: number; verschwunden: number; zurueck: number; fehler: string[] }>('/api/sharepoint/abgleich', senden('POST', {})), onSettled: () => { void qc.invalidateQueries({ queryKey: ['sharepoint'] }); void qc.invalidateQueries({ queryKey: ['dokumente'] }); } });
+};
 export const useSharepointTest = () => useMutation({ mutationFn: () => anfrage<{ ok: true; schritte: string[]; webUrl: string; dauerMs: number }>('/api/sharepoint/test', senden('POST', {})) });
 export const useM365Anmeldung = () => useMutation({ mutationFn: (redirectUri: string) => anfrage<{ url: string }>('/api/m365/anmeldung', senden('POST', { redirectUri })) });
 export const useM365Rueckweg = () => useM365Aendern((e: { code: string; state: string }) => anfrage<{ email: string }>('/api/m365/rueckweg', senden('POST', e)));

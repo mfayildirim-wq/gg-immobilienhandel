@@ -104,6 +104,9 @@ export async function graphNachbauStarten(): Promise<GraphNachbau> {
     }
     if (req.method === 'GET' && p === `/v1.0/drives/${DRIVE}/root/delta` && url.searchParams.get('token')) return antwort(res, 200, { value: [], '@odata.deltaLink': `${basis}${p}?token=t2` });
 
+    // Item über Kennung
+    const mid = /^\/v1\.0\/drives\/drive-test\/items\/([^/]+)$/.exec(p);
+    if (mid && req.method === 'GET') { const e = [...eintraege.values()].find((x) => x.id === mid[1]); return e ? antwort(res, 200, alsGraph(e)) : antwort(res, 404, { error: { code: 'itemNotFound' } }); }
     // Items über Pfad: /v1.0/drives/<d>/root[:/<pfad>:][/<aktion>]
     const m = /^\/v1\.0\/drives\/drive-test\/root(?::\/(.*?):)?(?:\/(children|content|createUploadSession|copy))?$/.exec(p);
     if (!m) return antwort(res, 404, { error: { code: 'itemNotFound', message: p } });

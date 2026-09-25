@@ -1,7 +1,7 @@
 import { Alert, Anchor, Badge, Button, Code, Group, List, Loader, Paper, Stack, Switch, Text, TextInput, Title } from '@mantine/core';
 import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
-import { useSharepoint, useSharepointKonfiguration, useSharepointTest } from '../lib/api.ts';
+import { useSharepoint, useSharepointAbgleich, useSharepointKonfiguration, useSharepointMigration, useSharepointMigrieren, useSharepointTest } from '../lib/api.ts';
 
 /**
  * 📂 SharePoint (Einstellungen, Protokoll 19): Site und Wurzelordner eintragen, Verbindung prüfen, einschalten.
@@ -12,6 +12,9 @@ export function SharepointEinstellungen() {
   const { data, isLoading, error } = useSharepoint();
   const speichern = useSharepointKonfiguration();
   const test = useSharepointTest();
+  const { data: bestand } = useSharepointMigration();
+  const migrieren = useSharepointMigrieren();
+  const abgleich = useSharepointAbgleich();
   const [form, setForm] = useState<{ siteUrl: string; wurzel: string; aktiv: boolean } | null>(null);
   const werte = form ?? { siteUrl: data?.siteUrl ?? '', wurzel: data?.wurzel ?? data?.wurzelStandard ?? '', aktiv: data?.aktiv ?? false };
   const geaendert = form !== null && (form.siteUrl !== data?.siteUrl || form.wurzel !== data?.wurzel || form.aktiv !== data?.aktiv);
@@ -69,6 +72,37 @@ export function SharepointEinstellungen() {
                 <Anchor href={test.data.webUrl} target="_blank" rel="noopener" size="xs">Ordner in SharePoint öffnen</Anchor>
               </Alert>
             )}
+          </Paper>
+
+          <Paper withBorder p="sm" aria-label="Bestand und Abgleich">
+            <Text size="sm" fw={600} mb={6}>Bestand und Abgleich</Text>
+            <Text size="xs" c="dimmed" mb={6}>
+              {bestand ? `${bestand.inSupabase} Dokument${bestand.inSupabase === 1 ? '' : 'e'} in Supabase · ${bestand.inSharepoint} in SharePoint${bestand.fehlend ? ` · ${bestand.fehlend} in SharePoint nicht mehr gefunden` : ''}` : '…'}
+            </Text>
+            <Group gap="xs">
+              <Button size="xs" variant="light" loading={migrieren.isPending} disabled={!data.aktiv || !bestand?.inSupabase} onClick={() => migrieren.mutate(25)}>
+                Bestand nach SharePoint übertragen (25 je Lauf)
+              </Button>
+              <Button size="xs" variant="default" loading={abgleich.isPending} disabled={!data.aktiv || !bestand?.inSharepoint} onClick={() => abgleich.mutate()}>
+                Abgleich mit SharePoint
+              </Button>
+            </Group>
+            {migrieren.data && (
+              <Alert color={migrieren.data.fehler.length ? 'orange' : 'teal'} mt="xs" data-sharepoint-migration>
+                {migrieren.data.migriert} übertragen, noch {migrieren.data.offen} offen{migrieren.data.offen > 0 && !migrieren.data.fehler.length ? ' — erneut klicken für das nächste Bündel' : ''}.
+                {migrieren.data.fehler.length > 0 && <List size="xs" mt={4}>{migrieren.data.fehler.map((f) => <List.Item key={f}>{f}</List.Item>)}</List>}
+              </Alert>
+            )}
+            {abgleich.data && (
+              <Alert color={abgleich.data.verschwunden || abgleich.data.fehler.length ? 'orange' : 'teal'} mt="xs" data-sharepoint-abgleich>
+                {abgleich.data.geprueft} geprüft · {abgleich.data.verschoben} in SharePoint verschoben oder umbenannt (eingeholt) · {abgleich.data.verschwunden} nicht mehr gefunden · {abgleich.data.zurueck} wieder da
+                {abgleich.data.fehler.length > 0 && <List size="xs" mt={4}>{abgleich.data.fehler.map((f) => <List.Item key={f}>{f}</List.Item>)}</List>}
+              </Alert>
+            )}
+            {(migrieren.error || abgleich.error) && <Alert color="red" mt="xs">{(migrieren.error ?? abgleich.error)!.message}</Alert>}
+            <Text fz={10} c="dimmed" mt={6}>
+              Übertragen kopiert nach SharePoint und stellt die Zeile um; die Datei in Supabase bleibt als Rückweg liegen. Der Abgleich findet Dateien über ihre Kennung wieder, auch wenn sie in SharePoint verschoben wurden; Verschwundenes wird datiert, nie gelöscht.
+            </Text>
           </Paper>
 
           <Paper withBorder p="sm">

@@ -120,6 +120,7 @@ import {
 import { varianteAnlegen, varianteLoeschen, variantenListe } from './services/kalkVarianten.ts';
 import { dokumentBezeichnen, dokumentDatei, einheitenAusMieterliste, dokumenteHochladen, dokumenteListe, dokumenteUebernehmen, dokumentLoeschen } from './services/dateien.ts';
 import { sharepointKonfigurationSpeichern, sharepointStand, sharepointVerbindungTesten } from './services/sharepoint.ts';
+import { dokumenteAbgleichen, dokumenteNachSharepoint, migrationsStand } from './services/dokumenteMigration.ts';
 import { uploadTicket } from './services/direktUpload.ts';
 import { alsStrom } from './strom.ts';
 import { cronErlaubt } from './cron.ts';
@@ -728,6 +729,18 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   app.openapi(
     createRoute({ method: 'post', path: '/api/sharepoint/test', responses: { 200: json(z.object({ ok: z.literal(true), schritte: z.array(z.string()), webUrl: z.string(), dauerMs: z.number() }), 'Verbindung steht'), 422: fehler('nicht eingerichtet'), 502: fehler('Verbindung fehlgeschlagen') } }),
     async (c) => c.json(await sharepointVerbindungTesten(db), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'get', path: '/api/sharepoint/migration', responses: { 200: json(z.object({ inSupabase: z.number(), inSharepoint: z.number(), fehlend: z.number() }), 'Stand des Bestands') } }),
+    async (c) => c.json(await migrationsStand(db), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/sharepoint/migration', request: body(z.object({ limit: z.number().int().min(1).max(200).optional() })), responses: { 200: json(z.object({ migriert: z.number(), offen: z.number(), fehler: z.array(z.string()) }), 'ein Bündel übertragen'), 422: fehler('nicht aktiv') } }),
+    async (c) => { const k = await dateien(); return c.json(await dokumenteNachSharepoint(db, k.speicher, k.sharepoint, c.req.valid('json').limit), 200); },
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/sharepoint/abgleich', responses: { 200: json(z.object({ geprueft: z.number(), verschoben: z.number(), verschwunden: z.number(), zurueck: z.number(), fehler: z.array(z.string()) }), 'abgeglichen'), 422: fehler('nicht aktiv') } }),
+    async (c) => c.json(await dokumenteAbgleichen(db, await sharepointJetzt()), 200),
   );
   app.openapi(
     createRoute({ method: 'put', path: '/api/m365/ordner', request: body(z.object({ ordner: z.string().max(200) })), responses: { 200: json(z.object({ ordner: z.string() }), 'gespeichert') } }),

@@ -952,6 +952,8 @@ export const Dokument = z.object({
   ablage: z.enum(['supabase', 'sharepoint']), pfad: z.string(),
   /** „In SharePoint öffnen“ — nur bei SharePoint */
   webUrl: z.string().nullable(),
+  /** vom Abgleich gesetzt, wenn die Datei in SharePoint nicht mehr gefunden wird */
+  fehltSeit: z.string().nullable(),
   bezug: DokumentBezug,
 });
 export type Dokument = z.infer<typeof Dokument>;
