@@ -33,6 +33,19 @@ export function appToken(cfg: AppTokenKonfiguration, loginBasis = 'https://login
   };
 }
 
+/**
+ * Graph spricht Sites auch über `hostname:/sites/Name` an — die Adresse aus dem Browser reicht als Site-Kennung.
+ * `https://firma.sharepoint.com/sites/GGImmohandel` → `firma.sharepoint.com:/sites/GGImmohandel:`; eine Kennung
+ * der Form `host,guid,guid` bleibt, wie sie ist.
+ */
+export function siteIdAusUrl(siteUrl: string): string {
+  const s = siteUrl.trim();
+  if (!/^https?:\/\//i.test(s)) return s;
+  const u = new URL(s);
+  const pfad = u.pathname.replace(/\/+$/, '');
+  return pfad && pfad !== '/' ? `${u.hostname}:${pfad}:` : u.hostname;
+}
+
 export interface DriveItem {
   id: string;
   name: string;
@@ -122,7 +135,7 @@ export function graphDrive(accessToken: () => Promise<string>, siteId: string, b
   const status = (e: unknown) => (e as { status?: number })?.status;
 
   const driveId = async () => {
-    if (!drive) drive = (await json<{ id: string }>('GET', `/sites/${encodeURIComponent(siteId)}/drive?$select=id`)).id;
+    if (!drive) drive = (await json<{ id: string }>('GET', `/sites/${siteId.includes(':') ? siteId : encodeURIComponent(siteId)}/drive?$select=id`)).id;
     return drive;
   };
   const wurzel = async (pfad: string) => `/drives/${await driveId()}/root${pfad ? `:/${encodePfad(pfad)}:` : ''}`;

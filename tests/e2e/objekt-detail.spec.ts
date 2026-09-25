@@ -77,15 +77,20 @@ test('Objekt-Detail: Reiter „Dokumente“ — hochladen am Objekt, Pfad sichtb
   await expect(detail.getByLabel('Dokumente der Deals')).toContainText('Mietvertrag.pdf');
 
   await detail.getByTestId('dokument-auswahl').setInputFiles([{ name: 'Grundbuch.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7\n' + 'g'.repeat(200)) }]);
-  await expect(detail.getByText('1 Dokument gespeichert')).toBeVisible();
+  await expect(detail.getByText('1 Dokument gespeichert')).toBeVisible({ timeout: 30_000 }); // SharePoint-Ablage braucht länger
   const zeile = detail.locator('[data-dokument]').filter({ hasText: 'Grundbuch.pdf' });
-  await expect(zeile).toHaveAttribute('data-ablage', 'supabase'); // lokal ohne SharePoint: Supabase
-  await expect(zeile.locator('[data-pfad]')).toContainText(`deal-docs/${o.id}/`);
+  // Ablage je nach Einstellung: Supabase (Standard) oder SharePoint (Einstellungen → SharePoint aktiv)
+  const ablage = await zeile.getAttribute('data-ablage');
+  expect(['supabase', 'sharepoint']).toContain(ablage);
+  await expect(zeile.locator('[data-pfad]')).toContainText(ablage === 'sharepoint' ? `Objekte/${strasse} 3, Ulm [${o.id}]/Grundbuch.pdf` : `deal-docs/${o.id}/`);
   const antwort = await page.request.get((await zeile.getByRole('link', { name: 'Anzeigen' }).getAttribute('href'))!);
-  expect(antwort.headers()['content-type']).toBe('application/pdf');
+  expect(antwort.status()).toBe(200);
+  expect((await antwort.body()).subarray(0, 5).toString()).toBe('%PDF-');
   const liste = await (await page.request.get(`/api/objekte/${o.id}/dokumente`)).json();
   expect(liste).toHaveLength(1);
-  expect(liste[0]).toMatchObject({ dateiname: 'Grundbuch.pdf', bezug: { art: 'objekt', id: o.id }, ablage: 'supabase', webUrl: null });
+  expect(liste[0]).toMatchObject({ dateiname: 'Grundbuch.pdf', bezug: { art: 'objekt', id: o.id }, ablage });
+  if (ablage === 'sharepoint') { expect(liste[0].webUrl).toContain('sharepoint.com'); await expect(zeile.getByRole('link', { name: 'In SharePoint öffnen' })).toBeVisible(); }
+  else expect(liste[0].webUrl).toBeNull();
   await zeile.getByRole('button', { name: 'Löschen' }).click();
   await expect(detail.getByText('📁 Noch keine Dokumente')).toBeVisible();
 });

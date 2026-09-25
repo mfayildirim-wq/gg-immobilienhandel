@@ -10,6 +10,8 @@ import {
   FotoReihenfolge,
   Dokument,
   DokumentBezug,
+  SharepointKonfiguration,
+  SharepointStand,
   PapierkorbEintrag,
   DublettenPaarSicht,
   AuditBefund,
@@ -117,6 +119,7 @@ import {
 } from './services/vertriebslisten.ts';
 import { varianteAnlegen, varianteLoeschen, variantenListe } from './services/kalkVarianten.ts';
 import { dokumentBezeichnen, dokumentDatei, einheitenAusMieterliste, dokumenteHochladen, dokumenteListe, dokumenteUebernehmen, dokumentLoeschen } from './services/dateien.ts';
+import { sharepointKonfigurationSpeichern, sharepointStand, sharepointVerbindungTesten } from './services/sharepoint.ts';
 import { uploadTicket } from './services/direktUpload.ts';
 import { alsStrom } from './strom.ts';
 import { cronErlaubt } from './cron.ts';
@@ -202,8 +205,11 @@ export interface AppKontext {
   autoImport?: { aktiv?: boolean; browserStarten?: () => Promise<import('playwright-core').Browser>; maxZeitlimitSek?: number; lokaleZieleErlaubt?: boolean };
   /** `CRON_SECRET`: ohne dieses Geheimnis antworten die Cron-Routen immer mit 401. */
   cronGeheimnis?: string;
-  /** SharePoint als Ablage neuer Dokumente (Protokoll 19); ohne Angabe bleibt alles in Supabase. */
-  sharepoint?: SharepointAblage | null;
+  /**
+   * SharePoint als Ablage neuer Dokumente (Protokoll 19): fest (Tests) oder als Lieferant, der sie aus den
+   * Einstellungen baut (Server). Ohne Angabe oder mit null bleibt alles in Supabase.
+   */
+  sharepoint?: SharepointAblage | null | (() => Promise<SharepointAblage | null>);
   /** Wohin die Microsoft-Anmeldung zurückleiten darf; Standard: nur lokale Adressen (`rueckwegRegelnAusUmgebung`). */
   oauthRueckweg?: RueckwegRegeln;
   /** Dateiablage (Supabase Storage); ohne sie antworten Foto-Routen mit 422. */
@@ -229,11 +235,12 @@ const konflikt = { 400: fehler('Eingabe ungültig'), 404: fehler('nicht gefunden
 
 export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, cronGeheimnis, autoImport, sharepoint = null, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
   const autoImportAktiv = autoImport?.aktiv ?? true;
-  const exposeKontext = () => {
+  const exposeKontext = async () => {
     if (!expose) throw new FachFehler(422, 'Dateiablage ist nicht eingerichtet (SUPABASE_SERVICE_ROLE_KEY).');
-    return { ...expose, sharepoint };
+    return { ...expose, sharepoint: await sharepointJetzt() };
   };
-  const dateien = () => ({ db, speicher: ablage(), sharepoint });
+  const sharepointJetzt = () => (typeof sharepoint === 'function' ? sharepoint() : Promise.resolve(sharepoint));
+  const dateien = async () => ({ db, speicher: ablage(), sharepoint: await sharepointJetzt() });
   const ablage = () => {
     const s = speicherOpt ?? expose?.speicher;
     if (!s) throw new FachFehler(422, 'Dateiablage ist nicht eingerichtet (SUPABASE_SERVICE_ROLE_KEY).');
@@ -627,7 +634,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   // ── Dokumente an Deal und Objekt (alt: /api/docs/:dealId; Protokoll 19) ─────────────
   const DokParam = z.object({ id: z.string().min(1), dokId: z.string().min(1) });
   const dateiAntwort = async (c: Context, bezug: DokumentBezug, dokId: string) => {
-    const d = await dokumentDatei(dateien(), bezug, dokId);
+    const d = await dokumentDatei(await dateien(), bezug, dokId);
     if (d.art === 'weiterleitung') return c.redirect(d.url, 302);
     return alsStrom(d.bytes, { 'Content-Type': d.mime, 'Content-Disposition': d.disposition, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store' });
   };
@@ -644,7 +651,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
       async (c) => c.json(await dokumenteListe(db, bezug(c.req.valid('param').id), c.req.valid('query').mitDeals === '1'), 200),
     );
     // Mehrteilige Formulardaten (Feld „dateien“, bis 20 Dateien); Prüfung der Signatur im Service
-    app.post(`/api/${pfad}/:id/dokumente`, async (c) => c.json(await dokumenteHochladen(dateien(), bezug(c.req.param('id')), await formularDateien(c)), 201));
+    app.post(`/api/${pfad}/:id/dokumente`, async (c) => c.json(await dokumenteHochladen(await dateien(), bezug(c.req.param('id')), await formularDateien(c)), 201));
     app.get(`/api/${pfad}/:id/dokumente/:dokId/datei`, (c) => dateiAntwort(c, bezug(c.req.param('id')), c.req.param('dokId')));
     app.openapi(
       createRoute({ method: 'patch', path: `/api/${pfad}/{id}/dokumente/{dokId}`, request: { params: DokParam, ...body(z.object({ label: z.string().max(500) })) }, responses: { 200: json(z.object({ ok: z.literal(true) }), 'Bezeichnung gesetzt'), 404: fehler('nicht gefunden') } }),
@@ -652,11 +659,11 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
     );
     app.openapi(
       createRoute({ method: 'delete', path: `/api/${pfad}/{id}/dokumente/{dokId}`, request: { params: DokParam }, responses: { 200: json(z.object({ ok: z.literal(true) }), 'gelöscht'), 404: fehler('nicht gefunden') } }),
-      async (c) => { const p = c.req.valid('param'); return c.json(await dokumentLoeschen(dateien(), bezug(p.id), p.dokId), 200); },
+      async (c) => { const p = c.req.valid('param'); return c.json(await dokumentLoeschen(await dateien(), bezug(p.id), p.dokId), 200); },
     );
     app.openapi(
       createRoute({ method: 'post', path: `/api/${pfad}/{id}/dokumente/uebernehmen`, request: { params: IdParam, ...body(z.object({ dateien: z.array(z.object({ key: z.string(), name: z.string().min(1).max(300), typ: z.string().max(200) })).max(20) })) }, responses: { 201: json(z.array(Dokument), 'übernommen'), 400: fehler('Schlüssel ungültig'), 404: fehler('nicht gefunden'), 413: fehler('zu groß'), 415: fehler('Typ nicht erlaubt') } }),
-      async (c) => c.json(await dokumenteUebernehmen(dateien(), bezug(c.req.valid('param').id), c.req.valid('json').dateien), 201),
+      async (c) => c.json(await dokumenteUebernehmen(await dateien(), bezug(c.req.valid('param').id), c.req.valid('json').dateien), 201),
     );
   }
 
@@ -665,7 +672,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
     const form = await c.req.parseBody();
     const f = form['file'];
     const datei = f && typeof f !== 'string' ? { name: f.name, typ: f.type, bytes: new Uint8Array(await f.arrayBuffer()) } : null;
-    return c.json(await einheitenAusMieterliste(dateien(), await kiMitSchluessel(), c.req.param('id'), datei), 200);
+    return c.json(await einheitenAusMieterliste(await dateien(), await kiMitSchluessel(), c.req.param('id'), datei), 200);
   });
 
   // ── Kalkulationsvarianten (alt d.kalkVarianten) ─────────
@@ -708,6 +715,19 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   app.openapi(
     createRoute({ method: 'put', path: '/api/m365/konfiguration', request: body(z.object({ clientId: z.string().max(200), tenantId: z.string().max(200), clientSecret: z.string().max(500).optional() })), responses: { 200: json(z.object({ ok: z.literal(true) }), 'gespeichert') } }),
     async (c) => c.json(await m365KonfigurationSpeichern(db, c.req.valid('json')), 200),
+  );
+  // ── SharePoint als Dokumentablage (Protokoll 19) ──
+  app.openapi(
+    createRoute({ method: 'get', path: '/api/sharepoint', responses: { 200: json(SharepointStand, 'Site, Wurzel, Schalter') } }),
+    async (c) => c.json(await sharepointStand(db), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'put', path: '/api/sharepoint/konfiguration', request: body(SharepointKonfiguration), responses: { 200: json(z.object({ ok: z.literal(true) }), 'gespeichert'), 400: fehler('unvollständig') } }),
+    async (c) => c.json(await sharepointKonfigurationSpeichern(db, c.req.valid('json')), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/sharepoint/test', responses: { 200: json(z.object({ ok: z.literal(true), schritte: z.array(z.string()), webUrl: z.string(), dauerMs: z.number() }), 'Verbindung steht'), 422: fehler('nicht eingerichtet'), 502: fehler('Verbindung fehlgeschlagen') } }),
+    async (c) => c.json(await sharepointVerbindungTesten(db), 200),
   );
   app.openapi(
     createRoute({ method: 'put', path: '/api/m365/ordner', request: body(z.object({ ordner: z.string().max(200) })), responses: { 200: json(z.object({ ordner: z.string() }), 'gespeichert') } }),
@@ -767,7 +787,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   // Anhang → Exposé-Eingang: dieselbe Strecke wie ein Datei-Upload, nur aus der Mail
   app.post('/api/m365/mails/:uid/anhaenge/:anhangId/uebernehmen', async (c) => {
     const bytes = await m365Anhang(db, graphOpt, c.req.param('uid'), c.req.param('anhangId'));
-    const eingang = await exposeEingang(exposeKontext(), bytes);
+    const eingang = await exposeEingang(await exposeKontext(), bytes);
     await m365Sperren(db, c.req.param('uid'));
     return c.json(eingang, 200);
   });
@@ -1158,24 +1178,24 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
     const laenge = Number(c.req.header('content-length') ?? 0);
     if (laenge > MAX_EXPOSE_BYTES) return c.json({ fehler: 'Das PDF ist größer als 200 MB.' }, 413);
     const bytes = new Uint8Array(await c.req.arrayBuffer());
-    return c.json(await exposeEingang(exposeKontext(), bytes), 201);
+    return c.json(await exposeEingang(await exposeKontext(), bytes), 201);
   });
   // Direkt-Upload (Function-Grenze 4,5 MB): Ticket → Browser lädt in den Speicher → Übernahme prüft die liegende Datei
   app.openapi(
     createRoute({ method: 'post', path: '/api/upload/ticket', request: body(z.object({ zweck: z.enum(['expose', 'dokument']), groesse: z.number().int().nonnegative().optional() })), responses: { 200: json(z.object({ url: z.string(), key: z.string(), art: z.enum(['put', 'upload-session']) }), 'Upload-Adresse'), 413: fehler('zu groß'), 422: fehler('Dateiablage nicht eingerichtet') } }),
-    async (c) => { const b = c.req.valid('json'); return c.json(await uploadTicket(dateien(), b.zweck, b.groesse), 200); },
+    async (c) => { const b = c.req.valid('json'); return c.json(await uploadTicket(await dateien(), b.zweck, b.groesse), 200); },
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/expose/eingang/uebernehmen', request: body(z.object({ key: z.string() })), responses: { 201: json(z.object({ key: z.string(), groesse: z.number() }), 'im Eingang'), 404: fehler('Datei fehlt'), 422: fehler('kein PDF') } }),
-    async (c) => c.json(await exposeEingangUebernehmen(exposeKontext(), c.req.valid('json').key), 201),
+    async (c) => c.json(await exposeEingangUebernehmen(await exposeKontext(), c.req.valid('json').key), 201),
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/expose/analyse', ...{ request: body(z.object({ key: z.string(), dateiname: z.string().max(300) })) }, responses: { 200: json(ExposeAnalyseAntwort, 'ausgewertet'), 404: fehler('Datei fehlt'), 422: fehler('nicht auswertbar') } }),
-    async (c) => { const b = c.req.valid('json'); return c.json(await exposeAnalysieren(db, exposeKontext(), b.key, b.dateiname), 200); },
+    async (c) => { const b = c.req.valid('json'); return c.json(await exposeAnalysieren(db, await exposeKontext(), b.key, b.dateiname), 200); },
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/expose/uebernehmen', request: body(ExposeUebernehmen), responses: { 201: json(ExposeUebernahmeErgebnis, 'angelegt'), 404: fehler('nicht gefunden'), 409: fehler('Deal bereits vorhanden'), 422: fehler('ungültig') } }),
-    async (c) => c.json(await exposeUebernehmen(db, exposeKontext(), c.req.valid('json'), heuteBerlin()), 201),
+    async (c) => c.json(await exposeUebernehmen(db, await exposeKontext(), c.req.valid('json'), heuteBerlin()), 201),
   );
   app.get('/api/expose/bekannte-dateien', async (c) => c.json(await bekannteExposeDateien(db)));
 

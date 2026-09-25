@@ -9,6 +9,7 @@ import type {
   KundenkalkEinstellungen,
   ObjektFoto,
   Dokument,
+  SharepointStand,
   PapierkorbEintrag,
   DublettenPaarSicht,
   AuditBefund,
@@ -269,6 +270,13 @@ function useM365Aendern<E, R>(aufruf: (e: E) => Promise<R>) {
 }
 export const useM365Konfiguration = () => useM365Aendern((e: { clientId: string; tenantId: string; clientSecret?: string }) => anfrage('/api/m365/konfiguration', senden('PUT', e)));
 export const useM365Ordner = () => useM365Aendern((ordner: string) => anfrage<{ ordner: string }>('/api/m365/ordner', senden('PUT', { ordner })));
+// ── SharePoint als Dokumentablage (Protokoll 19) ──────────
+export const useSharepoint = () => useQuery({ queryKey: ['sharepoint'], queryFn: () => anfrage<SharepointStand>('/api/sharepoint') });
+export const useSharepointKonfiguration = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (e: { siteUrl: string; wurzel: string; aktiv: boolean }) => anfrage('/api/sharepoint/konfiguration', senden('PUT', e)), onSettled: () => qc.invalidateQueries({ queryKey: ['sharepoint'] }) });
+};
+export const useSharepointTest = () => useMutation({ mutationFn: () => anfrage<{ ok: true; schritte: string[]; webUrl: string; dauerMs: number }>('/api/sharepoint/test', senden('POST', {})) });
 export const useM365Anmeldung = () => useMutation({ mutationFn: (redirectUri: string) => anfrage<{ url: string }>('/api/m365/anmeldung', senden('POST', { redirectUri })) });
 export const useM365Rueckweg = () => useM365Aendern((e: { code: string; state: string }) => anfrage<{ email: string }>('/api/m365/rueckweg', senden('POST', e)));
 export const useM365Trennen = () => useM365Aendern(() => anfrage<{ ok: true }>('/api/m365/trennen', senden('POST', {})));
