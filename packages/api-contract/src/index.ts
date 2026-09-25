@@ -333,6 +333,11 @@ export const M365Stand = z.object({
   autoImport: z.boolean(),
 });
 export type M365Stand = z.infer<typeof M365Stand>;
+/** SharePoint als Dokumentablage (Protokoll 19): Site, Wurzelordner, Schalter; die Azure-App kommt aus Microsoft 365. */
+export const SharepointStand = z.object({ siteUrl: z.string(), wurzel: z.string(), aktiv: z.boolean(), m365Eingerichtet: z.boolean(), wurzelStandard: z.string() });
+export type SharepointStand = z.infer<typeof SharepointStand>;
+export const SharepointKonfiguration = z.object({ siteUrl: z.string().max(500), wurzel: z.string().max(200), aktiv: z.boolean() });
+
 export const M365Mail = z.object({
   uid: z.string(), datum: z.string(), von: z.string(), vonName: z.string(), betreff: z.string(), vorschau: z.string(),
   anhaenge: z.array(z.object({ id: z.string(), name: z.string(), groesseMb: z.number(), art: z.string(), auswertbar: z.boolean() })),
