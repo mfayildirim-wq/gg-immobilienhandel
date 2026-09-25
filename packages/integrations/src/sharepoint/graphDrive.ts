@@ -71,6 +71,8 @@ export interface GraphDrive {
   /** Kennung der Dokumentbibliothek der Site (wird einmal ermittelt) */
   driveId(): Promise<string>;
   item(pfad: string): Promise<DriveItem | null>;
+  /** Item über seine stabile Kennung — findet es auch, wenn es in SharePoint verschoben oder umbenannt wurde */
+  itemNachId(id: string): Promise<DriveItem | null>;
   /** legt fehlende Ordner auf dem Weg an; gibt das Ordner-Item zurück */
   ordnerSicherstellen(pfad: string): Promise<DriveItem>;
   /** Dateien bis 4 MB in einem Aufruf; größere über eine Upload-Session in Stücken (vom Server aus) */
@@ -143,6 +145,15 @@ export function graphDrive(accessToken: () => Promise<string>, siteId: string, b
   const item = async (pfad: string): Promise<DriveItem | null> => {
     try {
       return alsItem(await json('GET', pfad ? `${await wurzel(pfad)}` : `/drives/${await driveId()}/root`));
+    } catch (e) {
+      if (status(e) === 404) return null;
+      throw e;
+    }
+  };
+
+  const itemNachId = async (id: string): Promise<DriveItem | null> => {
+    try {
+      return alsItem(await json('GET', `/drives/${await driveId()}/items/${encodeURIComponent(id)}`));
     } catch (e) {
       if (status(e) === 404) return null;
       throw e;
@@ -275,5 +286,5 @@ export function graphDrive(accessToken: () => Promise<string>, siteId: string, b
     return { eintraege, token: neuerToken };
   };
 
-  return { driveId, item, ordnerSicherstellen, ablegen, uploadSession, holen, loeschen, verschieben, kopieren, dateienUnter, delta };
+  return { driveId, item, itemNachId, ordnerSicherstellen, ablegen, uploadSession, holen, loeschen, verschieben, kopieren, dateienUnter, delta };
 }

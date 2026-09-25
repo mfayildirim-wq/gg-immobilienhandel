@@ -278,6 +278,8 @@ export const dokumente = fach
       spPfad: text('sp_pfad'),
       spWebUrl: text('sp_web_url'),
       spEtag: text('sp_etag'),
+      /** vom Abgleich gesetzt, wenn das Item in SharePoint nicht mehr gefunden wird; leer, sobald es wieder da ist */
+      spFehltSeit: timestamp('sp_fehlt_seit', { withTimezone: true, mode: 'string' }),
       hochgeladenAm: timestamp('hochgeladen_am', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
     },
     (t) => [

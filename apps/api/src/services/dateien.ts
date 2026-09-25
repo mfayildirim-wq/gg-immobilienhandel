@@ -29,7 +29,7 @@ type Zeile = typeof schema.dokumente.$inferSelect;
 const alsDokument = (d: Zeile): Dokument => ({
   id: d.id, dateiname: d.dateiname ?? '', mimeType: d.mimeType ?? 'application/octet-stream', groesseBytes: d.groesseBytes ?? 0, label: d.label ?? '',
   hochgeladenAm: d.hochgeladenAm, istExpose: Boolean(d.istExpose), ablage: d.ablage as Dokument['ablage'],
-  pfad: d.ablage === 'sharepoint' ? d.spPfad ?? '' : `${d.bucket}/${d.storageKey ?? ''}`, webUrl: d.spWebUrl ?? null,
+  pfad: d.ablage === 'sharepoint' ? d.spPfad ?? '' : `${d.bucket}/${d.storageKey ?? ''}`, webUrl: d.spWebUrl ?? null, fehltSeit: d.spFehltSeit ?? null,
   bezug: d.objektId && !d.dealId ? { art: 'objekt', id: d.objektId } : { art: 'deal', id: d.dealId ?? '' },
 });
 
@@ -201,8 +201,11 @@ const schluesselVon = (d: Zeile) => d.storageKey ?? dokumentSchluessel(d.dealId 
 export async function dokumentDatei(k: DateienKontext, bezug: DokumentBezug, dokId: string): Promise<{ art: 'bytes'; bytes: Uint8Array; mime: string; disposition: string } | { art: 'weiterleitung'; url: string }> {
   const d = await dokument(k.db, bezug, dokId);
   if (d.ablage === 'sharepoint') {
-    const url = k.sharepoint ? await k.sharepoint.downloadUrl(d.bucket as Bucket, schluesselVon(d)) : null;
-    if (!url) throw new FachFehler(404, 'Datei fehlt in SharePoint oder SharePoint ist nicht eingerichtet');
+    if (!k.sharepoint) throw new FachFehler(404, 'SharePoint ist nicht eingerichtet — die Datei liegt dort');
+    // über die stabile Kennung: findet die Datei auch, wenn sie in SharePoint verschoben wurde; sonst über den Pfad
+    const it = d.spItemId ? await k.sharepoint.itemNachId(d.spItemId) : null;
+    const url = it?.downloadUrl ?? (await k.sharepoint.downloadUrl(d.bucket as Bucket, schluesselVon(d)));
+    if (!url) throw new FachFehler(404, 'Datei fehlt in SharePoint');
     return { art: 'weiterleitung', url };
   }
   const mime = d.mimeType ?? 'application/octet-stream';

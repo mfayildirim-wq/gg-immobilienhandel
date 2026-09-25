@@ -75,6 +75,7 @@ function DokumentZeile({ bezug, d, loeschen }: { bezug: DokumentBezug; d: Dokume
             <Text fw={600} size="sm" truncate title={d.dateiname}>{d.dateiname}</Text>
             {d.istExpose && <Badge size="xs" variant="light" tt="none">Exposé</Badge>}
             {d.ablage === 'sharepoint' && <Badge size="xs" variant="light" color="blue" tt="none">SharePoint</Badge>}
+            {d.fehltSeit && <Badge size="xs" variant="light" color="red" tt="none" title={`seit ${datumDe(d.fehltSeit)}`}>in SharePoint nicht gefunden</Badge>}
           </Group>
           <Text size="xs" c="dimmed">{dateigroesse(d.groesseBytes)} · {datumDe(d.hochgeladenAm)}</Text>
           <Tooltip label={d.pfad} multiline maw={480} disabled={!d.pfad}>
