@@ -112,6 +112,28 @@ pnpm vercel:probe     # gebaute Oberfläche + gebündelte API + Header aus verce
 Die Probe findet Bündelfehler und alles, was die Content-Security-Policy blockiert. Sie ersetzt **kein** echtes
 Deployment: Function-Größe, Kaltstart und das schreibgeschützte Dateisystem zeigt nur Vercel selbst.
 
+## SharePoint als Dokumentablage (Protokoll 19, seit 25.09.2026)
+
+Dokumente an Deals und Objekten können in einer SharePoint-Dokumentbibliothek liegen; Bestände bleiben in Supabase
+lesbar, bis sie übertragen werden. Ohne Einrichtung verhält sich alles wie zuvor.
+
+1. **Azure (einmalig, Administrator):** in der App-Registrierung aus Einstellungen → Microsoft 365 die
+   Anwendungsberechtigung `Sites.Selected` hinzufügen, Administratorzustimmung erteilen. Dann der App Schreibrechte auf
+   genau eine Site geben — Graph Explorer als Admin (Zustimmung `Sites.FullControl.All` nur für den Explorer):
+   `GET /sites/<host>.sharepoint.com:/sites/<Name>` → `id`, dann
+   `POST /sites/<id>/permissions` mit `{ "roles": ["write"], "grantedToIdentities": [ { "application": { "id": "<Client-ID>", "displayName": "GG Immohandel" } } ] }`.
+2. **App:** Einstellungen → Microsoft 365 (Client-ID, Tenant, Geheimnis — dieselbe App), dann Einstellungen → SharePoint:
+   Site-Adresse, Wurzelordner, Speichern, **Verbindung prüfen** (schreibt/liest/löscht eine Probedatei), einschalten.
+3. **CSP:** `connect-src` und `frame-src` erlauben `https://*.sharepoint.com` (Upload-Session und Vorschau) — steht in `vercel.json`.
+4. **Bestand:** Einstellungen → SharePoint → „Bestand nach SharePoint übertragen“, 25 je Lauf, wiederaufnehmbar; die
+   Supabase-Datei bleibt als Rückweg. „Abgleich“ findet in SharePoint verschobene Dateien über ihre Kennung wieder.
+5. **Werkzeug:** `pnpm sharepoint:probe` prüft eine Site mit App-Token aus der Umgebung (`M365_TENANT_ID`, `M365_CLIENT_ID`,
+   `M365_CLIENT_SECRET`, `SHAREPOINT_SITE_ID`).
+
+Ablage: `<Wurzel>/Objekte/<Adresse> [<objekt-id>]/…` und `…/Deals/<deal-id>/…`. Große Dateien gehen vom Browser direkt an
+die Graph-Upload-Session (Stücke mit `Content-Range`), Downloads über die kurzlebige Download-Adresse — beides ohne die
+4,5-MB-Grenze der Function. SharePoint-Dateien sind **nicht** im Archiv-Spiegel; SharePoint versioniert selbst.
+
 ## Nächtliche Läufe (`vercel.json` → `crons`)
 
 | Zeit (UTC) | Route | Was |
