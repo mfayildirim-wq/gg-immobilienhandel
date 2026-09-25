@@ -94,6 +94,19 @@ Die alte App verhält sich genauso; eine Änderung ist eine bewusste Abweichung 
 - [ ] Telefon-/E-Mail-Prüfung serverseitig als Warnung *(Sauberkeit)*
 - [ ] zod-Schemata für jsonb-Inhalte (`vertriebslisten.daten`, `kundenkalkulationen.inputs`) *(Sauberkeit)*
 
+## SharePoint (Protokoll 19, 25.09.2026)
+
+- [x] Phase 1–4 umgesetzt: Graph-Drive-Client mit App-Token, `sharepointSpeicher()` als zweite Dateiablage, Tabelle
+      `dokumente` (Deal oder Objekt, Ablage je Dokument), Reiter „Dokumente“ am Objekt, „Anzeigen“ und „In SharePoint
+      öffnen“, Einstellungen mit Verbindungstest, Bestand übertragen, Abgleich über die Item-Kennung. Gegen die echte
+      Test-Site geprüft (lokal und Testumgebung: 6 MB aus dem Browser, Weiterleitung Byte für Byte gleich).
+- [ ] **Bestand der alten Produktion:** die Migration nach SharePoint braucht die Dateien in Supabase — die liegen im
+      Projekt der alten Produktion (siehe „Vor der Produktivsetzung“). Alternativ ein Werkzeug „altes Supabase → SharePoint“ direkt.
+- [ ] Fotos (`obj-photos`) bleiben in Supabase — Entscheidung 3 aus Protokoll 19; bei Bedarf +1 Tag.
+- [ ] Makler- und Projekt-Dokumente: Tabelle und Service sind vorbereitet (Bezug), Routen und Reiter fehlen.
+- [ ] Nächtlicher Abgleich (heute Knopf in den Einstellungen) — als Cron, wenn in SharePoint regelmäßig von Hand gearbeitet wird.
+- [ ] Vorschau eingebettet (Graph `preview`) statt „Anzeigen“ in neuem Tab.
+
 ## Bewusst offen
 
 - [x] **Auto-Import-Bot** — portiert am 21.09.2026 (`packages/integrations/src/autoimport/`, `services/autoImport.ts`,
