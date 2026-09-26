@@ -1,7 +1,7 @@
 /**
  * AgentMode — Overlay über der laufenden App oder eigene Seite, aus einer Komponente.
  *
- * Oben ein kompakter Block: Sprechkreis mit drei Symbolknöpfen, die zwei letzten Sprechblasen, Chips und Eingabe. Darunter: im Overlay die App im Schaufenster (sehen, nicht
+ * Oben ein Block über die ganze Breite: Sprechkreis, Agent-Blase mit Chips, Du-Blase mit Eingabe und Symbolknöpfen. Darunter: im Overlay die App im Schaufenster (sehen, nicht
  * klicken, solange der Agent handelt), auf der Seite der Inhalt des Hosts (Kontextkarte, Todos) und der Zeitstrahl.
  * Der Kanal läuft über `anfrage` des Hosts (mit dessen
  * Anmeldung) gegen die Routen des Kerns; Steuerungen führt die Oberfläche Schritt für Schritt sichtbar aus.
@@ -240,57 +240,61 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
   const zustand: SprechkreisZustand = zuhoeren.hoert ? 'hoert' : vorlesen.spricht ? 'spricht' : beschaeftigt || handelt ? 'denkt' : 'ruhig';
   const letzteAgent = [...zeilen].reverse().find((z) => z.wer === 'agent');
   const letzteNutzer = [...zeilen].reverse().find((z) => z.wer === 'nutzer');
-  const kreisGroesse = modus === 'seite' ? 96 : 56;
+  const kreisGroesse = modus === 'seite' ? 140 : 110;
 
-  // Ein kompakter Block statt zweier Leisten (Wunsch des Auftraggebers, 26.09.): links der Kreis mit drei kleinen
-  // Knöpfen darunter, rechts die Blasen, darunter Chips und die Eingabe mit drei Knöpfen. Knöpfe nur mit Symbol —
-  // der Text erscheint beim Darüberfahren (`data-tipp`) und steht für Screenreader im aria-label.
+  // Ein Block über die ganze Breite (Wunsch des Auftraggebers, 26.09.): links der große Sprechkreis; daneben oben die
+  // Agent-Blase mit den Chips rechts davon, darunter die Du-Blase mit dem Eingabefeld und allen Symbolknöpfen rechts.
+  // Knöpfe nur mit Symbol — der Text erscheint beim Darüberfahren (`data-tipp`) und steht im aria-label.
   const naechsterStil = () => {
     const i = SPRECHKREIS_STILE.findIndex((x) => x.wert === stil);
     onStil?.(SPRECHKREIS_STILE[(i + 1) % SPRECHKREIS_STILE.length]!.wert);
   };
   const block = (
     <div className={`am-block ${modus === 'overlay' ? 'am-overlay-oben' : ''}`} data-agentmode-oben>
-      <div className="am-block-links">
+      <div className="am-kreis">
         <Sprechkreis stil={stil} zustand={zustand} pegel={zuhoeren.hoert ? zuhoeren.pegel : vorlesen.spricht ? 0.6 : 0} groesse={kreisGroesse} saat={saat} farbe={farbe} titel="Agent"
           onClick={zuhoeren.moeglich ? (zuhoeren.hoert ? zuhoeren.stoppe : zuhoeren.starte) : undefined} />
-        <div className="am-symbole">
-          {onStil && (
-            <button type="button" className="am-symbol" aria-label="Stil des Sprechkreises wechseln" data-tipp={`Stil: ${SPRECHKREIS_STILE.find((x) => x.wert === stil)?.label ?? stil}`} onClick={naechsterStil}>✦</button>
-          )}
-          {vorlesen.moeglich && (
-            <button type="button" className="am-symbol" aria-pressed={vorlesen.an} aria-label={vorlesen.an ? 'Vorlesen ausschalten' : 'Vorlesen einschalten'} data-tipp={vorlesen.an ? 'Vorlesen an' : 'Vorlesen aus'} onClick={() => vorlesen.schalte(!vorlesen.an)}>{vorlesen.an ? '🔊' : '🔇'}</button>
-          )}
-          <button type="button" className="am-symbol" aria-label="Neues Gespräch" data-tipp="Neues Gespräch" onClick={neuesGespraech}>↻</button>
-        </div>
       </div>
-      <div className="am-block-rechts">
-        <div className="am-blasen">
-          {letzteAgent ? <Sprechblase wer="agent" text={letzteAgent.text} schluessel={letzteAgent.nr} lebendig /> : <div className="am-blase" data-wer="agent"><span className="am-wer">Agent</span>Ich höre. Sag mir, was ich tun soll — oder frag, was heute ansteht.</div>}
-          {letzteNutzer && <Sprechblase wer="nutzer" text={letzteNutzer.text} schluessel={letzteNutzer.nr} />}
-        </div>
+      <div className="am-agent">
+        {letzteAgent ? <Sprechblase wer="agent" text={letzteAgent.text} schluessel={letzteAgent.nr} lebendig /> : <div className="am-blase" data-wer="agent"><span className="am-wer">Agent</span>Ich höre. Sag mir, was ich tun soll — oder frag, was heute ansteht.</div>}
+      </div>
+      <div className="am-oben-rechts">
         <Chips chips={chips} waehlen={chipWaehlen} aus={beschaeftigt} />
-        <form className="am-zeile" onSubmit={(e) => { e.preventDefault(); nachricht(eingabe); }}>
-          <input className="am-eingabe" aria-label="Nachricht an den Agenten" placeholder="Nachricht …" value={eingabe} onChange={(e) => setEingabe(e.currentTarget.value)} disabled={beschaeftigt} />
-          {zuhoeren.moeglich && (
-            <button type="button" className="am-symbol" aria-pressed={zuhoeren.hoert} aria-label={zuhoeren.hoert ? 'Zuhören beenden' : 'Zuhören'} data-tipp={zuhoeren.hoert ? 'Zuhören beenden' : 'Zuhören'} onClick={zuhoeren.hoert ? zuhoeren.stoppe : zuhoeren.starte}>🎤</button>
-          )}
-          <button type="button" className="am-symbol" aria-pressed={transkriptOffen} aria-label="Transkript" data-tipp="Transkript" onClick={() => setTranskriptOffen((o) => !o)}>📜</button>
-          <button type="button" className="am-symbol" aria-pressed={gedaechtnisOffen} aria-label="Gedächtnis" data-tipp="Gedächtnis" onClick={() => setGedaechtnisOffen((o) => !o)}>🧠</button>
-        </form>
-        {fehler && <span className="am-hinweis" role="alert">{fehler}</span>}
-        {transkriptOffen && (
-          <div className="am-transkript" aria-label="Transkript">
-            {zeilen.map((z) => <Sprechblase key={z.nr} wer={z.wer} text={z.text} schluessel={z.nr} />)}
-          </div>
-        )}
-        {gedaechtnisOffen && (
-          <Gedaechtnisleiste eintraege={gedaechtnis}
-            loeschen={(id) => anfrage(`${api}/gedaechtnis/${id}`, { method: 'DELETE' }).then(gedaechtnisLaden)}
-            bestaetigen={(id) => anfrage(`${api}/gedaechtnis/${id}/bestaetigen`, { method: 'POST' }).then(gedaechtnisLaden)} />
-        )}
+        {schliessen && <button type="button" className="am-symbol" aria-label="AgentMode schließen" data-tipp="Schließen" onClick={schliessen}>✕</button>}
       </div>
-      {schliessen && <button type="button" className="am-symbol am-schliessen" aria-label="AgentMode schließen" data-tipp="Schließen" onClick={schliessen}>✕</button>}
+      <div className="am-du">
+        {letzteNutzer ? <Sprechblase wer="nutzer" text={letzteNutzer.text} schluessel={letzteNutzer.nr} /> : <div className="am-blase" data-wer="nutzer"><span className="am-wer">Du</span>…</div>}
+      </div>
+      <form className="am-zeile" onSubmit={(e) => { e.preventDefault(); nachricht(eingabe); }}>
+        <input className="am-eingabe" aria-label="Nachricht an den Agenten" placeholder="Nachricht …" value={eingabe} onChange={(e) => setEingabe(e.currentTarget.value)} disabled={beschaeftigt} />
+        {zuhoeren.moeglich && (
+          <button type="button" className="am-symbol" aria-pressed={zuhoeren.hoert} aria-label={zuhoeren.hoert ? 'Zuhören beenden' : 'Zuhören'} data-tipp={zuhoeren.hoert ? 'Zuhören beenden' : 'Zuhören'} onClick={zuhoeren.hoert ? zuhoeren.stoppe : zuhoeren.starte}>🎤</button>
+        )}
+        <button type="button" className="am-symbol" aria-pressed={transkriptOffen} aria-label="Transkript" data-tipp="Transkript" onClick={() => setTranskriptOffen((o) => !o)}>📜</button>
+        <button type="button" className="am-symbol" aria-pressed={gedaechtnisOffen} aria-label="Gedächtnis" data-tipp="Gedächtnis" onClick={() => setGedaechtnisOffen((o) => !o)}>🧠</button>
+        {onStil && (
+          <button type="button" className="am-symbol" aria-label="Stil des Sprechkreises wechseln" data-tipp={`Stil: ${SPRECHKREIS_STILE.find((x) => x.wert === stil)?.label ?? stil}`} onClick={naechsterStil}>✦</button>
+        )}
+        {vorlesen.moeglich && (
+          <button type="button" className="am-symbol" aria-pressed={vorlesen.an} aria-label={vorlesen.an ? 'Vorlesen ausschalten' : 'Vorlesen einschalten'} data-tipp={vorlesen.an ? 'Vorlesen an' : 'Vorlesen aus'} onClick={() => vorlesen.schalte(!vorlesen.an)}>{vorlesen.an ? '🔊' : '🔇'}</button>
+        )}
+        <button type="button" className="am-symbol" aria-label="Neues Gespräch" data-tipp="Neues Gespräch" onClick={neuesGespraech}>↻</button>
+      </form>
+      {(fehler || transkriptOffen || gedaechtnisOffen) && (
+        <div className="am-unterteil">
+          {fehler && <span className="am-hinweis" role="alert">{fehler}</span>}
+          {transkriptOffen && (
+            <div className="am-transkript" aria-label="Transkript">
+              {zeilen.map((z) => <Sprechblase key={z.nr} wer={z.wer} text={z.text} schluessel={z.nr} />)}
+            </div>
+          )}
+          {gedaechtnisOffen && (
+            <Gedaechtnisleiste eintraege={gedaechtnis}
+              loeschen={(id) => anfrage(`${api}/gedaechtnis/${id}`, { method: 'DELETE' }).then(gedaechtnisLaden)}
+              bestaetigen={(id) => anfrage(`${api}/gedaechtnis/${id}/bestaetigen`, { method: 'POST' }).then(gedaechtnisLaden)} />
+          )}
+        </div>
+      )}
     </div>
   );
 
