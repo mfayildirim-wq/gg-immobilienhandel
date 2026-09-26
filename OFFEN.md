@@ -131,7 +131,16 @@ Die alte App verhält sich genauso; eine Änderung ist eine bewusste Abweichung 
       Morgenvorschlag einmal am Tag. Dazu drei Fehler, die nur mit dem echten Modell auftraten (temperature, halbe
       Antworten, falsche Gesamtzahlen nach dem Kürzen). Dev läuft mit `ANTHROPIC_API_KEY` (`KI_ATTRAPPE=0`); für Klicktests
       mit Attrappe `KI_ATTRAPPE=1` setzen und die API neu starten.
-- [ ] AgentMode Lieferung 2b–5: Routinen, Realtime-Sprache, Meta-Agent,
+- [x] **AgentMode Lieferung 2b** (26.09.2026): Routinen erkennen und als ▶-Chip anbieten; dabei eine Lücke geschlossen —
+      ein zweites `sende` im selben Aufruf lief nach „Ja“ ungefragt mit, jetzt wird jedes Senden einzeln bestätigt.
+      Oberfläche: ein Block über die ganze Breite statt Leisten oben und unten (Wunsch des Auftraggebers).
+- [ ] **Befund (nicht AgentMode):** „Heute erledigt“ im Ankauf zeigt Notizen gelöschter Deals (Papierkorb). Ob die alte
+      App das auch tut, mit `pnpm paritaet` prüfen, bevor etwas geändert wird.
+- [ ] **Lokale Datenbank passt nicht zu `main`/`agentmode`:** sie hat die SharePoint-Migration aus PR 11 (`fach.dokumente`
+      statt `fach.deal_dokumente`). Folge: `/api/listen` 500, 9 API-, 3 Umzug- und 66 Klicktests rot (gegengeprüft auf dem
+      Stand vor AgentMode 2a — dieselben Fehler). Löst sich mit PR 11 in `main`; `db:reset` nur mit Rücksicht auf den
+      eingespielten echten Bestand.
+- [ ] AgentMode Lieferung 3–5: Realtime-Sprache, Meta-Agent,
       CoSAi-Backend in Python. Freigegebene Routinen ohne Rückfrage fehlen noch — heute wird jedes `sende` bestätigt.
 
 ## Erledigt (21.09.2026)

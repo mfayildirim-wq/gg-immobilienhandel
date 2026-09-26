@@ -221,6 +221,8 @@ Ein Agent, der die App **sichtbar über die Oberfläche** bedient: Overlay auf j
 - **Ziele:** bedienbare Stellen tragen `data-agent="…"`; die Liste steht als Oberflächenkarte in `@gg/api-contract`. `apps/web/src/agent/oberflaechenkarte.test.ts` prüft, dass Karte und Marken übereinstimmen.
 - **Lernen:** `<AgentLernen>` hängt immer im `AppRahmen` und meldet gespeicherte Eingaben (`melden({ art: 'gespeichert', … })` in `lib/api.ts`) an den Kern — auch ohne Overlay. Daraus werden Formulierungen; `<AgentVorschlaege ziel="deal.kommentar">` zeigt die häufigsten unter der Gesprächsnotiz (ein Klick füllt, abschicken tut der Nutzer). Alles steht in der Gedächtnis-Leiste und ist löschbar.
 - **Morgenvorschlag:** beim ersten Öffnen des Agenten am Tag (Overlay oder `/agent`) fragt die Oberfläche `POST /api/agent/morgen` mit dem lokalen Datum; einmal je Nutzer und Tag antwortet der Agent mit dem, was ansteht — nur lesend, Steuerungen daraus werden nicht ausgeführt.
+- **Routinen:** Macht der Nutzer im selben Deal dreimal denselben Ablauf (z. B. Notiz, dann „Erledigt“, innerhalb von 30 min), erkennt der Kern daraus eine Routine (`packages/cosai-kern/src/routinen.ts`) und legt sie im Gedächtnis ab. Der AgentMode bietet sie als ▶-Chip an; ein Klick gibt dem Agenten den Auftrag, **jedes Senden wird einzeln bestätigt**. Gelöschte Routinen kommen erst nach drei neuen Abläufen wieder.
+- **Oberfläche:** ein Block über die ganze Breite — großer Sprechkreis, daneben Agent-Blase mit Chips und Du-Blase mit Eingabe und Symbolknöpfen (Text beim Darüberfahren).
 - **Modell:** `ANTHROPIC_API_KEY`; mit `KI_ATTRAPPE=1` antwortet ein deterministisches Drehbuch (Tests, Vorführung ohne Schlüssel).
 - **Klicktests:** `npx playwright test tests/e2e/agentmode.spec.ts`.
 
