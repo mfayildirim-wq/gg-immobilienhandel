@@ -102,4 +102,17 @@ describe.skipIf(!url)('Kern', () => {
     expect(a.steuerung).toEqual([]);
     expect(a.text).toBe('Das Ziel kenne ich nicht.');
   });
+  it('macht den Morgenvorschlag einmal am Tag, in einer eigenen Sitzung', async () => {
+    const tag = `2099-01-${String(Math.floor(Math.random() * 28) + 1).padStart(2, '0')}`;
+    const drehbuch = [ki('', [['get_api_ankauf', {}]]), ki('Heute ist ein Deal fällig: Weraststraße 12.')];
+    const kern = agentKern({ db, modell: drehbuchModell(drehbuch), openapi, ziele, aufruf });
+    const a = await kern.morgen(nutzer, tag);
+    expect(a?.text).toBe('Heute ist ein Deal fällig: Weraststraße 12.');
+    expect(a?.sitzungId).toBeTruthy();
+    // Zweites Öffnen am selben Tag — auch über einen neuen Kern: nichts mehr
+    const zweiter = agentKern({ db, modell: drehbuchModell([]), openapi, ziele, aufruf });
+    expect(await zweiter.morgen(nutzer, tag)).toBeNull();
+    // Ein anderer Nutzer bekommt seinen eigenen
+    expect(await agentKern({ db, modell: drehbuchModell([ki('Guten Morgen.')]), openapi, ziele, aufruf }).morgen({ id: 'test-kern-2@example' }, tag)).not.toBeNull();
+  });
 });

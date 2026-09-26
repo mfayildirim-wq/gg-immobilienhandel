@@ -7,7 +7,7 @@
  */
 import { HumanMessage } from '@langchain/core/messages';
 import { Command } from '@langchain/langgraph';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { DrizzleSaver } from './checkpointer.ts';
 import { gedaechtnis as gedaechtnisBauen, type Db, type Gedaechtnis } from './gedaechtnis.ts';
 import { graphBauen, letzterText, type Aufruf, type ZielBeschreibung } from './graph.ts';
@@ -32,7 +32,11 @@ export interface KernOptionen {
   /** Die DNA des Meisters; Vorgabe: ein allgemeiner Assistent der Anwendung */
   dna?: Partial<DNA>;
   antwortGrenze?: number;
+  /** Auftrag des Morgenvorschlags — nur lesen, nichts ändern */
+  morgenAuftrag?: string;
 }
+
+export const MORGEN_AUFTRAG = 'Guten Morgen. Was steht heute an? Nenne, wie viele Einträge fällig sind, und schlage vor, womit ich anfange. Nur lesen, nichts ändern.';
 
 export const MEISTER_DNA: DNA = DNA.parse({
   slug: 'meister',
@@ -96,27 +100,41 @@ export function agentKern(opt: KernOptionen) {
     return antwort;
   }
 
+  async function nachricht(nutzer: Nutzer, eingabe: Eingabe): Promise<AgentAntwort> {
+    const sitzungId = await sitzungSicherstellen(nutzer, eingabe.sitzungId, eingabe.ort, eingabe.kontext);
+    await db.insert(nachrichten).values({ sitzungId, rolle: 'nutzer', text: eingabe.text });
+    const graph = graphFuer(nutzer, gedaechtnisBauen(db, nutzer.id));
+    const config = { configurable: { thread_id: sitzungId } };
+    // Wartet der Graph noch auf eine Bestätigung, gilt der neue Text als Antwort darauf (kein „ja“ → abgebrochen)
+    const stand = await graph.getState(config);
+    const wartet = stand.tasks.some((t) => t.interrupts?.length);
+    // `null` setzt Steuerung und Chips des vorigen Zugs zurück (Reducer); die Typen von LangGraph kennen den Reset nicht
+    type Eingang = Parameters<typeof graph.invoke>[0];
+    const zuruecksetzen = { steuerung: null, chips: null, ort: eingabe.ort, kontext: eingabe.kontext };
+    const eingang = (wartet
+      ? new Command({ resume: eingabe.text, update: zuruecksetzen })
+      : { messages: [new HumanMessage(eingabe.text)], ...zuruecksetzen }) as unknown as Eingang;
+    await graph.invoke(eingang, config);
+    return antwortAus(graph, nutzer, sitzungId, anzahlNachrichten(stand));
+  }
+
   return {
     dna,
     werkzeuge,
     fingerabdruck,
 
-    async nachricht(nutzer: Nutzer, eingabe: Eingabe): Promise<AgentAntwort> {
-      const sitzungId = await sitzungSicherstellen(nutzer, eingabe.sitzungId, eingabe.ort, eingabe.kontext);
-      await db.insert(nachrichten).values({ sitzungId, rolle: 'nutzer', text: eingabe.text });
-      const graph = graphFuer(nutzer, gedaechtnisBauen(db, nutzer.id));
-      const config = { configurable: { thread_id: sitzungId } };
-      // Wartet der Graph noch auf eine Bestätigung, gilt der neue Text als Antwort darauf (kein „ja“ → abgebrochen)
-      const stand = await graph.getState(config);
-      const wartet = stand.tasks.some((t) => t.interrupts?.length);
-      // `null` setzt Steuerung und Chips des vorigen Zugs zurück (Reducer); die Typen von LangGraph kennen den Reset nicht
-      type Eingang = Parameters<typeof graph.invoke>[0];
-      const zuruecksetzen = { steuerung: null, chips: null, ort: eingabe.ort, kontext: eingabe.kontext };
-      const eingang = (wartet
-        ? new Command({ resume: eingabe.text, update: zuruecksetzen })
-        : { messages: [new HumanMessage(eingabe.text)], ...zuruecksetzen }) as unknown as Eingang;
-      await graph.invoke(eingang, config);
-      return antwortAus(graph, nutzer, sitzungId, anzahlNachrichten(stand));
+    nachricht,
+
+    /**
+     * Der Morgenvorschlag: beim ersten Öffnen des Tages (Datum `heute` aus dem Browser, JJJJ-MM-TT) einmal je Nutzer.
+     * Der Merker steht vor dem Lauf in `ereignisse` — zwei Fenster gleichzeitig erzeugen so höchstens selten zwei.
+     */
+    async morgen(nutzer: Nutzer, heute: string): Promise<AgentAntwort | null> {
+      const [schon] = await db.select({ id: ereignisse.id }).from(ereignisse)
+        .where(and(eq(ereignisse.nutzer, nutzer.id), eq(ereignisse.art, 'morgen'), sql`${ereignisse.kontext}->>'datum' = ${heute}`)).limit(1);
+      if (schon) return null;
+      await db.insert(ereignisse).values({ nutzer: nutzer.id, sitzungId: null, richtung: 'steuerung', art: 'morgen', ziel: null, wert: null, kontext: { datum: heute } });
+      return nachricht(nutzer, { text: opt.morgenAuftrag ?? MORGEN_AUFTRAG, ort: '/', kontext: {} });
     },
 
     async entscheidung(nutzer: Nutzer, e: Entscheidung): Promise<AgentAntwort> {
