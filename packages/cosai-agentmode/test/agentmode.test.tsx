@@ -8,6 +8,7 @@ function kernErsatz() {
   const aufrufe: { pfad: string; body?: unknown }[] = [];
   let wartet = false;
   let morgen: unknown = null;
+  let routinen: unknown[] = [];
   const antwort = (daten: unknown, status = 200) => new Response(JSON.stringify(daten), { status, headers: { 'content-type': 'application/json' } });
   const anfrage = async (pfad: string, init?: RequestInit) => {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
@@ -15,6 +16,7 @@ function kernErsatz() {
     if (pfad.startsWith('/api/agent/sitzung')) return antwort({ sitzungId: null, verlauf: [] });
     if (pfad === '/api/agent/ereignis') return antwort({ ok: true });
     if (pfad === '/api/agent/morgen') return antwort({ antwort: morgen });
+    if (pfad === '/api/agent/routinen') return antwort({ routinen });
     if (pfad === '/api/agent/nachricht') {
       wartet = true;
       return antwort({
@@ -31,7 +33,7 @@ function kernErsatz() {
     }
     return antwort({ fehler: 'unbekannt' }, 404);
   };
-  return { anfrage, aufrufe, setzeMorgen: (m: unknown) => { morgen = m; } };
+  return { anfrage, aufrufe, setzeMorgen: (m: unknown) => { morgen = m; }, setzeRoutinen: (r: unknown[]) => { routinen = r; } };
 }
 
 function App() {
@@ -96,5 +98,17 @@ describe('AgentMode (Öffnen)', () => {
     act(() => melden({ art: 'gespeichert', ziel: 'deal.kommentar', wert: 'x' }));
     await new Promise((r) => setTimeout(r, 50));
     expect(k.aufrufe.some((a) => a.pfad === '/api/agent/ereignis')).toBe(false);
+  });
+});
+
+describe('AgentMode (Routinen)', () => {
+  it('bietet erkannte Routinen als ▶-Chip an und schickt ihren Auftrag', async () => {
+    const k = kernErsatz();
+    k.setzeRoutinen([{ id: 'r1', label: 'Neue Gesprächsnotiz → Erledigt', folge: ['deal.kommentar', 'deal.erledigt'], anzahl: 3, auftrag: 'Routine ausführen (3× so gemacht): …' }]);
+    render(<AgentMode api="/api/agent" anfrage={k.anfrage} modus="seite" navigiere={vi.fn()} ort="/" stil="kern" schrittMs={10}><App /></AgentMode>);
+    const chip = await screen.findByRole('button', { name: 'Routine: Neue Gesprächsnotiz → Erledigt' });
+    await act(async () => { fireEvent.click(chip); });
+    await waitFor(() => expect(k.aufrufe.find((a) => a.pfad === '/api/agent/nachricht')?.body).toMatchObject({ text: 'Routine ausführen (3× so gemacht): …' }));
+    expect((await screen.findAllByText('▶ Neue Gesprächsnotiz → Erledigt')).length).toBeGreaterThan(0);
   });
 });

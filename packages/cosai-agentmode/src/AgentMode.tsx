@@ -24,6 +24,9 @@ export interface AgentAntwortDaten {
 
 interface Zeile { wer: 'agent' | 'nutzer'; text: string; nr: number }
 
+/** Eine erkannte Routine des Nutzers (Kern: `GET /routinen`) */
+export interface RoutineDaten { id: string; label: string; auftrag: string }
+
 export interface AgentModeProps {
   /** Basis der Kern-Routen, z. B. `/api/agent` */
   api: string;
@@ -62,6 +65,7 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
   const [transkriptOffen, setTranskriptOffen] = useState(false);
   const [gedaechtnisOffen, setGedaechtnisOffen] = useState(false);
   const [gedaechtnis, setGedaechtnis] = useState<GedaechtnisEintragDaten[]>([]);
+  const [routinen, setRoutinen] = useState<RoutineDaten[]>([]);
   const nr = useRef(0);
   const abgebrochen = useRef(false);
   const saat = useMemo(() => saatAus('agent'), []);
@@ -173,6 +177,14 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
     }
   }, [sitzungMerken, steuern, vorlesen, wartendesZielZeigen, zeile]);
 
+  /** Erkannte Routinen — beim Öffnen, nach jeder Antwort und nach jedem Speichern in der App neu laden. */
+  const routinenLaden = useCallback(async () => {
+    const r = await anfrage(`${api}/routinen`).catch(() => null);
+    if (r?.ok) setRoutinen(((await r.json()) as { routinen: RoutineDaten[] }).routinen);
+  }, [anfrage, api]);
+  useEffect(() => { void routinenLaden(); }, [routinenLaden]);
+  useEffect(() => beobachten((b) => { if (b.art === 'gespeichert') window.setTimeout(() => void routinenLaden(), 500); }), [routinenLaden]);
+
   const senden = useCallback(async (pfad: 'nachricht' | 'entscheidung', body: Record<string, unknown>, anzeige: string) => {
     if (beschaeftigt) return;
     setFehler(null);
@@ -192,8 +204,14 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
       zeile('agent', `Das hat nicht geklappt: ${(e as Error).message}`);
     } finally {
       setBeschaeftigt(false);
+      void routinenLaden();
     }
-  }, [anfrage, api, beschaeftigt, verarbeiten, zeile]);
+  }, [anfrage, api, beschaeftigt, routinenLaden, verarbeiten, zeile]);
+
+  /** Eine Routine starten: der Auftrag geht an den Agenten, im Gespräch steht nur ihr Name. */
+  const routineStarten = useCallback((r: RoutineDaten) => {
+    void senden('nachricht', { sitzungId: sitzungId ?? undefined, text: r.auftrag, ort, kontext }, `▶ ${r.label}`);
+  }, [kontext, ort, senden, sitzungId]);
 
   const nachricht = useCallback((text: string) => {
     const t = text.trim();
@@ -260,6 +278,9 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
       </div>
       <div className="am-oben-rechts">
         <Chips chips={chips} waehlen={chipWaehlen} aus={beschaeftigt} />
+        {!wartetAuf && routinen.map((r) => (
+          <button key={r.id} type="button" className="am-chip" data-art="routine" aria-label={`Routine: ${r.label}`} disabled={beschaeftigt} onClick={() => routineStarten(r)}>▶ {r.label}</button>
+        ))}
         {schliessen && <button type="button" className="am-symbol" aria-label="AgentMode schließen" data-tipp="Schließen" onClick={schliessen}>✕</button>}
       </div>
       <div className="am-du">
@@ -290,7 +311,7 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
           )}
           {gedaechtnisOffen && (
             <Gedaechtnisleiste eintraege={gedaechtnis}
-              loeschen={(id) => anfrage(`${api}/gedaechtnis/${id}`, { method: 'DELETE' }).then(gedaechtnisLaden)}
+              loeschen={(id) => anfrage(`${api}/gedaechtnis/${id}`, { method: 'DELETE' }).then(gedaechtnisLaden).then(routinenLaden)}
               bestaetigen={(id) => anfrage(`${api}/gedaechtnis/${id}/bestaetigen`, { method: 'POST' }).then(gedaechtnisLaden)} />
           )}
         </div>

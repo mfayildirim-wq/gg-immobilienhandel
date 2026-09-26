@@ -101,3 +101,4 @@
   .am-block { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: 'kreis agent' 'kreis du' 'oben oben' 'zeile zeile' 'unter unter'; }
   .am-oben-rechts, .am-zeile { justify-content: flex-start; max-width: none; flex-wrap: wrap; }
 }
+.am-chip[data-art='routine'] { border-style: dashed; }
