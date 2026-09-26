@@ -1,17 +1,20 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { AgentMode } from '../src/AgentMode.tsx';
+import { melden } from '../src/kanal.ts';
 
 /** Ein Kern-Ersatz hinter `anfrage`: antwortet wie der echte auf /sitzung, /nachricht, /entscheidung, /ereignis. */
 function kernErsatz() {
   const aufrufe: { pfad: string; body?: unknown }[] = [];
   let wartet = false;
+  let morgen: unknown = null;
   const antwort = (daten: unknown, status = 200) => new Response(JSON.stringify(daten), { status, headers: { 'content-type': 'application/json' } });
   const anfrage = async (pfad: string, init?: RequestInit) => {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     aufrufe.push({ pfad, body });
     if (pfad.startsWith('/api/agent/sitzung')) return antwort({ sitzungId: null, verlauf: [] });
     if (pfad === '/api/agent/ereignis') return antwort({ ok: true });
+    if (pfad === '/api/agent/morgen') return antwort({ antwort: morgen });
     if (pfad === '/api/agent/nachricht') {
       wartet = true;
       return antwort({
@@ -28,7 +31,7 @@ function kernErsatz() {
     }
     return antwort({ fehler: 'unbekannt' }, 404);
   };
-  return { anfrage, aufrufe };
+  return { anfrage, aufrufe, setzeMorgen: (m: unknown) => { morgen = m; } };
 }
 
 function App() {
@@ -69,5 +72,29 @@ describe('AgentMode (Overlay)', () => {
     // Ein Klick des Nutzers auf ein markiertes Element geht als Beobachtung an den Kern
     fireEvent.click(screen.getByText('Kommunikation'));
     await waitFor(() => expect(aufrufe.some((a) => a.pfad === '/api/agent/ereignis' && (a.body as { ziel: string }).ziel === 'deal.reiter.kommunikation')).toBe(true));
+  });
+});
+
+describe('AgentMode (Öffnen)', () => {
+  it('zeigt beim Öffnen den Morgenvorschlag — ohne dessen Steuerung auszuführen', async () => {
+    const k = kernErsatz();
+    k.setzeMorgen({ sitzungId: 'm1', text: 'Heute sind 3 Deals fällig.', steuerung: [{ art: 'oeffne', ziel: 'deal.reiter.kommunikation' }], chips: [{ label: 'Ersten Deal öffnen', wert: 'Öffne den ersten Deal' }] });
+    const navigiere = vi.fn();
+    render(<AgentMode api="/api/agent" anfrage={k.anfrage} modus="seite" navigiere={navigiere} ort="/" stil="kern"><App /></AgentMode>);
+    expect((await screen.findAllByText('Heute sind 3 Deals fällig.')).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Ersten Deal öffnen' })).toBeTruthy();
+    const m = k.aufrufe.find((a) => a.pfad === '/api/agent/morgen');
+    expect((m?.body as { heute: string }).heute).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(document.querySelector('[data-etikett]')).toBeNull();
+  });
+
+  it('meldet gespeicherte Eingaben nicht selbst — das macht <Lernen>', async () => {
+    const k = kernErsatz();
+    render(<AgentMode api="/api/agent" anfrage={k.anfrage} modus="seite" navigiere={vi.fn()} ort="/" stil="kern" />);
+    await waitFor(() => expect(k.aufrufe.some((a) => a.pfad === '/api/agent/morgen')).toBe(true));
+    act(() => melden({ art: 'gespeichert', ziel: 'deal.kommentar', wert: 'x' }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(k.aufrufe.some((a) => a.pfad === '/api/agent/ereignis')).toBe(false);
   });
 });

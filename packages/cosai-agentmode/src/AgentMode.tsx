@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Chips, Gedaechtnisleiste, Schaufenster, Sprechblase, type ChipDaten, type GedaechtnisEintragDaten, type Schritt } from './Bausteine.tsx';
 import { ausfuehren, beobachten, zielFinden, type Beobachtung, type Steuerung } from './kanal.ts';
 import { saatAus } from './konstellation.ts';
+import { heuteLokal } from './lernen.tsx';
 import { Sprechkreis, SPRECHKREIS_STILE, type SprechkreisStil, type SprechkreisZustand } from './Sprechkreis.tsx';
 import { useVorlesen, useZuhoeren } from './sprache.ts';
 
@@ -83,29 +84,41 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
     anfrage(`${api}/sitzung${sitzungId ? `?sitzungId=${encodeURIComponent(sitzungId)}` : ''}`)
       .then(async (r) => (r.ok ? ((await r.json()) as { sitzungId: string | null; verlauf: { rolle: string; text: string; chips?: ChipDaten[] | null }[]; wartetAuf?: AgentAntwortDaten['wartetAuf'] | null }) : null))
       .then((d) => {
-        if (!aktiv || !d) return;
-        if (d.sitzungId) sitzungMerken(d.sitzungId);
-        if (!d.verlauf.length) return;
-        const alt = d.verlauf.filter((v) => v.text).map((v) => ({ wer: v.rolle === 'agent' ? 'agent' as const : 'nutzer' as const, text: v.text, nr: (nr.current += 1) }));
-        setZeilen(alt.slice(-100));
-        // Wartet die Sitzung noch auf eine Bestätigung, zeigt die Oberfläche das — sonst würde die
-        // nächste Nachricht stumm als Antwort auf eine längst vergessene Frage gedeutet.
-        if (d.wartetAuf) {
-          setWartetAuf(d.wartetAuf);
-          setChips([{ label: 'Ja, ausführen', wert: 'ja', art: 'entscheidung' }, { label: 'Nein', wert: 'nein', art: 'entscheidung' }]);
-          zeile('agent', d.wartetAuf.frage);
-        } else {
+        if (!aktiv) return;
+        if (d?.sitzungId) sitzungMerken(d.sitzungId);
+        if (d?.verlauf.length) {
+          const alt = d.verlauf.filter((v) => v.text).map((v) => ({ wer: v.rolle === 'agent' ? 'agent' as const : 'nutzer' as const, text: v.text, nr: (nr.current += 1) }));
+          setZeilen(alt.slice(-100));
+          // Wartet die Sitzung noch auf eine Bestätigung, zeigt die Oberfläche das — sonst würde die
+          // nächste Nachricht stumm als Antwort auf eine längst vergessene Frage gedeutet.
+          if (d.wartetAuf) {
+            setWartetAuf(d.wartetAuf);
+            setChips([{ label: 'Ja, ausführen', wert: 'ja', art: 'entscheidung' }, { label: 'Nein', wert: 'nein', art: 'entscheidung' }]);
+            zeile('agent', d.wartetAuf.frage);
+            return;
+          }
           const letzte = [...d.verlauf].reverse().find((v) => v.rolle === 'agent');
           if (letzte?.chips?.length) setChips(letzte.chips);
         }
+        // Einmal am Tag: der Morgenvorschlag — nur lesend, Steuerungen daraus werden nicht ausgeführt
+        return anfrage(`${api}/morgen`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ heute: heuteLokal() }) })
+          .then(async (r) => (r.ok ? ((await r.json()) as { antwort: AgentAntwortDaten | null }).antwort : null))
+          .then((m) => {
+            if (!aktiv || !m) return;
+            sitzungMerken(m.sitzungId);
+            zeile('agent', m.text);
+            setChips(m.chips);
+          });
       })
       .catch(() => { /* ohne Verlauf beginnt das Gespräch leer */ });
     return () => { aktiv = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Beobachtung: Klicks und Meldungen der App an den Kern — solange AgentMode offen ist
+  // Beobachtung: Klicks und Meldungen der App an den Kern — solange AgentMode offen ist.
+  // Gespeicherte Eingaben meldet <Lernen> (auch ohne Overlay) — hier nicht, sonst zählten sie doppelt.
   useEffect(() => beobachten((b: Beobachtung) => {
+    if (b.art === 'gespeichert') return;
     void anfrage(`${api}/ereignis`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...b, kontext: b.kontext ?? {}, sitzungId: sitzungId ?? undefined }) }).catch(() => undefined);
   }), [anfrage, api, sitzungId]);
 
