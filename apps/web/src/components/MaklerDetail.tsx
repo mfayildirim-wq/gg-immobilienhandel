@@ -33,8 +33,8 @@ export function MaklerDetail({ id, geloescht, start = 'profil' }: { id: string; 
   return (
     <Tabs value={reiter} onChange={(v) => v && setReiter(v as Reiter)} keepMounted={false}>
       <Reiterleiste>
-        <Tabs.Tab value="profil">👤 Profil</Tabs.Tab>
-        <Tabs.Tab value="komm">💬 Kommunikation</Tabs.Tab>
+        <Tabs.Tab value="profil" data-agent="makler.reiter.profil">👤 Profil</Tabs.Tab>
+        <Tabs.Tab value="komm" data-agent="makler.reiter.kommunikation">💬 Kommunikation</Tabs.Tab>
         <Tabs.Tab value="persoenlich">🎯 Persönlich</Tabs.Tab>
         <Tabs.Tab value="deals">🤝 Deals</Tabs.Tab>
       </Reiterleiste>

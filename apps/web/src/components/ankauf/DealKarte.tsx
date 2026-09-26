@@ -23,7 +23,7 @@ const ohneAuswahl = (kind: React.ReactNode) => (
  *   3 links Termin (Datum + Schnellwahl), rechts Fälligkeit und „Erledigt“
  * Ein Klick auf die Karte zeigt den Deal rechts im Detailbereich; die Werte sind dieselben wie zuvor.
  */
-export function DealKarte({ d, heute, aktiv, waehlen }: { d: CockpitDeal; heute: string; aktiv?: boolean; waehlen?: (id: string) => void }) {
+export function DealKarte({ d, heute, aktiv, waehlen, agentZiel, agentErster }: { d: CockpitDeal; heute: string; aktiv?: boolean; waehlen?: (id: string) => void; /** Marke für den AgentMode (Oberflächenkarte) */ agentZiel?: string; /** Zusätzliche Marke, wenn dies der erste Eintrag ist */ agentErster?: string }) {
   const erledigt = useDealErledigt(d.id);
   const termin = useTerminSetzen('deals', d.id);
   const rendite = d.jahresmiete && d.kaufpreis ? `${((d.jahresmiete / d.kaufpreis) * 100).toFixed(1).replace('.', ',')} % · ` : '';
@@ -43,6 +43,10 @@ export function DealKarte({ d, heute, aktiv, waehlen }: { d: CockpitDeal; heute:
       }}
       aria-label={`Deal ${d.objekt.titel}`}
       data-karte={`deal:${d.id}`}
+      data-agent={agentZiel}
+      data-agent-wert={agentZiel ? d.id : undefined}
+      data-agent-auch={agentErster}
+      data-agent-kontext={JSON.stringify({ dealId: d.id, objekt: d.objekt.titel })}
       data-faellig-klasse={d.faellig.klasse}
     >
       <Stack gap={6}>

@@ -38,16 +38,16 @@ export function DealDetail({ id, start = 'uebersicht' }: { id: string; start?: R
       </Group>
       <Tabs value={reiter} onChange={(v) => v && setReiter(v as Reiter)} keepMounted={false}>
         <Reiterleiste>
-          <Tabs.Tab value="uebersicht" leftSection={<IconInfoCircle size={16} />}>
+          <Tabs.Tab value="uebersicht" data-agent="deal.reiter.uebersicht" leftSection={<IconInfoCircle size={16} />}>
             Übersicht
           </Tabs.Tab>
-          <Tabs.Tab value="kommunikation" leftSection={<IconMessages size={16} />}>
+          <Tabs.Tab value="kommunikation" data-agent="deal.reiter.kommunikation" leftSection={<IconMessages size={16} />}>
             Kommunikation
           </Tabs.Tab>
-          <Tabs.Tab value="kalkulation" leftSection={<IconCalculator size={16} />}>
+          <Tabs.Tab value="kalkulation" data-agent="deal.reiter.kalkulation" leftSection={<IconCalculator size={16} />}>
             Kalkulation
           </Tabs.Tab>
-          <Tabs.Tab value="dateien" leftSection={<IconFolder size={16} />}>
+          <Tabs.Tab value="dateien" data-agent="deal.reiter.dateien" leftSection={<IconFolder size={16} />}>
             Dateien
           </Tabs.Tab>
           <Tabs.Tab value="kundenkalkulation" leftSection={<IconBriefcase size={16} />}>

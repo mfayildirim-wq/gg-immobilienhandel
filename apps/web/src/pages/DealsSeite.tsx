@@ -110,6 +110,8 @@ function DealZeile({ deal, exposeId, aktiv, waehlen }: { deal: DealZeileDaten; e
   return (
     <Listenzeile
       data-deal={deal.id}
+      data-agent="deals.liste.eintrag"
+      data-agent-wert={deal.id}
       aktiv={aktiv}
       waehlen={waehlen}
       titel={deal.adresse}
@@ -140,7 +142,7 @@ function DealTabelle({ zeilen, exposeIds, auswahlId, waehlen }: { zeilen: DealZe
       </Table.Thead>
       <Table.Tbody>
         {zeilen.map((d) => (
-          <Table.Tr key={d.id} data-deal={d.id} onClick={() => waehlen(d.id)} aria-selected={d.id === auswahlId} style={{ cursor: 'pointer' }}
+          <Table.Tr key={d.id} data-deal={d.id} data-agent="deals.liste.eintrag" data-agent-wert={d.id} onClick={() => waehlen(d.id)} aria-selected={d.id === auswahlId} style={{ cursor: 'pointer' }}
             bg={d.id === auswahlId ? 'var(--mantine-primary-color-light)' : undefined}>
             <Table.Td><Titelbild objektId={d.objId} /></Table.Td>
             <Table.Td>{exposeIds[d.id] && (

@@ -7,6 +7,8 @@ describe('Kanal (Oberfläche)', () => {
     expect(zielFinden('ankauf.deals.eintrag')?.textContent).toBe('A');
     expect(zielFinden('ankauf.deals.eintrag', 'd2')?.textContent).toBe('B');
     expect(zielFinden('ankauf.deals.eintrag', 'd9')).toBeNull();
+    document.querySelector('li')!.setAttribute('data-agent-auch', 'ankauf.deals.erster');
+    expect(zielFinden('ankauf.deals.erster')?.textContent).toBe('A');
     expect(zielFinden('gibt.es.nicht')).toBeNull();
   });
 

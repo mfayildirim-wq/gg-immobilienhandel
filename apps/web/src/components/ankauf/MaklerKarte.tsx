@@ -12,7 +12,7 @@ import css from '../Listenzeile.module.css';
 
 export const PRIO_FARBE: Record<string, string> = { A: 'green', B: 'orange', C: 'gray' };
 
-export function MaklerKarte({ m, heute, anrufen, stilOeffnen, aktiv, waehlen }: { m: CockpitMakler; heute: string; anrufen: (m: CockpitMakler) => void; stilOeffnen: () => void; aktiv?: boolean; waehlen?: (id: string) => void }) {
+export function MaklerKarte({ m, heute, anrufen, stilOeffnen, aktiv, waehlen, agentZiel, agentErster }: { m: CockpitMakler; heute: string; anrufen: (m: CockpitMakler) => void; stilOeffnen: () => void; aktiv?: boolean; waehlen?: (id: string) => void; /** Marke für den AgentMode (Oberflächenkarte) */ agentZiel?: string; /** Zusätzliche Marke, wenn dies der erste Eintrag ist */ agentErster?: string }) {
   const erledigt = useMaklerErledigt(m.id);
   const termin = useTerminSetzen('makler', m.id);
   const whatsapp = useWhatsappProtokoll(m.id);
@@ -44,6 +44,10 @@ export function MaklerKarte({ m, heute, anrufen, stilOeffnen, aktiv, waehlen }: 
       }}
       aria-label={`Makler ${m.name ?? m.firma ?? ''}`}
       data-karte={`makler:${m.id}`}
+      data-agent={agentZiel}
+      data-agent-wert={agentZiel ? m.id : undefined}
+      data-agent-auch={agentErster}
+      data-agent-kontext={JSON.stringify({ maklerId: m.id, makler: m.name ?? m.firma ?? '' })}
       data-faellig-klasse={m.faellig.klasse}
     >
       <Stack gap={6}>

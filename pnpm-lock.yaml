@@ -102,6 +102,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@cosai/agentmode':
+        specifier: workspace:*
+        version: link:../../packages/cosai-agentmode
       '@gg/api-contract':
         specifier: workspace:*
         version: link:../../packages/api-contract

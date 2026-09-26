@@ -131,8 +131,8 @@ export function AnkaufSeite() {
 
       <Tabs value={reiter} onChange={(v) => v && setReiter(v as Reiter)} keepMounted={false} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <Reiterleiste>
-          <Tabs.Tab value="deals" leftSection={<IconTarget size={16} />} rightSection={<Badge size="sm" color={data.deals.length ? 'red' : 'gray'}>{data.deals.length}</Badge>}>Deals kontaktieren</Tabs.Tab>
-          <Tabs.Tab value="makler" leftSection={<IconUsers size={16} />} rightSection={<Badge size="sm" color={data.makler.length ? 'red' : 'gray'}>{data.makler.length}</Badge>}>Makler kontaktieren</Tabs.Tab>
+          <Tabs.Tab value="deals" data-agent="ankauf.reiter.deals" leftSection={<IconTarget size={16} />} rightSection={<Badge size="sm" color={data.deals.length ? 'red' : 'gray'}>{data.deals.length}</Badge>}>Deals kontaktieren</Tabs.Tab>
+          <Tabs.Tab value="makler" data-agent="ankauf.reiter.makler" leftSection={<IconUsers size={16} />} rightSection={<Badge size="sm" color={data.makler.length ? 'red' : 'gray'}>{data.makler.length}</Badge>}>Makler kontaktieren</Tabs.Tab>
         </Reiterleiste>
 
         <Tabs.Panel value="deals" pt="sm" style={{ flex: 1, minHeight: 0 }}>
@@ -144,7 +144,8 @@ export function AnkaufSeite() {
               <Spalte titel="🎯 Deals nachverfolgen" anzahl={data.deals.length} leer="Keine Deals diese Woche">
                 {ABSCHNITTE.map(({ klasse, titel }) => (
                   <Abschnitt key={klasse} klasse={klasse} titel={titel} eintraege={data.deals.filter((d) => d.faellig.klasse === klasse)}
-                    karte={(d: CockpitDeal) => <DealKarte key={d.id} d={d} heute={data.heute} aktiv={d.id === dealAuswahl} waehlen={setDealAuswahl} />} />
+                    karte={(d: CockpitDeal) => <DealKarte key={d.id} d={d} heute={data.heute} aktiv={d.id === dealAuswahl} waehlen={setDealAuswahl}
+                      agentZiel="ankauf.deals.eintrag" agentErster={d.id === dealsGeordnet[0]?.id ? 'ankauf.deals.erster' : undefined} />} />
                 ))}
               </Spalte>
             </ScrollArea>
@@ -165,7 +166,8 @@ export function AnkaufSeite() {
               <Spalte titel="🤝 Makler kontaktieren" anzahl={data.makler.length} leer="Keine Makler diese Woche">
                 {ABSCHNITTE.map(({ klasse, titel }) => (
                   <Abschnitt key={klasse} klasse={klasse} titel={titel} eintraege={data.makler.filter((m) => m.faellig.klasse === klasse)}
-                    karte={(m: CockpitMakler) => <MaklerKarte key={m.id} m={m} heute={data.heute} anrufen={setBriefing} stilOeffnen={() => setStilOffen(true)} aktiv={m.id === maklerAuswahl} waehlen={setMaklerAuswahl} />} />
+                    karte={(m: CockpitMakler) => <MaklerKarte key={m.id} m={m} heute={data.heute} anrufen={setBriefing} stilOeffnen={() => setStilOffen(true)} aktiv={m.id === maklerAuswahl} waehlen={setMaklerAuswahl}
+                      agentZiel="ankauf.makler.eintrag" agentErster={m.id === maklerGeordnet[0]?.id ? 'ankauf.makler.erster' : undefined} />} />
                 ))}
               </Spalte>
             </ScrollArea>

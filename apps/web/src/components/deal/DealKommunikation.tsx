@@ -47,6 +47,7 @@ export function DealKommunikation({ deal }: { deal: DealDetail }) {
           />
           <Stack gap={4}>
             <TextInput
+              data-agent="deal.naechster-kontakt.datum"
               label="Nächster Kontakt"
               type="date"
               value={deal.nextContact ?? ''}
@@ -64,7 +65,8 @@ export function DealKommunikation({ deal }: { deal: DealDetail }) {
             </Text>
             <Group gap="xs">
               <Text size="sm">{datumDe(deal.lastContact)}</Text>
-              <Button size="xs" variant="light" leftSection={<IconCheck size={14} />} loading={erledigt.isPending} onClick={() => erledigt.mutate(deal.version)}>
+              <Button data-agent="deal.erledigt" size="xs" variant="light" leftSection={<IconCheck size={14} />} loading={erledigt.isPending}
+                onClick={() => erledigt.mutate(deal.version)}>
                 Erledigt
               </Button>
             </Group>
@@ -84,13 +86,14 @@ function Kommentare({ deal }: { deal: DealDetail }) {
   const [text, setText] = useState('');
   const gespraeche = deal.kommentare.filter((k) => k.zeitpunkt);
   return (
-    <section aria-label="Kommentare">
+    <section aria-label="Kommentare" data-agent-kontext={JSON.stringify({ dealId: deal.id })}>
       <Title order={5} mb="xs">
         📝 Gesprächslog
       </Title>
       <Group align="flex-end" gap="xs" mb="sm">
-        <Textarea placeholder="Neue Gesprächsnotiz…" autosize minRows={2} style={{ flex: 1 }} value={text} onChange={(e) => setText(e.currentTarget.value)} aria-label="Neue Gesprächsnotiz" />
-        <Button disabled={!text.trim()} loading={anlegen.isPending} onClick={() => anlegen.mutate(text, { onSuccess: () => setText('') })}>
+        <Textarea data-agent="deal.kommentar.text" placeholder="Neue Gesprächsnotiz…" autosize minRows={2} style={{ flex: 1 }} value={text} onChange={(e) => setText(e.currentTarget.value)} aria-label="Neue Gesprächsnotiz" />
+        <Button data-agent="deal.kommentar.senden" disabled={!text.trim()} loading={anlegen.isPending}
+          onClick={() => anlegen.mutate(text, { onSuccess: () => setText('') })}>
           + Eintrag
         </Button>
       </Group>

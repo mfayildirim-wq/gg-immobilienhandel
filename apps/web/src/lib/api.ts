@@ -70,6 +70,7 @@ import type {
   StatusHistorieEintrag,
   StatusWechsel, AutoImportLauf,
 } from '@gg/api-contract';
+import { melden } from '@cosai/agentmode/kanal';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { sitzungErneuern, zugriffsToken } from './sitzung.ts';
 
@@ -108,6 +109,9 @@ async function holen(pfad: string, init?: RequestInit): Promise<Response> {
   if (res.status !== 401) return res;
   return (await sitzungErneuern()) ? bauen() : res;
 }
+
+/** Roh-Aufruf mit Anmeldung — für Bibliotheken, die selbst Antworten lesen (AgentMode). */
+export const agentAnfrage = (pfad: string, init?: RequestInit) => holen(pfad, init);
 
 async function anfrage<T>(pfad: string, init?: RequestInit): Promise<T> {
   const res = await holen(pfad, { ...init, headers: { 'content-type': 'application/json', ...init?.headers } });
@@ -199,10 +203,20 @@ export const useDealInfoAendern = (id: string) =>
   useAendern('deals', (e: DealInfoAendern) => anfrage<Geaendert>(`/api/deals/${id}`, senden('PATCH', e)));
 export const useKalkulationSpeichern = (id: string) =>
   useAendern('deals', (e: KalkulationSpeichern) => anfrage<Geaendert & { kennzahlen: Record<string, number> }>(`/api/deals/${id}/kalkulation`, senden('PUT', e)));
+// `melden` in der Mutation, nicht im Aufruf-Callback: React Query überspringt die Callbacks aus `mutate(...)`,
+// wenn die Komponente zwischendurch neu gerendert wird — der AgentMode verlöre dann die Formulierung.
 export const useKommentarAnlegen = (id: string) =>
-  useAendern('deals', (text: string) => anfrage(`/api/deals/${id}/kommentare`, senden('POST', { text })));
+  useAendern('deals', async (text: string) => {
+    const ergebnis = await anfrage(`/api/deals/${id}/kommentare`, senden('POST', { text }));
+    melden({ art: 'gespeichert', ziel: 'deal.kommentar', wert: text, kontext: { dealId: id } });
+    return ergebnis;
+  });
 export const useDealErledigt = (id: string) =>
-  useAendern('deals', (version: number) => anfrage<Geaendert>(`/api/deals/${id}/erledigt`, senden('POST', { version })));
+  useAendern('deals', async (version: number) => {
+    const ergebnis = await anfrage<Geaendert>(`/api/deals/${id}/erledigt`, senden('POST', { version }));
+    melden({ art: 'gespeichert', ziel: 'deal.erledigt', kontext: { dealId: id } });
+    return ergebnis;
+  });
 export const useMaklerAendern = (id: string) =>
   useAendern('makler', (e: MaklerAendern) => anfrage<Geaendert>(`/api/makler/${id}`, senden('PATCH', e)));
 export const useKommunikationAnlegen = (id: string) =>

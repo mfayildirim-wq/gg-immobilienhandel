@@ -2,6 +2,7 @@ import { createRootRoute, createRoute, createRouter, Outlet, redirect } from '@t
 import { Stack, Title } from '@mantine/core';
 import { EINSTELLUNGEN_SEITEN } from './lib/einstellungenSeiten.tsx';
 import { AppRahmen } from './components/AppRahmen.tsx';
+import { AgentSeite } from './agent/AgentSeite.tsx';
 import { AnkaufSeite } from './pages/AnkaufSeite.tsx';
 import { BegleitscheineSeite } from './pages/BegleitscheineSeite.tsx';
 import { BegleitscheinSeite } from './pages/BegleitscheinSeite.tsx';
@@ -68,6 +69,7 @@ const routen = [
     validateSearch: (s: Record<string, unknown>): { key?: string; name?: string } => ({ key: text(s.key), name: text(s.name) }),
   }),
   createRoute({ getParentRoute: () => root, path: '/angebote', component: AngeboteSeite }),
+  createRoute({ getParentRoute: () => root, path: '/agent', component: AgentSeite }),
   createRoute({
     getParentRoute: () => root,
     path: '/m365/rueckweg',

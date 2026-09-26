@@ -12,23 +12,25 @@ import {
   IconFileImport,
   IconMail,
   IconSearch,
-  IconUsers, IconChecklist, IconTableShare, IconChartBar } from '@tabler/icons-react';
+  IconUsers, IconChecklist, IconTableShare, IconChartBar, IconSparkles } from '@tabler/icons-react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { AbmeldenKnopf } from './Anmeldung.tsx';
 import { GlobaleSuche } from './GlobaleSuche.tsx';
 import { EINSTELLUNGEN_SEITEN } from '../lib/einstellungenSeiten.tsx';
+import { AgentModeHost, useAgentAktiv, useAgentVerfuegbar } from '../agent/agent.tsx';
 
+// `ziel` = Marke für den AgentMode (Oberflächenkarte `nav.<seite>`)
 const NAVIGATION = [
-  { to: '/', label: 'Ankauf', icon: IconTarget },
-  { to: '/deals', label: 'Deals', icon: IconReportMoney },
+  { to: '/', label: 'Ankauf', icon: IconTarget, ziel: 'nav.ankauf' },
+  { to: '/deals', label: 'Deals', icon: IconReportMoney, ziel: 'nav.deals' },
   { to: '/kundenkalkulationen', label: 'Kundenkalk', icon: IconBriefcase },
   { to: '/begleitscheine', label: 'Begleitscheine', icon: IconChecklist },
   { to: '/vertriebslisten', label: 'Vertriebslisten', icon: IconTableShare },
   { to: '/projekte', label: 'Projekte', icon: IconChartBar },
-  { to: '/objekte', label: 'Objekte', icon: IconBuildingCommunity },
-  { to: '/makler', label: 'Makler', icon: IconUsers },
-  { to: '/angebote', label: 'Angebote', icon: IconMail },
+  { to: '/objekte', label: 'Objekte', icon: IconBuildingCommunity, ziel: 'nav.objekte' },
+  { to: '/makler', label: 'Makler', icon: IconUsers, ziel: 'nav.makler' },
+  { to: '/angebote', label: 'Angebote', icon: IconMail, ziel: 'nav.angebote' },
 ] as const;
 
 /** App-Rahmen im neuen Design: einklappbare Seitenleiste links. Die Wählmaschine gehört zur Ankaufseite (Knopf bei „Nächste Kontakte“). */
@@ -47,6 +49,10 @@ export function AppRahmen() {
   const leisteSichtbar = desktop ? true : mobilOffen;
   // Untermenü Einstellungen: auf einer Einstellungsseite offen, sonst per Klick
   const [einstellungenOffen, setEinstellungenOffen] = useState(pfad.startsWith('/einstellungen'));
+  // AgentMode: Overlay über jeder Seite (Schalter), eigene Seite unter /agent — nur wenn die API ein Modell hat
+  const agentVerfuegbar = useAgentVerfuegbar().data === true;
+  const [agentAktiv, setAgentAktiv] = useAgentAktiv();
+  const agentOverlay = agentVerfuegbar && agentAktiv === 'an' && pfad !== '/agent';
   useEffect(() => { if (pfad.startsWith('/einstellungen')) setEinstellungenOffen(true); }, [pfad]);
   // ⌘F / Strg+F öffnet die globale Suche (wie main.ts der alten App)
   useEffect(() => {
@@ -93,13 +99,14 @@ export function AppRahmen() {
         style={{ transition: 'width 150ms ease', overflowX: 'hidden' }}
       >
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-          {NAVIGATION.map(({ to, label, icon: Icon }) => {
+          {NAVIGATION.map(({ to, label, icon: Icon, ...rest }) => {
             const aktiv = to === '/' ? pfad === '/' : pfad.startsWith(to);
             return (
               <Tooltip key={to} label={label} position="right" disabled={!schmal}>
                 <NavLink
                   component={Link}
                   to={to}
+                  data-agent={'ziel' in rest ? rest.ziel : undefined}
                   label={schmal ? undefined : label}
                   aria-label={label}
                   leftSection={<Icon size={18} />}
@@ -137,6 +144,20 @@ export function AppRahmen() {
           </Tooltip>
         </div>
 
+        {agentVerfuegbar && (
+          <Group gap={4} wrap="nowrap" pt="xs" style={{ borderTop: '1px solid var(--mantine-color-default-border)', flexDirection: schmal ? 'column' : 'row' }}>
+            <Tooltip label="AgentMode-Seite" position="right" disabled={!schmal}>
+              <NavLink component={Link} to="/agent" label={schmal ? undefined : 'AgentMode'} aria-label="AgentMode" leftSection={<IconSparkles size={18} />} active={pfad === '/agent'}
+                styles={{ root: { flex: 1 }, label: { fontWeight: pfad === '/agent' ? 700 : undefined } }} onClick={() => { mobilSchliessen(); setUeberfahren(false); }} />
+            </Tooltip>
+            <Tooltip label={agentAktiv === 'an' ? 'Agent-Overlay ausschalten' : 'Agent-Overlay einschalten'} position="right">
+              <ActionIcon variant={agentAktiv === 'an' ? 'filled' : 'subtle'} color="teal" aria-label="Agent-Overlay" aria-pressed={agentAktiv === 'an'} onClick={() => setAgentAktiv(agentAktiv === 'an' ? 'aus' : 'an')}>
+                <IconSparkles size={18} />
+              </ActionIcon>
+            </Tooltip>
+          </Group>
+        )}
+
         {/* Abmelden und Auf-/Zuklappen stehen immer unten in der Leiste; eingeklappt untereinander, sonst nebeneinander. */}
         <Group justify={schmal ? 'center' : 'space-between'} gap="xs" pt="xs" style={{ borderTop: '1px solid var(--mantine-color-default-border)', flexDirection: schmal ? 'column' : 'row' }}>
           <AbmeldenKnopf schmal={schmal} />
@@ -155,7 +176,7 @@ export function AppRahmen() {
       </AppShell.Navbar>
 
       <AppShell.Main>
-        <Outlet />
+        {agentOverlay ? <AgentModeHost modus="overlay" schliessen={() => setAgentAktiv('aus')}><Outlet /></AgentModeHost> : <Outlet />}
       </AppShell.Main>
 
       <GlobaleSuche offen={sucheOffen} schliessen={suche.close} />

@@ -14,9 +14,13 @@ export interface Beobachtung { art: BeobachtungArt; ziel: string; wert?: string;
 
 const EREIGNIS = 'cosai:beobachtung';
 
-/** Findet das Element eines Ziels; `wert` wählt einen Listeneintrag (`data-agent-wert`), sonst den ersten Treffer. */
+/**
+ * Findet das Element eines Ziels; `wert` wählt einen Listeneintrag (`data-agent-wert`), sonst den ersten Treffer.
+ * Ein Element kann neben `data-agent` weitere Ziele in `data-agent-auch` tragen (z. B. der erste Eintrag einer Liste).
+ */
 export function zielFinden(ziel: string, wert?: string, root: ParentNode = document): HTMLElement | null {
-  const alle = Array.from(root.querySelectorAll<HTMLElement>(`[data-agent="${CSS.escape(ziel)}"]`));
+  const z = CSS.escape(ziel);
+  const alle = Array.from(root.querySelectorAll<HTMLElement>(`[data-agent="${z}"], [data-agent-auch~="${z}"]`));
   if (!alle.length) return null;
   if (wert !== undefined) return alle.find((e) => e.dataset.agentWert === wert) ?? null;
   return alle[0]!;
@@ -33,10 +37,9 @@ export function wertSetzen(el: HTMLElement, wert: string): void {
   feld.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-/** Klickt das Ziel — oder das klickbare Element darin (Reiter, Knopf). */
+/** Klickt das Ziel selbst — oder, wenn markiert, das klickbare Element darin (`data-agent-klick`). */
 export function klicken(el: HTMLElement): void {
-  const ziel = el.matches('button, a, [role="tab"], [role="button"], input') ? el : el.querySelector<HTMLElement>('button, a, [role="tab"], [role="button"]') ?? el;
-  ziel.click();
+  (el.querySelector<HTMLElement>('[data-agent-klick]') ?? el).click();
 }
 
 export interface AusfuehrenOptionen {
