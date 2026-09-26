@@ -115,4 +115,20 @@ describe.skipIf(!url)('Kern', () => {
     // Ein anderer Nutzer bekommt seinen eigenen
     expect(await agentKern({ db, modell: drehbuchModell([ki('Guten Morgen.')]), openapi, ziele, aufruf }).morgen({ id: 'test-kern-2@example' }, tag)).not.toBeNull();
   });
+
+  it('bestätigt jedes Senden einzeln — ein zweites sende im selben Aufruf läuft nach „Ja“ nicht mit', async () => {
+    const zweiZiele = [...ziele, { ziel: 'deal.erledigt', beschreibung: 'Knopf: Deal erledigt' }];
+    const aktionen = [
+      { art: 'fuelle', ziel: 'deal.kommentar.text', wert: 'Rückruf Montag' },
+      { art: 'sende', ziel: 'deal.kommentar.senden', text: 'Notiz abschicken?' },
+      { art: 'oeffne', ziel: 'deal.reiter.kommunikation' },
+      { art: 'sende', ziel: 'deal.erledigt', text: 'Als erledigt markieren?' },
+    ];
+    const drehbuch = [ki('', [['steuere', { aktionen }]]), ki('Die Notiz ist drin.')];
+    const kern = agentKern({ db, modell: drehbuchModell(drehbuch), openapi, ziele: zweiZiele, aufruf });
+    const a = await kern.nachricht(nutzer, { text: 'Notiz und erledigt', ort: '/', kontext: {} });
+    expect(a.wartetAuf?.aktion.ziel).toBe('deal.kommentar.senden');
+    const b = await kern.entscheidung(nutzer, { sitzungId: a.sitzungId, wert: 'ja' });
+    expect(b.steuerung.map((s) => s.ziel)).toEqual(['deal.kommentar.senden', 'deal.reiter.kommunikation']);
+  });
 });

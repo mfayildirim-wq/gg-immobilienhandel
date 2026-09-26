@@ -130,7 +130,13 @@ export function werkzeugeBauen(opt: GraphOptionen): StructuredToolInterface[] {
     // Die Unterbrechung: die Schritte davor führt die Oberfläche schon aus, das Senden wartet auf den Nutzer.
     const antwort = interrupt({ frage: senden.text ?? `${senden.ziel} ausführen?`, aktion: senden, vorher }) as string;
     if (antwort.trim().toLowerCase() === 'ja') {
-      return new Command({ update: { steuerung: [senden, ...danach], messages: [new ToolMessage({ content: 'Der Nutzer hat bestätigt, gesendet.', tool_call_id: toolCallId })] } });
+      // Jedes Senden braucht seine eigene Bestätigung: nach „Ja“ nur bis vor das nächste `sende`, den Rest meldet der
+      // Kern zurück — das Modell ruft `steuere` damit erneut auf, und der Nutzer wird wieder gefragt.
+      const naechstes = danach.findIndex((a) => a.art === 'sende');
+      const jetzt = naechstes < 0 ? danach : danach.slice(0, naechstes);
+      const offen = naechstes < 0 ? [] : danach.slice(naechstes);
+      const hinweis = offen.length ? ` Noch nicht ausgeführt (jedes Senden einzeln bestätigen lassen, dafür steuere erneut aufrufen): ${JSON.stringify(offen)}` : '';
+      return new Command({ update: { steuerung: [senden, ...jetzt], messages: [new ToolMessage({ content: `Der Nutzer hat bestätigt, gesendet.${hinweis}`, tool_call_id: toolCallId })] } });
     }
     return new Command({ update: { messages: [new ToolMessage({ content: `Der Nutzer hat nicht bestätigt: „${antwort}“. Nicht gesendet.`, tool_call_id: toolCallId })] } });
   }, {
