@@ -39,7 +39,8 @@ describe.skipIf(!url)('Kern', () => {
     const kern = agentKern({ db, modell, openapi, ziele, aufruf });
     const a = await kern.nachricht(nutzer, { text: 'Was ist heute fällig?', ort: '/', kontext: {} });
     expect(aufrufe).toEqual(['Bearer t GET /api/ankauf']);
-    expect(a.text).toBe('Was möchtest du tun?');
+    // Die Antwort neben dem Chips-Aufruf gehört dazu — das echte Modell legt die Auskunft oft dorthin
+    expect(a.text).toBe('Heute ist ein Deal fällig: Weraststraße 12, Makler Huber.\n\nWas möchtest du tun?');
     expect(a.chips.map((c) => c.label)).toEqual(['Anrufen', 'Nächster']);
     expect(a.steuerung).toEqual([]);
     expect(a.wartetAuf).toBeUndefined();

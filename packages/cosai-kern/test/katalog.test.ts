@@ -59,6 +59,13 @@ describe('Werkzeug-Antworten kürzen', async () => {
     expect(daten.heute).toBe('x');
     expect(JSON.stringify(daten.deals.at(-1))).toContain('_gekuerzt');
   });
+  it('nennt nach mehreren Runden die ursprüngliche Gesamtzahl — sonst zählt das Modell „3 + 2 weitere“ als 5', () => {
+    const gross = JSON.stringify({ deals: Array.from({ length: 53 }, (_, i) => ({ id: `d${i}`, titel: 'Objekt '.repeat(20) })) });
+    const daten = JSON.parse(kuerzen(gross, 1200)) as { deals: Record<string, unknown>[] };
+    const hinweis = daten.deals.at(-1)!;
+    expect(hinweis._gesamt).toBe(53);
+    expect(daten.deals.length - 1 + Number(String(hinweis._gekuerzt).match(/\d+/)![0])).toBe(53);
+  });
   it('schneidet Text ohne JSON hart ab', () => {
     expect(kuerzen('x'.repeat(50), 10)).toMatch(/^x{10}\n… \(gekürzt/);
   });

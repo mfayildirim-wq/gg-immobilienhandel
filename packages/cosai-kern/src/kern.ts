@@ -73,14 +73,19 @@ export function agentKern(opt: KernOptionen) {
     await db.insert(ereignisse).values({ nutzer: nutzer.id, sitzungId, richtung, art, ziel: ziel ?? null, wert: wert ?? null, kontext });
   }
 
+  /** Nachrichten im Zustand vor einem Lauf — der Antworttext kommt nur aus dem, was dieser Lauf hinzugefügt hat. */
+  function anzahlNachrichten(stand: { values: unknown }): number {
+    return (stand.values as { messages?: unknown[] }).messages?.length ?? 0;
+  }
+
   /** Liest nach dem Lauf aus dem Zustand, was die Oberfläche bekommt — und ob der Graph auf eine Bestätigung wartet. */
-  async function antwortAus(graph: ReturnType<typeof graphFuer>, nutzer: Nutzer, sitzungId: string): Promise<AgentAntwort> {
+  async function antwortAus(graph: ReturnType<typeof graphFuer>, nutzer: Nutzer, sitzungId: string, vorher: number): Promise<AgentAntwort> {
     const config = { configurable: { thread_id: sitzungId } };
     const stand = await graph.getState(config);
     const werte = stand.values as { messages: import('@langchain/core/messages').BaseMessage[]; steuerung: Steuerung[]; chips: Chip[] };
     const unterbrechung = stand.tasks.flatMap((t) => t.interrupts ?? [])[0]?.value as { frage: string; aktion: Steuerung; vorher: Steuerung[] } | undefined;
     const steuerung = [...werte.steuerung, ...(unterbrechung?.vorher ?? [])];
-    const text = letzterText(werte.messages) || (unterbrechung ? unterbrechung.frage : '');
+    const text = letzterText(werte.messages.slice(vorher)) || (unterbrechung ? unterbrechung.frage : '');
     const chips: Chip[] = unterbrechung
       ? [{ label: 'Ja, ausführen', wert: 'ja', art: 'entscheidung' }, { label: 'Nein', wert: 'nein', art: 'entscheidung' }]
       : werte.chips;
@@ -111,7 +116,7 @@ export function agentKern(opt: KernOptionen) {
         ? new Command({ resume: eingabe.text, update: zuruecksetzen })
         : { messages: [new HumanMessage(eingabe.text)], ...zuruecksetzen }) as unknown as Eingang;
       await graph.invoke(eingang, config);
-      return antwortAus(graph, nutzer, sitzungId);
+      return antwortAus(graph, nutzer, sitzungId, anzahlNachrichten(stand));
     },
 
     async entscheidung(nutzer: Nutzer, e: Entscheidung): Promise<AgentAntwort> {
@@ -123,7 +128,7 @@ export function agentKern(opt: KernOptionen) {
       const stand = await graph.getState(config);
       if (!stand.tasks.some((t) => t.interrupts?.length)) throw new Error('Nichts wartet auf eine Entscheidung');
       await graph.invoke(new Command({ resume: e.wert, update: { steuerung: null } }) as unknown as Parameters<typeof graph.invoke>[0], config);
-      return antwortAus(graph, nutzer, e.sitzungId);
+      return antwortAus(graph, nutzer, e.sitzungId, anzahlNachrichten(stand));
     },
 
     /** Die Oberfläche meldet, was der Nutzer tut. `gespeichert` mit Wert wird zur Formulierung und Episode. */

@@ -10,7 +10,8 @@ import type { ChatResult } from '@langchain/core/outputs';
 export type Modell = BaseChatModel;
 
 export function anthropicModell(apiKey: string, model = 'claude-sonnet-5'): Modell {
-  return new ChatAnthropic({ apiKey, model, temperature: 0, maxTokens: 1500 });
+  // Keine temperature: neuere Claude-Modelle lehnen gesetzte Werte ab
+  return new ChatAnthropic({ apiKey, model, maxTokens: 1500 });
 }
 
 /** Ein Drehbuch-Modell: antwortet mit den vorbereiteten Nachrichten der Reihe nach; danach mit einem festen Satz. */

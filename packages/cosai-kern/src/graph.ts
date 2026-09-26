@@ -86,8 +86,14 @@ export function kuerzen(text: string, grenze: number): string {
 
 function listenBeschneiden(wert: unknown, anteil: number): unknown {
   if (Array.isArray(wert)) {
-    const n = Math.max(1, Math.floor(wert.length * anteil));
-    return n < wert.length ? [...wert.slice(0, n), { _gekuerzt: `${wert.length - n} weitere Einträge weggelassen` }] : wert;
+    // Ein Hinweis aus der vorigen Runde trägt die ursprüngliche Länge — sonst schrumpft die Gesamtzahl mit jeder Runde
+    const letzter = wert.at(-1) as { _gesamt?: number } | undefined;
+    const vorher = typeof letzter?._gesamt === 'number';
+    const eintraege = vorher ? wert.slice(0, -1) : wert;
+    const gesamt = vorher ? letzter!._gesamt! : wert.length;
+    const n = Math.max(1, Math.floor(eintraege.length * anteil));
+    if (n >= eintraege.length) return wert;
+    return [...eintraege.slice(0, n), { _gekuerzt: `${gesamt - n} weitere Einträge weggelassen (insgesamt ${gesamt})`, _gesamt: gesamt }];
   }
   if (wert && typeof wert === 'object') {
     return Object.fromEntries(Object.entries(wert as Record<string, unknown>).map(([k, v]) => [k, Array.isArray(v) ? listenBeschneiden(v, anteil) : v]));
@@ -179,16 +185,18 @@ export function graphBauen(opt: GraphOptionen, checkpointer: BaseCheckpointSaver
 
 export type AgentGraph = ReturnType<typeof graphBauen>;
 
-/** Text der letzten Agenten-Antwort — Werkzeugaufrufe ohne Text zählen nicht. */
+/**
+ * Alle Agenten-Texte seit der letzten Nutzernachricht, in Reihenfolge — das Modell schreibt die eigentliche Antwort oft
+ * neben einen Werkzeugaufruf und danach nur noch einen Schlusssatz. Werkzeugaufrufe ohne Text zählen nicht.
+ */
 export function letzterText(messages: BaseMessage[]): string {
+  const texte: string[] = [];
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const m = messages[i]!;
     if (m instanceof HumanMessage) break;
-    if (m instanceof AIMessage && typeof m.content === 'string' && m.content.trim()) return m.content.trim();
-    if (m instanceof AIMessage && Array.isArray(m.content)) {
-      const text = m.content.map((t) => (t.type === 'text' ? t.text : '')).join('').trim();
-      if (text) return text;
-    }
+    if (!(m instanceof AIMessage)) continue;
+    const text = (typeof m.content === 'string' ? m.content : m.content.map((t) => (t.type === 'text' ? t.text : '')).join('')).trim();
+    if (text) texte.unshift(text);
   }
-  return '';
+  return texte.join('\n\n');
 }
