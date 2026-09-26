@@ -54,8 +54,9 @@ export function agentRouten(kern: Kern, nutzerAus: (c: Context) => Nutzer | null
   app.get('/sitzung', async (c) => {
     const nutzer = nutzerAus(c)!;
     const sitzungId = c.req.query('sitzungId') ?? (await kern.letzteSitzung(nutzer));
-    if (!sitzungId) return c.json({ sitzungId: null, verlauf: [] });
-    return c.json({ sitzungId, verlauf: await kern.verlauf(nutzer, sitzungId) });
+    if (!sitzungId) return c.json({ sitzungId: null, verlauf: [], wartetAuf: null });
+    const [verlauf, wartetAuf] = await Promise.all([kern.verlauf(nutzer, sitzungId), kern.wartetAuf(nutzer, sitzungId)]);
+    return c.json({ sitzungId, verlauf, wartetAuf: wartetAuf ?? null });
   });
 
   app.get('/vorschlaege', async (c) => {

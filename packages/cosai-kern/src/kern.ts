@@ -152,6 +152,16 @@ export function agentKern(opt: KernOptionen) {
       return db.select({ rolle: nachrichten.rolle, text: nachrichten.text, chips: nachrichten.chips, createdAt: nachrichten.createdAt }).from(nachrichten).where(eq(nachrichten.sitzungId, sitzungId)).orderBy(nachrichten.createdAt);
     },
 
+    /** Wartet diese Sitzung noch auf eine Bestätigung? Beim Wiederaufnehmen muss die Oberfläche das zeigen. */
+    async wartetAuf(nutzer: Nutzer, sitzungId: string): Promise<AgentAntwort['wartetAuf']> {
+      const [s] = await db.select().from(sitzungen).where(eq(sitzungen.id, sitzungId)).limit(1);
+      if (!s || s.nutzer !== nutzer.id) return undefined;
+      const graph = graphFuer(nutzer, gedaechtnisBauen(db, nutzer.id));
+      const stand = await graph.getState({ configurable: { thread_id: sitzungId } });
+      const u = stand.tasks.flatMap((t) => t.interrupts ?? [])[0]?.value as { frage: string; aktion: Steuerung } | undefined;
+      return u ? { frage: u.frage, aktion: u.aktion } : undefined;
+    },
+
     async letzteSitzung(nutzer: Nutzer): Promise<string | undefined> {
       const [s] = await db.select({ id: sitzungen.id }).from(sitzungen).where(eq(sitzungen.nutzer, nutzer.id)).orderBy(desc(sitzungen.updatedAt)).limit(1);
       return s?.id;

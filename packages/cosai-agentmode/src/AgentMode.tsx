@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Chips, Gedaechtnisleiste, Schaufenster, Sprechblase, type ChipDaten, type GedaechtnisEintragDaten, type Schritt } from './Bausteine.tsx';
-import { ausfuehren, beobachten, type Beobachtung, type Steuerung } from './kanal.ts';
+import { ausfuehren, beobachten, zielFinden, type Beobachtung, type Steuerung } from './kanal.ts';
 import { saatAus } from './konstellation.ts';
 import { Sprechkreis, SPRECHKREIS_STILE, type SprechkreisStil, type SprechkreisZustand } from './Sprechkreis.tsx';
 import { useVorlesen, useZuhoeren } from './sprache.ts';
@@ -81,14 +81,23 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
   useEffect(() => {
     let aktiv = true;
     anfrage(`${api}/sitzung${sitzungId ? `?sitzungId=${encodeURIComponent(sitzungId)}` : ''}`)
-      .then(async (r) => (r.ok ? ((await r.json()) as { sitzungId: string | null; verlauf: { rolle: string; text: string; chips?: ChipDaten[] | null }[] }) : null))
+      .then(async (r) => (r.ok ? ((await r.json()) as { sitzungId: string | null; verlauf: { rolle: string; text: string; chips?: ChipDaten[] | null }[]; wartetAuf?: AgentAntwortDaten['wartetAuf'] | null }) : null))
       .then((d) => {
         if (!aktiv || !d) return;
         if (d.sitzungId) sitzungMerken(d.sitzungId);
+        if (!d.verlauf.length) return;
         const alt = d.verlauf.filter((v) => v.text).map((v) => ({ wer: v.rolle === 'agent' ? 'agent' as const : 'nutzer' as const, text: v.text, nr: (nr.current += 1) }));
         setZeilen(alt.slice(-100));
-        const letzte = [...d.verlauf].reverse().find((v) => v.rolle === 'agent');
-        if (letzte?.chips?.length) setChips(letzte.chips);
+        // Wartet die Sitzung noch auf eine Bestätigung, zeigt die Oberfläche das — sonst würde die
+        // nächste Nachricht stumm als Antwort auf eine längst vergessene Frage gedeutet.
+        if (d.wartetAuf) {
+          setWartetAuf(d.wartetAuf);
+          setChips([{ label: 'Ja, ausführen', wert: 'ja', art: 'entscheidung' }, { label: 'Nein', wert: 'nein', art: 'entscheidung' }]);
+          zeile('agent', d.wartetAuf.frage);
+        } else {
+          const letzte = [...d.verlauf].reverse().find((v) => v.rolle === 'agent');
+          if (letzte?.chips?.length) setChips(letzte.chips);
+        }
       })
       .catch(() => { /* ohne Verlauf beginnt das Gespräch leer */ });
     return () => { aktiv = false; };
@@ -127,19 +136,29 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
     }
   }, [anfrage, api, navigiere, onSteuerung, schrittMs, sitzungId, zeile]);
 
+  /** Markiert das Ziel der wartenden Aktion, solange gefragt wird — man sieht, worum es geht. */
+  const wartendesZielZeigen = useCallback((aktion?: Steuerung) => {
+    if (!aktion?.ziel) { setSchritt(null); return; }
+    const el = zielFinden(aktion.ziel);
+    setSchritt(el ? { el, text: aktion.text ?? 'wartet auf deine Bestätigung' } : null);
+  }, []);
+
   const verarbeiten = useCallback(async (antwort: AgentAntwortDaten) => {
     sitzungMerken(antwort.sitzungId);
-    setWartetAuf(antwort.wartetAuf);
-    setChips(antwort.chips ?? []);
     if (antwort.text) zeile('agent', antwort.text);
     const sprechen = antwort.text ? vorlesen.sprich(antwort.text) : Promise.resolve();
+    // Erst handeln, dann fragen: Die Chips erscheinen nach den Schritten. Sonst kann der Nutzer „Ja“ drücken,
+    // während das Feld noch leer ist — die Bestätigung liefe dann ins Leere.
     await steuern(antwort.steuerung ?? []);
+    wartendesZielZeigen(antwort.wartetAuf?.aktion);
+    setWartetAuf(antwort.wartetAuf);
+    setChips(antwort.chips ?? []);
     await sprechen;
     if (antwort.wartetAuf && antwort.wartetAuf.frage !== antwort.text) {
       zeile('agent', antwort.wartetAuf.frage);
       await vorlesen.sprich(antwort.wartetAuf.frage);
     }
-  }, [sitzungMerken, steuern, vorlesen, zeile]);
+  }, [sitzungMerken, steuern, vorlesen, wartendesZielZeigen, zeile]);
 
   const senden = useCallback(async (pfad: 'nachricht' | 'entscheidung', body: Record<string, unknown>, anzeige: string) => {
     if (beschaeftigt) return;
@@ -147,6 +166,7 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
     setBeschaeftigt(true);
     zeile('nutzer', anzeige);
     setChips([]);
+    setSchritt(null);
     try {
       const r = await anfrage(`${api}/${pfad}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       if (!r.ok) {
@@ -187,6 +207,17 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
     if (treffer) chipWaehlen(treffer); else nachricht(text);
   });
 
+  /** Ein neues Gespräch: die alte Sitzung bleibt in der Datenbank, der Faden beginnt frisch. */
+  const neuesGespraech = useCallback(() => {
+    setSitzungId(null);
+    try { window.localStorage.removeItem(SITZUNG); } catch { /* privater Modus */ }
+    setZeilen([]);
+    setChips([]);
+    setWartetAuf(undefined);
+    setSchritt(null);
+    setFehler(null);
+  }, []);
+
   const gedaechtnisLaden = useCallback(async () => {
     const r = await anfrage(`${api}/gedaechtnis`);
     if (r.ok) setGedaechtnis(((await r.json()) as { eintraege: GedaechtnisEintragDaten[] }).eintraege);
@@ -213,6 +244,7 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
           </select>
         )}
         {vorlesen.moeglich && <button type="button" className="am-knopf" aria-pressed={vorlesen.an} onClick={() => vorlesen.schalte(!vorlesen.an)}>{vorlesen.an ? '🔊 Vorlesen an' : '🔇 Vorlesen aus'}</button>}
+        <button type="button" className="am-knopf" aria-label="Neues Gespräch" onClick={neuesGespraech}>Neues Gespräch</button>
         {schliessen && <button type="button" className="am-knopf" aria-label="AgentMode schließen" onClick={schliessen}>✕</button>}
       </div>
     </div>

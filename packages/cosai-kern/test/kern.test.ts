@@ -72,6 +72,7 @@ describe.skipIf(!url)('Kern', () => {
 
     const verlauf = await zweiter.verlauf(nutzer, a.sitzungId);
     expect(verlauf.map((v) => v.rolle)).toEqual(['nutzer', 'agent', 'nutzer', 'agent']);
+    expect(await zweiter.wartetAuf(nutzer, a.sitzungId)).toBeUndefined();
   });
 
   it('lehnt ab, wenn der Nutzer nicht „ja“ sagt, und merkt sich gespeicherte Formulierungen', async () => {
@@ -79,6 +80,10 @@ describe.skipIf(!url)('Kern', () => {
     const kern = agentKern({ db, modell: drehbuchModell(drehbuch), openapi, ziele, aufruf });
     const a = await kern.nachricht(nutzer, { text: 'schick ab', ort: '/deals', kontext: { dealId: 'd1' } });
     expect(a.wartetAuf).toBeTruthy();
+    // Vor der Antwort weiß auch ein frischer Kern, dass diese Sitzung wartet (Neuladen der Seite)
+    const frisch = agentKern({ db, modell: drehbuchModell([]), openapi, ziele, aufruf });
+    expect((await frisch.wartetAuf(nutzer, a.sitzungId))?.aktion.ziel).toBe('deal.kommentar.senden');
+    expect(await frisch.wartetAuf({ id: 'fremd@example' }, a.sitzungId)).toBeUndefined();
     const b = await kern.nachricht(nutzer, { sitzungId: a.sitzungId, text: 'lieber nicht', ort: '/deals', kontext: { dealId: 'd1' } });
     expect(b.steuerung).toEqual([]);
     expect(b.text).toBe('Gut, nicht gesendet.');

@@ -62,9 +62,10 @@
 .am-zeiger { position: fixed; z-index: 1002; width: 18px; height: 18px; pointer-events: none; transition: top 350ms ease, left 350ms ease; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4)); }
 [data-agent-ziel='aktiv'] { outline: 3px solid var(--am-farbe) !important; outline-offset: 2px; border-radius: 6px; box-shadow: 0 0 0 6px var(--am-farbe-weich); position: relative; z-index: 21; transition: box-shadow 200ms; }
 
-/* Overlay über der App und eigene Seite */
-.am-overlay-oben { position: sticky; top: 0; z-index: 30; }
-.am-overlay-unten { position: sticky; bottom: 0; z-index: 30; }
+/* Overlay über der App und eigene Seite.
+   `--am-oben` / `--am-unten`: Abstand zu festen Leisten des Hosts (in gg-immo der App-Kopf, 56 px). */
+.am-overlay-oben { position: sticky; top: var(--am-oben, 0); z-index: 30; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08); }
+.am-overlay-unten { position: sticky; bottom: var(--am-unten, 0); z-index: 30; border-radius: 10px 10px 0 0; box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.08); }
 .am-seite { display: flex; flex-direction: column; min-height: 100%; }
 .am-seite-mitte { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; padding: 16px; }
 @media (max-width: 860px) { .am-seite-mitte { grid-template-columns: 1fr; } }

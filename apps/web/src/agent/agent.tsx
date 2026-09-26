@@ -7,7 +7,7 @@ import { AgentMode, type SprechkreisStil } from '@cosai/agentmode';
 import { OBERFLAECHENKARTE } from '@gg/api-contract';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import { useCallback, type ReactNode } from 'react';
+import { useCallback, type CSSProperties, type ReactNode } from 'react';
 import { agentAnfrage } from '../lib/api.ts';
 import { useEinstellung } from '../lib/ansicht.ts';
 
@@ -48,6 +48,7 @@ export function AgentModeHost({ modus, children, schliessen }: { modus: 'overlay
   const qc = useQueryClient();
   const ort = useRouterState({ select: (s) => s.location.pathname });
   return (
+    <div style={{ '--am-oben': modus === 'overlay' ? '56px' : '0px' } as CSSProperties}>
     <AgentMode
       api="/api/agent"
       anfrage={agentAnfrage}
@@ -62,5 +63,6 @@ export function AgentModeHost({ modus, children, schliessen }: { modus: 'overlay
     >
       {children}
     </AgentMode>
+    </div>
   );
 }
