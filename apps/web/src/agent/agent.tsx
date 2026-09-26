@@ -3,7 +3,7 @@
  * Die Oberflächenkarte (Ziele) liegt in `@gg/api-contract`; die Marken stehen als `data-agent` in den Komponenten.
  */
 import '@cosai/agentmode/agentmode.css';
-import { AgentMode, type SprechkreisStil } from '@cosai/agentmode';
+import { AgentMode, FeldVorschlaege, Lernen, type SprechkreisStil } from '@cosai/agentmode';
 import { OBERFLAECHENKARTE } from '@gg/api-contract';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
@@ -65,4 +65,16 @@ export function AgentModeHost({ modus, children, schliessen }: { modus: 'overlay
     </AgentMode>
     </div>
   );
+}
+
+/** Lernen auch ohne Overlay (Entscheidung 26.09.): gespeicherte Eingaben werden zu Formulierungen und Episoden. */
+export function AgentLernen() {
+  const verfuegbar = useAgentVerfuegbar().data === true;
+  return verfuegbar ? <Lernen api="/api/agent" anfrage={agentAnfrage} /> : null;
+}
+
+/** Die häufigsten Formulierungen des Nutzers an einem Feld — ein Klick füllt, abschicken tut der Nutzer. */
+export function AgentVorschlaege({ ziel, waehlen }: { ziel: string; waehlen: (text: string) => void }) {
+  const verfuegbar = useAgentVerfuegbar().data === true;
+  return verfuegbar ? <FeldVorschlaege api="/api/agent" anfrage={agentAnfrage} ziel={ziel} waehlen={waehlen} /> : null;
 }

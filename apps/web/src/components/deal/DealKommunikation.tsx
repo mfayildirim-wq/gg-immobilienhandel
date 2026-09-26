@@ -3,6 +3,7 @@ import { FREQUENZEN, isoPlusTage, NAECHSTER_KONTAKT_KNOEPFE, nachfassStand, naec
 import { Alert, Badge, Button, Group, Paper, Select, SimpleGrid, Stack, Text, Textarea, TextInput, Title } from '@mantine/core';
 import { IconCheck } from '@tabler/icons-react';
 import { useState } from 'react';
+import { AgentVorschlaege } from '../../agent/agent.tsx';
 import { useDealErledigt, useDealInfoAendern, useKommentarAnlegen } from '../../lib/api.ts';
 import { heuteIso } from '../../lib/ansicht.ts';
 import { datumDe, zeitpunktLog } from '../../lib/format.ts';
@@ -97,6 +98,7 @@ function Kommentare({ deal }: { deal: DealDetail }) {
           + Eintrag
         </Button>
       </Group>
+      <AgentVorschlaege ziel="deal.kommentar" waehlen={setText} />
       <Stack gap={6}>
         {gespraeche.length === 0 && (
           <Text c="dimmed" size="sm">

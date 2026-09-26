@@ -18,7 +18,7 @@ import { useEffect, useState } from 'react';
 import { AbmeldenKnopf } from './Anmeldung.tsx';
 import { GlobaleSuche } from './GlobaleSuche.tsx';
 import { EINSTELLUNGEN_SEITEN } from '../lib/einstellungenSeiten.tsx';
-import { AgentModeHost, useAgentAktiv, useAgentVerfuegbar } from '../agent/agent.tsx';
+import { AgentLernen, AgentModeHost, useAgentAktiv, useAgentVerfuegbar } from '../agent/agent.tsx';
 
 // `ziel` = Marke für den AgentMode (Oberflächenkarte `nav.<seite>`)
 const NAVIGATION = [
@@ -176,6 +176,7 @@ export function AppRahmen() {
       </AppShell.Navbar>
 
       <AppShell.Main>
+        <AgentLernen />
         {agentOverlay ? <AgentModeHost modus="overlay" schliessen={() => setAgentAktiv('aus')}><Outlet /></AgentModeHost> : <Outlet />}
       </AppShell.Main>
 
