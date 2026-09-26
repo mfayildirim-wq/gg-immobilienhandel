@@ -49,6 +49,18 @@ export function gedaechtnis(db: Db, nutzer: string) {
       return zeile(z!);
     },
 
+    /** Setzt einen Eintrag mit fester Häufigkeit (Routinen: die Anzahl rechnet der Kern aus den Episoden). */
+    async setze(art: GedaechtnisEintrag['art'], schluessel: string, inhalt: string, haeufigkeit: number, kontext: Record<string, unknown> = {}): Promise<void> {
+      await db
+        .insert(tabelle)
+        .values({ nutzer, art, schluessel, inhalt: inhalt.trim(), kontext, haeufigkeit })
+        .onConflictDoUpdate({
+          target: [tabelle.nutzer, tabelle.art, tabelle.schluessel, tabelle.inhalt],
+          targetWhere: sql`art <> 'episode'`,
+          set: { haeufigkeit, kontext },
+        });
+    },
+
     /** Die häufigsten, zuletzt genutzten Einträge einer Art — mit Schlüssel eingegrenzt, sonst alle. */
     async erinnere(art: GedaechtnisEintrag['art'], schluessel?: string, n = 5): Promise<GedaechtnisEintrag[]> {
       const wo = schluessel ? and(eq(tabelle.nutzer, nutzer), eq(tabelle.art, art), eq(tabelle.schluessel, schluessel)) : and(eq(tabelle.nutzer, nutzer), eq(tabelle.art, art));
@@ -73,6 +85,11 @@ export function gedaechtnis(db: Db, nutzer: string) {
 
     async bestaetige(id: string): Promise<void> {
       await db.update(tabelle).set({ bestaetigt: true }).where(and(eq(tabelle.id, id), eq(tabelle.nutzer, nutzer)));
+    },
+
+    async eintrag(id: string): Promise<GedaechtnisEintrag | undefined> {
+      const [z] = await db.select().from(tabelle).where(and(eq(tabelle.id, id), eq(tabelle.nutzer, nutzer))).limit(1);
+      return z ? zeile(z) : undefined;
     },
 
     /** Löscht nur eigene Einträge — die Kennung allein reicht nicht. */

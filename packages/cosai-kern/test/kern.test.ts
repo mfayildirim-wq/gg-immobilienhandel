@@ -19,6 +19,12 @@ const ziele = [
   { ziel: 'deal.kommentar.senden', beschreibung: 'Knopf: Notiz abschicken' },
 ];
 
+/** Ein Tag, den es für den Testnutzer noch nicht gab: Jahr aus der Uhrzeit, Monat und Tag zufällig */
+function einmaligerTag(): string {
+  const z = (n: number) => String(n).padStart(2, '0');
+  return `${2100 + (Math.floor(Date.now() / 1000) % 7000)}-${z(1 + Math.floor(Math.random() * 12))}-${z(1 + Math.floor(Math.random() * 28))}`;
+}
+
 describe.skipIf(!url)('Kern', () => {
   const { db, client } = url ? testDb() : ({} as ReturnType<typeof testDb>);
   const nutzer: Nutzer = { id: 'test-kern@example', kopf: { authorization: 'Bearer t' } };
@@ -103,7 +109,7 @@ describe.skipIf(!url)('Kern', () => {
     expect(a.text).toBe('Das Ziel kenne ich nicht.');
   });
   it('macht den Morgenvorschlag einmal am Tag, in einer eigenen Sitzung', async () => {
-    const tag = `2099-01-${String(Math.floor(Math.random() * 28) + 1).padStart(2, '0')}`;
+    const tag = einmaligerTag();
     const drehbuch = [ki('', [['get_api_ankauf', {}]]), ki('Heute ist ein Deal fällig: Weraststraße 12.')];
     const kern = agentKern({ db, modell: drehbuchModell(drehbuch), openapi, ziele, aufruf });
     const a = await kern.morgen(nutzer, tag);
@@ -130,5 +136,37 @@ describe.skipIf(!url)('Kern', () => {
     expect(a.wartetAuf?.aktion.ziel).toBe('deal.kommentar.senden');
     const b = await kern.entscheidung(nutzer, { sitzungId: a.sitzungId, wert: 'ja' });
     expect(b.steuerung.map((s) => s.ziel)).toEqual(['deal.kommentar.senden', 'deal.reiter.kommunikation']);
+  });
+
+  it('erkennt Routinen aus gespeicherten Abläufen, bietet sie an und lernt nach dem Löschen neu', async () => {
+    const r = { id: `test-routine-${Date.now()}@example` };
+    const zielKarte = [
+      { ziel: 'deal.kommentar.text', beschreibung: 'Feld „Neue Gesprächsnotiz“ im Reiter Kommunikation' },
+      { ziel: 'deal.kommentar.senden', beschreibung: 'Knopf, der die Notiz speichert (sende)' },
+      { ziel: 'deal.erledigt', beschreibung: 'Knopf „Erledigt“ (sende)' },
+    ];
+    const kern = agentKern({ db, modell: drehbuchModell([]), openapi, ziele: zielKarte, aufruf });
+    const ablauf = async (deal: string) => {
+      await kern.ereignis(r, { art: 'gespeichert', ziel: 'deal.kommentar', wert: 'Mailbox, Rückruf Montag', kontext: { dealId: deal } });
+      await kern.ereignis(r, { art: 'gespeichert', ziel: 'deal.erledigt', kontext: { dealId: deal } });
+    };
+    await ablauf('r1');
+    await ablauf('r2');
+    expect(await kern.routinen(r)).toEqual([]);
+    await ablauf('r3');
+    const [routine, ...rest] = await kern.routinen(r);
+    expect(rest).toEqual([]);
+    expect(routine).toMatchObject({ label: 'Neue Gesprächsnotiz → Erledigt', anzahl: 3, folge: ['deal.kommentar', 'deal.erledigt'] });
+    expect(routine!.auftrag).toContain('„Mailbox, Rückruf Montag“');
+    expect(routine!.auftrag).toContain('deal.erledigt');
+    // Sichtbar im Gedächtnis; gelöscht bleibt sie weg, bis der Ablauf nach dem Löschen wieder dreimal vorkommt
+    expect((await kern.gedaechtnis(r).alles()).some((e) => e.art === 'routine')).toBe(true);
+    expect(await kern.loeschen(r, routine!.id)).toBe(true);
+    await ablauf('r4');
+    expect(await kern.routinen(r)).toEqual([]);
+    await ablauf('r5');
+    await ablauf('r6');
+    expect((await kern.routinen(r)).map((x) => x.anzahl)).toEqual([3]);
+    await kern.gedaechtnis(r).leeren();
   });
 });

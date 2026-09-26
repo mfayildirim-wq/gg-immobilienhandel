@@ -5,6 +5,12 @@ import { agentKern } from '../src/kern.ts';
 import { drehbuchModell, ki } from '../src/modell.ts';
 import { testDb, url } from './db.ts';
 
+/** Ein Tag, den es für den Testnutzer noch nicht gab: Jahr aus der Uhrzeit, Monat und Tag zufällig */
+function einmaligerTag(): string {
+  const z = (n: number) => String(n).padStart(2, '0');
+  return `${2100 + (Math.floor(Date.now() / 1000) % 7000)}-${z(1 + Math.floor(Math.random() * 12))}-${z(1 + Math.floor(Math.random() * 28))}`;
+}
+
 describe.skipIf(!url)('Hono-Routen', () => {
   const { db, client } = url ? testDb() : ({} as ReturnType<typeof testDb>);
   afterAll(async () => { await client?.end(); });
@@ -51,7 +57,7 @@ describe.skipIf(!url)('Hono-Routen', () => {
   });
   it('POST /morgen prüft das Datum, antwortet einmal am Tag und danach mit null', async () => {
     const app = bauen([ki('Guten Morgen, heute ist wenig los.')]);
-    const tag = `2098-02-${String(Math.floor(Math.random() * 28) + 1).padStart(2, '0')}`;
+    const tag = einmaligerTag();
     expect((await post(app, '/api/agent/morgen', { heute: 'gestern' })).status).toBe(400);
     const erst = (await (await post(app, '/api/agent/morgen', { heute: tag })).json()) as { antwort: { text: string } | null };
     expect(erst.antwort?.text).toBe('Guten Morgen, heute ist wenig los.');

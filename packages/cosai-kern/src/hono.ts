@@ -78,7 +78,8 @@ export function agentRouten(kern: Kern, nutzerAus: (c: Context) => Nutzer | null
     await kern.gedaechtnis(nutzerAus(c)!).bestaetige(c.req.param('id'));
     return c.json({ ok: true });
   });
-  app.delete('/gedaechtnis/:id', async (c) => c.json({ geloescht: await kern.gedaechtnis(nutzerAus(c)!).loeschen(c.req.param('id')) }));
+  app.get('/routinen', async (c) => c.json({ routinen: await kern.routinen(nutzerAus(c)!) }));
+  app.delete('/gedaechtnis/:id', async (c) => c.json({ geloescht: await kern.loeschen(nutzerAus(c)!, c.req.param('id')) }));
   app.delete('/gedaechtnis', async (c) => c.json({ geloescht: await kern.gedaechtnis(nutzerAus(c)!).leeren() }));
 
   return app;

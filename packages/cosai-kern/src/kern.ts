@@ -13,6 +13,7 @@ import { gedaechtnis as gedaechtnisBauen, type Db, type Gedaechtnis } from './ge
 import { graphBauen, letzterText, type Aufruf, type ZielBeschreibung } from './graph.ts';
 import { katalogFingerabdruck, werkzeugeAusOpenapi, type KatalogWerkzeug, type OpenapiDokument } from './katalog.ts';
 import type { Modell } from './modell.ts';
+import { routinenAus, type Routine } from './routinen.ts';
 import { ereignisse, laeufe, nachrichten, sitzungen } from './schema.ts';
 import { DNA, type AgentAntwort, type Beobachtung, type Chip, type Eingabe, type Entscheidung, type Steuerung } from './vertrag.ts';
 
@@ -118,6 +119,33 @@ export function agentKern(opt: KernOptionen) {
     return antwortAus(graph, nutzer, sitzungId, anzahlNachrichten(stand));
   }
 
+  /** Kurzname eines Schritts aus der Oberflächenkarte: der Text in „…“ der Beschreibung, sonst der Schlüssel. */
+  function kurzname(schluessel: string): string {
+    const z = opt.ziele.find((x) => x.ziel === schluessel) ?? opt.ziele.find((x) => x.ziel.startsWith(`${schluessel}.`));
+    return z?.beschreibung.match(/„([^“]+)“/)?.[1] ?? schluessel;
+  }
+
+  /**
+   * Rechnet die Routinen aus den Episoden neu und legt sie als Gedächtnis-Einträge ab. Hat der Nutzer eine Routine
+   * gelöscht, zählt für sie nur, was danach passiert ist.
+   */
+  async function routinenNeu(nutzer: Nutzer): Promise<void> {
+    const g = gedaechtnisBauen(db, nutzer.id);
+    const episoden = (await g.verlauf(300)).map((e) => ({ schluessel: e.schluessel, kontext: e.kontext, zeit: e.zuletzt! }));
+    const geloescht = await db.select({ ziel: ereignisse.ziel, createdAt: ereignisse.createdAt }).from(ereignisse)
+      .where(and(eq(ereignisse.nutzer, nutzer.id), eq(ereignisse.art, 'routine-geloescht')));
+    const seit = new Map<string, number>();
+    for (const m of geloescht) if (m.ziel) seit.set(m.ziel, Math.max(seit.get(m.ziel) ?? 0, new Date(m.createdAt).getTime()));
+    const gleich = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+    for (const r of routinenAus(episoden)) {
+      const schluessel = r.folge.join(' → ');
+      let gilt: Routine | undefined = r;
+      const ab = seit.get(schluessel);
+      if (ab) gilt = routinenAus(episoden.filter((e) => Date.parse(e.zeit) > ab)).find((x) => gleich(x.folge, r.folge));
+      if (gilt) await g.setze('routine', schluessel, r.folge.map(kurzname).join(' → '), gilt.anzahl, { folge: r.folge });
+    }
+  }
+
   return {
     dna,
     werkzeuge,
@@ -156,6 +184,7 @@ export function agentKern(opt: KernOptionen) {
         const g = gedaechtnisBauen(db, nutzer.id);
         if (b.wert?.trim()) await g.merke('formulierung', b.ziel, b.wert, b.kontext);
         await g.merke('episode', b.ziel, b.wert?.trim() ? `${b.ziel}: ${b.wert.trim().slice(0, 200)}` : b.ziel, { ...b.kontext, ...(sitzungId ? { sitzungId } : {}) });
+        await routinenNeu(nutzer);
       }
     },
 
@@ -167,6 +196,32 @@ export function agentKern(opt: KernOptionen) {
     async vorschlaege(nutzer: Nutzer, ziel: string, n = 5): Promise<string[]> {
       const e = await gedaechtnisBauen(db, nutzer.id).erinnere('formulierung', ziel, n);
       return e.map((x) => x.inhalt);
+    },
+
+    /** Die erkannten Routinen mit Label und Auftrag für den Agenten (jedes Senden wird einzeln bestätigt). */
+    async routinen(nutzer: Nutzer, n = 3) {
+      const g = gedaechtnisBauen(db, nutzer.id);
+      const eintraege = await g.erinnere('routine', undefined, n);
+      return Promise.all(eintraege.map(async (e) => {
+        const folge = (e.kontext.folge as string[] | undefined) ?? e.schluessel.split(' → ');
+        const woerter: string[] = [];
+        for (const schritt of folge) {
+          const [f] = await g.erinnere('formulierung', schritt, 1);
+          if (f) woerter.push(` Wortlaut für ${kurzname(schritt)}: „${f.inhalt}“ (vorschlagen, der Nutzer kann ändern).`);
+        }
+        const schritte = folge.map((s, i) => `${i + 1}. ${kurzname(s)} (${s})`).join(', ');
+        const auftrag = `Routine ausführen (${e.haeufigkeit}× so gemacht): ${schritte}. Im gerade geöffneten Eintrag.${woerter.join('')} Jedes Senden einzeln bestätigen lassen.`;
+        return { id: e.id!, label: e.inhalt, folge, anzahl: e.haeufigkeit, auftrag };
+      }));
+    },
+
+    /** Löscht einen Gedächtnis-Eintrag; eine gelöschte Routine wird erst nach neuen Abläufen wieder angeboten. */
+    async loeschen(nutzer: Nutzer, id: string): Promise<boolean> {
+      const g = gedaechtnisBauen(db, nutzer.id);
+      const e = await g.eintrag(id);
+      if (!e) return false;
+      if (e.art === 'routine') await db.insert(ereignisse).values({ nutzer: nutzer.id, sitzungId: null, richtung: 'beobachtung', art: 'routine-geloescht', ziel: e.schluessel, wert: null, kontext: {} });
+      return g.loeschen(id);
     },
 
     async verlauf(nutzer: Nutzer, sitzungId: string) {
