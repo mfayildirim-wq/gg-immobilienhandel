@@ -47,3 +47,19 @@ describe('Werkzeugkatalog aus OpenAPI', () => {
     expect(katalogFingerabdruck(werkzeugeAusOpenapi(doc), [['nav.deals']])).not.toBe(a);
   });
 });
+
+describe('Werkzeug-Antworten kürzen', async () => {
+  const { kuerzen } = await import('../src/graph.ts');
+  it('lässt kurze Antworten unangetastet und hält JSON gültig', () => {
+    expect(kuerzen('{"a":1}', 100)).toBe('{"a":1}');
+    const gross = JSON.stringify({ heute: 'x', deals: Array.from({ length: 200 }, (_, i) => ({ id: `d${i}`, titel: 'Objekt '.repeat(5) })) });
+    const kurz = kuerzen(gross, 2000);
+    expect(kurz.length).toBeLessThanOrEqual(2000);
+    const daten = JSON.parse(kurz) as { heute: string; deals: unknown[] };
+    expect(daten.heute).toBe('x');
+    expect(JSON.stringify(daten.deals.at(-1))).toContain('_gekuerzt');
+  });
+  it('schneidet Text ohne JSON hart ab', () => {
+    expect(kuerzen('x'.repeat(50), 10)).toMatch(/^x{10}\n… \(gekürzt/);
+  });
+});

@@ -955,3 +955,6 @@ export const PersonaStand = z.object({ profil: PersonaProfil.nullable(), konfide
 export type PersonaStand = z.infer<typeof PersonaStand>;
 export const NachrichtEntwurf = z.object({ wa: z.string(), email: z.object({ subject: z.string(), body: z.string() }) });
 export type NachrichtEntwurf = z.infer<typeof NachrichtEntwurf>;
+
+// AgentMode: Ziele der Oberfläche (Marken data-agent), geteilt zwischen Web und API
+export * from './oberflaechenkarte.ts';

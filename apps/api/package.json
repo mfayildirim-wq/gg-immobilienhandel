@@ -26,7 +26,8 @@
     "pdfjs-dist": "^5.7.284",
     "playwright-core": "1.63.0",
     "pptxgenjs": "^4.0.1",
-    "zod": "^4.6.5"
+    "zod": "^4.6.5",
+    "@cosai/kern": "workspace:*"
   },
   "devDependencies": {
     "esbuild": "0.28.2",

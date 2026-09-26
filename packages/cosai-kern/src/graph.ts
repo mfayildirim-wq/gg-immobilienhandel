@@ -64,8 +64,35 @@ function systemtext(dna: DNA, ziele: ZielBeschreibung[], erinnerungen: string[],
   ].join('\n');
 }
 
-function kuerzen(text: string, grenze: number): string {
-  return text.length <= grenze ? text : `${text.slice(0, grenze)}\n… (gekürzt, ${text.length} Zeichen insgesamt — enger abfragen)`;
+/**
+ * Kürzt eine Werkzeug-Antwort für das Modell. JSON bleibt gültig: Listen werden von hinten beschnitten (oben und eine
+ * Ebene tiefer), mit Hinweis `_gekuerzt` — ein abgeschnittener Text wäre für das Modell wertlos.
+ */
+export function kuerzen(text: string, grenze: number): string {
+  if (text.length <= grenze) return text;
+  try {
+    let daten = JSON.parse(text) as unknown;
+    const gesamt = text.length;
+    for (let runde = 0; runde < 12; runde += 1) {
+      daten = listenBeschneiden(daten, 0.6);
+      const kurz = JSON.stringify(daten);
+      if (kurz.length <= grenze) return kurz;
+    }
+  } catch {
+    // kein JSON
+  }
+  return `${text.slice(0, grenze)}\n… (gekürzt, ${text.length} Zeichen insgesamt — enger abfragen)`;
+}
+
+function listenBeschneiden(wert: unknown, anteil: number): unknown {
+  if (Array.isArray(wert)) {
+    const n = Math.max(1, Math.floor(wert.length * anteil));
+    return n < wert.length ? [...wert.slice(0, n), { _gekuerzt: `${wert.length - n} weitere Einträge weggelassen` }] : wert;
+  }
+  if (wert && typeof wert === 'object') {
+    return Object.fromEntries(Object.entries(wert as Record<string, unknown>).map(([k, v]) => [k, Array.isArray(v) ? listenBeschneiden(v, anteil) : v]));
+  }
+  return wert;
 }
 
 /** Baut die Werkzeuge: lesende Operationen des Hosts, Steuerung, Chips, Gedächtnis. */

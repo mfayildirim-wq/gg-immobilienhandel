@@ -38,6 +38,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@cosai/kern':
+        specifier: workspace:*
+        version: link:../../packages/cosai-kern
       '@gg/api-contract':
         specifier: workspace:*
         version: link:../../packages/api-contract

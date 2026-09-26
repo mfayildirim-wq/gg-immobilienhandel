@@ -91,10 +91,14 @@ import {
   ObjektDetail,
   StatusHistorieEintrag,
   StatusWechsel,
+  OBERFLAECHENKARTE,
+  type ZielBeschreibung,
 } from '@gg/api-contract';
 import type { Db } from '@gg/db';
 import { AUFBEWAHRUNG, DealStatus, geplanteStufe, rueckwegPruefen, type RueckwegRegeln } from '@gg/domain';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
+import { agentKern, type Modell, type OpenapiDokument } from '@cosai/kern';
+import { agentRouten } from '@cosai/kern/hono';
 import { sql } from 'drizzle-orm';
 import { bankgespraechPdf, type BilderPorts, browserStarten, erzeugeSchleuse, finanzpraesPdf, finanzpraesPptx, KeinBrowserError, praesentationDateiname, SCHLEUSE_STANDARD, type Schleuse } from '@gg/documents/pdf';
 import type { FinanzPraes } from '@gg/domain';
@@ -198,6 +202,8 @@ export interface AppKontext {
    * `aktiv: false` schaltet den Bot ab: die Routen antworten 503, die Oberfläche zeigt keine Bot-Knöpfe (Standard: an).
    */
   autoImport?: { aktiv?: boolean; browserStarten?: () => Promise<import('playwright-core').Browser>; maxZeitlimitSek?: number; lokaleZieleErlaubt?: boolean };
+  /** AgentMode: das Sprachmodell des Agenten (LangChain-ChatModel oder Drehbuch/Attrappe); ohne Modell antwortet /api/agent/stand mit 503. */
+  agent?: { modell?: Modell | null; ziele?: ZielBeschreibung[] };
   /** `CRON_SECRET`: ohne dieses Geheimnis antworten die Cron-Routen immer mit 401. */
   cronGeheimnis?: string;
   /** Wohin die Microsoft-Anmeldung zurückleiten darf; Standard: nur lokale Adressen (`rueckwegRegelnAusUmgebung`). */
@@ -223,7 +229,7 @@ const Version = z.object({ version: z.number().int() });
 const Geaendert = json(z.object({ id: z.string(), version: z.number().int() }), 'geändert');
 const konflikt = { 400: fehler('Eingabe ungültig'), 404: fehler('nicht gefunden'), 409: fehler('Versionskonflikt') };
 
-export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, cronGeheimnis, autoImport, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
+export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, cronGeheimnis, autoImport, agent: agentOpt, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
   const autoImportAktiv = autoImport?.aktiv ?? true;
   const exposeKontext = () => {
     if (!expose) throw new FachFehler(422, 'Dateiablage ist nicht eingerichtet (SUPABASE_SERVICE_ROLE_KEY).');
@@ -1189,6 +1195,30 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   );
 
   app.doc31('/api/openapi.json', { openapi: '3.1.0', info: { title: 'GG Immobilienhandel API', version: '0.1.0' } });
+
+  // ── AgentMode (@cosai/kern): der Agent liest über dieselben Routen im Namen des Nutzers, schreibt nur über die Oberfläche ──
+  if (agentOpt?.modell) {
+    const kern = agentKern({
+      db,
+      modell: agentOpt.modell,
+      openapi: app.getOpenAPI31Document({ openapi: '3.1.0', info: { title: 'GG Immobilienhandel API', version: '0.1.0' } }) as OpenapiDokument,
+      ziele: [...(agentOpt.ziele ?? OBERFLAECHENKARTE)],
+      // In-process, mit den Kopfzeilen des Nutzers: Anmeldung und Rechte gelten wie bei jedem Aufruf aus dem Browser
+      aufruf: async (nutzer, methode, pfad, body) => {
+        const res = await app.request(pfad, { method: methode, headers: { ...(nutzer.kopf ?? {}), ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+        return { status: res.status, text: await res.text() };
+      },
+    });
+    app.route('/api/agent', agentRouten(kern, (c) => {
+      const id = c.get('nutzer');
+      if (!id) return null;
+      const kopf: Record<string, string> = {};
+      for (const name of ['authorization', 'cookie']) { const w = c.req.header(name); if (w) kopf[name] = w; }
+      return { id, kopf };
+    }));
+  } else {
+    app.get('/api/agent/stand', (c) => c.json({ verfuegbar: false, hinweis: 'AgentMode braucht ein Sprachmodell (ANTHROPIC_API_KEY oder KI_ATTRAPPE=1).' }, 503));
+  }
 
   return app;
 }

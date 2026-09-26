@@ -1,6 +1,7 @@
 import { createDb, verlangeLokaleDatenbank } from '@gg/db';
 import { rueckwegRegelnAusUmgebung } from '@gg/domain';
 import { anthropicClient, kiAttrappe, supabaseSpeicher, graphAttrappe, propstackAttrappe } from '@gg/integrations';
+import { anthropicModell, attrappenModell } from '@cosai/kern';
 import { createApp } from './app.ts';
 
 /**
@@ -30,7 +31,11 @@ export function appAusUmgebung(env: Record<string, string | undefined> = process
   const graph = env.M365_ATTRAPPE === '1' && !produktion ? graphAttrappe() : null;
   const propstack = env.PROPSTACK_ATTRAPPE === '1' && !produktion ? propstackAttrappe() : null;
 
+  // AgentMode: dasselbe Prinzip wie die KI — Attrappe nur ausdrücklich und nie in Produktion, sonst der Schlüssel
+  const agentModell = attrappe ? attrappenModell() : env.ANTHROPIC_API_KEY ? anthropicModell(env.ANTHROPIC_API_KEY, env.AGENT_MODELL) : null;
+
   const app = createApp({
+    agent: { modell: agentModell },
     expose: speicher ? { speicher, ki, attrappe } : undefined,
     ki,
     graph,
