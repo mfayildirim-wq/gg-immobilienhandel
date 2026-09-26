@@ -21,8 +21,9 @@ test.beforeEach(async ({ page }) => {
 
 test.afterEach(async ({ page }) => {
   // Der Agent merkt sich Formulierungen — die des Tests wieder vergessen
-  const g = (await (await page.request.get('/api/agent/gedaechtnis')).json().catch(() => ({ eintraege: [] }))) as { eintraege?: { id: string; inhalt: string }[] };
-  for (const e of g.eintraege ?? []) if (e.inhalt.includes('(Test ')) await page.request.delete(`/api/agent/gedaechtnis/${e.id}`).catch(() => undefined);
+  const g = (await (await page.request.get('/api/agent/gedaechtnis')).json().catch(() => ({ eintraege: [] }))) as { eintraege?: { id: string; art: string; inhalt: string }[] };
+  // … und die Routinen, die aus den Test-Abläufen entstanden sind
+  for (const e of g.eintraege ?? []) if (e.inhalt.includes('(Test ') || e.art === 'routine') await page.request.delete(`/api/agent/gedaechtnis/${e.id}`).catch(() => undefined);
   for (const id of angelegt.deals.splice(0)) await page.request.delete(`/api/deals/${id}`).catch(() => undefined);
   for (const id of angelegt.objekte.splice(0)) await page.request.delete(`/api/objekte/${id}`).catch(() => undefined);
   for (const id of angelegt.makler.splice(0)) await page.request.delete(`/api/makler/${id}`).catch(() => undefined);
@@ -65,7 +66,7 @@ test.describe('AgentMode', () => {
 
     // Sichtbar: Etikett am Ziel, Feld gefüllt, dann die Rückfrage
     await expect(page.locator('[data-etikett]')).toBeVisible();
-    await expect(page.getByLabel('Neue Gesprächsnotiz')).toHaveValue(text, { timeout: 15_000 });
+    await expect(page.getByRole('textbox', { name: 'Neue Gesprächsnotiz' })).toHaveValue(text, { timeout: 15_000 });
     await expect(page.locator('.am-blase[data-wer="agent"]').last()).toContainText('Notiz abschicken?');
 
     // Welchen Deal hat der Agent geöffnet? (der erste fällige — im Bestand nicht unbedingt unserer)
@@ -86,12 +87,12 @@ test.describe('AgentMode', () => {
 
     // Der Nutzer wählt seinen Deal — der Agent arbeitet in dem, was offen ist
     await page.getByLabel(`Deal ${titel}`).click();
-    await expect(page.getByLabel('Neue Gesprächsnotiz')).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Neue Gesprächsnotiz' })).toBeVisible();
 
     const eingabe = page.getByLabel('Nachricht an den Agenten');
     await eingabe.fill(`Kommentar: ${text}. Abschicken.`);
     await eingabe.press('Enter');
-    await expect(page.getByLabel('Neue Gesprächsnotiz')).toHaveValue(text, { timeout: 15_000 });
+    await expect(page.getByRole('textbox', { name: 'Neue Gesprächsnotiz' })).toHaveValue(text, { timeout: 15_000 });
 
     await page.getByRole('button', { name: 'Ja, ausführen' }).click();
     await expect.poll(async () => {
@@ -124,14 +125,14 @@ test.describe('AgentMode', () => {
     await page.goto('/');
     await expect(page.locator('[data-agentmode-oben]')).toHaveCount(0);
     await page.getByLabel(`Deal ${erster.titel}`).click();
-    await page.getByLabel('Neue Gesprächsnotiz').fill(text);
+    await page.getByRole('textbox', { name: 'Neue Gesprächsnotiz' }).fill(text);
     await page.getByRole('button', { name: '+ Eintrag' }).click();
     await expect.poll(async () => ((await (await page.request.get('/api/agent/vorschlaege?ziel=deal.kommentar')).json()) as { vorschlaege: string[] }).vorschlaege, { timeout: 10_000 })
       .toContain(text);
 
     await page.getByLabel(`Deal ${zweiter.titel}`).click();
     await page.getByRole('group', { name: 'Vorschläge aus dem Gedächtnis' }).getByRole('button', { name: text }).click();
-    await expect(page.getByLabel('Neue Gesprächsnotiz')).toHaveValue(text);
+    await expect(page.getByRole('textbox', { name: 'Neue Gesprächsnotiz' })).toHaveValue(text);
   });
 
   test('begrüßt beim ersten Öffnen des Tages mit dem Morgenvorschlag, danach nicht noch einmal', async ({ page }) => {
@@ -147,5 +148,31 @@ test.describe('AgentMode', () => {
     expect(((await (await zweites).json()) as { antwort: unknown }).antwort).toBeNull();
     // Der Verlauf der Sitzung zeigt ihn weiter
     await expect(page.locator('.am-blase[data-wer="agent"]').last()).toContainText(/Heute sind \d+ Deals/);
+  });
+  test('erkennt „Notiz → Erledigt“ als Routine und führt sie mit zwei Bestätigungen aus', async ({ page }) => {
+    const text = notiz();
+    // Dreimal derselbe Ablauf in eigenen Deals — so, wie die App ihn meldet
+    for (let i = 0; i < 3; i += 1) {
+      const d = await faelligerDeal(page, `Agent-Routine ${Date.now()}-${i}`);
+      await page.request.post('/api/agent/ereignis', { data: { art: 'gespeichert', ziel: 'deal.kommentar', wert: text, kontext: { dealId: d.dealId } } });
+      await page.request.post('/api/agent/ereignis', { data: { art: 'gespeichert', ziel: 'deal.erledigt', kontext: { dealId: d.dealId } } });
+    }
+    const ziel = await faelligerDeal(page, `Agent-Routineziel ${Date.now()}`);
+    await page.goto('/');
+    await agentOeffnen(page);
+    await page.getByLabel(`Deal ${ziel.titel}`).click();
+    await page.getByRole('button', { name: 'Routine: Neue Gesprächsnotiz → Erledigt' }).click();
+
+    // Erstes Senden: die Notiz (mit der gemerkten Formulierung)
+    await expect(page.getByRole('textbox', { name: 'Neue Gesprächsnotiz' })).toHaveValue(text, { timeout: 15_000 });
+    await page.getByRole('button', { name: 'Ja, ausführen' }).click();
+    await expect.poll(async () => ((await (await page.request.get(`/api/deals/${ziel.dealId}`)).json()) as { kommentare: { text: string }[] }).kommentare.filter((k) => k.text === text).length, { timeout: 15_000 }).toBe(1);
+
+    // Zweites Senden fragt noch einmal — erst danach ist der Deal erledigt
+    await expect(page.locator('.am-blase[data-wer="agent"]').last()).toContainText('deal.erledigt ausführen?', { timeout: 15_000 });
+    expect(((await (await page.request.get(`/api/deals/${ziel.dealId}`)).json()) as { lastContact: string | null }).lastContact).not.toBe(heute());
+    await page.getByRole('button', { name: 'Ja, ausführen' }).click();
+    await expect.poll(async () => ((await (await page.request.get(`/api/deals/${ziel.dealId}`)).json()) as { lastContact: string | null }).lastContact, { timeout: 15_000 }).toBe(heute());
+
   });
 });
