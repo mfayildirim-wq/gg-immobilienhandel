@@ -6,15 +6,16 @@ import * as schema from '../src/schema.ts';
 const tabellen: PgTable[] = Object.values(schema as Record<string, unknown>).filter((v): v is PgTable => is(v, PgTable));
 
 describe('Fachschema', () => {
-  it('enthält die 37 Tabellen aus Protokoll 07 plus den Anlässe-Zwischenspeicher (23.09.2026)', () => {
-    expect(tabellen).toHaveLength(38);
+  it('enthält die 37 Tabellen aus Protokoll 07, den Anlässe-Zwischenspeicher (23.09.2026) und die 10 Tabellen des Schemas cosai (26.09.2026)', () => {
+    expect(tabellen).toHaveLength(48);
+    expect(tabellen.filter((t) => getTableConfig(t).schema === 'cosai')).toHaveLength(10);
     expect(tabellen.map((t) => getTableConfig(t).name)).toContain('makler_anlaesse');
   });
 
-  it('legt alle Tabellen im Schema „fach“ mit RLS an', () => {
+  it('legt alle Tabellen in den Schemas „fach“ und „cosai“ mit RLS an', () => {
     for (const t of tabellen) {
       const cfg = getTableConfig(t);
-      expect(cfg.schema, cfg.name).toBe('fach');
+      expect(['fach', 'cosai'], cfg.name).toContain(cfg.schema);
       expect(cfg.enableRLS, cfg.name).toBe(true);
     }
   });

@@ -194,6 +194,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@cosai/kern':
+        specifier: workspace:*
+        version: link:../cosai-kern
       '@gg/domain':
         specifier: workspace:*
         version: link:../domain

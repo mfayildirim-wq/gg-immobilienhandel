@@ -57,6 +57,13 @@
       "when": 1790156818375,
       "tag": "20260923094658_makler_anlaesse",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790417051836,
+      "tag": "20260926100411_cosai",
+      "breakpoints": true
     }
   ]
 }

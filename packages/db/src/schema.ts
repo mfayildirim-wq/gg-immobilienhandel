@@ -652,3 +652,6 @@ export const archiveLedger = fach
     ],
   )
   .enableRLS();
+
+// ── Schema „cosai" (AgentMode): die Bibliothek bringt ihre Tabellen mit, gg-immo spielt sie als Migration ein ──
+export * from '@cosai/kern/schema';

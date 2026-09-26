@@ -6,7 +6,7 @@ export default defineConfig({
   dialect: 'postgresql',
   schema: './src/schema.ts',
   out: '../../supabase/migrations',
-  schemaFilter: ['fach'],
+  schemaFilter: ['fach', 'cosai'],
   migrations: { prefix: 'supabase' },
   casing: 'snake_case',
 });
