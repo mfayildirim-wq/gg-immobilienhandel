@@ -49,4 +49,12 @@ describe.skipIf(!url)('Hono-Routen', () => {
     expect(g.eintraege.length).toBeGreaterThan(0);
     expect(((await (await app.request('/api/agent/gedaechtnis', { method: 'DELETE', headers: { 'x-nutzer': 'hono@example' } })).json()) as { geloescht: number }).geloescht).toBeGreaterThan(0);
   });
+  it('POST /morgen prüft das Datum, antwortet einmal am Tag und danach mit null', async () => {
+    const app = bauen([ki('Guten Morgen, heute ist wenig los.')]);
+    const tag = `2098-02-${String(Math.floor(Math.random() * 28) + 1).padStart(2, '0')}`;
+    expect((await post(app, '/api/agent/morgen', { heute: 'gestern' })).status).toBe(400);
+    const erst = (await (await post(app, '/api/agent/morgen', { heute: tag })).json()) as { antwort: { text: string } | null };
+    expect(erst.antwort?.text).toBe('Guten Morgen, heute ist wenig los.');
+    expect(await (await post(app, '/api/agent/morgen', { heute: tag })).json()).toEqual({ antwort: null });
+  });
 });

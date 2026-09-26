@@ -43,6 +43,13 @@ export function agentRouten(kern: Kern, nutzerAus: (c: Context) => Nutzer | null
     }
   });
 
+  // Einmal am Tag je Nutzer; `heute` ist das lokale Datum des Browsers
+  app.post('/morgen', async (c) => {
+    const e = await json(c, z.object({ heute: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }));
+    if (e instanceof Response) return e;
+    return c.json({ antwort: await kern.morgen(nutzerAus(c)!, e.heute) });
+  });
+
   app.post('/ereignis', async (c) => {
     const b = await json(c, Beobachtung.extend(SitzungsParam.shape));
     if (b instanceof Response) return b;
