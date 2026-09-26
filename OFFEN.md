@@ -123,6 +123,13 @@ Die alte App verhält sich genauso; eine Änderung ist eine bewusste Abweichung 
       (`tests/e2e/ankauf.spec.ts`, Begründung steht dort). Beim Neuentwurf ohne Durchklicken durch die
       Warteschlange testen — der alte Test war davon abhängig, was vorherige Tests hinterlassen hatten.
 
+- [x] **AgentMode Lieferung 1** (26.09.2026, Branch `agentmode`, `baf7ff4`): `@cosai/kern`, `@cosai/agentmode`, Overlay und
+      Seite `/agent`, 26 `data-agent`-Marken, Klicktests 6/6. Protokoll 20, Fassung 4.
+- [ ] **AgentMode nach `main`** — Merge macht der Auftraggeber. Online danach: Migrationen `…_cosai` und
+      `…_cosai_gedaechtnis_index` einspielen (`npx supabase db push`), `ANTHROPIC_API_KEY` bei Vercel (sonst nur Attrappe).
+- [ ] AgentMode Lieferung 2–5: Lernen (Vorschläge im Feld, Routinen, Morgenvorschlag), Realtime-Sprache, Meta-Agent,
+      CoSAi-Backend in Python. Freigegebene Routinen ohne Rückfrage fehlen noch — heute wird jedes `sende` bestätigt.
+
 ## Erledigt (21.09.2026)
 
 - [x] CI grün — sie lief erst seit dem Anlegen des Remotes und war von Anfang an rot (keine Dateiablage, kein Chrome-Pfad)

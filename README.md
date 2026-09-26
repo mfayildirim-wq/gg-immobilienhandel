@@ -60,6 +60,8 @@ packages/
   integrations/   KI (Anthropic, Kosten, Attrappe), PDF-Text, Exposé-Analyse + Prompt, Vorsortierung Mails, Dateiablage (Supabase Storage)
   documents/      Vorlagen Bankgespräch + Bank-Präsentation, Payload (auch im Browser: Live-Vorschau) · ./pdf: Chrome-Druck (Playwright), PowerPoint (pptxgenjs), Foto-Ablage für den Druck, Render-Schleuse (nur Node)
   umzug/          Umzugsskript kv_store (alte App) → Schema fach, mit Prüfbericht
+  cosai-kern/     @cosai/kern: Agenten-Laufzeit (LangGraph), Schema „cosai“, Werkzeugkatalog aus OpenAPI, Gedächtnis, Hono-Routen — importiert nichts aus @gg/*
+  cosai-agentmode/ @cosai/agentmode: React-Oberfläche des Agenten (Overlay + Seite, Sprechkreis, Chips, Kanal-Client, Web Speech)
 supabase/         config.toml (Ports 554xx), migrations/, seed.sql
 tests/e2e/        Playwright
 scripts/          schema-aus-protokoll.py (erzeugt das Drizzle-Schema aus Protokoll 07)
@@ -209,6 +211,18 @@ Zwei Aktionen verändern etwas außerhalb der App: die AGB-/Provisionsbestätigu
 ## Objektfotos
 
 Objekt-Schubfach → Fotos: mehrere hochladen (im Browser auf 1280 px / JPEG verkleinert, HEIC unverändert), sortieren (erstes = Titelbild), löschen. Ablage wie alt im Bucket `obj-photos/<objekt>/<foto>.jpg`, ausgeliefert unter `/api/photos/<objekt>/<foto>` (gleicher Pfad wie alt, die Vorlagen lösen `photo:`-Verweise so auf). Der Bildtyp wird an der Signatur geprüft (kein SVG). Präsentation und Kundenkalkulation verweisen mit `photo:<objekt>/<foto>`; beim Druck werden die Fotos als Dateien neben die Seite gelegt (Port von `finanzpraes-bilder.ts`).
+
+## AgentMode (Branch `agentmode`)
+
+Ein Agent, der die App **sichtbar über die Oberfläche** bedient: Overlay auf jeder Seite (Schalter „AgentMode“ unten in der Seitenleiste) und eigene Seite `/agent`. Der Nutzer tippt oder spricht einen Auftrag („Kommentar: Mailbox besprochen, Rückruf Montag. Abschicken.“), der Agent navigiert, füllt aus und **fragt vor jedem Abschicken** („Ja, ausführen“ / „Nein“). Geschrieben wird nur über die Oberfläche in der Sitzung des Nutzers — Rechte, Validierung und Audit der App greifen unverändert; gelesen wird über Werkzeuge aus der eigenen OpenAPI (in-process).
+
+- **Kern** `packages/cosai-kern`: Vertrag (zod), Schema `cosai` (10 Tabellen in dieser Datenbank, keine Fremdschlüssel auf `fach`), Graph mit `interrupt` vor jedem `sende`, Checkpointer über Drizzle, Gedächtnis (Episoden, Formulierungen, Fakten, Routinen). Eingehängt unter `/api/agent` in `apps/api/src/app.ts`.
+- **Oberfläche** `packages/cosai-agentmode`, eingebunden im `AppRahmen` und unter `apps/web/src/agent/`.
+- **Ziele:** bedienbare Stellen tragen `data-agent="…"`; die Liste steht als Oberflächenkarte in `@gg/api-contract`. `apps/web/src/agent/oberflaechenkarte.test.ts` prüft, dass Karte und Marken übereinstimmen.
+- **Modell:** `ANTHROPIC_API_KEY`; mit `KI_ATTRAPPE=1` antwortet ein deterministisches Drehbuch (Tests, Vorführung ohne Schlüssel).
+- **Klicktests:** `npx playwright test tests/e2e/agentmode.spec.ts`.
+
+Konzept, Umsetzung und Bildschirmfotos: `../immohandel-doks/protokoll/20-agentmode-konzept.md` (Fassung 4).
 
 ## Rechenkerne und Golden Master
 

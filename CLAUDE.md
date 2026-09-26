@@ -12,6 +12,7 @@ Lies zuerst `README.md`. Fachlicher und architektonischer Hintergrund: `../immoh
 - **Parallelprüfung:** Fachfunktionen werden nicht nur per Golden Master, sondern gegen die **laufende alte App** geprüft (`pnpm paritaet`, `tests/paritaet/`). Jede neu übernommene Fachfunktion bekommt dort einen Vergleich. Abweichungen sind Befunde: angleichen (Ist-Verhalten) oder als bewusste Korrektur dokumentieren.
 - **Umzug:** Jede neue Tabelle, die Altdaten bekommt, braucht Umformung + Prüfung im Bericht + Test mit Altformaten (`packages/umzug/test/altbestand.ts`). Zuerst `pnpm umzug:probe`.
 - **Statuswechsel** immer über den Service (schreibt `deal_status_historie`, prüft `version`).
+- **AgentMode:** `packages/cosai-*` importieren nichts aus `@gg/*` (sollen herauslösbar bleiben). Eine neue bedienbare Stelle für den Agenten bekommt `data-agent="…"` **und** einen Eintrag in der Oberflächenkarte (`@gg/api-contract`) — der Kartentest hält beides zusammen. Der Agent schreibt nur über die Oberfläche und nur nach Bestätigung.
 - **Hosting:** Supabase + Vercel (vorerst). Speicherzugriffe trotzdem hinter Adaptern halten.
 - **Alte App** (`../gg-immohandel`) nicht verändern; deren `CLAUDE.md` gilt dort (kein Push auf main, Merge nur durch Jonas).
 - **Keine Secrets** lesen oder ausgeben (`.env`, Schlüssel).
