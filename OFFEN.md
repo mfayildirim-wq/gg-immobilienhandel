@@ -127,7 +127,11 @@ Die alte App verhält sich genauso; eine Änderung ist eine bewusste Abweichung 
       Seite `/agent`, 26 `data-agent`-Marken, Klicktests 6/6. Protokoll 20, Fassung 4.
 - [ ] **AgentMode nach `main`** — Merge macht der Auftraggeber. Online danach: Migrationen `…_cosai` und
       `…_cosai_gedaechtnis_index` einspielen (`npx supabase db push`), `ANTHROPIC_API_KEY` bei Vercel (sonst nur Attrappe).
-- [ ] AgentMode Lieferung 2–5: Lernen (Vorschläge im Feld, Routinen, Morgenvorschlag), Realtime-Sprache, Meta-Agent,
+- [x] **AgentMode Lieferung 2a** (26.09.2026): Lernen auch ohne Overlay, Vorschläge unter der Gesprächsnotiz,
+      Morgenvorschlag einmal am Tag. Dazu drei Fehler, die nur mit dem echten Modell auftraten (temperature, halbe
+      Antworten, falsche Gesamtzahlen nach dem Kürzen). Dev läuft mit `ANTHROPIC_API_KEY` (`KI_ATTRAPPE=0`); für Klicktests
+      mit Attrappe `KI_ATTRAPPE=1` setzen und die API neu starten.
+- [ ] AgentMode Lieferung 2b–5: Routinen, Realtime-Sprache, Meta-Agent,
       CoSAi-Backend in Python. Freigegebene Routinen ohne Rückfrage fehlen noch — heute wird jedes `sende` bestätigt.
 
 ## Erledigt (21.09.2026)
