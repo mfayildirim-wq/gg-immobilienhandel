@@ -15,6 +15,16 @@ describe('letzterText', () => {
     expect(letzterText(verlauf)).toBe('Heute sind 12 Deals fällig.\n\nSag Bescheid, wenn ich einen öffnen soll.');
   });
 
+  it('wiederholt einen Satz nicht, den das Modell nach einem Werkzeugaufruf noch einmal sagt', () => {
+    const verlauf = [
+      new HumanMessage('nein'),
+      new AIMessage({ content: 'Gut, nicht gesendet.', tool_calls: [{ id: 't', name: 'chips', args: {} }] }),
+      new ToolMessage({ content: 'Chips gesetzt.', tool_call_id: 't' }),
+      new AIMessage('Gut, nicht gesendet.'),
+    ];
+    expect(letzterText(verlauf)).toBe('Gut, nicht gesendet.');
+  });
+
   it('Werkzeugaufrufe ohne Text zählen nicht', () => {
     expect(letzterText([new HumanMessage('los'), new AIMessage({ content: '', tool_calls: [{ id: 't', name: 'lies', args: {} }] })])).toBe('');
   });

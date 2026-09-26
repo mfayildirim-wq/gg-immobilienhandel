@@ -187,7 +187,8 @@ export type AgentGraph = ReturnType<typeof graphBauen>;
 
 /**
  * Alle Agenten-Texte seit der letzten Nutzernachricht, in Reihenfolge — das Modell schreibt die eigentliche Antwort oft
- * neben einen Werkzeugaufruf und danach nur noch einen Schlusssatz. Werkzeugaufrufe ohne Text zählen nicht.
+ * neben einen Werkzeugaufruf und danach nur noch einen Schlusssatz. Werkzeugaufrufe ohne Text zählen nicht, eine
+ * wörtliche Wiederholung direkt danach auch nicht.
  */
 export function letzterText(messages: BaseMessage[]): string {
   const texte: string[] = [];
@@ -196,7 +197,8 @@ export function letzterText(messages: BaseMessage[]): string {
     if (m instanceof HumanMessage) break;
     if (!(m instanceof AIMessage)) continue;
     const text = (typeof m.content === 'string' ? m.content : m.content.map((t) => (t.type === 'text' ? t.text : '')).join('')).trim();
-    if (text) texte.unshift(text);
+    // Denselben Satz noch einmal (nach einem Werkzeugaufruf) nicht doppelt zeigen
+    if (text && text !== texte[0]) texte.unshift(text);
   }
   return texte.join('\n\n');
 }
