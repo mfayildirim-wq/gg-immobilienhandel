@@ -92,6 +92,23 @@ function attrappenAntwort(messages: BaseMessage[]): AIMessage {
     return new AIMessage(String(letzteAi?.content ?? 'Erledigt.'));
   }
 
+  // Nach „Ja“ noch offene Schritte (das nächste Senden braucht seine eigene Bestätigung): erneut steuern
+  const offen = werkzeugAntworten.at(-1)?.match(/Noch nicht ausgeführt[^:]*: (\[.*\])$/s)?.[1];
+  if (offen) return ki('', [['steuere', { aktionen: JSON.parse(offen) as unknown[] }]]);
+
+  // Routine: „… 1. Name (schritt), 2. Name (schritt) … Wortlaut für …: „…““ → die Schritte der Reihe nach
+  if (/^routine ausführen/.test(t) && !werkzeugAntworten.length) {
+    const schritte = [...text.matchAll(/\d+\. [^(]+\(([a-z0-9.\-]+)\)/g)].map((m) => m[1]!);
+    const wortlaut = text.match(/Wortlaut für [^:]+: „([^“]+)“/)?.[1] ?? '';
+    const aktionen = [
+      { art: 'oeffne', ziel: 'deal.reiter.kommunikation', text: 'öffnet Reiter Kommunikation' },
+      ...schritte.flatMap((s) => s === 'deal.kommentar'
+        ? [{ art: 'fuelle', ziel: 'deal.kommentar.text', wert: wortlaut, text: 'schreibt die Notiz' }, { art: 'sende', ziel: 'deal.kommentar.senden', text: 'Notiz abschicken?' }]
+        : [{ art: 'sende', ziel: s, text: `${s} ausführen?` }]),
+    ];
+    return ki('Ich führe die Routine aus.', [['steuere', { aktionen }]]);
+  }
+
   // Bestätigung („ja“) oder Ablehnung nach einer Unterbrechung
   if (werkzeugAntworten.some((w) => w.startsWith('Der Nutzer hat bestätigt'))) {
     return ki('Erledigt — gespeichert.', [['chips', { liste: [{ label: 'Nächster Deal', wert: 'Nächster Deal' }, { label: 'Was ist heute fällig?', wert: 'Was ist heute fällig?' }] }]]);
