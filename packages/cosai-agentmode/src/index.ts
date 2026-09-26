@@ -4,3 +4,4 @@ export * from './Sprechkreis.tsx';
 export * from './konstellation.ts';
 export * from './kanal.ts';
 export * from './sprache.ts';
+export * from './lernen.tsx';
