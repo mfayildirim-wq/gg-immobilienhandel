@@ -29,6 +29,8 @@ export const Steuerung = z.object({
   wert: z.string().optional(),
   /** Was das Etikett im Schaufenster sagt („öffnet Reiter Kommunikation“) */
   text: z.string().optional(),
+  /** Nur der Kern setzt das — nach dem „Ja“ des Nutzers; die Oberfläche führt schreibende Ziele nur damit aus */
+  bestaetigt: z.boolean().optional(),
 });
 export type Steuerung = z.infer<typeof Steuerung>;
 

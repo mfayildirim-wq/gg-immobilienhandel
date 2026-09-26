@@ -51,3 +51,20 @@ describe('Kanal (Oberfläche)', () => {
     ]);
   });
 });
+
+describe('Kanal: schreibende Ziele', () => {
+  it('klickt oder füllt ein Ziel mit data-agent-schreibt nur mit dem Vermerk „bestätigt“ vom Kern', async () => {
+    document.body.innerHTML = `<button data-agent="deal.erledigt" data-agent-schreibt>Erledigt</button><input data-agent="deal.naechster-kontakt.datum" data-agent-schreibt />`;
+    const klicks: string[] = [];
+    document.querySelector('button')!.addEventListener('click', () => klicks.push('erledigt'));
+    const navigiere = vi.fn();
+    await expect(ausfuehren({ art: 'oeffne', ziel: 'deal.erledigt' }, { navigiere })).rejects.toThrow(/Bestätigung/);
+    await expect(ausfuehren({ art: 'sende', ziel: 'deal.erledigt' }, { navigiere })).rejects.toThrow(/Bestätigung/);
+    await expect(ausfuehren({ art: 'fuelle', ziel: 'deal.naechster-kontakt.datum', wert: '2030-01-01' }, { navigiere })).rejects.toThrow(/Bestätigung/);
+    expect(klicks).toEqual([]);
+    expect((document.querySelector('input') as HTMLInputElement).value).toBe('');
+    await ausfuehren({ art: 'markiere', ziel: 'deal.erledigt' }, { navigiere });
+    await ausfuehren({ art: 'sende', ziel: 'deal.erledigt', bestaetigt: true }, { navigiere });
+    expect(klicks).toEqual(['erledigt']);
+  });
+});

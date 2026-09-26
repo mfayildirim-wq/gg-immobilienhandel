@@ -43,4 +43,11 @@ describe('Oberflächenkarte des AgentMode', () => {
     expect(new Set(ziele).size).toBe(ziele.length);
     for (const z of OBERFLAECHENKARTE.filter((z) => z.ziel.startsWith('nav.'))) expect(z.seite, z.ziel).toBeTruthy();
   });
+
+  it('kennzeichnet schreibende Ziele im Quelltext mit data-agent-schreibt — und nur diese', () => {
+    const imQuelltext = new Set([...quelltext.matchAll(/data-agent="([a-z0-9.\-_]+)" data-agent-schreibt/g)].map((m) => m[1]!));
+    const inDerKarte = new Set(OBERFLAECHENKARTE.filter((z) => z.schreibt).map((z) => z.ziel));
+    expect([...imQuelltext].sort()).toEqual([...inDerKarte].sort());
+    expect(inDerKarte.has('deal.erledigt')).toBe(true);
+  });
 });

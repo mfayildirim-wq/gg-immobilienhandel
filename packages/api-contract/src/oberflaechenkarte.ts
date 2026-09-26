@@ -10,6 +10,8 @@ export interface ZielBeschreibung {
   beschreibung: string;
   /** Auf welcher Seite das Ziel liegt (Pfad) — der Agent navigiert zuerst dorthin */
   seite?: string;
+  /** Das Ziel speichert etwas — jede Aktion darauf braucht das „Ja“ des Nutzers (Marke dazu: `data-agent-schreibt`) */
+  schreibt?: boolean;
 }
 
 export const OBERFLAECHENKARTE: readonly ZielBeschreibung[] = [
@@ -34,9 +36,9 @@ export const OBERFLAECHENKARTE: readonly ZielBeschreibung[] = [
   { ziel: 'deal.reiter.kalkulation', beschreibung: 'Reiter „Kalkulation“ im Deal' },
   { ziel: 'deal.reiter.dateien', beschreibung: 'Reiter „Dateien“ im Deal' },
   { ziel: 'deal.kommentar.text', beschreibung: 'Feld „Neue Gesprächsnotiz“ im Reiter Kommunikation (fuelle mit dem Wortlaut)' },
-  { ziel: 'deal.kommentar.senden', beschreibung: 'Knopf, der die Gesprächsnotiz speichert (sende)' },
-  { ziel: 'deal.erledigt', beschreibung: 'Knopf „Erledigt“: setzt den letzten Kontakt auf heute und berechnet den nächsten (sende)' },
-  { ziel: 'deal.naechster-kontakt.datum', beschreibung: 'Datumsfeld „Nächster Kontakt“ (fuelle mit JJJJ-MM-TT)' },
+  { ziel: 'deal.kommentar.senden', beschreibung: 'Knopf, der die Gesprächsnotiz speichert (sende)', schreibt: true },
+  { ziel: 'deal.erledigt', beschreibung: 'Knopf „Erledigt“: setzt den letzten Kontakt auf heute und berechnet den nächsten (sende)', schreibt: true },
+  { ziel: 'deal.naechster-kontakt.datum', beschreibung: 'Datumsfeld „Nächster Kontakt“ (fuelle mit JJJJ-MM-TT)', schreibt: true },
 
   // Deals-Seite
   { ziel: 'deals.liste.eintrag', beschreibung: 'Ein Deal in der Liste der Deals-Seite; wert = Deal-ID (aus GET /api/deals)', seite: '/deals' },

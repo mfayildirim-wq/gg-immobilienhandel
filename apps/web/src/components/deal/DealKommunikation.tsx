@@ -48,7 +48,7 @@ export function DealKommunikation({ deal }: { deal: DealDetail }) {
           />
           <Stack gap={4}>
             <TextInput
-              data-agent="deal.naechster-kontakt.datum"
+              data-agent="deal.naechster-kontakt.datum" data-agent-schreibt
               label="Nächster Kontakt"
               type="date"
               value={deal.nextContact ?? ''}
@@ -66,7 +66,7 @@ export function DealKommunikation({ deal }: { deal: DealDetail }) {
             </Text>
             <Group gap="xs">
               <Text size="sm">{datumDe(deal.lastContact)}</Text>
-              <Button data-agent="deal.erledigt" size="xs" variant="light" leftSection={<IconCheck size={14} />} loading={erledigt.isPending}
+              <Button data-agent="deal.erledigt" data-agent-schreibt size="xs" variant="light" leftSection={<IconCheck size={14} />} loading={erledigt.isPending}
                 onClick={() => erledigt.mutate(deal.version)}>
                 Erledigt
               </Button>
@@ -93,7 +93,7 @@ function Kommentare({ deal }: { deal: DealDetail }) {
       </Title>
       <Group align="flex-end" gap="xs" mb="sm">
         <Textarea data-agent="deal.kommentar.text" placeholder="Neue Gesprächsnotiz…" autosize minRows={2} style={{ flex: 1 }} value={text} onChange={(e) => setText(e.currentTarget.value)} aria-label="Neue Gesprächsnotiz" />
-        <Button data-agent="deal.kommentar.senden" disabled={!text.trim()} loading={anlegen.isPending}
+        <Button data-agent="deal.kommentar.senden" data-agent-schreibt disabled={!text.trim()} loading={anlegen.isPending}
           onClick={() => anlegen.mutate(text, { onSuccess: () => setText('') })}>
           + Eintrag
         </Button>

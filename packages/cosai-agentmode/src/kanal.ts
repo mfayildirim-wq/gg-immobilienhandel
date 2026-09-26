@@ -8,7 +8,7 @@
  */
 
 export type SteuerungArt = 'navigiere' | 'oeffne' | 'fuelle' | 'sende' | 'markiere' | 'zeige' | 'sprich';
-export interface Steuerung { art: SteuerungArt; ziel?: string; wert?: string; text?: string }
+export interface Steuerung { art: SteuerungArt; ziel?: string; wert?: string; text?: string; bestaetigt?: boolean }
 export type BeobachtungArt = 'navigation' | 'klick' | 'eingabe' | 'gespeichert';
 export interface Beobachtung { art: BeobachtungArt; ziel: string; wert?: string; kontext?: Record<string, string | number | boolean | null> }
 
@@ -35,6 +35,14 @@ export function wertSetzen(el: HTMLElement, wert: string): void {
   setter ? setter.call(feld, wert) : ((feld as HTMLInputElement).value = wert);
   feld.dispatchEvent(new Event('input', { bubbles: true }));
   feld.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+/**
+ * Zweite Sperre neben dem Kern: Ziele mit `data-agent-schreibt` (speichern etwas) klickt oder füllt die Oberfläche nur,
+ * wenn der Kern die Aktion nach dem „Ja“ des Nutzers als `bestaetigt` markiert hat.
+ */
+function schreibSperre(el: HTMLElement, s: Steuerung): void {
+  if (el.closest('[data-agent-schreibt]') && !s.bestaetigt) throw new Error(`${s.ziel} speichert — nur nach Bestätigung`);
 }
 
 /** Klickt das Ziel selbst — oder, wenn markiert, das klickbare Element darin (`data-agent-klick`). */
@@ -81,12 +89,14 @@ export async function ausfuehren(s: Steuerung, opt: AusfuehrenOptionen): Promise
     case 'sende': {
       const el = await zielAbwarten(s.ziel!, s.wert, wartenMs);
       el.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+      schreibSperre(el, s);
       klicken(el);
       return el;
     }
     case 'fuelle': {
       const el = await zielAbwarten(s.ziel!, undefined, wartenMs);
       el.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+      schreibSperre(el, s);
       wertSetzen(el, s.wert ?? '');
       return el;
     }

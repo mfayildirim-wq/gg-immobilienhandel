@@ -17,7 +17,8 @@ import type { Modell } from './modell.ts';
 import { Chip, DNA, Steuerung } from './vertrag.ts';
 
 /** Ein Ziel der Oberfläche, wie der Host es beschreibt (aus den `data-agent`-Marken). */
-export const ZielBeschreibung = z.object({ ziel: z.string(), beschreibung: z.string(), seite: z.string().optional() });
+/** `schreibt`: das Ziel ändert Daten (Knopf, der speichert; Feld, das bei Änderung sofort speichert) — jede Aktion darauf wird bestätigt */
+export const ZielBeschreibung = z.object({ ziel: z.string(), beschreibung: z.string(), seite: z.string().optional(), schreibt: z.boolean().optional() });
 export type ZielBeschreibung = z.infer<typeof ZielBeschreibung>;
 
 /** Ruft eine Operation der Host-App auf — in gg-immo in-process über `app.request` mit dem Token des Nutzers. */
@@ -108,6 +109,9 @@ export function werkzeugeBauen(opt: GraphOptionen): StructuredToolInterface[] {
   const lesend = opt.werkzeuge.filter((w) => w.lesend && (alle || erlaubt.has(w.name)));
   const grenze = opt.antwortGrenze ?? ANTWORT_GRENZE;
   const zielNamen = new Set(opt.ziele.map((z) => z.ziel));
+  const schreibZiele = new Set(opt.ziele.filter((z) => z.schreibt).map((z) => z.ziel));
+  /** Braucht die Aktion ein „Ja“? Jedes `sende` — und jede Aktion, die auf einem schreibenden Ziel etwas auslöst. */
+  const schreibend = (a: Steuerung) => a.art === 'sende' || (!!a.ziel && schreibZiele.has(a.ziel) && a.art !== 'markiere' && a.art !== 'zeige');
 
   const hostWerkzeuge = lesend.map((w) =>
     tool(async (args) => {
@@ -116,10 +120,12 @@ export function werkzeugeBauen(opt: GraphOptionen): StructuredToolInterface[] {
     }, { name: w.name, description: w.beschreibung, schema: w.parameter }),
   );
 
-  const steuere = tool(async ({ aktionen }, config) => {
+  const steuere = tool(async ({ aktionen: roh }, config) => {
+    // „bestaetigt“ setzt nur der Kern nach dem „Ja“ des Nutzers — vom Modell wird es nie übernommen
+    const aktionen = roh.map(({ bestaetigt: _b, ...a }) => a);
     const unbekannt = aktionen.filter((a) => a.ziel && !zielNamen.has(a.ziel)).map((a) => a.ziel);
     if (unbekannt.length) return `Unbekannte Ziele: ${unbekannt.join(', ')}. Erlaubt sind nur die Ziele aus der Liste.`;
-    const erstesSenden = aktionen.findIndex((a) => a.art === 'sende');
+    const erstesSenden = aktionen.findIndex(schreibend);
     const toolCallId = (config as { toolCall?: { id?: string } }).toolCall?.id ?? '';
     if (erstesSenden < 0) {
       return new Command({ update: { steuerung: aktionen, messages: [new ToolMessage({ content: `Ausgeführt: ${aktionen.map((a) => a.art).join(', ')}`, tool_call_id: toolCallId })] } });
@@ -132,11 +138,11 @@ export function werkzeugeBauen(opt: GraphOptionen): StructuredToolInterface[] {
     if (antwort.trim().toLowerCase() === 'ja') {
       // Jedes Senden braucht seine eigene Bestätigung: nach „Ja“ nur bis vor das nächste `sende`, den Rest meldet der
       // Kern zurück — das Modell ruft `steuere` damit erneut auf, und der Nutzer wird wieder gefragt.
-      const naechstes = danach.findIndex((a) => a.art === 'sende');
+      const naechstes = danach.findIndex(schreibend);
       const jetzt = naechstes < 0 ? danach : danach.slice(0, naechstes);
       const offen = naechstes < 0 ? [] : danach.slice(naechstes);
       const hinweis = offen.length ? ` Noch nicht ausgeführt (jedes Senden einzeln bestätigen lassen, dafür steuere erneut aufrufen): ${JSON.stringify(offen)}` : '';
-      return new Command({ update: { steuerung: [senden, ...jetzt], messages: [new ToolMessage({ content: `Der Nutzer hat bestätigt, gesendet.${hinweis}`, tool_call_id: toolCallId })] } });
+      return new Command({ update: { steuerung: [{ ...senden, bestaetigt: true }, ...jetzt], messages: [new ToolMessage({ content: `Der Nutzer hat bestätigt, gesendet.${hinweis}`, tool_call_id: toolCallId })] } });
     }
     return new Command({ update: { messages: [new ToolMessage({ content: `Der Nutzer hat nicht bestätigt: „${antwort}“. Nicht gesendet.`, tool_call_id: toolCallId })] } });
   }, {

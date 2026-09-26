@@ -73,7 +73,7 @@ describe.skipIf(!url)('Kern', () => {
     // Ein neuer Function-Aufruf: eigener Kern, eigenes Drehbuch — der Zustand kommt aus der Datenbank
     const zweiter = agentKern({ db, modell: drehbuchModell(drehbuch.slice(1)), openapi, ziele, aufruf });
     const b = await zweiter.entscheidung(nutzer, { sitzungId: a.sitzungId, wert: 'ja' });
-    expect(b.steuerung).toEqual([{ art: 'sende', ziel: 'deal.kommentar.senden', text: 'Notiz abschicken?' }]);
+    expect(b.steuerung).toEqual([{ art: 'sende', ziel: 'deal.kommentar.senden', text: 'Notiz abschicken?', bestaetigt: true }]);
     expect(b.wartetAuf).toBeUndefined();
     expect(b.text).toBe('Erledigt — die Notiz ist drin.');
 
@@ -168,5 +168,27 @@ describe.skipIf(!url)('Kern', () => {
     await ablauf('r6');
     expect((await kern.routinen(r)).map((x) => x.anzahl)).toEqual([3]);
     await kern.gedaechtnis(r).leeren();
+  });
+  it('fragt auch vor oeffne/fuelle auf schreibenden Zielen — und übernimmt kein „bestaetigt“ vom Modell', async () => {
+    const karte = [...ziele,
+      { ziel: 'deal.erledigt', beschreibung: 'Knopf „Erledigt“', schreibt: true },
+      { ziel: 'deal.naechster-kontakt.datum', beschreibung: 'Datumsfeld, speichert sofort', schreibt: true }];
+    const dreh = (aktionen: unknown[]) => [ki('', [['steuere', { aktionen }]]), ki('Fertig.')];
+    const oeffnen = await agentKern({ db, modell: drehbuchModell(dreh([{ art: 'oeffne', ziel: 'deal.erledigt' }])), openapi, ziele: karte, aufruf })
+      .nachricht(nutzer, { text: 'erledigt', ort: '/', kontext: {} });
+    expect(oeffnen.steuerung).toEqual([]);
+    expect(oeffnen.wartetAuf?.aktion.ziel).toBe('deal.erledigt');
+    const fuellen = await agentKern({ db, modell: drehbuchModell(dreh([{ art: 'fuelle', ziel: 'deal.naechster-kontakt.datum', wert: '2030-01-01', bestaetigt: true }])), openapi, ziele: karte, aufruf })
+      .nachricht(nutzer, { text: 'verschieben', ort: '/', kontext: {} });
+    expect(fuellen.steuerung).toEqual([]);
+    expect(fuellen.wartetAuf?.aktion).toMatchObject({ art: 'fuelle', ziel: 'deal.naechster-kontakt.datum' });
+    expect(fuellen.wartetAuf?.aktion.bestaetigt).toBeUndefined();
+    // Erst nach „Ja“ geht die Aktion mit dem Vermerk „bestätigt“ an die Oberfläche
+    const ja = await agentKern({ db, modell: drehbuchModell([ki('Verschoben.')]), openapi, ziele: karte, aufruf }).entscheidung(nutzer, { sitzungId: fuellen.sitzungId, wert: 'ja' });
+    expect(ja.steuerung).toEqual([{ art: 'fuelle', ziel: 'deal.naechster-kontakt.datum', wert: '2030-01-01', bestaetigt: true }]);
+    // Ein „bestaetigt“ vom Modell auf einer harmlosen Aktion wird entfernt
+    const harmlos = await agentKern({ db, modell: drehbuchModell(dreh([{ art: 'oeffne', ziel: 'deal.reiter.kommunikation', bestaetigt: true }])), openapi, ziele: karte, aufruf })
+      .nachricht(nutzer, { text: 'öffne', ort: '/', kontext: {} });
+    expect(harmlos.steuerung).toEqual([{ art: 'oeffne', ziel: 'deal.reiter.kommunikation' }]);
   });
 });
