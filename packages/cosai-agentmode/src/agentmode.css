@@ -78,3 +78,21 @@
 .am-transkript { max-height: 220px; overflow: auto; display: grid; gap: 6px; }
 .am-feldvorschlaege { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
 .am-feldvorschlaege .am-chip { max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Ein kompakter Block statt zweier Leisten: links Kreis + Symbolknöpfe, rechts Blasen, Chips, Eingabe */
+.am-block { position: relative; display: flex; gap: 12px; align-items: flex-start; width: fit-content; max-width: min(760px, 100%); padding: 10px 40px 10px 12px; background: var(--am-flaeche-2); color: var(--am-text); border: 1px solid var(--am-linie); border-radius: 12px; font-size: 14px; }
+.am-block-links { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: none; }
+.am-block-rechts { display: grid; gap: 8px; min-width: 0; flex: 1; }
+.am-block .am-transkript, .am-block .am-liste { max-height: 240px; overflow: auto; }
+.am-symbole { display: flex; gap: 2px; }
+.am-symbol { position: relative; font: inherit; font-size: 14px; line-height: 1; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border-radius: 7px; border: 1px solid transparent; background: transparent; color: var(--am-text); cursor: pointer; }
+.am-symbol:hover, .am-symbol:focus-visible { background: var(--am-flaeche); border-color: var(--am-linie); outline: none; }
+.am-symbol[aria-pressed='true'] { background: var(--am-farbe-weich); border-color: var(--am-farbe); }
+/* Tooltip beim Darüberfahren — ohne Verzögerung, anders als `title` */
+.am-symbol[data-tipp]:hover::after, .am-symbol[data-tipp]:focus-visible::after { content: attr(data-tipp); position: absolute; top: calc(100% + 4px); left: 50%; transform: translateX(-50%); z-index: 1003; padding: 3px 8px; border-radius: 6px; background: var(--am-text); color: var(--am-flaeche); font-size: 12px; font-weight: 500; white-space: nowrap; pointer-events: none; }
+.am-schliessen { position: absolute; top: 6px; right: 6px; }
+.am-zeile { display: flex; align-items: center; gap: 2px; }
+/* Klein, solange nichts drinsteht; beim Hineinklicken (oder mit Text) breit */
+.am-block .am-eingabe { flex: none; width: 160px; min-width: 0; margin-right: 6px; transition: width 180ms ease; }
+.am-block .am-eingabe:focus, .am-block .am-eingabe:not(:placeholder-shown) { width: min(420px, 60vw); }
+.am-block.am-overlay-oben { position: sticky; margin: 8px 12px 0; border-radius: 12px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); }

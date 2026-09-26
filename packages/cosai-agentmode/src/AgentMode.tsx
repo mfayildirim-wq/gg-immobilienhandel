@@ -1,9 +1,9 @@
 /**
  * AgentMode — Overlay über der laufenden App oder eigene Seite, aus einer Komponente.
  *
- * Oben: Sprechkreis und die zwei letzten Sprechblasen. Mitte: im Overlay die App im Schaufenster (sehen, nicht
+ * Oben ein kompakter Block: Sprechkreis mit drei Symbolknöpfen, die zwei letzten Sprechblasen, Chips und Eingabe. Darunter: im Overlay die App im Schaufenster (sehen, nicht
  * klicken, solange der Agent handelt), auf der Seite der Inhalt des Hosts (Kontextkarte, Todos) und der Zeitstrahl.
- * Unten: Mikrofon, Chips, Eingabe, Transkript, Gedächtnis. Der Kanal läuft über `anfrage` des Hosts (mit dessen
+ * Der Kanal läuft über `anfrage` des Hosts (mit dessen
  * Anmeldung) gegen die Routen des Kerns; Steuerungen führt die Oberfläche Schritt für Schritt sichtbar aus.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -240,63 +240,64 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
   const zustand: SprechkreisZustand = zuhoeren.hoert ? 'hoert' : vorlesen.spricht ? 'spricht' : beschaeftigt || handelt ? 'denkt' : 'ruhig';
   const letzteAgent = [...zeilen].reverse().find((z) => z.wer === 'agent');
   const letzteNutzer = [...zeilen].reverse().find((z) => z.wer === 'nutzer');
-  const kreisGroesse = modus === 'seite' ? 140 : 56;
+  const kreisGroesse = modus === 'seite' ? 96 : 56;
 
-  const oben = (
-    <div className={`am-leiste am-oben ${modus === 'overlay' ? 'am-overlay-oben' : ''}`} data-agentmode-oben>
-      <Sprechkreis stil={stil} zustand={zustand} pegel={zuhoeren.hoert ? zuhoeren.pegel : vorlesen.spricht ? 0.6 : 0} groesse={kreisGroesse} saat={saat} farbe={farbe} titel="Agent"
-        onClick={zuhoeren.moeglich ? (zuhoeren.hoert ? zuhoeren.stoppe : zuhoeren.starte) : undefined} />
-      <div className="am-blasen">
-        {letzteAgent ? <Sprechblase wer="agent" text={letzteAgent.text} schluessel={letzteAgent.nr} lebendig /> : <div className="am-blase" data-wer="agent"><span className="am-wer">Agent</span>Ich höre. Sag mir, was ich tun soll — oder frag, was heute ansteht.</div>}
-        {letzteNutzer && <Sprechblase wer="nutzer" text={letzteNutzer.text} schluessel={letzteNutzer.nr} />}
-      </div>
-      <div className="am-rechts">
-        {onStil && (
-          <select className="am-knopf" aria-label="Stil des Sprechkreises" value={stil} onChange={(e) => onStil(e.currentTarget.value as SprechkreisStil)}>
-            {SPRECHKREIS_STILE.map((s) => <option key={s.wert} value={s.wert}>{s.label}</option>)}
-          </select>
-        )}
-        {vorlesen.moeglich && <button type="button" className="am-knopf" aria-pressed={vorlesen.an} onClick={() => vorlesen.schalte(!vorlesen.an)}>{vorlesen.an ? '🔊 Vorlesen an' : '🔇 Vorlesen aus'}</button>}
-        <button type="button" className="am-knopf" aria-label="Neues Gespräch" onClick={neuesGespraech}>Neues Gespräch</button>
-        {schliessen && <button type="button" className="am-knopf" aria-label="AgentMode schließen" onClick={schliessen}>✕</button>}
-      </div>
-    </div>
-  );
-
-  const unten = (
-    <div className={`am-leiste am-unten ${modus === 'overlay' ? 'am-overlay-unten' : ''}`} data-agentmode-unten>
-      {zuhoeren.moeglich && (
-        <button type="button" className="am-knopf" aria-pressed={zuhoeren.hoert} aria-label={zuhoeren.hoert ? 'Zuhören beenden' : 'Zuhören'} onClick={zuhoeren.hoert ? zuhoeren.stoppe : zuhoeren.starte}>🎤</button>
-      )}
-      <Chips chips={chips} waehlen={chipWaehlen} aus={beschaeftigt} />
-      <form style={{ display: 'contents' }} onSubmit={(e) => { e.preventDefault(); nachricht(eingabe); }}>
-        <input className="am-eingabe" aria-label="Nachricht an den Agenten" placeholder="Sag dem Agenten, was er tun soll …" value={eingabe} onChange={(e) => setEingabe(e.currentTarget.value)} disabled={beschaeftigt} />
-        <button type="submit" className="am-knopf" disabled={beschaeftigt || !eingabe.trim()}>Senden</button>
-      </form>
-      <div className="am-rechts">
-        {fehler && <span className="am-hinweis" role="alert">{fehler}</span>}
-        <button type="button" className="am-knopf" aria-pressed={transkriptOffen} onClick={() => setTranskriptOffen((o) => !o)}>Transkript ▾</button>
-        <button type="button" className="am-knopf" aria-pressed={gedaechtnisOffen} onClick={() => setGedaechtnisOffen((o) => !o)}>Gedächtnis ▾</button>
-      </div>
-      {transkriptOffen && (
-        <div className="am-transkript" style={{ flexBasis: '100%' }} aria-label="Transkript">
-          {zeilen.map((z) => <Sprechblase key={z.nr} wer={z.wer} text={z.text} schluessel={z.nr} />)}
+  // Ein kompakter Block statt zweier Leisten (Wunsch des Auftraggebers, 26.09.): links der Kreis mit drei kleinen
+  // Knöpfen darunter, rechts die Blasen, darunter Chips und die Eingabe mit drei Knöpfen. Knöpfe nur mit Symbol —
+  // der Text erscheint beim Darüberfahren (`data-tipp`) und steht für Screenreader im aria-label.
+  const naechsterStil = () => {
+    const i = SPRECHKREIS_STILE.findIndex((x) => x.wert === stil);
+    onStil?.(SPRECHKREIS_STILE[(i + 1) % SPRECHKREIS_STILE.length]!.wert);
+  };
+  const block = (
+    <div className={`am-block ${modus === 'overlay' ? 'am-overlay-oben' : ''}`} data-agentmode-oben>
+      <div className="am-block-links">
+        <Sprechkreis stil={stil} zustand={zustand} pegel={zuhoeren.hoert ? zuhoeren.pegel : vorlesen.spricht ? 0.6 : 0} groesse={kreisGroesse} saat={saat} farbe={farbe} titel="Agent"
+          onClick={zuhoeren.moeglich ? (zuhoeren.hoert ? zuhoeren.stoppe : zuhoeren.starte) : undefined} />
+        <div className="am-symbole">
+          {onStil && (
+            <button type="button" className="am-symbol" aria-label="Stil des Sprechkreises wechseln" data-tipp={`Stil: ${SPRECHKREIS_STILE.find((x) => x.wert === stil)?.label ?? stil}`} onClick={naechsterStil}>✦</button>
+          )}
+          {vorlesen.moeglich && (
+            <button type="button" className="am-symbol" aria-pressed={vorlesen.an} aria-label={vorlesen.an ? 'Vorlesen ausschalten' : 'Vorlesen einschalten'} data-tipp={vorlesen.an ? 'Vorlesen an' : 'Vorlesen aus'} onClick={() => vorlesen.schalte(!vorlesen.an)}>{vorlesen.an ? '🔊' : '🔇'}</button>
+          )}
+          <button type="button" className="am-symbol" aria-label="Neues Gespräch" data-tipp="Neues Gespräch" onClick={neuesGespraech}>↻</button>
         </div>
-      )}
-      {gedaechtnisOffen && (
-        <div style={{ flexBasis: '100%' }}>
+      </div>
+      <div className="am-block-rechts">
+        <div className="am-blasen">
+          {letzteAgent ? <Sprechblase wer="agent" text={letzteAgent.text} schluessel={letzteAgent.nr} lebendig /> : <div className="am-blase" data-wer="agent"><span className="am-wer">Agent</span>Ich höre. Sag mir, was ich tun soll — oder frag, was heute ansteht.</div>}
+          {letzteNutzer && <Sprechblase wer="nutzer" text={letzteNutzer.text} schluessel={letzteNutzer.nr} />}
+        </div>
+        <Chips chips={chips} waehlen={chipWaehlen} aus={beschaeftigt} />
+        <form className="am-zeile" onSubmit={(e) => { e.preventDefault(); nachricht(eingabe); }}>
+          <input className="am-eingabe" aria-label="Nachricht an den Agenten" placeholder="Nachricht …" value={eingabe} onChange={(e) => setEingabe(e.currentTarget.value)} disabled={beschaeftigt} />
+          {zuhoeren.moeglich && (
+            <button type="button" className="am-symbol" aria-pressed={zuhoeren.hoert} aria-label={zuhoeren.hoert ? 'Zuhören beenden' : 'Zuhören'} data-tipp={zuhoeren.hoert ? 'Zuhören beenden' : 'Zuhören'} onClick={zuhoeren.hoert ? zuhoeren.stoppe : zuhoeren.starte}>🎤</button>
+          )}
+          <button type="button" className="am-symbol" aria-pressed={transkriptOffen} aria-label="Transkript" data-tipp="Transkript" onClick={() => setTranskriptOffen((o) => !o)}>📜</button>
+          <button type="button" className="am-symbol" aria-pressed={gedaechtnisOffen} aria-label="Gedächtnis" data-tipp="Gedächtnis" onClick={() => setGedaechtnisOffen((o) => !o)}>🧠</button>
+        </form>
+        {fehler && <span className="am-hinweis" role="alert">{fehler}</span>}
+        {transkriptOffen && (
+          <div className="am-transkript" aria-label="Transkript">
+            {zeilen.map((z) => <Sprechblase key={z.nr} wer={z.wer} text={z.text} schluessel={z.nr} />)}
+          </div>
+        )}
+        {gedaechtnisOffen && (
           <Gedaechtnisleiste eintraege={gedaechtnis}
             loeschen={(id) => anfrage(`${api}/gedaechtnis/${id}`, { method: 'DELETE' }).then(gedaechtnisLaden)}
             bestaetigen={(id) => anfrage(`${api}/gedaechtnis/${id}/bestaetigen`, { method: 'POST' }).then(gedaechtnisLaden)} />
-        </div>
-      )}
+        )}
+      </div>
+      {schliessen && <button type="button" className="am-symbol am-schliessen" aria-label="AgentMode schließen" data-tipp="Schließen" onClick={schliessen}>✕</button>}
     </div>
   );
 
   if (modus === 'seite') {
     return (
       <div className="am-seite" data-agentmode="seite">
-        {oben}
+        {block}
         <div className="am-seite-mitte">
           <div>{children}</div>
           <div className="am-karte">
@@ -306,18 +307,16 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
             </div>
           </div>
         </div>
-        {unten}
       </div>
     );
   }
 
   return (
     <div data-agentmode="overlay" style={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
-      {oben}
+      {block}
       <Schaufenster aktiv={handelt} schritt={schritt} uebernehmen={() => { abgebrochen.current = true; setHandelt(false); setSchritt(null); }}>
         {children}
       </Schaufenster>
-      {unten}
     </div>
   );
 }
