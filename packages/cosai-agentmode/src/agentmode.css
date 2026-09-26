@@ -1,0 +1,77 @@
+/* CoSAi AgentMode — Gestaltung des Sprechkreises, der Blasen, des Schaufensters. Farben über --am-* anpassbar. */
+:root {
+  --am-farbe: #2f9e8f;
+  --am-farbe-weich: rgba(47, 158, 143, 0.14);
+  --am-flaeche: #ffffff;
+  --am-flaeche-2: #f3f5f7;
+  --am-text: #1c2429;
+  --am-text-matt: #5c6b74;
+  --am-linie: #d9e0e5;
+  --am-nutzer: #2b8a3e;
+  --am-schleier: rgba(12, 22, 30, 0.35);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-mantine-color-scheme='light']) {
+    --am-flaeche: #1a2228; --am-flaeche-2: #232d34; --am-text: #e6ebee; --am-text-matt: #9aa8b1; --am-linie: #33414a; --am-schleier: rgba(0, 0, 0, 0.55);
+  }
+}
+[data-mantine-color-scheme='dark'] {
+  --am-flaeche: #1a2228; --am-flaeche-2: #232d34; --am-text: #e6ebee; --am-text-matt: #9aa8b1; --am-linie: #33414a; --am-schleier: rgba(0, 0, 0, 0.55);
+}
+
+/* Sprechkreis: Ringe drehen, der Kern atmet, beim Sprechen vibriert alles (aus CoSAi) */
+@keyframes am-drehen { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes am-atmen { 0%, 100% { transform: scale(0.96); opacity: 0.85; } 50% { transform: scale(1.04); opacity: 1; } }
+@keyframes am-pulsen { 0% { transform: scale(0.9); } 30% { transform: scale(1.18); } 55% { transform: scale(0.98); } 80% { transform: scale(1.1); } 100% { transform: scale(0.92); } }
+@keyframes am-vibrieren { 0% { transform: translate(0, 0); } 25% { transform: translate(0.9px, -0.6px); } 50% { transform: translate(-0.7px, 0.8px); } 75% { transform: translate(0.5px, 0.7px); } 100% { transform: translate(0, 0); } }
+@keyframes am-scheinen { 0%, 100% { opacity: 0.1; transform: scale(0.98); } 50% { opacity: 0.28; transform: scale(1.03); } }
+.am-dreht { animation: am-drehen 14s linear infinite; }
+.am-dreht-langsam { animation-duration: 60s !important; }
+.am-atmet { animation: am-atmen 3.2s ease-in-out infinite; }
+.am-atmet-schnell { animation-duration: 1.2s; }
+.am-pulst { animation: am-pulsen 0.42s ease-in-out infinite; }
+.am-vibriert { animation: am-vibrieren 0.14s linear infinite; }
+.am-schein { animation: am-scheinen 2.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .am-dreht, .am-atmet, .am-pulst, .am-vibriert, .am-schein { animation: none; }
+}
+
+/* Leisten oben und unten */
+.am-leiste { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--am-flaeche-2); color: var(--am-text); border-bottom: 1px solid var(--am-linie); font-size: 14px; }
+.am-leiste.am-unten { border-bottom: 0; border-top: 1px solid var(--am-linie); flex-wrap: wrap; }
+.am-blasen { display: grid; gap: 6px; flex: 1; min-width: 0; }
+.am-blase { position: relative; padding: 6px 10px; border-radius: 10px; background: var(--am-flaeche); border-left: 3px solid var(--am-farbe); line-height: 1.35; }
+.am-blase[data-wer='nutzer'] { border-left-color: var(--am-nutzer); }
+.am-blase .am-wer { display: block; font-size: 11px; color: var(--am-text-matt); }
+.am-blase .am-cursor { display: inline-block; width: 2px; height: 0.9em; margin-left: 2px; background: currentColor; opacity: 0.7; vertical-align: text-bottom; }
+.am-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.am-chip { font: inherit; font-size: 12.5px; font-weight: 600; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--am-farbe); color: var(--am-farbe); background: var(--am-flaeche); cursor: pointer; }
+.am-chip:hover, .am-chip:focus-visible { background: var(--am-farbe-weich); outline: none; }
+.am-chip[data-art='entscheidung']:first-of-type { background: var(--am-farbe); color: #fff; }
+.am-knopf { font: inherit; font-size: 12.5px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--am-linie); background: var(--am-flaeche); color: var(--am-text); cursor: pointer; }
+.am-knopf[aria-pressed='true'] { background: var(--am-farbe-weich); border-color: var(--am-farbe); }
+.am-eingabe { flex: 1; min-width: 160px; font: inherit; font-size: 14px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--am-linie); background: var(--am-flaeche); color: var(--am-text); }
+.am-rechts { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.am-hinweis { font-size: 12px; color: var(--am-text-matt); }
+
+/* Schaufenster: die App bleibt sichtbar, ist aber nicht klickbar, solange der Agent handelt */
+.am-schaufenster { position: relative; }
+.am-schaufenster[data-aktiv='true'] > .am-inhalt { pointer-events: none; user-select: none; filter: saturate(0.7); }
+.am-schleier { position: absolute; inset: 0; background: var(--am-schleier); z-index: 20; pointer-events: none; transition: opacity 200ms; }
+.am-etikett { position: fixed; z-index: 1002; font-size: 12.5px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: var(--am-farbe); color: #fff; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25); pointer-events: none; white-space: nowrap; transition: top 250ms, left 250ms; }
+.am-zeiger { position: fixed; z-index: 1002; width: 18px; height: 18px; pointer-events: none; transition: top 350ms ease, left 350ms ease; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4)); }
+[data-agent-ziel='aktiv'] { outline: 3px solid var(--am-farbe) !important; outline-offset: 2px; border-radius: 6px; box-shadow: 0 0 0 6px var(--am-farbe-weich); position: relative; z-index: 21; transition: box-shadow 200ms; }
+
+/* Overlay über der App und eigene Seite */
+.am-overlay-oben { position: sticky; top: 0; z-index: 30; }
+.am-overlay-unten { position: sticky; bottom: 0; z-index: 30; }
+.am-seite { display: flex; flex-direction: column; min-height: 100%; }
+.am-seite-mitte { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; padding: 16px; }
+@media (max-width: 860px) { .am-seite-mitte { grid-template-columns: 1fr; } }
+.am-karte { border: 1px solid var(--am-linie); border-radius: 12px; background: var(--am-flaeche); padding: 12px 14px; color: var(--am-text); }
+.am-karte h3 { margin: 0 0 8px; font-size: 14px; color: var(--am-text-matt); font-weight: 600; }
+.am-liste { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13.5px; }
+.am-liste li { display: flex; gap: 8px; align-items: baseline; }
+.am-liste time { color: var(--am-text-matt); font-size: 12px; white-space: nowrap; }
+.am-gross { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px; }
+.am-transkript { max-height: 220px; overflow: auto; display: grid; gap: 6px; }
