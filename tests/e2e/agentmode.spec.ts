@@ -13,6 +13,12 @@ const notiz = () => `Mailbox besprochen, Rückruf Montag (Test ${Date.now()})`;
 
 const angelegt: { makler: string[]; objekte: string[]; deals: string[] } = { makler: [], objekte: [], deals: [] };
 
+// Der Morgenvorschlag kommt einmal am Tag beim Öffnen — für die übrigen Tests vorab verbrauchen, sonst platzt er
+// in ein laufendes Gespräch (sein eigener Test stellt die Uhr auf einen neuen Tag)
+test.beforeEach(async ({ page }) => {
+  await page.request.post('/api/agent/morgen', { data: { heute: heute() } });
+});
+
 test.afterEach(async ({ page }) => {
   // Der Agent merkt sich Formulierungen — die des Tests wieder vergessen
   const g = (await (await page.request.get('/api/agent/gedaechtnis')).json().catch(() => ({ eintraege: [] }))) as { eintraege?: { id: string; inhalt: string }[] };
@@ -110,5 +116,36 @@ test.describe('AgentMode', () => {
     // Der Satz steht in der Sprechblase (und noch einmal im Transkript) — die erste genügt
     await expect(page.locator('.am-blase[data-wer="agent"]').first()).toContainText(/Heute sind \d+ Deals und \d+ Makler fällig/, { timeout: 15_000 });
     await expect(page.getByRole('button', { name: 'Ersten Deal öffnen' })).toBeVisible();
+  });
+  test('lernt ohne Overlay und schlägt die Formulierung am Feld vor', async ({ page }) => {
+    const erster = await faelligerDeal(page, `Agent-Lernen ${Date.now()}`);
+    const zweiter = await faelligerDeal(page, `Agent-Vorschlag ${Date.now()}`);
+    const text = notiz();
+    await page.goto('/');
+    await expect(page.locator('[data-agentmode-oben]')).toHaveCount(0);
+    await page.getByLabel(`Deal ${erster.titel}`).click();
+    await page.getByLabel('Neue Gesprächsnotiz').fill(text);
+    await page.getByRole('button', { name: '+ Eintrag' }).click();
+    await expect.poll(async () => ((await (await page.request.get('/api/agent/vorschlaege?ziel=deal.kommentar')).json()) as { vorschlaege: string[] }).vorschlaege, { timeout: 10_000 })
+      .toContain(text);
+
+    await page.getByLabel(`Deal ${zweiter.titel}`).click();
+    await page.getByRole('group', { name: 'Vorschläge aus dem Gedächtnis' }).getByRole('button', { name: text }).click();
+    await expect(page.getByLabel('Neue Gesprächsnotiz')).toHaveValue(text);
+  });
+
+  test('begrüßt beim ersten Öffnen des Tages mit dem Morgenvorschlag, danach nicht noch einmal', async ({ page }) => {
+    // Ein Tag, den es für diesen Nutzer noch nicht gab
+    await page.clock.setFixedTime(new Date(2090, 0, 1 + Math.floor(Math.random() * 3000), 9, 0));
+    const morgen = page.waitForResponse((r) => r.url().endsWith('/api/agent/morgen'));
+    await page.goto('/agent');
+    expect(((await (await morgen).json()) as { antwort: unknown }).antwort).not.toBeNull();
+    await expect(page.locator('.am-blase[data-wer="agent"]').last()).toContainText(/Heute sind \d+ Deals/, { timeout: 15_000 });
+
+    const zweites = page.waitForResponse((r) => r.url().endsWith('/api/agent/morgen'));
+    await page.reload();
+    expect(((await (await zweites).json()) as { antwort: unknown }).antwort).toBeNull();
+    // Der Verlauf der Sitzung zeigt ihn weiter
+    await expect(page.locator('.am-blase[data-wer="agent"]').last()).toContainText(/Heute sind \d+ Deals/);
   });
 });
