@@ -64,6 +64,13 @@
       "when": 1790417051836,
       "tag": "20260926100411_cosai",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790417211321,
+      "tag": "20260926100651_cosai_gedaechtnis_index",
+      "breakpoints": true
     }
   ]
 }

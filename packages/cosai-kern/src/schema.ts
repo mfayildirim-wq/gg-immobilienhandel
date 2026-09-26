@@ -89,7 +89,8 @@ export const gedaechtnis = cosai.table('gedaechtnis', {
   createdAt: jetzt('created_at'),
 }, (t) => [
   index('cosai_gedaechtnis_nutzer_schluessel').on(t.nutzer, t.art, t.schluessel),
-  uniqueIndex('cosai_gedaechtnis_formulierung').on(t.nutzer, t.art, t.schluessel, t.inhalt),
+  // Episoden sind immer neu; Formulierungen, Fakten und Routinen zählen bei gleichem Inhalt hoch
+  uniqueIndex('cosai_gedaechtnis_formulierung').on(t.nutzer, t.art, t.schluessel, t.inhalt).where(sql`art <> 'episode'`),
 ]).enableRLS();
 
 /** Ein Graph-Lauf je Sitzung — Kopf; der Zustand liegt in den Checkpoints. */

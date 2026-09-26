@@ -1,0 +1,2 @@
+DROP INDEX "cosai"."cosai_gedaechtnis_formulierung";--> statement-breakpoint
+CREATE UNIQUE INDEX "cosai_gedaechtnis_formulierung" ON "cosai"."gedaechtnis" USING btree ("nutzer","art","schluessel","inhalt") WHERE art <> 'episode';
