@@ -165,3 +165,33 @@ describe('AgentMode (Rückfrage absichern)', () => {
     expect(screen.queryByRole('button', { name: 'Ja, ausführen' })).toBeNull();
   });
 });
+
+describe('AgentMode (Vorlesen stoppen)', () => {
+  it('zeigt beim Vorlesen ⏹, ein Klick auf den Kreis bricht sofort ab', async () => {
+    // Eine Sprachausgabe, die „spricht“, bis sie abgebrochen wird
+    const abbrueche: number[] = [];
+    let laufend: { onend?: () => void } | null = null;
+    Object.assign(window, {
+      SpeechSynthesisUtterance: class { text: string; lang = ''; pitch = 1; rate = 1; voice = null; onstart?: () => void; onend?: () => void; onerror?: () => void; constructor(t: string) { this.text = t; } },
+      speechSynthesis: {
+        getVoices: () => [], addEventListener: () => undefined, removeEventListener: () => undefined,
+        speak: (u: { onstart?: () => void; onend?: () => void }) => { laufend = u; u.onstart?.(); },
+        cancel: () => { abbrueche.push(Date.now()); const u = laufend; laufend = null; u?.onend?.(); },
+      },
+    });
+    window.localStorage.setItem('cosai.ton', 'an');
+    const k = kernErsatz();
+    render(<AgentMode api="/api/agent" anfrage={k.anfrage} modus="seite" navigiere={vi.fn()} ort="/" stil="kern" schrittMs={10}><App /></AgentMode>);
+    const eingabe = await screen.findByLabelText('Nachricht an den Agenten');
+    fireEvent.change(eingabe, { target: { value: 'Kommentar: Rückruf Montag. Abschicken.' } });
+    await act(async () => { fireEvent.submit(eingabe.closest('form')!); });
+    // spricht → ⏹ sichtbar, der Kreis zeigt „spricht“
+    const stopp = await screen.findByRole('button', { name: 'Vorlesen stoppen' });
+    const vorher = abbrueche.length;
+    await act(async () => { fireEvent.click(screen.getByRole('img', { name: /Agent: spricht/ })); });
+    expect(abbrueche.length).toBeGreaterThan(vorher);
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Vorlesen stoppen' })).toBeNull());
+    expect(stopp).toBeTruthy();
+    window.localStorage.removeItem('cosai.ton');
+  });
+});

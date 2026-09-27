@@ -7,6 +7,37 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 const TON = 'cosai.ton';
 
+/** Höchstens so viele Zeichen werden vorgelesen — der volle Text steht auf dem Bildschirm */
+const SPRECH_MAX = 280;
+
+/**
+ * Was vorgelesen wird: ohne Markdown (Sternchen, Rauten, Backticks, Aufzählungszeichen), nur der erste Absatz, am
+ * Satzende gekürzt. Lange Antworten mit Listen vorzulesen dauert Minuten — Rückmeldung des Auftraggebers (27.09.).
+ */
+export function sprechfassung(text: string): string {
+  // Erst den ersten Absatz nehmen (Leerzeile oder Beginn einer Aufzählung), dann das Markdown entfernen
+  const ohneCode = text.replace(/```[\s\S]*?```/g, ' ').trim();
+  const absatz = ohneCode.split(/\n\s*\n|\n(?=\s*(?:[-•*]|\d+\.)\s)/)[0] ?? '';
+  const flach = absatz
+    .replace(/https?:\/\/\S+/g, ' ')
+    .replace(/[*_`#>]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (flach.length <= SPRECH_MAX) return flach;
+  const saetze = flach.match(/[^.!?]+[.!?]+/g) ?? [];
+  let kurz = '';
+  for (const satz of saetze) {
+    if ((kurz + satz).trim().length > SPRECH_MAX) break;
+    kurz += satz;
+  }
+  return kurz.trim() || `${flach.slice(0, SPRECH_MAX - 1).replace(/\s+\S*$/, '')} …`;
+}
+
+/** „Stopp“, „Halt“, „Ruhe“ … — bricht das Vorlesen ab, statt als Auftrag zu gelten. */
+export function istStoppwort(text: string): boolean {
+  return /^(stopp?|halt|ruhe|genug|aufhören|sei still|still)$/.test(text.toLowerCase().replace(/[.!?,]/g, '').trim());
+}
+
 export function useVorlesen(saatwert = 'agent') {
   const [moeglich, setMoeglich] = useState(false);
   const [an, setAn] = useState(false);
@@ -39,7 +70,8 @@ export function useVorlesen(saatwert = 'agent') {
   const sprich = useCallback((text: string): Promise<void> => {
     if (!an || !moeglich || !text) return Promise.resolve();
     return new Promise((fertig) => {
-      const u = new SpeechSynthesisUtterance(text.replace(/[„“"…]/g, ' '));
+      const fassung = sprechfassung(text);
+      const u = new SpeechSynthesisUtterance(fassung.replace(/[„“"…]/g, ' '));
       u.lang = 'de-DE';
       if (stimme.current) u.voice = stimme.current;
       let h = 0;
@@ -47,7 +79,7 @@ export function useVorlesen(saatwert = 'agent') {
       u.pitch = 0.9 + ((h % 7) / 6) * 0.3;
       u.rate = 1.02;
       // Manche Browser melden das Ende nie (Tab im Hintergrund): dann geht es nach einer Frist weiter.
-      const frist = setTimeout(() => ende(), 4000 + text.length * 110);
+      const frist = setTimeout(() => ende(), 4000 + fassung.length * 110);
       const ende = () => { clearTimeout(frist); setSpricht(false); fertig(); };
       u.onstart = () => setSpricht(true);
       u.onend = ende;

@@ -12,7 +12,7 @@ import { ausfuehren, beobachten, zielFinden, zielKontext, type Beobachtung, type
 import { saatAus } from './konstellation.ts';
 import { heuteLokal } from './lernen.tsx';
 import { Sprechkreis, SPRECHKREIS_STILE, type SprechkreisStil, type SprechkreisZustand } from './Sprechkreis.tsx';
-import { useVorlesen, useZuhoeren } from './sprache.ts';
+import { istStoppwort, useVorlesen, useZuhoeren } from './sprache.ts';
 
 export interface AgentAntwortDaten {
   sitzungId: string;
@@ -257,6 +257,8 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
 
   // Zuhören: Zwischenstand ins Eingabefeld, am Ende abschicken; kurze Bestätigungen treffen die Chips direkt
   const zuhoeren = useZuhoeren((text, fertig) => {
+    // „Stopp“ bricht das Vorlesen ab und wird nicht als Auftrag geschickt
+    if (istStoppwort(text)) { if (fertig) { vorlesen.stoppe(); setEingabe(''); } return; }
     setEingabe(text);
     if (!fertig || !text) return;
     const kurz = text.toLowerCase().replace(/[.!?]/g, '').trim();
@@ -281,6 +283,14 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
   }, [anfrage, api]);
   useEffect(() => { if (gedaechtnisOffen) void gedaechtnisLaden(); }, [gedaechtnisOffen, gedaechtnisLaden]);
 
+  // Esc bricht das Vorlesen ab — auch wenn der Fokus gerade woanders liegt
+  useEffect(() => {
+    if (!vorlesen.spricht) return;
+    const taste = (e: KeyboardEvent) => { if (e.key === 'Escape') vorlesen.stoppe(); };
+    window.addEventListener('keydown', taste);
+    return () => window.removeEventListener('keydown', taste);
+  }, [vorlesen]);
+
   const zustand: SprechkreisZustand = zuhoeren.hoert ? 'hoert' : vorlesen.spricht ? 'spricht' : beschaeftigt || handelt ? 'denkt' : 'ruhig';
   const letzteAgent = [...zeilen].reverse().find((z) => z.wer === 'agent');
   const letzteNutzer = [...zeilen].reverse().find((z) => z.wer === 'nutzer');
@@ -297,7 +307,7 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
     <div className={`am-block ${modus === 'overlay' ? 'am-overlay-oben' : ''}`} data-agentmode-oben>
       <div className="am-kreis">
         <Sprechkreis stil={stil} zustand={zustand} pegel={zuhoeren.hoert ? zuhoeren.pegel : vorlesen.spricht ? 0.6 : 0} groesse={kreisGroesse} saat={saat} farbe={farbe} titel="Agent"
-          onClick={zuhoeren.moeglich ? (zuhoeren.hoert ? zuhoeren.stoppe : zuhoeren.starte) : undefined} />
+          onClick={vorlesen.spricht ? vorlesen.stoppe : zuhoeren.moeglich ? (zuhoeren.hoert ? zuhoeren.stoppe : zuhoeren.starte) : undefined} />
       </div>
       <div className="am-agent">
         {letzteAgent ? <Sprechblase wer="agent" text={letzteAgent.text} schluessel={letzteAgent.nr} lebendig /> : <div className="am-blase" data-wer="agent"><span className="am-wer">Agent</span>Ich höre. Sag mir, was ich tun soll — oder frag, was heute ansteht.</div>}
@@ -323,6 +333,9 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
         <button type="button" className="am-symbol" aria-pressed={gedaechtnisOffen} aria-label="Gedächtnis" data-tipp="Gedächtnis" onClick={() => setGedaechtnisOffen((o) => !o)}>🧠</button>
         {onStil && (
           <button type="button" className="am-symbol" aria-label="Stil des Sprechkreises wechseln" data-tipp={`Stil: ${SPRECHKREIS_STILE.find((x) => x.wert === stil)?.label ?? stil}`} onClick={naechsterStil}>✦</button>
+        )}
+        {vorlesen.spricht && (
+          <button type="button" className="am-symbol am-stopp" aria-label="Vorlesen stoppen" data-tipp="Stopp (Esc, Kreis oder „Stopp“ sagen)" onClick={vorlesen.stoppe}>⏹</button>
         )}
         {vorlesen.moeglich && (
           <button type="button" className="am-symbol" aria-pressed={vorlesen.an} aria-label={vorlesen.an ? 'Vorlesen ausschalten' : 'Vorlesen einschalten'} data-tipp={vorlesen.an ? 'Vorlesen an' : 'Vorlesen aus'} onClick={() => vorlesen.schalte(!vorlesen.an)}>{vorlesen.an ? '🔊' : '🔇'}</button>
