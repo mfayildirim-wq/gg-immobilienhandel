@@ -1,4 +1,9 @@
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { expect, type Page, test } from '@playwright/test';
+import { z } from 'zod';
 
 /**
  * AgentMode im Browser (mit `KI_ATTRAPPE=1` antwortet das Attrappen-Modell deterministisch):
@@ -197,11 +202,51 @@ test.describe('AgentMode', () => {
       await nie.getByLabel('Neue Regel: Nie').fill(regel);
       await nie.getByRole('button', { name: 'Hinzufügen' }).click();
       await page.getByRole('button', { name: 'Speichern' }).click();
-      await expect(page.getByText('Gespeichert')).toBeVisible();
+      await expect(page.getByText('Gespeichert — gilt ab der nächsten Nachricht.')).toBeVisible();
       await page.reload();
       await expect(page.getByRole('region', { name: 'Nie' }).locator('input').first()).toHaveValue(regel);
     } finally {
       await page.request.put('/api/agent/einstellungen', { data: { regeln: vorher.regeln, nie: vorher.nie, anbieter: vorher.anbieter, modell: vorher.modell } });
+    }
+  });
+
+  test('MCP-Server anbinden: Werkzeuge erscheinen, fragen vorher, lassen sich freigeben — und wieder entfernen', async ({ page }) => {
+    // Ein echter MCP-Server mit Anmeldung, lokal — der lokale API-Server darf lokale Adressen (nur außerhalb der Produktion)
+    const mcp: Server = createServer(async (req, res) => {
+      if (req.headers.authorization !== 'Bearer e2e-geheim') { res.writeHead(401).end(); return; }
+      const server = new McpServer({ name: 'post', version: '1.0.0' });
+      server.registerTool('suche_mails', { description: 'Sucht Mails im Postfach', inputSchema: { stichwort: z.string() }, annotations: { readOnlyHint: true } }, async () => ({ content: [{ type: 'text', text: 'keine' }] }));
+      server.registerTool('mail_senden', { description: 'Sendet eine Mail', inputSchema: { an: z.string() } }, async () => ({ content: [{ type: 'text', text: 'ok' }] }));
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+      res.on('close', () => { void transport.close(); void server.close(); });
+      await server.connect(transport);
+      await transport.handleRequest(req, res);
+    });
+    await new Promise<void>((r) => mcp.listen(0, '127.0.0.1', r));
+    const name = `E2E-Post-${Date.now() % 100000}`;
+    try {
+      await page.goto('/einstellungen/agentmode');
+      const bereich = page.getByRole('region', { name: 'MCP-Server' });
+      await bereich.getByLabel('Name').fill(name);
+      await bereich.getByLabel('Adresse').fill(`http://127.0.0.1:${(mcp.address() as AddressInfo).port}/mcp`);
+      await bereich.getByLabel('Kopfzeile (optional)').fill('Authorization: Bearer e2e-geheim');
+      await bereich.getByRole('button', { name: 'Verbinden' }).click();
+      await expect(bereich.getByText('2 Werkzeuge gefunden')).toBeVisible({ timeout: 15_000 });
+      await expect(bereich.locator(`[data-mcp="${name}"]`)).toContainText('mit Zugang');
+
+      const werkzeug = `mcp_${name.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_suche_mails`;
+      const zeile = page.locator(`[data-werkzeug="${werkzeug}"]`);
+      await expect(zeile).toContainText('Sucht Mails im Postfach');
+      const schalter = zeile.getByRole('switch');
+      await expect(schalter).not.toBeChecked();
+      await schalter.click({ force: true });
+      await expect.poll(async () => ((await (await page.request.get('/api/agent/werkzeuge')).json()) as { werkzeuge: { name: string; recht: string }[] }).werkzeuge.find((w) => w.name === werkzeug)?.recht).toBe('frei');
+
+      await bereich.locator(`[data-mcp="${name}"]`).getByRole('button', { name: 'Entfernen' }).click();
+      await expect(bereich.locator(`[data-mcp="${name}"]`)).toHaveCount(0);
+    } finally {
+      await page.request.delete(`/api/agent/mcp/${encodeURIComponent(name)}`);
+      await new Promise((r) => mcp.close(r));
     }
   });
 });

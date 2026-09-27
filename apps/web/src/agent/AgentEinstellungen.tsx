@@ -8,9 +8,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { agentAnfrage } from '../lib/api.ts';
+import { AgentWerkzeuge } from './AgentWerkzeuge.tsx';
 
 interface AnbieterStand { id: string; label: string; vorgabeModell: string; verfuegbar: boolean }
-interface Einstellungen { grundregeln: string[]; regeln: string[]; nie: string[]; anbieter: string; modell: string; anbieterListe: AnbieterStand[] }
+interface Einstellungen { grundregeln: string[]; regeln: string[]; nie: string[]; anbieter: string; modell: string; anbieterListe: AnbieterStand[]; mcp: { name: string; url: string; aktiv: boolean; mitZugang: boolean }[] }
 type Aenderbar = Pick<Einstellungen, 'regeln' | 'nie' | 'anbieter' | 'modell'>;
 
 async function holen(): Promise<Einstellungen> {
@@ -65,9 +66,12 @@ export function AgentEinstellungen() {
   const { data, isLoading, error } = useQuery({ queryKey: ['agent', 'einstellungen'], queryFn: holen, retry: false });
   const [entwurf, setEntwurf] = useState<Aenderbar | null>(null);
   useEffect(() => { if (data && !entwurf) setEntwurf({ regeln: data.regeln, nie: data.nie, anbieter: data.anbieter, modell: data.modell }); }, [data, entwurf]);
+  // Erfolg selbst merken: `isSuccess` von React Query kommt erst nach dem globalen onSettled der App (Listen neu laden)
+  const [gespeichert, setGespeichert] = useState(false);
   const sichern = useMutation({
     mutationFn: speichern,
-    onSuccess: (d) => { qc.setQueryData(['agent', 'einstellungen'], d); setEntwurf({ regeln: d.regeln, nie: d.nie, anbieter: d.anbieter, modell: d.modell }); },
+    onMutate: () => setGespeichert(false),
+    onSuccess: (d) => { qc.setQueryData(['agent', 'einstellungen'], d); setEntwurf({ regeln: d.regeln, nie: d.nie, anbieter: d.anbieter, modell: d.modell }); setGespeichert(true); },
   });
 
   if (isLoading) return <Loader size="sm" />;
@@ -116,8 +120,10 @@ export function AgentEinstellungen() {
       <Group>
         <Button onClick={() => sichern.mutate({ ...entwurf, regeln: entwurf.regeln.map((r) => r.trim()).filter(Boolean), nie: entwurf.nie.map((r) => r.trim()).filter(Boolean) })}
           loading={sichern.isPending} disabled={!geaendert}>Speichern</Button>
-        {sichern.isSuccess && !geaendert && <Text size="xs" c="teal">Gespeichert — gilt ab der nächsten Nachricht.</Text>}
+        {gespeichert && !geaendert && <Text size="xs" c="teal">Gespeichert — gilt ab der nächsten Nachricht.</Text>}
       </Group>
+
+      <AgentWerkzeuge mcp={data.mcp ?? []} />
     </Stack>
   );
 }
