@@ -7,7 +7,7 @@
  * Host-Komponenten nach erfolgreichem Speichern auf — der Agent lernt daraus Formulierungen.
  */
 
-export type SteuerungArt = 'navigiere' | 'oeffne' | 'fuelle' | 'sende' | 'markiere' | 'zeige' | 'sprich';
+export type SteuerungArt = 'navigiere' | 'oeffne' | 'fuelle' | 'sende' | 'markiere' | 'zeige' | 'sprich' | 'werkzeug';
 export interface Steuerung { art: SteuerungArt; ziel?: string; wert?: string; text?: string; bestaetigt?: boolean }
 export type BeobachtungArt = 'navigation' | 'klick' | 'eingabe' | 'gespeichert';
 export interface Beobachtung { art: BeobachtungArt; ziel: string; wert?: string; kontext?: Record<string, string | number | boolean | null> }

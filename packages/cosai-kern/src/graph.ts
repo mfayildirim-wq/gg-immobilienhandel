@@ -13,6 +13,7 @@ import { ToolNode } from '@langchain/langgraph/prebuilt';
 import { z } from 'zod';
 import { adresse, type KatalogWerkzeug } from './katalog.ts';
 import type { Gedaechtnis } from './gedaechtnis.ts';
+import type { McpWerkzeug } from './mcp.ts';
 import type { Modell } from './modell.ts';
 import { Chip, DNA, Steuerung } from './vertrag.ts';
 
@@ -47,6 +48,14 @@ export interface GraphOptionen {
   nurLesen?: boolean;
   /** Recherche außerhalb der Anwendung — der Host liefert Suche und Seitenabruf */
   web?: WebWerkzeuge;
+  /** Werkzeuge der angebundenen MCP-Server; `frei` = ohne Rückfrage */
+  mcp?: McpWerkzeug[];
+  frei?: string[];
+}
+
+/** Getippt oder gesagt: „Ja.“, „ja bitte“, „OK“ — aber nicht „ja, aber …“ */
+export function istZustimmung(antwort: string): boolean {
+  return /^(ja|ok|okay)( bitte)?$/.test(antwort.trim().toLowerCase().replace(/[.!]+$/, ''));
 }
 
 /** Web-Recherche des Hosts. `claudeSuche`: bei Anthropic zusätzlich die Websuche von Claude (Server-Werkzeug). */
@@ -171,8 +180,7 @@ export function werkzeugeBauen(opt: GraphOptionen): StructuredToolInterface[] {
     // Die Unterbrechung: die Schritte davor führt die Oberfläche schon aus, das Senden wartet auf den Nutzer.
     const antwort = interrupt({ frage: senden.text ?? `${senden.ziel} ausführen?`, aktion: senden, vorher }) as string;
     // Getippt heißt es oft „Ja.“ oder „ja bitte“ — aber „ja, aber …“ ist keine Zustimmung
-    const zustimmung = /^(ja|ok|okay)( bitte)?$/.test(antwort.trim().toLowerCase().replace(/[.!]+$/, ''));
-    if (zustimmung) {
+    if (istZustimmung(antwort)) {
       // Jedes Senden braucht seine eigene Bestätigung: nach „Ja“ nur bis vor das nächste `sende`, den Rest meldet der
       // Kern zurück — das Modell ruft `steuere` damit erneut auf, und der Nutzer wird wieder gefragt.
       const naechstes = danach.findIndex(schreibend);
@@ -218,7 +226,19 @@ export function werkzeugeBauen(opt: GraphOptionen): StructuredToolInterface[] {
       try { return kuerzen(await lesen(url), grenze); } catch (e) { return `Nicht lesbar: ${(e as Error).message}`; }
     }, { name: 'seite_lesen', description: 'Liest den Text einer öffentlichen Webseite (z. B. einen Treffer der Websuche oder ein Inserat). Nur http(s), keine internen Adressen.', schema: z.object({ url: z.string().url() }) }));
   }
-  return opt.nurLesen ? [...hostWerkzeuge, ...web, chips, erinnere] : [...hostWerkzeuge, ...web, steuere, chips, merke, erinnere];
+  // MCP: jedes Werkzeug fragt vorher — außer der Nutzer hat es freigegeben. Der Morgenlauf bekommt nur freigegebene.
+  const frei = new Set(opt.frei ?? []);
+  const mcp = (opt.mcp ?? []).filter((w) => !opt.nurLesen || frei.has(w.name)).map((w) => tool(async (args, config) => {
+    if (!frei.has(w.name)) {
+      const argumente = JSON.stringify(args);
+      const frage = `${w.server}: „${w.original}“ ausführen?${argumente !== '{}' ? ` ${argumente.slice(0, 300)}` : ''}`;
+      const antwort = interrupt({ frage, aktion: { art: 'werkzeug', ziel: w.name, wert: argumente.slice(0, 2000), text: frage }, vorher: [] }) as string;
+      if (!istZustimmung(antwort)) return `Der Nutzer hat nicht bestätigt: „${antwort}“. Nicht ausgeführt.`;
+    }
+    void config;
+    try { return kuerzen(await w.aufrufen(args as Record<string, unknown>), grenze); } catch (e) { return `Fehler: ${(e as Error).message}`; }
+  }, { name: w.name, description: `[MCP ${w.server}] ${w.beschreibung}`, schema: w.schema as never }));
+  return opt.nurLesen ? [...hostWerkzeuge, ...web, ...mcp, chips, erinnere] : [...hostWerkzeuge, ...web, ...mcp, steuere, chips, merke, erinnere];
 }
 
 export function graphBauen(opt: GraphOptionen, checkpointer: BaseCheckpointSaver) {

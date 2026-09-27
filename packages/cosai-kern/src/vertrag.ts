@@ -24,7 +24,8 @@ export type Beobachtung = z.infer<typeof Beobachtung>;
 
 /** Was der Agent die Oberfläche tun lässt — sichtbar, Schritt für Schritt. */
 export const Steuerung = z.object({
-  art: z.enum(['navigiere', 'oeffne', 'fuelle', 'sende', 'markiere', 'zeige', 'sprich']),
+  /** `werkzeug`: Rückfrage vor einem MCP-Werkzeug — läuft im Kern, nicht in der Oberfläche */
+  art: z.enum(['navigiere', 'oeffne', 'fuelle', 'sende', 'markiere', 'zeige', 'sprich', 'werkzeug']),
   ziel: Ziel.optional(),
   wert: z.string().optional(),
   /** Was das Etikett im Schaufenster sagt („öffnet Reiter Kommunikation“) */
@@ -67,6 +68,10 @@ export const DNA = z.object({
   /** Modellanbieter und Modell; leer = Vorgabe des Hosts */
   anbieter: z.string().default(''),
   modell: z.string().default(''),
+  /** MCP-Server (Internet-Adresse); `kopf` nur verschlüsselt (Host-Funktion `geheimnis`) */
+  mcp: z.array(z.object({ name: z.string(), url: z.string(), kopf: z.string().default(''), aktiv: z.boolean().default(true) })).default([]),
+  /** MCP-Werkzeuge, die ohne Rückfrage laufen dürfen (in den Einstellungen freigegeben) */
+  frei: z.array(z.string()).default([]),
   beispiele: z.array(z.object({ nutzer: z.string(), agent: z.string() })).default([]),
   version: z.number().int().min(1).default(1),
   /** Hash von OpenAPI + Oberflächenkarte, gegen den die DNA entworfen wurde */
@@ -83,6 +88,13 @@ export const AgentEinstellungen = z.object({
   modell: z.string().max(100).default(''),
 });
 export type AgentEinstellungen = z.infer<typeof AgentEinstellungen>;
+
+export const McpServerNeu = z.object({
+  name: z.string().trim().min(1).max(40).regex(/^[\p{L}\p{N} _-]+$/u, 'Nur Buchstaben, Ziffern, Leerzeichen, - und _'),
+  url: z.string().trim().url().max(500),
+  kopf: z.string().trim().max(2000).default(''),
+});
+export type McpServerNeu = z.infer<typeof McpServerNeu>;
 
 export const GedaechtnisArt = z.enum(['episode', 'formulierung', 'fakt', 'routine']);
 export const GedaechtnisEintrag = z.object({

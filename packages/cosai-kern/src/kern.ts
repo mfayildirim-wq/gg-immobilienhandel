@@ -13,10 +13,11 @@ import { gedaechtnis as gedaechtnisBauen, type Db, type Gedaechtnis } from './ge
 import { graphBauen, GRUNDREGELN, letzterText, type Aufruf, type WebWerkzeuge, type ZielBeschreibung } from './graph.ts';
 export { GRUNDREGELN } from './graph.ts';
 import { katalogFingerabdruck, werkzeugeAusOpenapi, type KatalogWerkzeug, type OpenapiDokument } from './katalog.ts';
+import { mcpVerbinden, mcpWerkzeugName, type McpWerkzeug } from './mcp.ts';
 import { drehbuchModell, type Modell } from './modell.ts';
 import { routinenAus, type Routine } from './routinen.ts';
 import { agenten, ereignisse, laeufe, nachrichten, sitzungen } from './schema.ts';
-import { AgentEinstellungen, DNA, type AgentAntwort, type Beobachtung, type Chip, type Eingabe, type Entscheidung, type Steuerung } from './vertrag.ts';
+import { AgentEinstellungen, DNA, McpServerNeu, type AgentAntwort, type Beobachtung, type Chip, type Eingabe, type Entscheidung, type Steuerung } from './vertrag.ts';
 
 /** Wer gerade spricht — und was der Host-Aufruf braucht, um in dessen Namen zu lesen (z. B. Authorization). */
 export interface Nutzer {
@@ -45,11 +46,31 @@ export interface KernOptionen {
   morgenAuftrag?: string;
   /** Web-Recherche (Suche, Seite lesen, Claude-Websuche) */
   web?: WebWerkzeuge;
+  /** Verschlüsselung der MCP-Kopfzeilen (Zugangsdaten) — ohne sie werden keine Kopfzeilen angenommen */
+  geheimnis?: { verpacken: (klar: string) => string; auspacken: (verpackt: string) => string };
+  /** MCP-Server auf localhost/internen Adressen erlauben (nur Entwicklung und Tests) */
+  mcpLokalErlaubt?: boolean;
   /** Für die Einstellungsseite: welche Anbieter der Host kennt und ob ein Schlüssel hinterlegt ist */
   anbieterListe?: () => Promise<AnbieterStand[]>;
 }
 
 export interface AnbieterStand { id: string; label: string; vorgabeModell: string; verfuegbar: boolean }
+
+/** Ein Werkzeug für die Einstellungsseite: woher, was es darf */
+export interface WerkzeugEintrag {
+  name: string;
+  beschreibung: string;
+  quelle: 'app' | 'web' | 'mcp' | 'agent';
+  /** lesen: ohne Rückfrage, liest nur · fragt: nur nach „Ja“ · frei: MCP, freigegeben · intern: Gespräch/Gedächtnis */
+  recht: 'lesen' | 'fragt' | 'frei' | 'intern';
+  server?: string;
+  /** MCP: der Server kennzeichnet es als nur lesend (Hinweis) */
+  liestNur?: boolean;
+}
+
+/** Werkzeuglisten der MCP-Server kurz zwischenspeichern — jede Nachricht baut den Graphen neu */
+const MCP_CACHE_MS = 60_000;
+const mcpCache = new Map<string, { zeit: number; werkzeuge: McpWerkzeug[] }>();
 
 /** Längste Notiz, die als Formulierung (Vorschlag) gemerkt wird */
 export const FORMULIERUNG_MAX = 500;
@@ -90,12 +111,46 @@ export function agentKern(opt: KernOptionen) {
     return m;
   }
 
+  async function dnaSpeichern(neu: DNA): Promise<void> {
+    await db.insert(agenten).values({ slug: dna.slug, version: 1, dna: neu, status: 'aktiv' })
+      .onConflictDoUpdate({ target: [agenten.slug, agenten.version], set: { dna: neu, updatedAt: new Date().toISOString() } });
+  }
+
+  /** Die Werkzeuge der aktiven MCP-Server; ein Server, der nicht antwortet, fehlt eben (und steht im Protokoll). */
+  async function mcpWerkzeuge(d: DNA): Promise<McpWerkzeug[]> {
+    const listen = await Promise.all(d.mcp.filter((m) => m.aktiv).map(async (m) => {
+      const kopf = m.kopf && opt.geheimnis ? opt.geheimnis.auspacken(m.kopf) : undefined;
+      const schluessel = `${m.url}|${m.kopf}`;
+      const vorrat = mcpCache.get(schluessel);
+      if (vorrat && Date.now() - vorrat.zeit < MCP_CACHE_MS) return vorrat.werkzeuge;
+      try {
+        const w = await mcpVerbinden({ name: m.name, url: m.url }, kopf);
+        mcpCache.set(schluessel, { zeit: Date.now(), werkzeuge: w });
+        return w;
+      } catch (e) {
+        console.warn(`[cosai] MCP-Server „${m.name}“ nicht erreichbar:`, (e as Error).message);
+        return [];
+      }
+    }));
+    return listen.flat();
+  }
+
+  function mcpAdressePruefen(url: string): void {
+    const u = new URL(url);
+    if (opt.mcpLokalErlaubt) return;
+    const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    const intern = host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal') || !host.includes('.')
+      || /^(0\.|10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host) || host.includes(':');
+    if (u.protocol !== 'https:' || intern) throw new KernHinweis('MCP-Server bitte über eine öffentliche https-Adresse anbinden.');
+  }
+
   /** `nurZustand`: nur den gespeicherten Zustand lesen — dafür wird kein Modell gebraucht (und keines gebaut). */
   const graphFuer = async (nutzer: Nutzer, gedaechtnis: Gedaechtnis, nurLesen = false, nurZustand = false) => {
     const aufruf: Aufruf = (methode, pfad, body) => opt.aufruf(nutzer, methode, pfad, body);
     const d = await dnaLaden();
     const modell = nurZustand ? drehbuchModell([]) : await modellFuer(d);
-    return graphBauen({ modell, dna: d, werkzeuge, ziele: opt.ziele, aufruf, gedaechtnis, antwortGrenze: opt.antwortGrenze, nurLesen, web: opt.web }, new DrizzleSaver(db));
+    const mcp = nurZustand ? [] : await mcpWerkzeuge(d);
+    return graphBauen({ modell, dna: d, werkzeuge, ziele: opt.ziele, aufruf, gedaechtnis, antwortGrenze: opt.antwortGrenze, nurLesen, web: opt.web, mcp, frei: d.frei }, new DrizzleSaver(db));
   };
 
   async function sitzungSicherstellen(nutzer: Nutzer, sitzungId: string | undefined, ort: string, kontext: Record<string, unknown>): Promise<string> {
@@ -286,15 +341,63 @@ export function agentKern(opt: KernOptionen) {
     /** Für die Einstellungsseite: feste Grundregeln, änderbare Immer/Nie, Anbieter und Modell. */
     async einstellungen() {
       const d = await dnaLaden();
-      return { grundregeln: GRUNDREGELN, regeln: d.regeln, nie: d.nie, anbieter: d.anbieter, modell: d.modell, anbieterListe: (await opt.anbieterListe?.()) ?? [] };
+      return { grundregeln: GRUNDREGELN, regeln: d.regeln, nie: d.nie, anbieter: d.anbieter, modell: d.modell, anbieterListe: (await opt.anbieterListe?.()) ?? [],
+        // Zugangsdaten nie zurück an die Oberfläche — nur, ob welche hinterlegt sind
+        mcp: d.mcp.map((m) => ({ name: m.name, url: m.url, aktiv: m.aktiv, mitZugang: !!m.kopf })) };
     },
 
     async einstellungenSpeichern(eingabe: AgentEinstellungen) {
       const e = AgentEinstellungen.parse(eingabe);
-      const neu = DNA.parse({ ...(await dnaLaden()), ...e, slug: dna.slug });
-      await db.insert(agenten).values({ slug: dna.slug, version: 1, dna: neu, status: 'aktiv' })
-        .onConflictDoUpdate({ target: [agenten.slug, agenten.version], set: { dna: neu, updatedAt: new Date().toISOString() } });
+      await dnaSpeichern(DNA.parse({ ...(await dnaLaden()), ...e, slug: dna.slug }));
       return this.einstellungen();
+    },
+
+    /** Einen MCP-Server anbinden: erst verbinden und Werkzeuge lesen — antwortet er nicht, wird nichts gespeichert. */
+    async mcpHinzufuegen(eingabe: McpServerNeu): Promise<{ werkzeuge: number }> {
+      const m = McpServerNeu.parse(eingabe);
+      mcpAdressePruefen(m.url);
+      if (m.kopf && !opt.geheimnis) throw new KernHinweis('Zugangsdaten für MCP-Server lassen sich hier nicht sicher speichern.');
+      let w: McpWerkzeug[];
+      try { w = await mcpVerbinden({ name: m.name, url: m.url }, m.kopf || undefined); } catch (e) { throw new KernHinweis((e as Error).message); }
+      const d = await dnaLaden();
+      const eintrag = { name: m.name, url: m.url, kopf: m.kopf ? opt.geheimnis!.verpacken(m.kopf) : '', aktiv: true };
+      await dnaSpeichern(DNA.parse({ ...d, mcp: [...d.mcp.filter((x) => x.name !== m.name), eintrag] }));
+      return { werkzeuge: w.length };
+    },
+
+    async mcpEntfernen(name: string): Promise<void> {
+      const d = await dnaLaden();
+      const weg = d.mcp.find((x) => x.name === name);
+      if (!weg) return;
+      mcpCache.delete(`${weg.url}|${weg.kopf}`);
+      const praefix = mcpWerkzeugName(name, '');
+      await dnaSpeichern(DNA.parse({ ...d, mcp: d.mcp.filter((x) => x.name !== name), frei: d.frei.filter((f) => !f.startsWith(praefix)) }));
+    },
+
+    /** Ein MCP-Werkzeug ohne Rückfrage erlauben (oder wieder fragen lassen). Nur MCP — eigene Werkzeuge sind fest geregelt. */
+    async werkzeugFrei(name: string, frei: boolean): Promise<void> {
+      if (!name.startsWith('mcp_')) throw new KernHinweis('Nur Werkzeuge von MCP-Servern lassen sich freigeben.');
+      const d = await dnaLaden();
+      const rest = d.frei.filter((f) => f !== name);
+      await dnaSpeichern(DNA.parse({ ...d, frei: frei ? [...rest, name] : rest }));
+    },
+
+    /** Alle Werkzeuge des Agenten mit Quelle und Recht — für die Einstellungsseite. */
+    async werkzeugListe(): Promise<WerkzeugEintrag[]> {
+      const d = await dnaLaden();
+      const frei = new Set(d.frei);
+      const liste: WerkzeugEintrag[] = [
+        ...werkzeuge.map((w) => ({ name: w.name, beschreibung: w.beschreibung, quelle: 'app' as const, recht: 'lesen' as const })),
+        ...(opt.web?.claudeSuche ? [{ name: 'web_search', beschreibung: 'Websuche von Claude (nur mit Anbieter Anthropic)', quelle: 'web' as const, recht: 'lesen' as const }] : []),
+        ...(opt.web?.suche ? [{ name: 'websuche', beschreibung: 'Websuche (DuckDuckGo, Nachrichten) — mit anderen Anbietern', quelle: 'web' as const, recht: 'lesen' as const }] : []),
+        ...(opt.web?.lesen ? [{ name: 'seite_lesen', beschreibung: 'Text einer öffentlichen Webseite lesen', quelle: 'web' as const, recht: 'lesen' as const }] : []),
+        ...(await mcpWerkzeuge(d)).map((w) => ({ name: w.name, beschreibung: w.beschreibung, quelle: 'mcp' as const, recht: frei.has(w.name) ? 'frei' as const : 'fragt' as const, server: w.server, liestNur: w.liestNur })),
+        { name: 'steuere', beschreibung: 'Bedient die Oberfläche sichtbar; alles, was speichert, erst nach „Ja“', quelle: 'agent', recht: 'fragt' },
+        { name: 'chips', beschreibung: 'Antwortmöglichkeiten anbieten', quelle: 'agent', recht: 'intern' },
+        { name: 'merke', beschreibung: 'Etwas im Gedächtnis ablegen (sichtbar und löschbar)', quelle: 'agent', recht: 'intern' },
+        { name: 'erinnere', beschreibung: 'Im Gedächtnis nachsehen', quelle: 'agent', recht: 'intern' },
+      ];
+      return liste;
     },
 
     stand() {
