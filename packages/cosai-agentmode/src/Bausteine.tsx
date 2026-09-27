@@ -19,13 +19,44 @@ export function useGetippt(text: string, schluessel: string | number, aktiv: boo
   return { sichtbar: text.slice(0, Math.min(anzahl, text.length)), tippt: anzahl < text.length };
 }
 
+/** **fett** innerhalb einer Zeile — als React-Elemente, nie als HTML */
+function mitFett(zeile: string): ReactNode[] {
+  return zeile.split(/(\*\*[^*]+\*\*)/g).filter(Boolean).map((teil, i) => (teil.startsWith('**') && teil.endsWith('**') && teil.length > 4 ? <strong key={i}>{teil.slice(2, -2)}</strong> : teil.replace(/\*\*/g, '')));
+}
+
+/**
+ * Antworten des Modells lesbar: Absätze, Aufzählungen („- “, „• “, „1. “), Überschriften („## “) und **fett**.
+ * Bewusst klein und ohne HTML — Text aus Webseiten und Mails bleibt Text.
+ */
+export function Formatiert({ text }: { text: string }) {
+  const bloecke = text.replace(/\r/g, '').split(/\n\s*\n/);
+  return (
+    <>
+      {bloecke.map((block, i) => {
+        const zeilen = block.split('\n').filter((z) => z.trim());
+        const liste = zeilen.length > 0 && zeilen.every((z) => /^\s*([-•*]|\d+\.)\s+/.test(z));
+        if (liste) return <ul key={i} className="am-md-liste">{zeilen.map((z, j) => <li key={j}>{mitFett(z.replace(/^\s*([-•*]|\d+\.)\s+/, ''))}</li>)}</ul>;
+        return (
+          <p key={i} className="am-md-absatz">
+            {zeilen.map((z, j) => {
+              const titel = /^#{1,6}\s+/.test(z);
+              const inhalt = mitFett(z.replace(/^#{1,6}\s+/, '').replace(/^\s*([-•*])\s+/, '• '));
+              return <span key={j}>{j > 0 && <br />}{titel ? <strong>{inhalt}</strong> : inhalt}</span>;
+            })}
+          </p>
+        );
+      })}
+    </>
+  );
+}
+
 export function Sprechblase({ wer, text, schluessel, lebendig = false }: { wer: 'agent' | 'nutzer'; text: string; schluessel: string | number; lebendig?: boolean }) {
   const { sichtbar, tippt } = useGetippt(text, schluessel, lebendig);
   return (
     <div className="am-blase" data-wer={wer} role={wer === 'agent' ? 'status' : undefined} aria-live={wer === 'agent' ? 'polite' : undefined}>
       <span className="am-wer">{wer === 'agent' ? 'Agent' : 'Du'}</span>
       <span className="am-sr" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>{text}</span>
-      <span aria-hidden>{sichtbar}{tippt && <span className="am-cursor" />}</span>
+      <div aria-hidden className="am-blase-text"><Formatiert text={sichtbar} />{tippt && <span className="am-cursor" />}</div>
     </div>
   );
 }

@@ -106,3 +106,9 @@
 .am-senden:disabled { opacity: 0.35; cursor: default; }
 /* Am rechten Rand nach links ausrichten, sonst schneidet der Rand den Text ab */
 .am-zeile .am-symbol:last-child[data-tipp]:hover::after, .am-zeile .am-symbol:last-child[data-tipp]:focus-visible::after { left: auto; right: 0; transform: none; }
+/* Antworten: Absätze und Listen; im Block höchstens einige Zeilen (scrollbar), die volle Antwort steht im Transkript */
+.am-blase-text .am-md-absatz { margin: 0 0 6px; }
+.am-blase-text .am-md-absatz:last-child, .am-blase-text .am-md-liste:last-child { margin-bottom: 0; }
+.am-blase-text .am-md-liste { margin: 0 0 6px; padding-left: 18px; }
+.am-block .am-agent .am-blase-text { max-height: 6.2em; overflow-y: auto; }
+.am-block .am-du .am-blase-text { max-height: 2.8em; overflow-y: auto; }
