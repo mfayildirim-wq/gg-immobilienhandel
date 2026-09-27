@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Chips, Gedaechtnisleiste, Schaufenster, Sprechblase, type ChipDaten, type GedaechtnisEintragDaten, type Schritt } from './Bausteine.tsx';
-import { ausfuehren, beobachten, zielFinden, type Beobachtung, type Steuerung } from './kanal.ts';
+import { ausfuehren, beobachten, zielFinden, zielKontext, type Beobachtung, type Steuerung } from './kanal.ts';
 import { saatAus } from './konstellation.ts';
 import { heuteLokal } from './lernen.tsx';
 import { Sprechkreis, SPRECHKREIS_STILE, type SprechkreisStil, type SprechkreisZustand } from './Sprechkreis.tsx';
@@ -68,6 +68,8 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
   const [routinen, setRoutinen] = useState<RoutineDaten[]>([]);
   const nr = useRef(0);
   const abgebrochen = useRef(false);
+  /** Welcher Eintrag offen war, als gefragt wurde — „Ja“ gilt nur dafür */
+  const wartKontext = useRef<string | null>(null);
   const saat = useMemo(() => saatAus('agent'), []);
   const vorlesen = useVorlesen('agent');
 
@@ -95,10 +97,11 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
           setZeilen(alt.slice(-100));
           // Wartet die Sitzung noch auf eine Bestätigung, zeigt die Oberfläche das — sonst würde die
           // nächste Nachricht stumm als Antwort auf eine längst vergessene Frage gedeutet.
-          if (d.wartetAuf) {
-            setWartetAuf(d.wartetAuf);
-            setChips([{ label: 'Ja, ausführen', wert: 'ja', art: 'entscheidung' }, { label: 'Nein', wert: 'nein', art: 'entscheidung' }]);
-            zeile('agent', d.wartetAuf.frage);
+          if (d.wartetAuf && d.sitzungId) {
+            // Eine Rückfrage von vorhin verfällt: der vorbereitete Stand (gefülltes Feld, offener Deal) ist nach dem
+            // Neuladen weg — ein „Ja“ träfe, was gerade offen ist. Der Kern bekommt ein „Nein“, der Nutzer einen Satz.
+            void anfrage(`${api}/entscheidung`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sitzungId: d.sitzungId, wert: 'nein' }) }).catch(() => undefined);
+            zeile('agent', 'Die Rückfrage von vorhin ist verfallen — sag mir bitte noch einmal, was ich tun soll.');
             return;
           }
           const letzte = [...d.verlauf].reverse().find((v) => v.rolle === 'agent');
@@ -127,13 +130,15 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
   }), [anfrage, api, sitzungId]);
 
   /** Führt die Steuerungen sichtbar aus — Schritt für Schritt, mit Etikett und Hervorhebung. */
-  const steuern = useCallback(async (steuerung: Steuerung[]) => {
-    if (!steuerung.length) return;
+  /** Führt die Steuerungen aus; `false`, wenn ein Schritt scheiterte oder der Nutzer übernommen hat. */
+  const steuern = useCallback(async (steuerung: Steuerung[]): Promise<boolean> => {
+    if (!steuerung.length) return true;
+    let vollstaendig = true;
     setHandelt(true);
     abgebrochen.current = false;
     try {
       for (const s of steuerung) {
-        if (abgebrochen.current) break;
+        if (abgebrochen.current) { vollstaendig = false; break; }
         if (s.art === 'sprich') { zeile('agent', s.text ?? ''); continue; }
         setSchritt({ el: null, text: s.text ?? `${s.art} ${s.ziel ?? ''}`.trim() });
         try {
@@ -143,6 +148,7 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
         } catch (e) {
           setFehler((e as Error).message);
           void anfrage(`${api}/ereignis`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ art: 'klick', ziel: s.ziel ?? 'unbekannt', wert: `FEHLER: ${(e as Error).message}`, kontext: {}, sitzungId: sitzungId ?? undefined }) }).catch(() => undefined);
+          vollstaendig = false;
           break;
         }
         await new Promise((r) => setTimeout(r, schrittMs));
@@ -151,6 +157,7 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
       setSchritt(null);
       setHandelt(false);
     }
+    return vollstaendig && !abgebrochen.current;
   }, [anfrage, api, navigiere, onSteuerung, schrittMs, sitzungId, zeile]);
 
   /** Markiert das Ziel der wartenden Aktion, solange gefragt wird — man sieht, worum es geht. */
@@ -160,14 +167,21 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
     setSchritt(el ? { el, text: aktion.text ?? 'wartet auf deine Bestätigung' } : null);
   }, []);
 
-  const verarbeiten = useCallback(async (antwort: AgentAntwortDaten) => {
+  const verarbeiten = useCallback(async (antwort: AgentAntwortDaten): Promise<{ verwerfen: boolean }> => {
     sitzungMerken(antwort.sitzungId);
     if (antwort.text) zeile('agent', antwort.text);
     const sprechen = antwort.text ? vorlesen.sprich(antwort.text) : Promise.resolve();
     // Erst handeln, dann fragen: Die Chips erscheinen nach den Schritten. Sonst kann der Nutzer „Ja“ drücken,
     // während das Feld noch leer ist — die Bestätigung liefe dann ins Leere.
-    await steuern(antwort.steuerung ?? []);
+    const vollstaendig = await steuern(antwort.steuerung ?? []);
+    // Ist ein Schritt vor dem Senden gescheitert, gibt es kein „Ja“ auf einen halbfertigen Stand
+    if (antwort.wartetAuf && !vollstaendig) {
+      await sprechen;
+      zeile('agent', 'Ein Schritt davor hat nicht geklappt — ich schicke nicht ab.');
+      return { verwerfen: true };
+    }
     wartendesZielZeigen(antwort.wartetAuf?.aktion);
+    wartKontext.current = antwort.wartetAuf?.aktion.ziel ? zielKontext(antwort.wartetAuf.aktion.ziel) : null;
     setWartetAuf(antwort.wartetAuf);
     setChips(antwort.chips ?? []);
     await sprechen;
@@ -175,6 +189,7 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
       zeile('agent', antwort.wartetAuf.frage);
       await vorlesen.sprich(antwort.wartetAuf.frage);
     }
+    return { verwerfen: false };
   }, [sitzungMerken, steuern, vorlesen, wartendesZielZeigen, zeile]);
 
   /** Erkannte Routinen — beim Öffnen, nach jeder Antwort und nach jedem Speichern in der App neu laden. */
@@ -198,7 +213,12 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
         const f = (await r.json().catch(() => ({}))) as { fehler?: string };
         throw new Error(f.fehler ?? `Fehler ${r.status}`);
       }
-      await verarbeiten((await r.json()) as AgentAntwortDaten);
+      const antwort = (await r.json()) as AgentAntwortDaten;
+      const { verwerfen } = await verarbeiten(antwort);
+      if (verwerfen) {
+        const nein = await anfrage(`${api}/entscheidung`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sitzungId: antwort.sitzungId, wert: 'nein' }) });
+        if (nein.ok) await verarbeiten((await nein.json()) as AgentAntwortDaten);
+      }
     } catch (e) {
       setFehler((e as Error).message);
       zeile('agent', `Das hat nicht geklappt: ${(e as Error).message}`);
@@ -223,11 +243,17 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
   const chipWaehlen = useCallback((c: ChipDaten) => {
     if (c.art === 'entscheidung' && sitzungId && wartetAuf) {
       setWartetAuf(undefined);
+      // „Ja“ gilt nur für den Eintrag, der beim Fragen offen war
+      if (c.wert === 'ja' && wartetAuf.aktion.ziel && zielKontext(wartetAuf.aktion.ziel) !== wartKontext.current) {
+        zeile('agent', 'Inzwischen ist ein anderer Eintrag offen — ich schicke nicht ab.');
+        void senden('entscheidung', { sitzungId, wert: 'nein' }, 'Nein (anderer Eintrag)');
+        return;
+      }
       void senden('entscheidung', { sitzungId, wert: c.wert }, c.label);
     } else {
       nachricht(c.wert);
     }
-  }, [nachricht, senden, sitzungId, wartetAuf]);
+  }, [nachricht, senden, sitzungId, wartetAuf, zeile]);
 
   // Zuhören: Zwischenstand ins Eingabefeld, am Ende abschicken; kurze Bestätigungen treffen die Chips direkt
   const zuhoeren = useZuhoeren((text, fertig) => {

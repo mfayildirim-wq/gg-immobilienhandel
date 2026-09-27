@@ -9,11 +9,12 @@ function kernErsatz() {
   let wartet = false;
   let morgen: unknown = null;
   let routinen: unknown[] = [];
+  let sitzung: unknown = { sitzungId: null, verlauf: [] };
   const antwort = (daten: unknown, status = 200) => new Response(JSON.stringify(daten), { status, headers: { 'content-type': 'application/json' } });
   const anfrage = async (pfad: string, init?: RequestInit) => {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     aufrufe.push({ pfad, body });
-    if (pfad.startsWith('/api/agent/sitzung')) return antwort({ sitzungId: null, verlauf: [] });
+    if (pfad.startsWith('/api/agent/sitzung')) return antwort(sitzung);
     if (pfad === '/api/agent/ereignis') return antwort({ ok: true });
     if (pfad === '/api/agent/morgen') return antwort({ antwort: morgen });
     if (pfad === '/api/agent/routinen') return antwort({ routinen });
@@ -33,7 +34,7 @@ function kernErsatz() {
     }
     return antwort({ fehler: 'unbekannt' }, 404);
   };
-  return { anfrage, aufrufe, setzeMorgen: (m: unknown) => { morgen = m; }, setzeRoutinen: (r: unknown[]) => { routinen = r; } };
+  return { anfrage, aufrufe, setzeMorgen: (m: unknown) => { morgen = m; }, setzeRoutinen: (r: unknown[]) => { routinen = r; }, setzeSitzung: (x: { wartetAuf?: unknown; [feld: string]: unknown }) => { sitzung = x; wartet = !!x.wartetAuf; } };
 }
 
 function App() {
@@ -123,5 +124,44 @@ describe('AgentMode (Eingabe)', () => {
     await act(async () => { fireEvent.click(senden); });
     await waitFor(() => expect(document.querySelector('.am-blase[data-wer="nutzer"]')?.textContent).toContain('Was ist heute fällig?'));
     expect(k.aufrufe.some((a) => a.pfad === '/api/agent/nachricht')).toBe(true);
+  });
+});
+
+describe('AgentMode (Rückfrage absichern)', () => {
+  it('sagt selbst „Nein“, wenn ein Schritt vor dem Senden gescheitert ist', async () => {
+    const k = kernErsatz();
+    // Ohne Notizfeld: `fuelle deal.kommentar.text` findet kein Ziel
+    render(<AgentMode api="/api/agent" anfrage={k.anfrage} modus="overlay" navigiere={vi.fn()} ort="/" stil="kern" schrittMs={10}>
+      <div><button data-agent="deal.reiter.kommunikation">Kommunikation</button><button data-agent="deal.kommentar.senden">Abschicken</button></div>
+    </AgentMode>);
+    const eingabe = await screen.findByLabelText('Nachricht an den Agenten');
+    fireEvent.change(eingabe, { target: { value: 'Kommentar: Rückruf Montag. Abschicken.' } });
+    await act(async () => { fireEvent.submit(eingabe.closest('form')!); });
+    await waitFor(() => expect(k.aufrufe.find((a) => a.pfad === '/api/agent/entscheidung')?.body).toMatchObject({ wert: 'nein' }), { timeout: 8000 });
+    expect(screen.queryByRole('button', { name: 'Ja, ausführen' })).toBeNull();
+  }, 12_000);
+
+  it('schickt nicht ab, wenn inzwischen ein anderer Eintrag offen ist', async () => {
+    document.body.removeAttribute('data-gesendet');
+    const k = kernErsatz();
+    render(<AgentMode api="/api/agent" anfrage={k.anfrage} modus="overlay" navigiere={vi.fn()} ort="/" stil="kern" schrittMs={10}>
+      <section data-agent-kontext='{"dealId":"d1"}'><App /></section>
+    </AgentMode>);
+    const eingabe = await screen.findByLabelText('Nachricht an den Agenten');
+    fireEvent.change(eingabe, { target: { value: 'Kommentar: Rückruf Montag. Abschicken.' } });
+    await act(async () => { fireEvent.submit(eingabe.closest('form')!); });
+    const ja = await screen.findByRole('button', { name: 'Ja, ausführen' });
+    document.querySelector('section')!.setAttribute('data-agent-kontext', '{"dealId":"d2"}');
+    await act(async () => { fireEvent.click(ja); });
+    await waitFor(() => expect(k.aufrufe.find((a) => a.pfad === '/api/agent/entscheidung')?.body).toMatchObject({ wert: 'nein' }));
+    expect(document.body.getAttribute('data-gesendet')).toBeNull();
+  });
+
+  it('lässt eine Rückfrage aus einer früheren Sitzung beim Öffnen verfallen', async () => {
+    const k = kernErsatz();
+    k.setzeSitzung({ sitzungId: 's1', verlauf: [{ rolle: 'agent', text: 'Notiz abschicken?' }], wartetAuf: { frage: 'Notiz abschicken?', aktion: { art: 'sende', ziel: 'deal.kommentar.senden' } } });
+    render(<AgentMode api="/api/agent" anfrage={k.anfrage} modus="seite" navigiere={vi.fn()} ort="/" stil="kern" />);
+    await waitFor(() => expect(k.aufrufe.find((a) => a.pfad === '/api/agent/entscheidung')?.body).toEqual({ sitzungId: 's1', wert: 'nein' }));
+    expect(screen.queryByRole('button', { name: 'Ja, ausführen' })).toBeNull();
   });
 });

@@ -111,6 +111,12 @@ export function melden(b: Beobachtung): void {
   document.dispatchEvent(new CustomEvent<Beobachtung>(EREIGNIS, { detail: b }));
 }
 
+/** Der Kontext eines Ziels (z. B. welcher Deal offen ist) als Text — zum Vergleich vor einer Bestätigung. */
+export function zielKontext(ziel: string): string | null {
+  const el = zielFinden(ziel);
+  return el ? JSON.stringify(kontextVon(el)) : null;
+}
+
 /** Kontext aus dem nächsten markierten Vorfahren: `data-agent-kontext='{"dealId":"…"}'` */
 function kontextVon(el: HTMLElement): Record<string, string | number | boolean | null> {
   const traeger = el.closest<HTMLElement>('[data-agent-kontext]');
