@@ -21,9 +21,13 @@ test.beforeEach(async ({ page }) => {
 
 test.afterEach(async ({ page }) => {
   // Der Agent merkt sich Formulierungen — die des Tests wieder vergessen
-  const g = (await (await page.request.get('/api/agent/gedaechtnis')).json().catch(() => ({ eintraege: [] }))) as { eintraege?: { id: string; art: string; inhalt: string }[] };
-  // … und die Routinen, die aus den Test-Abläufen entstanden sind
-  for (const e of g.eintraege ?? []) if (e.inhalt.includes('(Test ') || e.art === 'routine') await page.request.delete(`/api/agent/gedaechtnis/${e.id}`).catch(() => undefined);
+  const g = (await (await page.request.get('/api/agent/gedaechtnis')).json().catch(() => ({ eintraege: [] }))) as { eintraege?: { id: string; art: string; inhalt: string; kontext?: { dealId?: string } }[] };
+  // … alles zu den Deals des Tests (auch „deal.erledigt“ ohne Text) und die Routinen, die aus den Test-Abläufen entstanden sind.
+  // Die Klicktests laufen mit demselben lokalen Nutzer wie die Entwicklung — ohne das bliebe ihr Gedächtnis voller Testspuren.
+  const testDeals = new Set(angelegt.deals);
+  for (const e of g.eintraege ?? []) {
+    if (e.inhalt.includes('(Test ') || e.art === 'routine' || (e.kontext?.dealId && testDeals.has(e.kontext.dealId))) await page.request.delete(`/api/agent/gedaechtnis/${e.id}`).catch(() => undefined);
+  }
   for (const id of angelegt.deals.splice(0)) await page.request.delete(`/api/deals/${id}`).catch(() => undefined);
   for (const id of angelegt.objekte.splice(0)) await page.request.delete(`/api/objekte/${id}`).catch(() => undefined);
   for (const id of angelegt.makler.splice(0)) await page.request.delete(`/api/makler/${id}`).catch(() => undefined);

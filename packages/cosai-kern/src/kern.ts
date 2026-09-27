@@ -60,9 +60,9 @@ export function agentKern(opt: KernOptionen) {
   const fingerabdruck = katalogFingerabdruck(werkzeuge, opt.ziele.map((z) => z.ziel));
   const { db } = opt;
 
-  const graphFuer = (nutzer: Nutzer, gedaechtnis: Gedaechtnis) => {
+  const graphFuer = (nutzer: Nutzer, gedaechtnis: Gedaechtnis, nurLesen = false) => {
     const aufruf: Aufruf = (methode, pfad, body) => opt.aufruf(nutzer, methode, pfad, body);
-    return graphBauen({ modell: opt.modell, dna, werkzeuge, ziele: opt.ziele, aufruf, gedaechtnis, antwortGrenze: opt.antwortGrenze }, new DrizzleSaver(db));
+    return graphBauen({ modell: opt.modell, dna, werkzeuge, ziele: opt.ziele, aufruf, gedaechtnis, antwortGrenze: opt.antwortGrenze, nurLesen }, new DrizzleSaver(db));
   };
 
   async function sitzungSicherstellen(nutzer: Nutzer, sitzungId: string | undefined, ort: string, kontext: Record<string, unknown>): Promise<string> {
@@ -104,10 +104,10 @@ export function agentKern(opt: KernOptionen) {
     return antwort;
   }
 
-  async function nachricht(nutzer: Nutzer, eingabe: Eingabe): Promise<AgentAntwort> {
+  async function nachricht(nutzer: Nutzer, eingabe: Eingabe, nurLesen = false): Promise<AgentAntwort> {
     const sitzungId = await sitzungSicherstellen(nutzer, eingabe.sitzungId, eingabe.ort, eingabe.kontext);
     await db.insert(nachrichten).values({ sitzungId, rolle: 'nutzer', text: eingabe.text });
-    const graph = graphFuer(nutzer, gedaechtnisBauen(db, nutzer.id));
+    const graph = graphFuer(nutzer, gedaechtnisBauen(db, nutzer.id), nurLesen);
     const config = { configurable: { thread_id: sitzungId } };
     // Wartet der Graph noch auf eine Bestätigung, gilt der neue Text als Antwort darauf (kein „ja“ → abgebrochen)
     const stand = await graph.getState(config);
@@ -165,7 +165,8 @@ export function agentKern(opt: KernOptionen) {
         .where(and(eq(ereignisse.nutzer, nutzer.id), eq(ereignisse.art, 'morgen'), sql`${ereignisse.kontext}->>'datum' = ${heute}`)).limit(1);
       if (schon) return null;
       await db.insert(ereignisse).values({ nutzer: nutzer.id, sitzungId: null, richtung: 'steuerung', art: 'morgen', ziel: null, wert: null, kontext: { datum: heute } });
-      return nachricht(nutzer, { text: opt.morgenAuftrag ?? MORGEN_AUFTRAG, ort: '/', kontext: {} });
+      // Niemand hat ihn ausdrücklich angestoßen — deshalb nur lesend: kein steuere, kein merke, keine offene Rückfrage
+      return nachricht(nutzer, { text: opt.morgenAuftrag ?? MORGEN_AUFTRAG, ort: '/', kontext: {} }, true);
     },
 
     async entscheidung(nutzer: Nutzer, e: Entscheidung): Promise<AgentAntwort> {

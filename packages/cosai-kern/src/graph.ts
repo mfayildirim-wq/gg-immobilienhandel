@@ -43,6 +43,8 @@ export interface GraphOptionen {
   gedaechtnis: Gedaechtnis;
   /** Wie viele Zeichen einer Werkzeug-Antwort das Modell sieht */
   antwortGrenze?: number;
+  /** Nur lesen (z. B. der Morgenvorschlag, den niemand ausdrücklich angestoßen hat): kein steuere, kein merke */
+  nurLesen?: boolean;
 }
 
 const ANTWORT_GRENZE = 8000;
@@ -168,7 +170,7 @@ export function werkzeugeBauen(opt: GraphOptionen): StructuredToolInterface[] {
     return e.length ? e.map((x) => `- ${x.schluessel}: ${x.inhalt} (${x.haeufigkeit}×)`).join('\n') : 'Nichts gemerkt.';
   }, { name: 'erinnere', description: 'Liest Gemerktes: Fakten, Formulierungen (je Feld-Ziel) oder Routinen.', schema: z.object({ art: z.enum(['fakt', 'formulierung', 'routine', 'episode']), schluessel: z.string().optional() }) });
 
-  return [...hostWerkzeuge, steuere, chips, merke, erinnere];
+  return opt.nurLesen ? [...hostWerkzeuge, chips, erinnere] : [...hostWerkzeuge, steuere, chips, merke, erinnere];
 }
 
 export function graphBauen(opt: GraphOptionen, checkpointer: BaseCheckpointSaver) {

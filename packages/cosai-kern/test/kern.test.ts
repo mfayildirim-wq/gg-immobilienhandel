@@ -209,4 +209,17 @@ describe.skipIf(!url)('Kern', () => {
     expect((await kern.gedaechtnis(lang).verlauf(5)).length).toBe(1);
     await kern.gedaechtnis(lang).leeren();
   });
+
+  it('der Morgenvorschlag läuft nur lesend — kein steuere, keine offene Rückfrage, kein merke', async () => {
+    const drehbuch = [
+      ki('', [['steuere', { aktionen: [{ art: 'sende', ziel: 'deal.kommentar.senden', text: 'Abschicken?' }] }], ['merke', { art: 'fakt', schluessel: 'x', inhalt: 'y' }]]),
+      ki('Heute ist wenig los.'),
+    ];
+    const kern = agentKern({ db, modell: drehbuchModell(drehbuch), openapi, ziele, aufruf });
+    const a = await kern.morgen(nutzer, einmaligerTag());
+    expect(a?.wartetAuf).toBeUndefined();
+    expect(a?.steuerung).toEqual([]);
+    expect(await kern.wartetAuf(nutzer, a!.sitzungId)).toBeUndefined();
+    expect((await kern.gedaechtnis(nutzer).alles()).some((e) => e.art === 'fakt' && e.schluessel === 'x')).toBe(false);
+  });
 });
