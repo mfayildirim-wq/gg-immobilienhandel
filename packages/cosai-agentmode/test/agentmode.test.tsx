@@ -112,3 +112,16 @@ describe('AgentMode (Routinen)', () => {
     expect((await screen.findAllByText('▶ Neue Gesprächsnotiz → Erledigt')).length).toBeGreaterThan(0);
   });
 });
+
+describe('AgentMode (Eingabe)', () => {
+  it('schickt mit dem ➤-Knopf ab — die Nachricht steht dann in der Du-Blase', async () => {
+    const k = kernErsatz();
+    render(<AgentMode api="/api/agent" anfrage={k.anfrage} modus="seite" navigiere={vi.fn()} ort="/" stil="kern" schrittMs={10}><App /></AgentMode>);
+    const senden = await screen.findByRole('button', { name: 'Senden' });
+    expect((senden as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Nachricht an den Agenten'), { target: { value: 'Was ist heute fällig?' } });
+    await act(async () => { fireEvent.click(senden); });
+    await waitFor(() => expect(document.querySelector('.am-blase[data-wer="nutzer"]')?.textContent).toContain('Was ist heute fällig?'));
+    expect(k.aufrufe.some((a) => a.pfad === '/api/agent/nachricht')).toBe(true);
+  });
+});

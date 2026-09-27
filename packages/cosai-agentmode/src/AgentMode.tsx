@@ -287,7 +287,9 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
         {letzteNutzer ? <Sprechblase wer="nutzer" text={letzteNutzer.text} schluessel={letzteNutzer.nr} /> : <div className="am-blase" data-wer="nutzer"><span className="am-wer">Du</span>…</div>}
       </div>
       <form className="am-zeile" onSubmit={(e) => { e.preventDefault(); nachricht(eingabe); }}>
-        <input className="am-eingabe" aria-label="Nachricht an den Agenten" placeholder="Nachricht …" value={eingabe} onChange={(e) => setEingabe(e.currentTarget.value)} disabled={beschaeftigt} />
+        <input className="am-eingabe" aria-label="Nachricht an den Agenten" placeholder="Nachricht … (Enter)" value={eingabe} onChange={(e) => setEingabe(e.currentTarget.value)} disabled={beschaeftigt} />
+        {/* Abschicken auch per Klick — nur mit Enter sah man nicht, wie die Nachricht ankommt (Rückmeldung des Auftraggebers) */}
+        <button type="submit" className="am-symbol am-senden" aria-label="Senden" data-tipp="Senden (Enter)" disabled={beschaeftigt || !eingabe.trim()}>➤</button>
         {zuhoeren.moeglich && (
           <button type="button" className="am-symbol" aria-pressed={zuhoeren.hoert} aria-label={zuhoeren.hoert ? 'Zuhören beenden' : 'Zuhören'} data-tipp={zuhoeren.hoert ? 'Zuhören beenden' : 'Zuhören'} onClick={zuhoeren.hoert ? zuhoeren.stoppe : zuhoeren.starte}>🎤</button>
         )}
