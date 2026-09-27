@@ -154,6 +154,7 @@ Die alte App verhält sich genauso; eine Änderung ist eine bewusste Abweichung 
 - [ ] **Firefox-Mikrofon im echten Firefox prüfen** — nur mit nachgebauter Aufnahme getestet.
 - [x] **AgentMode Websuche und MCP** (27.09.2026): Websuche (Claude bzw. DuckDuckGo/News), Seite lesen, MCP-Server über
       Internet-Adresse mit Rückfrage je Werkzeug, Werkzeugliste in den Einstellungen. Echte Websuche geprüft.
+- [x] **Antworten formatiert** (27.09.2026): Absätze, Listen, fett ohne HTML; Blasen im Block höhenbegrenzt.
 - [ ] **MCP gegen einen echten Anbieter-Server prüfen** (z. B. Mail/SharePoint) — getestet nur gegen einen eigenen
       MCP-Server im Test. OAuth-Anmeldung von MCP-Servern gibt es noch nicht, nur eine feste Kopfzeile.
 - [ ] AgentMode Lieferung 3–5: Realtime-Sprache, Meta-Agent,
