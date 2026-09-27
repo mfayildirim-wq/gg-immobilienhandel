@@ -13,6 +13,15 @@ describe('anthropicModell', () => {
     expect(() => modell.invocationParams()).not.toThrow();
     expect(modell.invocationParams()).not.toHaveProperty('temperature', 0);
   });
+
+  it('ruft Werkzeuge nacheinander auf — eine Rückfrage in einem Aufruf darf keinen parallelen verschlucken', () => {
+    const werkzeug = { name: 'lies', description: 'liest', schema: { type: 'object', properties: {} } };
+    const gebunden = anthropicModell('sk-test').bindTools!([werkzeug]) as unknown as { config: { tool_choice?: unknown } };
+    expect(gebunden.config.tool_choice).toEqual({ type: 'auto', disable_parallel_tool_use: true });
+    // … und so geht es an die API
+    const params = (anthropicModell('sk-test') as ChatAnthropic).invocationParams(gebunden.config as never);
+    expect(params.tool_choice).toEqual({ type: 'auto', disable_parallel_tool_use: true });
+  });
 });
 
 describe('Attrappe: Routinen', () => {

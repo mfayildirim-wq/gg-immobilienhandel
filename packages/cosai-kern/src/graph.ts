@@ -179,7 +179,7 @@ export function graphBauen(opt: GraphOptionen, checkpointer: BaseCheckpointSaver
     const [fakten, routinen] = await Promise.all([opt.gedaechtnis.erinnere('fakt', undefined, 10), opt.gedaechtnis.erinnere('routine', undefined, 5)]);
     const erinnerungen = [...fakten, ...routinen].map((e) => `${e.art} ${e.schluessel}: ${e.inhalt}`);
     const system = new SystemMessage(systemtext(opt.dna, opt.ziele, erinnerungen, zustand));
-    const antwort = (await modell.invoke([system, ...zustand.messages])) as AIMessage;
+    const antwort = (await modell.invoke([system, ...verlaufFenster(zustand.messages)])) as AIMessage;
     return { messages: [antwort] };
   };
 
@@ -198,6 +198,33 @@ export function graphBauen(opt: GraphOptionen, checkpointer: BaseCheckpointSaver
 }
 
 export type AgentGraph = ReturnType<typeof graphBauen>;
+
+/** Wie viele Zeichen Verlauf das Modell je Schritt höchstens sieht (grob 15–20 Tsd. Token) */
+export const VERLAUF_ZEICHEN = 60_000;
+
+/**
+ * Das Fenster des Verlaufs, das an das Modell geht: von hinten so viele Züge, wie in `maxZeichen` passen — geschnitten
+ * immer vor einer Nutzernachricht, damit kein Werkzeug-Ergebnis ohne seinen Aufruf beginnt. Der aktuelle Zug bleibt
+ * immer ganz. Der gespeicherte Verlauf (Checkpoint) bleibt vollständig; nur das Modell sieht weniger.
+ */
+export function verlaufFenster(messages: BaseMessage[], maxZeichen = VERLAUF_ZEICHEN): BaseMessage[] {
+  const laenge = (m: BaseMessage) => (typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length) + JSON.stringify((m as AIMessage).tool_calls ?? []).length;
+  let summe = 0;
+  let schnitt = 0;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    summe += laenge(messages[i]!);
+    if (messages[i] instanceof HumanMessage) {
+      if (summe > maxZeichen) {
+        // Passt dieser Zug nicht mehr, beginnt das Fenster beim nächsten — außer es ist der aktuelle
+        const naechste = messages.findIndex((m, j) => j > i && m instanceof HumanMessage);
+        schnitt = naechste < 0 ? i : naechste;
+        break;
+      }
+      schnitt = i;
+    }
+  }
+  return schnitt > 0 ? messages.slice(schnitt) : messages;
+}
 
 /**
  * Alle Agenten-Texte seit der letzten Nutzernachricht, in Reihenfolge — das Modell schreibt die eigentliche Antwort oft

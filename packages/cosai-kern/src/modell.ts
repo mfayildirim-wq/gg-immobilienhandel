@@ -9,9 +9,19 @@ import type { ChatResult } from '@langchain/core/outputs';
 
 export type Modell = BaseChatModel;
 
+/**
+ * Werkzeuge nacheinander: eine Rückfrage (`interrupt` in `steuere`) hält den ganzen Werkzeug-Schritt an — parallele
+ * Aufrufe aus derselben Antwort gingen dabei verloren oder liefen nach dem „Ja“ doppelt.
+ */
+class SeriellesAnthropic extends ChatAnthropic {
+  override bindTools(...[werkzeuge, optionen]: Parameters<ChatAnthropic['bindTools']>) {
+    return super.bindTools(werkzeuge, { tool_choice: { type: 'auto', disable_parallel_tool_use: true } as never, ...optionen });
+  }
+}
+
 export function anthropicModell(apiKey: string, model = 'claude-sonnet-5'): Modell {
   // Keine temperature: neuere Claude-Modelle lehnen gesetzte Werte ab
-  return new ChatAnthropic({ apiKey, model, maxTokens: 1500 });
+  return new SeriellesAnthropic({ apiKey, model, maxTokens: 1500 });
 }
 
 /** Ein Drehbuch-Modell: antwortet mit den vorbereiteten Nachrichten der Reihe nach; danach mit einem festen Satz. */
