@@ -12,7 +12,7 @@ interface McpServer { name: string; url: string; aktiv: boolean; mitZugang: bool
 
 const QUELLEN: { quelle: Werkzeug['quelle']; titel: string; hinweis: string }[] = [
   { quelle: 'web', titel: 'Web', hinweis: 'Recherche im Internet — liest nur.' },
-  { quelle: 'mcp', titel: 'MCP-Server', hinweis: 'Werkzeuge angebundener Server. Jedes fragt vor dem Aufruf, außer du gibst es frei.' },
+  { quelle: 'mcp', titel: 'Von MCP-Servern', hinweis: 'Werkzeuge angebundener Server. Jedes fragt vor dem Aufruf, außer du gibst es frei.' },
   { quelle: 'agent', titel: 'Agent', hinweis: 'Bedienung der Oberfläche und Gedächtnis.' },
   { quelle: 'app', titel: 'App (lesend)', hinweis: 'Alles, was die App zum Lesen anbietet — automatisch aus ihrer Schnittstelle.' },
 ];

@@ -226,7 +226,7 @@ test.describe('AgentMode', () => {
     const name = `E2E-Post-${Date.now() % 100000}`;
     try {
       await page.goto('/einstellungen/agentmode');
-      const bereich = page.getByRole('region', { name: 'MCP-Server' });
+      const bereich = page.getByRole('region', { name: 'MCP-Server', exact: true });
       await bereich.getByLabel('Name').fill(name);
       await bereich.getByLabel('Adresse').fill(`http://127.0.0.1:${(mcp.address() as AddressInfo).port}/mcp`);
       await bereich.getByLabel('Kopfzeile (optional)').fill('Authorization: Bearer e2e-geheim');
