@@ -1,4 +1,3 @@
-import { tool } from '@langchain/core/tools';
 import { like } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
@@ -66,7 +65,7 @@ describe.skipIf(!url)('Ergebnisse', () => {
 
   it('nimmt Werkzeuge des Hosts auf (z. B. Dokumente der App lesen)', async () => {
     const gelesen: string[] = [];
-    const zusatzWerkzeuge = () => [tool(async ({ dokumentId }) => { gelesen.push(dokumentId); return 'Mieterliste: 6 Einheiten, 7,80 €/m²'; }, { name: 'dokument_lesen', description: 'liest ein Dokument', schema: z.object({ dokumentId: z.string() }) })];
+    const zusatzWerkzeuge = () => [{ name: 'dokument_lesen', beschreibung: 'liest ein Dokument', parameter: z.object({ dokumentId: z.string() }), ausfuehren: async (a: Record<string, unknown>) => { gelesen.push(String(a.dokumentId)); return 'Mieterliste: 6 Einheiten, 7,80 €/m²'; } }];
     const modell = drehbuchModell([ki('', [['dokument_lesen', { dokumentId: 'dok-1' }]]), ki('Die Mieten liegen bei 7,80 €/m².')]);
     const a = await agentKern({ db, modell, zusatzWerkzeuge, ...basis }).nachricht(nutzer, { text: 'Analysiere die Mieterliste', ort: '/', kontext: {} });
     expect(gelesen).toEqual(['dok-1']);

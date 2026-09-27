@@ -31,8 +31,9 @@ function ObjektInhalt({ o, geloescht }: { o: Detail; geloescht?: () => void }) {
   const loeschen = useObjektLoeschen();
   const [reiter, setReiter] = useState<string | null>('details');
 
+  const fokus = JSON.stringify({ objektId: o.id, objekt: [o.strasse, o.hausnr].filter(Boolean).join(' ') || (o.stadt ?? '') });
   return (
-    <Stack gap="sm">
+    <Stack gap="sm" data-agent-fokus={fokus}>
       {aendern.error && <Alert color="red">{aendern.error.message}</Alert>}
       <Group justify="space-between">
         <Group gap="xs">

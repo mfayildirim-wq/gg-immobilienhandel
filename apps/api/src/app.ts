@@ -167,6 +167,7 @@ import {
 } from './services/ankauf.ts';
 import { kommunikationAnlegen, maklerAendern, maklerAnlegen, maklerDetail, maklerErledigt, maklerListe, maklerLoeschen, maklerPersoenlichSpeichern } from './services/makler.ts';
 import { beziehungsprofilErstellen, entwurfErstellen, erwaehnungenErgaenzen, gespraechsoeffnerErstellen, kontaktAnlaesseErmitteln, osintAusfuehren, personaAnalysieren, type Suchdienste, personaStand, persoenlichesErgaenzen, transkription, zusammenfassungErstellen } from './services/maklerKi.ts';
+import { dokumentAlsText } from './services/agentDokumente.ts';
 import { mcpAnmelden, mcpSchluesselAusKopfOderNull, mcpStand, mcpVerarbeiten } from './services/mcp.ts';
 import { m365Client, m365OrdnerLesen, m365Entsperren, m365Anhang, m365AnmeldungStarten, m365KonfigurationSpeichern, m365OrdnerSpeichern, m365Posteingang, m365Rueckweg, m365Sperren, m365Stand, m365Trennen } from './services/m365.ts';
 import { propstackAnlegen, propstackLesen, propstackStatusListe, propstackStatusSpeichern, propstackVorbelegen } from './services/propstack.ts';
@@ -1218,6 +1219,14 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
         lesen: (url) => seiteLesen(url),
         claudeSuche: true,
       },
+      // Dateien der App lesen (nur lesend): „analysiere die Mietdokumente dieses Deals“. Welche es gibt, liefert das
+      // Lesewerkzeug zu GET /api/deals/{id}/dokumente. Nach PR 11 (SharePoint) ändert sich nur dieser Adapter.
+      zusatzWerkzeuge: () => [{
+        name: 'dokument_lesen',
+        beschreibung: 'Liest den Text einer Datei aus den Dateien eines Deals (PDF oder Text), z. B. Exposé, Mieterliste, Teilungserklärung. Welche Dateien es gibt: Dokumentliste des Deals (GET /api/deals/{id}/dokumente). Nur lesen.',
+        parameter: z.object({ dealId: z.string().min(1), dokumentId: z.string().min(1) }),
+        ausfuehren: async (a) => dokumentAlsText(await dokumentDatei(db, ablage(), String(a.dealId), String(a.dokumentId))),
+      }],
       // MCP-Zugangsdaten verschlüsselt wie die Zugänge (AES-256-GCM); lokale MCP-Server nur außerhalb der Produktion
       geheimnis: { verpacken: geheimnisVerpacken, auspacken: (v) => geheimnisAuspacken(v) },
       mcpLokalErlaubt: !authOpt.produktion,

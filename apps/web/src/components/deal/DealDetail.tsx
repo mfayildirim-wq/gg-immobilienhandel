@@ -25,8 +25,10 @@ export function DealDetail({ id, start = 'uebersicht' }: { id: string; start?: R
   if (isLoading) return <Loader size="sm" />;
   if (error || !deal) return <Alert color="red">{error?.message ?? 'Deal nicht gefunden'}</Alert>;
 
+  // Fokus für den AgentMode: Ergebnisse (Recherche, Analysen) hängen an Deal und Objekt
+  const fokus = JSON.stringify({ dealId: deal.id, deal: deal.objekt.titel, objektId: deal.objekt.id, objekt: deal.objekt.titel });
   return (
-    <Stack gap="sm">
+    <Stack gap="sm" data-agent-fokus={fokus}>
       <Group justify="space-between" wrap="nowrap">
         <div style={{ minWidth: 0 }}>
           <Title order={3}>{deal.objekt.titel}</Title>

@@ -15,7 +15,8 @@ export { GRUNDREGELN } from './graph.ts';
 import { katalogFingerabdruck, werkzeugeAusOpenapi, type KatalogWerkzeug, type OpenapiDokument } from './katalog.ts';
 import { ergebnisseVon } from './ergebnisse.ts';
 import { mcpVerbinden, mcpWerkzeugName, type McpWerkzeug } from './mcp.ts';
-import type { StructuredToolInterface } from '@langchain/core/tools';
+import { tool } from '@langchain/core/tools';
+import type { z } from 'zod';
 import { drehbuchModell, type Modell } from './modell.ts';
 import { routinenAus, type Routine } from './routinen.ts';
 import { agenten, ereignisse, laeufe, nachrichten, sitzungen } from './schema.ts';
@@ -53,10 +54,22 @@ export interface KernOptionen {
   /** MCP-Server auf localhost/internen Adressen erlauben (nur Entwicklung und Tests) */
   mcpLokalErlaubt?: boolean;
   /** Lesende Werkzeuge des Hosts im Namen des Nutzers (z. B. Dokumente der App lesen) — erscheinen als Quelle „app“ */
-  zusatzWerkzeuge?: (nutzer: Nutzer) => StructuredToolInterface[];
+  zusatzWerkzeuge?: (nutzer: Nutzer) => HostWerkzeug[];
   /** Für die Einstellungsseite: welche Anbieter der Host kennt und ob ein Schlüssel hinterlegt ist */
   anbieterListe?: () => Promise<AnbieterStand[]>;
 }
+
+/** Ein lesendes Werkzeug der App — ohne LangChain beim Host; der Kern macht daraus ein Werkzeug für das Modell. */
+export interface HostWerkzeug {
+  name: string;
+  beschreibung: string;
+  parameter: z.ZodObject<z.ZodRawShape>;
+  ausfuehren: (args: Record<string, unknown>) => Promise<string>;
+}
+
+const alsWerkzeug = (w: HostWerkzeug) => tool(async (args) => {
+  try { return await w.ausfuehren(args as Record<string, unknown>); } catch (e) { return `Fehler: ${(e as Error).message}`; }
+}, { name: w.name, description: w.beschreibung, schema: w.parameter });
 
 export interface AnbieterStand { id: string; label: string; vorgabeModell: string; verfuegbar: boolean }
 
@@ -154,7 +167,7 @@ export function agentKern(opt: KernOptionen) {
     const d = await dnaLaden();
     const modell = nurZustand ? drehbuchModell([]) : await modellFuer(d);
     const mcp = nurZustand ? [] : await mcpWerkzeuge(d);
-    return graphBauen({ modell, dna: d, werkzeuge, ziele: opt.ziele, aufruf, gedaechtnis, antwortGrenze: opt.antwortGrenze, nurLesen, web: opt.web, mcp, frei: d.frei, ergebnisse: ergebnisseVon(db, nutzer.id), zusatz: opt.zusatzWerkzeuge?.(nutzer) }, new DrizzleSaver(db));
+    return graphBauen({ modell, dna: d, werkzeuge, ziele: opt.ziele, aufruf, gedaechtnis, antwortGrenze: opt.antwortGrenze, nurLesen, web: opt.web, mcp, frei: d.frei, ergebnisse: ergebnisseVon(db, nutzer.id), zusatz: opt.zusatzWerkzeuge?.(nutzer).map(alsWerkzeug) }, new DrizzleSaver(db));
   };
 
   async function sitzungSicherstellen(nutzer: Nutzer, sitzungId: string | undefined, ort: string, kontext: Record<string, unknown>): Promise<string> {
@@ -407,7 +420,7 @@ export function agentKern(opt: KernOptionen) {
         ...(opt.web?.suche ? [{ name: 'websuche', beschreibung: 'Websuche (DuckDuckGo, Nachrichten) — mit anderen Anbietern', quelle: 'web' as const, recht: 'lesen' as const }] : []),
         ...(opt.web?.lesen ? [{ name: 'seite_lesen', beschreibung: 'Text einer öffentlichen Webseite lesen', quelle: 'web' as const, recht: 'lesen' as const }] : []),
         ...(await mcpWerkzeuge(d)).map((w) => ({ name: w.name, beschreibung: w.beschreibung, quelle: 'mcp' as const, recht: frei.has(w.name) ? 'frei' as const : 'fragt' as const, server: w.server, liestNur: w.liestNur })),
-        ...(opt.zusatzWerkzeuge?.({ id: '' }) ?? []).map((w) => ({ name: w.name, beschreibung: w.description, quelle: 'app' as const, recht: 'lesen' as const })),
+        ...(opt.zusatzWerkzeuge?.({ id: '' }) ?? []).map((w) => ({ name: w.name, beschreibung: w.beschreibung, quelle: 'app' as const, recht: 'lesen' as const })),
         { name: 'steuere', beschreibung: 'Bedient die Oberfläche sichtbar; alles, was speichert, erst nach „Ja“', quelle: 'agent', recht: 'fragt' },
         { name: 'ergebnis_speichern', beschreibung: 'Ergebnis (Recherche, Analyse) beim geöffneten Objekt speichern — erst nach „Ja“', quelle: 'agent', recht: 'fragt' },
         { name: 'ergebnisse_lesen', beschreibung: 'Gespeicherte Ergebnisse lesen', quelle: 'agent', recht: 'lesen' },

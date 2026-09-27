@@ -31,7 +31,7 @@ export function MaklerDetail({ id, geloescht, start = 'profil' }: { id: string; 
   if (isLoading) return <Loader size="sm" />;
   if (error || !m) return <Alert color="red">{error?.message ?? 'Makler nicht gefunden'}</Alert>;
   return (
-    <Tabs value={reiter} onChange={(v) => v && setReiter(v as Reiter)} keepMounted={false}>
+    <Tabs value={reiter} onChange={(v) => v && setReiter(v as Reiter)} keepMounted={false} data-agent-fokus={JSON.stringify({ maklerId: m.id, makler: m.name ?? m.firma ?? '' })}>
       <Reiterleiste>
         <Tabs.Tab value="profil" data-agent="makler.reiter.profil">👤 Profil</Tabs.Tab>
         <Tabs.Tab value="komm" data-agent="makler.reiter.kommunikation">💬 Kommunikation</Tabs.Tab>
