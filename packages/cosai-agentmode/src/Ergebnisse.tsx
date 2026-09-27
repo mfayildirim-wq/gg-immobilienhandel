@@ -42,8 +42,8 @@ function Eintrag({ e, offen, umschalten, loeschen }: { e: ErgebnisDaten; offen: 
               })}
             </p>
           )}
-          {!!e.bezuege.length && <p className="am-hinweis">Gehört zu: {e.bezuege.map((b) => `${b.typ} ${b.bezeichnung || b.refId}`).join(', ')}</p>}
-          <button type="button" className="am-knopf" onClick={() => loeschen(e.id)}>Löschen</button>
+          {!!e.bezuege.length && <p className="am-hinweis">Gehört zu: {e.bezuege.map((b) => `${b.typ[0]!.toUpperCase()}${b.typ.slice(1)} ${b.bezeichnung || b.refId}`).join(', ')}</p>}
+          <button type="button" className="am-knopf" style={{ justifySelf: 'start' }} onClick={() => loeschen(e.id)}>Löschen</button>
         </div>
       )}
     </li>
