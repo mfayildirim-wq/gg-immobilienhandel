@@ -223,6 +223,7 @@ Ein Agent, der die App **sichtbar über die Oberfläche** bedient: Overlay auf j
 - **Morgenvorschlag:** beim ersten Öffnen des Agenten am Tag (Overlay oder `/agent`) fragt die Oberfläche `POST /api/agent/morgen` mit dem lokalen Datum; einmal je Nutzer und Tag antwortet der Agent mit dem, was ansteht — nur lesend, Steuerungen daraus werden nicht ausgeführt.
 - **Routinen:** Macht der Nutzer im selben Deal dreimal denselben Ablauf (z. B. Notiz, dann „Erledigt“, innerhalb von 30 min), erkennt der Kern daraus eine Routine (`packages/cosai-kern/src/routinen.ts`) und legt sie im Gedächtnis ab. Der AgentMode bietet sie als ▶-Chip an; ein Klick gibt dem Agenten den Auftrag, **jedes Senden wird einzeln bestätigt**. Gelöschte Routinen kommen erst nach drei neuen Abläufen wieder.
 - **Oberfläche:** ein Block über die ganze Breite — großer Sprechkreis, daneben Agent-Blase mit Chips und Du-Blase mit Eingabe und Symbolknöpfen (Text beim Darüberfahren).
+- **Online-Schalter:** `AGENTMODE_AKTIV=ja` — ohne ihn ist der AgentMode online aus, auch wenn `ANTHROPIC_API_KEY` gesetzt ist (lokal an).
 - **Modell:** `ANTHROPIC_API_KEY`; mit `KI_ATTRAPPE=1` antwortet ein deterministisches Drehbuch (Tests, Vorführung ohne Schlüssel).
 - **Klicktests:** `npx playwright test tests/e2e/agentmode.spec.ts`.
 

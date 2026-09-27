@@ -140,6 +140,13 @@ Die alte App verhält sich genauso; eine Änderung ist eine bewusste Abweichung 
       statt `fach.deal_dokumente`). Folge: `/api/listen` 500, 9 API-, 3 Umzug- und 66 Klicktests rot (gegengeprüft auf dem
       Stand vor AgentMode 2a — dieselben Fehler). Löst sich mit PR 11 in `main`; `db:reset` nur mit Rücksicht auf den
       eingespielten echten Bestand.
+- [x] **AgentMode Review + Security** (27.09.2026): Schreiben ohne „Ja“ über `oeffne`/`fuelle` geschlossen
+      (schreibende Ziele, zweite Sperre im Client); „Ja“ nur auf den vorbereiteten Stand; getipptes „Ja.“; lange
+      Notizen; Mengengrenze; Werkzeuge nacheinander; Verlaufsfenster; ➤-Senden-Knopf; online erst mit
+      `AGENTMODE_AKTIV=ja`.
+- [ ] AgentMode, bewusst offen aus dem Review: (1) Speichert der Agent nach „Ja“, lernt das Gedächtnis das wie eine
+      eigene Eingabe — eine Routine verstärkt sich so selbst. (2) Checkpoints wachsen je Sitzung und werden nie
+      aufgeräumt; jeder Aufruf baut den Graphen neu. Beides erst angehen, wenn es im Betrieb stört.
 - [ ] AgentMode Lieferung 3–5: Realtime-Sprache, Meta-Agent,
       CoSAi-Backend in Python. Freigegebene Routinen ohne Rückfrage fehlen noch — heute wird jedes `sende` bestätigt.
 

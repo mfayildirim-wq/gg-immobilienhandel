@@ -5,6 +5,16 @@ import { anthropicModell, attrappenModell } from '@cosai/kern';
 import { createApp } from './app.ts';
 
 /**
+ * Der AgentMode schickt, was der Nutzer lesen darf, an den Modellanbieter — online deshalb erst nach ausdrücklicher
+ * Freigabe (`AGENTMODE_AKTIV=ja`), nicht schon, weil ein ANTHROPIC_API_KEY für andere KI-Funktionen gesetzt ist.
+ * Lokal an; `AGENTMODE_AKTIV=nein` schaltet ab. (Muster wie AUTO_IMPORT_AKTIV.)
+ */
+export function agentModusAn(env: Record<string, string | undefined>): boolean {
+  if (env.AGENTMODE_AKTIV) return env.AGENTMODE_AKTIV === 'ja';
+  return !env.VERCEL && env.NODE_ENV !== 'production';
+}
+
+/**
  * Baut die App aus der Umgebung — der eine Ort dafür. Der lokale Server (`server.ts`) und der Einstieg auf
  * Vercel (`vercel.ts`) rufen beide hier hinein; zwei Zusammenbauten liefen beim ersten neuen Schalter auseinander.
  */
@@ -32,7 +42,7 @@ export function appAusUmgebung(env: Record<string, string | undefined> = process
   const propstack = env.PROPSTACK_ATTRAPPE === '1' && !produktion ? propstackAttrappe() : null;
 
   // AgentMode: dasselbe Prinzip wie die KI — Attrappe nur ausdrücklich und nie in Produktion, sonst der Schlüssel
-  const agentModell = attrappe ? attrappenModell() : env.ANTHROPIC_API_KEY ? anthropicModell(env.ANTHROPIC_API_KEY, env.AGENT_MODELL) : null;
+  const agentModell = !agentModusAn(env) ? null : attrappe ? attrappenModell() : env.ANTHROPIC_API_KEY ? anthropicModell(env.ANTHROPIC_API_KEY, env.AGENT_MODELL) : null;
 
   const app = createApp({
     agent: { modell: agentModell },
