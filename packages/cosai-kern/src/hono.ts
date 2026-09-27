@@ -33,6 +33,19 @@ export function agentRouten(kern: Kern, nutzerAus: (c: Context) => Nutzer | null
   app.get('/einstellungen', async (c) => c.json(await kern.einstellungen()));
 
   // Werkzeuge: alle mit Quelle und Recht; Freigabe ohne Rückfrage nur für MCP-Werkzeuge
+  // Ergebnisse (Recherchen, Analysen) zu einem Objekt der App — Typ und ID sind nur Werte, keine Fremdschlüssel
+  const Bezug = z.object({ typ: z.string().min(1).max(40), id: z.string().min(1).max(200) });
+  app.get('/ergebnisse', async (c) => {
+    const b = Bezug.safeParse({ typ: c.req.query('typ'), id: c.req.query('id') });
+    return c.json({ ergebnisse: await kern.ergebnisseListe(b.success ? b.data : undefined) });
+  });
+  app.get('/ergebnisse/zaehlen', async (c) => {
+    const b = Bezug.safeParse({ typ: c.req.query('typ'), id: c.req.query('id') });
+    if (!b.success) return c.json({ fehler: 'typ und id fehlen' }, 400);
+    return c.json({ anzahl: await kern.ergebnisseZaehlen(b.data) });
+  });
+  app.delete('/ergebnisse/:id', async (c) => c.json({ geloescht: await kern.ergebnisLoeschen(c.req.param('id')) }));
+
   app.get('/werkzeuge', async (c) => c.json({ werkzeuge: await kern.werkzeugListe() }));
   app.put('/werkzeuge/frei', async (c) => {
     const e = await json(c, z.object({ name: z.string().min(1).max(64), frei: z.boolean() }));

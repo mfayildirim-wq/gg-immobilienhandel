@@ -8,11 +8,12 @@
  */
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage, type BaseMessage } from '@langchain/core/messages';
 import { tool, type StructuredToolInterface } from '@langchain/core/tools';
-import { Annotation, Command, END, interrupt, MessagesAnnotation, START, StateGraph, type BaseCheckpointSaver } from '@langchain/langgraph';
+import { Annotation, Command, END, getCurrentTaskInput, interrupt, MessagesAnnotation, START, StateGraph, type BaseCheckpointSaver } from '@langchain/langgraph';
 import { ToolNode } from '@langchain/langgraph/prebuilt';
 import { z } from 'zod';
 import { adresse, type KatalogWerkzeug } from './katalog.ts';
 import type { Gedaechtnis } from './gedaechtnis.ts';
+import { bezuegeAusKontext, type ErgebnisSpeicher } from './ergebnisse.ts';
 import type { McpWerkzeug } from './mcp.ts';
 import type { Modell } from './modell.ts';
 import { Chip, DNA, Steuerung } from './vertrag.ts';
@@ -51,6 +52,10 @@ export interface GraphOptionen {
   /** Werkzeuge der angebundenen MCP-Server; `frei` = ohne Rückfrage */
   mcp?: McpWerkzeug[];
   frei?: string[];
+  /** Ergebnisse speichern/lesen (mit Bezug auf die Objekte im Fokus) */
+  ergebnisse?: ErgebnisSpeicher;
+  /** Lesende Werkzeuge des Hosts (z. B. Dokumente der App lesen) */
+  zusatz?: StructuredToolInterface[];
 }
 
 /** Getippt oder gesagt: „Ja.“, „ja bitte“, „OK“ — aber nicht „ja, aber …“ */
@@ -146,6 +151,9 @@ function listenBeschneiden(wert: unknown, anteil: number): unknown {
   return wert;
 }
 
+/** Der Zustand des laufenden Graphen — für Werkzeuge, die Kontext und Verlauf brauchen */
+const zustandJetzt = () => getCurrentTaskInput() as { kontext: Record<string, unknown>; messages: BaseMessage[] };
+
 /** Baut die Werkzeuge: lesende Operationen des Hosts, Steuerung, Chips, Gedächtnis. */
 export function werkzeugeBauen(opt: GraphOptionen): StructuredToolInterface[] {
   const erlaubt = new Set(opt.dna.werkzeuge);
@@ -238,7 +246,42 @@ export function werkzeugeBauen(opt: GraphOptionen): StructuredToolInterface[] {
     void config;
     try { return kuerzen(await w.aufrufen(args as Record<string, unknown>), grenze); } catch (e) { return `Fehler: ${(e as Error).message}`; }
   }, { name: w.name, description: `[MCP ${w.server}] ${w.beschreibung}`, schema: w.schema as never }));
-  return opt.nurLesen ? [...hostWerkzeuge, ...web, ...mcp, chips, erinnere] : [...hostWerkzeuge, ...web, ...mcp, steuere, chips, merke, erinnere];
+  // Ergebnisse: speichern nur nach „Ja“ (Bezug aus dem Fokus der App), lesen frei
+  const erg: StructuredToolInterface[] = [];
+  const speicher = opt.ergebnisse;
+  if (speicher) {
+    erg.push(tool(async ({ bezug }) => {
+      const b = bezug ?? bezuegeAusKontext(zustandJetzt().kontext)[0];
+      const liste = await speicher.liste(b ? { typ: b.typ, id: 'refId' in b ? b.refId : b.id } : undefined, 10);
+      return liste.length ? kuerzen(JSON.stringify(liste.map((e) => ({ titel: e.titel, art: e.art, datum: e.createdAt.slice(0, 10), inhalt: e.inhalt, quellen: e.quellen }))), grenze) : 'Keine gespeicherten Ergebnisse.';
+    }, { name: 'ergebnisse_lesen', description: 'Liest gespeicherte Ergebnisse (Recherchen, Analysen) — ohne Angabe zum Objekt, das der Nutzer gerade offen hat.', schema: z.object({ bezug: z.object({ typ: z.string(), id: z.string() }).optional() }) }));
+    if (!opt.nurLesen) {
+      erg.push(tool(async ({ titel, art, inhalt, quellen }) => {
+        const zustand = zustandJetzt();
+        const bezuege = bezuegeAusKontext(zustand.kontext);
+        const wo = bezuege.length ? ` bei ${bezuege.map((b) => `${b.typ[0]!.toUpperCase()}${b.typ.slice(1)} ${b.bezeichnung || b.refId}`).join(' und ')}` : ' (ohne Bezug)';
+        const frage = `Als Ergebnis „${titel}“${wo} speichern?`;
+        const antwort = interrupt({ frage, aktion: { art: 'werkzeug', ziel: 'ergebnis_speichern', wert: titel, text: frage }, vorher: [] }) as string;
+        if (!istZustimmung(antwort)) return `Der Nutzer hat nicht bestätigt: „${antwort}“. Nicht gespeichert.`;
+        const seitFrage = zustand.messages.slice(zustand.messages.map((m) => m instanceof HumanMessage).lastIndexOf(true));
+        const werkzeuge = [...new Set(seitFrage.flatMap((m) => (m instanceof AIMessage ? (m.tool_calls ?? []).map((t) => t.name) : [])).filter((n) => n !== 'ergebnis_speichern'))];
+        const letzteFrage = [...zustand.messages].reverse().find((m) => m instanceof HumanMessage);
+        const e = await speicher.speichern({ titel, art, inhalt, quellen: quellen ?? [], bezuege, werkzeuge, modell: opt.modell._llmType(), frage: letzteFrage ? String(letzteFrage.content) : undefined });
+        return `Gespeichert: „${e.titel}“${wo}.`;
+      }, {
+        name: 'ergebnis_speichern',
+        description: 'Speichert ein Ergebnis (Recherche, Dokumentanalyse, Vergleich) dauerhaft beim Objekt, das der Nutzer offen hat. Biete es nach einer Recherche oder Analyse an; der Nutzer wird vorher gefragt. inhalt: das Ergebnis vollständig und lesbar (Markdown), quellen: Webseiten oder Dokumente.',
+        schema: z.object({
+          titel: z.string().min(2).max(200),
+          art: z.enum(['recherche', 'dokumentanalyse', 'vergleich', 'zusammenfassung', 'sonstiges']),
+          inhalt: z.string().min(1),
+          quellen: z.array(z.object({ titel: z.string(), url: z.string().optional() })).optional(),
+        }),
+      }));
+    }
+  }
+  const zusatz = opt.zusatz ?? [];
+  return opt.nurLesen ? [...hostWerkzeuge, ...zusatz, ...web, ...mcp, ...erg, chips, erinnere] : [...hostWerkzeuge, ...zusatz, ...web, ...mcp, ...erg, steuere, chips, merke, erinnere];
 }
 
 export function graphBauen(opt: GraphOptionen, checkpointer: BaseCheckpointSaver) {

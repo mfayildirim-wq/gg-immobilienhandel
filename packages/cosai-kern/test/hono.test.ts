@@ -98,4 +98,14 @@ describe.skipIf(!url)('Hono-Routen', () => {
     expect(((await intern.json()) as { fehler: string }).fehler).toMatch(/öffentliche https-Adresse/);
     expect((await app.request('/api/agent/mcp/Post', { method: 'DELETE', headers: { 'x-nutzer': 'hono@example' } })).status).toBe(200);
   });
+
+  it('Ergebnisse: Liste und Anzahl zu einem Objekt, Löschen — Typ und ID sind Pflicht für die Anzahl', async () => {
+    const app = bauen();
+    const h = { headers: { 'x-nutzer': 'hono@example' } };
+    expect((await app.request('/api/agent/ergebnisse/zaehlen', h)).status).toBe(400);
+    const id = `hono-${Date.now()}`;
+    expect(await (await app.request(`/api/agent/ergebnisse/zaehlen?typ=deal&id=${id}`, h)).json()).toEqual({ anzahl: 0 });
+    expect(await (await app.request(`/api/agent/ergebnisse?typ=deal&id=${id}`, h)).json()).toEqual({ ergebnisse: [] });
+    expect(((await (await app.request('/api/agent/ergebnisse/gibtesnicht', { method: 'DELETE', ...h })).json()) as { geloescht: boolean }).geloescht).toBe(false);
+  });
 });

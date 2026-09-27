@@ -141,3 +141,37 @@ export const vorschlaege = cosai.table('vorschlaege', {
   createdAt: jetzt('created_at'),
   entschiedenAt: zeit('entschieden_at'),
 }, (t) => [index('cosai_vorschlaege_nutzer').on(t.nutzer, t.createdAt)]).enableRLS();
+
+/**
+ * Ergebnisse des Agenten (Recherche, Dokumentanalyse, Vergleich …) — bleiben erhalten, unabhängig von den Tabellen der
+ * App. Für alle Nutzer der App sichtbar (Geschäftsdaten); `nutzer` = wer gespeichert hat.
+ */
+export const ergebnisse = cosai.table('ergebnisse', {
+  id: kennung(),
+  nutzer: text('nutzer').notNull(),
+  titel: text('titel').notNull(),
+  /** recherche · dokumentanalyse · vergleich · zusammenfassung · sonstiges — frei, die Oberfläche zeigt es nur an */
+  art: text('art').notNull().default('sonstiges'),
+  inhalt: text('inhalt').notNull(),
+  /** [{ titel, url? }] — Webseiten, Dokumente der App */
+  quellen: jsonb('quellen').notNull().default([]),
+  /** Die Nachricht des Nutzers, die zum Ergebnis führte */
+  frage: text('frage'),
+  /** Namen der Werkzeuge, die dafür liefen */
+  werkzeuge: jsonb('werkzeuge').notNull().default([]),
+  modell: text('modell'),
+  sitzungId: text('sitzung_id'),
+  createdAt: jetzt('created_at'),
+}, (t) => [index('cosai_ergebnisse_zeit').on(t.createdAt)]).enableRLS();
+
+/**
+ * Die Zwischentabelle zu den Objekten der App: Typ und ID als Werte, **keine Fremdschlüssel** — so passt sie zu jeder
+ * App. Ein Ergebnis kann an mehreren Objekten hängen (z. B. Deal und Objekt).
+ */
+export const ergebnisBezuege = cosai.table('ergebnis_bezuege', {
+  ergebnisId: text('ergebnis_id').notNull().references(() => ergebnisse.id, { onDelete: 'cascade' }),
+  typ: text('typ').notNull(),
+  refId: text('ref_id').notNull(),
+  /** Anzeigename zum Zeitpunkt des Speicherns („Musterweg 1“) */
+  bezeichnung: text('bezeichnung').notNull().default(''),
+}, (t) => [primaryKey({ columns: [t.ergebnisId, t.typ, t.refId] }), index('cosai_ergebnis_bezuege_ref').on(t.typ, t.refId)]).enableRLS();

@@ -71,6 +71,13 @@
       "when": 1790417211321,
       "tag": "20260926100651_cosai_gedaechtnis_index",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790517065843,
+      "tag": "20260927135105_cosai_ergebnisse",
+      "breakpoints": true
     }
   ]
 }

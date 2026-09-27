@@ -13,7 +13,9 @@ import { gedaechtnis as gedaechtnisBauen, type Db, type Gedaechtnis } from './ge
 import { graphBauen, GRUNDREGELN, letzterText, type Aufruf, type WebWerkzeuge, type ZielBeschreibung } from './graph.ts';
 export { GRUNDREGELN } from './graph.ts';
 import { katalogFingerabdruck, werkzeugeAusOpenapi, type KatalogWerkzeug, type OpenapiDokument } from './katalog.ts';
+import { ergebnisseVon } from './ergebnisse.ts';
 import { mcpVerbinden, mcpWerkzeugName, type McpWerkzeug } from './mcp.ts';
+import type { StructuredToolInterface } from '@langchain/core/tools';
 import { drehbuchModell, type Modell } from './modell.ts';
 import { routinenAus, type Routine } from './routinen.ts';
 import { agenten, ereignisse, laeufe, nachrichten, sitzungen } from './schema.ts';
@@ -50,6 +52,8 @@ export interface KernOptionen {
   geheimnis?: { verpacken: (klar: string) => string; auspacken: (verpackt: string) => string };
   /** MCP-Server auf localhost/internen Adressen erlauben (nur Entwicklung und Tests) */
   mcpLokalErlaubt?: boolean;
+  /** Lesende Werkzeuge des Hosts im Namen des Nutzers (z. B. Dokumente der App lesen) — erscheinen als Quelle „app“ */
+  zusatzWerkzeuge?: (nutzer: Nutzer) => StructuredToolInterface[];
   /** Für die Einstellungsseite: welche Anbieter der Host kennt und ob ein Schlüssel hinterlegt ist */
   anbieterListe?: () => Promise<AnbieterStand[]>;
 }
@@ -150,7 +154,7 @@ export function agentKern(opt: KernOptionen) {
     const d = await dnaLaden();
     const modell = nurZustand ? drehbuchModell([]) : await modellFuer(d);
     const mcp = nurZustand ? [] : await mcpWerkzeuge(d);
-    return graphBauen({ modell, dna: d, werkzeuge, ziele: opt.ziele, aufruf, gedaechtnis, antwortGrenze: opt.antwortGrenze, nurLesen, web: opt.web, mcp, frei: d.frei }, new DrizzleSaver(db));
+    return graphBauen({ modell, dna: d, werkzeuge, ziele: opt.ziele, aufruf, gedaechtnis, antwortGrenze: opt.antwortGrenze, nurLesen, web: opt.web, mcp, frei: d.frei, ergebnisse: ergebnisseVon(db, nutzer.id), zusatz: opt.zusatzWerkzeuge?.(nutzer) }, new DrizzleSaver(db));
   };
 
   async function sitzungSicherstellen(nutzer: Nutzer, sitzungId: string | undefined, ort: string, kontext: Record<string, unknown>): Promise<string> {
@@ -382,6 +386,17 @@ export function agentKern(opt: KernOptionen) {
       await dnaSpeichern(DNA.parse({ ...d, frei: frei ? [...rest, name] : rest }));
     },
 
+    /** Ergebnisse zu einem Objekt der App (Typ + ID) — oder ohne Bezug die jüngsten. Für alle Nutzer der App sichtbar. */
+    async ergebnisseListe(bezug?: { typ: string; id: string }) {
+      return ergebnisseVon(db, '').liste(bezug);
+    },
+    async ergebnisseZaehlen(bezug: { typ: string; id: string }) {
+      return ergebnisseVon(db, '').zaehlen(bezug);
+    },
+    async ergebnisLoeschen(id: string) {
+      return ergebnisseVon(db, '').loeschen(id);
+    },
+
     /** Alle Werkzeuge des Agenten mit Quelle und Recht — für die Einstellungsseite. */
     async werkzeugListe(): Promise<WerkzeugEintrag[]> {
       const d = await dnaLaden();
@@ -392,7 +407,10 @@ export function agentKern(opt: KernOptionen) {
         ...(opt.web?.suche ? [{ name: 'websuche', beschreibung: 'Websuche (DuckDuckGo, Nachrichten) — mit anderen Anbietern', quelle: 'web' as const, recht: 'lesen' as const }] : []),
         ...(opt.web?.lesen ? [{ name: 'seite_lesen', beschreibung: 'Text einer öffentlichen Webseite lesen', quelle: 'web' as const, recht: 'lesen' as const }] : []),
         ...(await mcpWerkzeuge(d)).map((w) => ({ name: w.name, beschreibung: w.beschreibung, quelle: 'mcp' as const, recht: frei.has(w.name) ? 'frei' as const : 'fragt' as const, server: w.server, liestNur: w.liestNur })),
+        ...(opt.zusatzWerkzeuge?.({ id: '' }) ?? []).map((w) => ({ name: w.name, beschreibung: w.description, quelle: 'app' as const, recht: 'lesen' as const })),
         { name: 'steuere', beschreibung: 'Bedient die Oberfläche sichtbar; alles, was speichert, erst nach „Ja“', quelle: 'agent', recht: 'fragt' },
+        { name: 'ergebnis_speichern', beschreibung: 'Ergebnis (Recherche, Analyse) beim geöffneten Objekt speichern — erst nach „Ja“', quelle: 'agent', recht: 'fragt' },
+        { name: 'ergebnisse_lesen', beschreibung: 'Gespeicherte Ergebnisse lesen', quelle: 'agent', recht: 'lesen' },
         { name: 'chips', beschreibung: 'Antwortmöglichkeiten anbieten', quelle: 'agent', recht: 'intern' },
         { name: 'merke', beschreibung: 'Etwas im Gedächtnis ablegen (sichtbar und löschbar)', quelle: 'agent', recht: 'intern' },
         { name: 'erinnere', beschreibung: 'Im Gedächtnis nachsehen', quelle: 'agent', recht: 'intern' },

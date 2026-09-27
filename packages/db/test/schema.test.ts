@@ -6,9 +6,9 @@ import * as schema from '../src/schema.ts';
 const tabellen: PgTable[] = Object.values(schema as Record<string, unknown>).filter((v): v is PgTable => is(v, PgTable));
 
 describe('Fachschema', () => {
-  it('enthält die 37 Tabellen aus Protokoll 07, den Anlässe-Zwischenspeicher (23.09.2026) und die 10 Tabellen des Schemas cosai (26.09.2026)', () => {
-    expect(tabellen).toHaveLength(48);
-    expect(tabellen.filter((t) => getTableConfig(t).schema === 'cosai')).toHaveLength(10);
+  it('enthält die 37 Tabellen aus Protokoll 07, den Anlässe-Zwischenspeicher (23.09.2026) und die 12 Tabellen des Schemas cosai (26.09. + Ergebnisse 27.09.2026)', () => {
+    expect(tabellen).toHaveLength(50);
+    expect(tabellen.filter((t) => getTableConfig(t).schema === 'cosai')).toHaveLength(12);
     expect(tabellen.map((t) => getTableConfig(t).name)).toContain('makler_anlaesse');
   });
 
