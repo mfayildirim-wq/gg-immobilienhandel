@@ -1,4 +1,4 @@
-import { IconBriefcase, IconBuildingBank, IconCalculator, IconChecklist, IconTableShare, IconTemplate, IconTrash, IconCopy, IconHistory, IconTool, IconKey, IconDatabaseExport, IconBook, IconShieldLock, IconMail } from '@tabler/icons-react';
+import { IconSparkles, IconBriefcase, IconBuildingBank, IconCalculator, IconChecklist, IconTableShare, IconTemplate, IconTrash, IconCopy, IconHistory, IconTool, IconKey, IconDatabaseExport, IconBook, IconShieldLock, IconMail } from '@tabler/icons-react';
 import type { ComponentType } from 'react';
 import { BegleitscheinEinstellungen } from '../components/begleitschein/BegleitscheinEinstellungen.tsx';
 import { PraesentationStandards } from '../components/praesentation/PraesentationStandards.tsx';
@@ -15,6 +15,7 @@ import { PapierkorbEinstellungen } from '../components/PapierkorbEinstellungen.t
 import { VorlagenEinstellungen } from '../components/VorlagenEinstellungen.tsx';
 import { DdEinstellungen } from '../components/DdEinstellungen.tsx';
 import { KalkulationEinstellungen, KundenkalkEinstellungenFormular } from '../pages/EinstellungenSeite.tsx';
+import { AgentEinstellungen } from '../agent/AgentEinstellungen.tsx';
 
 /** Unterseiten der Einstellungen: eine Seite je Bereich, als Untermenü in der Seitenleiste. */
 export const EINSTELLUNGEN_SEITEN: { pfad: string; label: string; icon: ComponentType<{ size?: number }>; komponente: ComponentType }[] = [
@@ -27,6 +28,7 @@ export const EINSTELLUNGEN_SEITEN: { pfad: string; label: string; icon: Componen
   { pfad: 'dd', label: 'DD-Dokumentenliste', icon: IconChecklist, komponente: DdEinstellungen },
   { pfad: 'sicherung', label: 'Sicherung', icon: IconDatabaseExport, komponente: SicherungEinstellungen },
   { pfad: 'zugaenge', label: 'Zugänge', icon: IconKey, komponente: ZugaengeEinstellungen },
+  { pfad: 'agentmode', label: 'AgentMode', icon: IconSparkles, komponente: AgentEinstellungen },
   { pfad: 'werkzeuge', label: 'Werkzeuge', icon: IconTool, komponente: WerkzeugeEinstellungen },
   { pfad: 'audit', label: 'Audit-Log', icon: IconHistory, komponente: AuditEinstellungen },
   { pfad: 'dubletten', label: 'Dubletten', icon: IconCopy, komponente: DublettenEinstellungen },

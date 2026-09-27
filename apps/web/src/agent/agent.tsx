@@ -45,6 +45,7 @@ export function useZielNavigation() {
 export function AgentModeHost({ modus, children, schliessen }: { modus: 'overlay' | 'seite'; children?: ReactNode; schliessen?: () => void }) {
   const [stil, setStil] = useAgentStil();
   const navigiere = useZielNavigation();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const ort = useRouterState({ select: (s) => s.location.pathname });
   return (
@@ -62,6 +63,7 @@ export function AgentModeHost({ modus, children, schliessen }: { modus: 'overlay
       onSteuerung={(s) => { if (s.art === 'sende') void qc.invalidateQueries(); }}
       // Firefox kennt keine eingebaute Spracherkennung: dort nimmt das Mikrofon auf, Whisper macht Text daraus
       transkribieren={transkribieren}
+      einstellungen={() => void navigate({ to: '/einstellungen/agentmode' as '/' })}
     >
       {children}
     </AgentMode>

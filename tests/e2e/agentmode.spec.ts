@@ -179,4 +179,29 @@ test.describe('AgentMode', () => {
     await expect.poll(async () => ((await (await page.request.get(`/api/deals/${ziel.dealId}`)).json()) as { lastContact: string | null }).lastContact, { timeout: 15_000 }).toBe(heute());
 
   });
+
+  test('Einstellungen: ⚙ öffnet sie, Grundregeln fest, eine „Nie“-Regel ergänzen bleibt nach dem Neuladen', async ({ page }) => {
+    // Die Einstellungen gelten für den lokalen Nutzer der Entwicklung — am Ende den alten Stand zurückschreiben
+    const vorher = (await (await page.request.get('/api/agent/einstellungen')).json()) as { regeln: string[]; nie: string[]; anbieter: string; modell: string };
+    try {
+      await page.goto('/');
+      await agentOeffnen(page);
+      await page.getByRole('button', { name: 'Einstellungen des Agenten' }).click();
+      await expect(page).toHaveURL(/\/einstellungen\/agentmode$/);
+      const grund = page.getByRole('region', { name: 'Grundregeln' });
+      await expect(grund).toContainText('nie von dir aus');
+      await expect(grund.getByRole('button')).toHaveCount(0);
+
+      const regel = `Nie am Wochenende anrufen (Test ${Date.now()})`;
+      const nie = page.getByRole('region', { name: 'Nie' });
+      await nie.getByLabel('Neue Regel: Nie').fill(regel);
+      await nie.getByRole('button', { name: 'Hinzufügen' }).click();
+      await page.getByRole('button', { name: 'Speichern' }).click();
+      await expect(page.getByText('Gespeichert')).toBeVisible();
+      await page.reload();
+      await expect(page.getByRole('region', { name: 'Nie' }).locator('input').first()).toHaveValue(regel);
+    } finally {
+      await page.request.put('/api/agent/einstellungen', { data: { regeln: vorher.regeln, nie: vorher.nie, anbieter: vorher.anbieter, modell: vorher.modell } });
+    }
+  });
 });

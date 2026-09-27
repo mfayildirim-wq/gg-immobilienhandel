@@ -50,11 +50,13 @@ export interface AgentModeProps {
   onSteuerung?: (s: Steuerung) => void;
   /** Für Browser ohne eigene Spracherkennung (Firefox): Aufnahme → Text über den Host */
   transkribieren?: (audio: Blob) => Promise<string>;
+  /** ⚙ im Block: öffnet die Einstellungen des Agenten (Immer/Nie, Anbieter) beim Host */
+  einstellungen?: () => void;
 }
 
 const SITZUNG = 'cosai.sitzung';
 
-export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, stil, onStil, children, schliessen, schrittMs = 700, farbe, onSteuerung, transkribieren }: AgentModeProps) {
+export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, stil, onStil, children, schliessen, schrittMs = 700, farbe, onSteuerung, transkribieren, einstellungen }: AgentModeProps) {
   const [sitzungId, setSitzungId] = useState<string | null>(() => { try { return window.localStorage.getItem(SITZUNG); } catch { return null; } });
   const [zeilen, setZeilen] = useState<Zeile[]>([]);
   const [chips, setChips] = useState<ChipDaten[]>([]);
@@ -343,6 +345,7 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
           <button type="button" className="am-symbol" aria-pressed={vorlesen.an} aria-label={vorlesen.an ? 'Vorlesen ausschalten' : 'Vorlesen einschalten'} data-tipp={vorlesen.an ? 'Vorlesen an' : 'Vorlesen aus'} onClick={() => vorlesen.schalte(!vorlesen.an)}>{vorlesen.an ? '🔊' : '🔇'}</button>
         )}
         <button type="button" className="am-symbol" aria-label="Neues Gespräch" data-tipp="Neues Gespräch" onClick={neuesGespraech}>↻</button>
+        {einstellungen && <button type="button" className="am-symbol" aria-label="Einstellungen des Agenten" data-tipp="Einstellungen (Immer/Nie, Modell)" onClick={einstellungen}>⚙</button>}
       </form>
       {(fehler || transkriptOffen || gedaechtnisOffen) && (
         <div className="am-unterteil">
