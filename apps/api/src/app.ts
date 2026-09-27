@@ -130,7 +130,7 @@ import { autoSicherungDatei, autoSicherungEinspielen, autoSicherungErstellen, au
 import { filterAnlegen, filterListe, filterLoeschen, filterUmbenennen, filterVorlagenEinrichten, listenAltformat } from './services/listen.ts';
 import { projektAnlegen, projektDealAuswahl, projektDetail, projekteListe, projektLoeschen, projektSpeichern } from './services/projekte.ts';
 import { fotoDatei, fotoHochladen, fotoLoeschen, fotoPort, fotosListe, fotosSortieren } from './services/fotos.ts';
-import { type Dateispeicher, type GraphClient, type KiClient, type PropstackClient, nachrichtenSuche, webSuche, anthropicClient, seiteLesen } from '@gg/integrations';
+import { type Dateispeicher, type GraphClient, type KiClient, type PropstackClient, nachrichtenSuche, webSuche, anthropicClient, seiteLesen, geheimnisVerpacken, geheimnisAuspacken } from '@gg/integrations';
 import { bekannteExposeDateien, exposeAnalysieren, exposeEingang, exposeEingangUebernehmen, type ExposeKontext, exposeUebernehmen, MAX_EXPOSE_BYTES } from './services/expose.ts';
 import { auth, type AuthOptionen } from './middleware/auth.ts';
 import {
@@ -1218,6 +1218,9 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
         lesen: (url) => seiteLesen(url),
         claudeSuche: true,
       },
+      // MCP-Zugangsdaten verschlüsselt wie die Zugänge (AES-256-GCM); lokale MCP-Server nur außerhalb der Produktion
+      geheimnis: { verpacken: geheimnisVerpacken, auspacken: (v) => geheimnisAuspacken(v) },
+      mcpLokalErlaubt: !authOpt.produktion,
       openapi: app.getOpenAPI31Document({ openapi: '3.1.0', info: { title: 'GG Immobilienhandel API', version: '0.1.0' } }) as OpenapiDokument,
       ziele: [...(agentOpt.ziele ?? OBERFLAECHENKARTE)],
       // In-process, mit den Kopfzeilen des Nutzers: Anmeldung und Rechte gelten wie bei jedem Aufruf aus dem Browser

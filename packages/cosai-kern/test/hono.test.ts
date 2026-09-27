@@ -85,4 +85,17 @@ describe.skipIf(!url)('Hono-Routen', () => {
     expect(res.status).toBe(409);
     expect(((await res.json()) as { fehler: string }).fehler).toMatch(/kein Modell/);
   });
+
+  it('Werkzeuge: Liste mit Quelle und Recht; Freigabe nur für MCP; MCP-Server mit ungültiger Adresse → Meldung', async () => {
+    const app = bauen();
+    const liste = (await (await app.request('/api/agent/werkzeuge', { headers: { 'x-nutzer': 'hono@example' } })).json()) as { werkzeuge: { name: string; quelle: string; recht: string }[] };
+    expect(liste.werkzeuge.find((w) => w.name === 'steuere')).toMatchObject({ quelle: 'agent', recht: 'fragt' });
+    const put = (pfad: string, body: unknown, method = 'PUT') => app.request(pfad, { method, headers: { 'content-type': 'application/json', 'x-nutzer': 'hono@example' }, body: JSON.stringify(body) });
+    expect((await put('/api/agent/werkzeuge/frei', { name: 'steuere', frei: true })).status).toBe(409);
+    expect((await put('/api/agent/mcp', { name: 'Post', url: 'keine adresse' }, 'POST')).status).toBe(400);
+    const intern = await put('/api/agent/mcp', { name: 'Post', url: 'https://localhost/mcp' }, 'POST');
+    expect(intern.status).toBe(409);
+    expect(((await intern.json()) as { fehler: string }).fehler).toMatch(/öffentliche https-Adresse/);
+    expect((await app.request('/api/agent/mcp/Post', { method: 'DELETE', headers: { 'x-nutzer': 'hono@example' } })).status).toBe(200);
+  });
 });

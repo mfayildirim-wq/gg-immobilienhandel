@@ -5,7 +5,7 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { KernHinweis, type Kern, type Nutzer } from './kern.ts';
-import { AgentEinstellungen, Beobachtung, Eingabe, Entscheidung } from './vertrag.ts';
+import { AgentEinstellungen, Beobachtung, Eingabe, Entscheidung, McpServerNeu } from './vertrag.ts';
 
 const SitzungsParam = z.object({ sitzungId: z.string().optional() });
 
@@ -31,6 +31,24 @@ export function agentRouten(kern: Kern, nutzerAus: (c: Context) => Nutzer | null
   });
 
   app.get('/einstellungen', async (c) => c.json(await kern.einstellungen()));
+
+  // Werkzeuge: alle mit Quelle und Recht; Freigabe ohne Rückfrage nur für MCP-Werkzeuge
+  app.get('/werkzeuge', async (c) => c.json({ werkzeuge: await kern.werkzeugListe() }));
+  app.put('/werkzeuge/frei', async (c) => {
+    const e = await json(c, z.object({ name: z.string().min(1).max(64), frei: z.boolean() }));
+    if (e instanceof Response) return e;
+    await kern.werkzeugFrei(e.name, e.frei);
+    return c.json({ ok: true });
+  });
+  app.post('/mcp', async (c) => {
+    const e = await json(c, McpServerNeu);
+    if (e instanceof Response) return e;
+    return c.json(await kern.mcpHinzufuegen(e));
+  });
+  app.delete('/mcp/:name', async (c) => {
+    await kern.mcpEntfernen(c.req.param('name'));
+    return c.json({ ok: true });
+  });
   app.put('/einstellungen', async (c) => {
     const e = await json(c, AgentEinstellungen);
     if (e instanceof Response) return e;
