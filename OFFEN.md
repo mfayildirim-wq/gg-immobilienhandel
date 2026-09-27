@@ -157,6 +157,12 @@ Die alte App verhält sich genauso; eine Änderung ist eine bewusste Abweichung 
 - [x] **Antworten formatiert** (27.09.2026): Absätze, Listen, fett ohne HTML; Blasen im Block höhenbegrenzt.
 - [ ] **MCP gegen einen echten Anbieter-Server prüfen** (z. B. Mail/SharePoint) — getestet nur gegen einen eigenen
       MCP-Server im Test. OAuth-Anmeldung von MCP-Servern gibt es noch nicht, nur eine feste Kopfzeile.
+- [x] **AgentMode Ergebnisse und Dateien der App** (27.09.2026): Ergebnisse generisch in `cosai` mit Bezug auf
+      App-Objekte, 🗂 im Block, `dokument_lesen`. Echter Lauf: Lageanalyse → gespeichert mit Quellen.
+- [ ] **Dokumentanalyse echt prüfen** — lokal nicht möglich: die lokale DB hat `fach.deal_dokumente` nicht (PR 11).
+      Nach PR 11 den Adapter von `dokument_lesen` auf die neue Dateiablage (SharePoint) umstellen.
+- [ ] **Sicherung um `cosai.ergebnisse` erweitern** — die Sicherung der App umfasst nur das Schema `fach`.
+- [ ] Online: Migration `…_cosai_ergebnisse` einspielen (mit den übrigen `cosai`-Migrationen).
 - [ ] AgentMode Lieferung 3–5: Realtime-Sprache, Meta-Agent,
       CoSAi-Backend in Python. Freigegebene Routinen ohne Rückfrage fehlen noch — heute wird jedes `sende` bestätigt.
 
