@@ -253,4 +253,26 @@ describe.skipIf(!url)('Kern', () => {
     await kern.einstellungenSpeichern({ regeln: [], nie: [], anbieter: 'kimi', modell: '' });
     await expect(kern.nachricht(nutzer, { text: 'Hi', ort: '/', kontext: {} })).rejects.toThrow(/kimi/i);
   });
+
+  it('recherchiert im Web über die Werkzeuge des Hosts (websuche, seite_lesen) — lesend, auch im Morgenlauf erlaubt', async () => {
+    const gesucht: string[] = [];
+    const gelesen: string[] = [];
+    const web = {
+      suche: async (q: string) => { gesucht.push(q); return [{ titel: 'Mietspiegel Stuttgart 2026', url: 'https://example.org/mietspiegel', auszug: '14,20 €/m²' }]; },
+      lesen: async (url: string) => { gelesen.push(url); return 'Durchschnittsmiete Stuttgart-West 15,10 €/m².'; },
+    };
+    const drehbuch = [
+      ki('', [['websuche', { anfrage: 'Mietspiegel Stuttgart West' }]]),
+      ki('', [['seite_lesen', { url: 'https://example.org/mietspiegel' }]]),
+      ki('Laut Mietspiegel liegt die Miete bei etwa 15 €/m².'),
+    ];
+    const modell = drehbuchModell(drehbuch);
+    const kern = agentKern({ db, modell, openapi, ziele, aufruf, web, dna: { slug: `test-web-${Date.now()}` } });
+    const a = await kern.nachricht(nutzer, { text: 'Recherchiere den Mietspiegel', ort: '/', kontext: {} });
+    expect(a.text).toBe('Laut Mietspiegel liegt die Miete bei etwa 15 €/m².');
+    expect(gesucht).toEqual(['Mietspiegel Stuttgart West']);
+    expect(gelesen).toEqual(['https://example.org/mietspiegel']);
+    // Das Modell hat die Treffer als Werkzeug-Ergebnis gesehen
+    expect(JSON.stringify(modell.aufrufe.at(-1))).toContain('Mietspiegel Stuttgart 2026');
+  });
 });

@@ -45,6 +45,24 @@ export interface GraphOptionen {
   antwortGrenze?: number;
   /** Nur lesen (z. B. der Morgenvorschlag, den niemand ausdrücklich angestoßen hat): kein steuere, kein merke */
   nurLesen?: boolean;
+  /** Recherche außerhalb der Anwendung — der Host liefert Suche und Seitenabruf */
+  web?: WebWerkzeuge;
+}
+
+/** Web-Recherche des Hosts. `claudeSuche`: bei Anthropic zusätzlich die Websuche von Claude (Server-Werkzeug). */
+export interface WebWerkzeuge {
+  suche?: (anfrage: string) => Promise<{ titel: string; url: string; auszug: string }[]>;
+  lesen?: (url: string) => Promise<string>;
+  claudeSuche?: boolean;
+}
+
+/**
+ * Server-Werkzeuge des Anbieters: mit Anthropic die Websuche von Claude (`web_search_20260209`, höchstens 5 Suchen je
+ * Antwort). Sie läuft bei Anthropic — LangChain führt `server_tool_use` nicht als Werkzeugaufruf, der Graph ruft also
+ * nichts selbst auf; Ergebnisse und Quellen stehen im Inhalt der Antwort.
+ */
+export function serverWerkzeuge(modell: Modell, web?: WebWerkzeuge): Record<string, unknown>[] {
+  return web?.claudeSuche && modell._llmType() === 'anthropic' ? [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }] : [];
 }
 
 const ANTWORT_GRENZE = 8000;
@@ -69,6 +87,7 @@ function systemtext(dna: DNA, ziele: ZielBeschreibung[], erinnerungen: string[],
     zielListe,
     'Reihenfolge einer Bedienung: navigiere (Seite) → oeffne (Eintrag/Reiter) → fuelle (Feld) → sende (Knopf). Vor jeder Aktion, die etwas speichert, wird der Nutzer gefragt; das übernimmt die Anwendung.',
     'Lesen (Listen, Details) machst du direkt über die GET-Werkzeuge. Antworte danach mit dem, was für den Nutzer wichtig ist, nicht mit Rohdaten.',
+    'Für Recherche außerhalb der Anwendung (Lage, Umfeld, Marktpreise, vergleichbare Angebote) nutze die Websuche, falls vorhanden. Nenne dann die Quellen mit Adresse und trenne Gefundenes klar von deiner Einschätzung.',
     'Biete am Ende deiner Antwort mit `chips` passende nächste Schritte an (2–6 kurze Möglichkeiten).',
     'Merke dir mit `merke` Fakten, die der Nutzer dir sagt (art „fakt“) und Formulierungen, die er in Felder schreibt (art „formulierung“, schluessel = Ziel des Feldes).',
     'Grundregeln (gelten immer):', ...GRUNDREGELN.map((r) => `- ${r}`),
@@ -183,12 +202,27 @@ export function werkzeugeBauen(opt: GraphOptionen): StructuredToolInterface[] {
     return e.length ? e.map((x) => `- ${x.schluessel}: ${x.inhalt} (${x.haeufigkeit}×)`).join('\n') : 'Nichts gemerkt.';
   }, { name: 'erinnere', description: 'Liest Gemerktes: Fakten, Formulierungen (je Feld-Ziel) oder Routinen.', schema: z.object({ art: z.enum(['fakt', 'formulierung', 'routine', 'episode']), schluessel: z.string().optional() }) });
 
-  return opt.nurLesen ? [...hostWerkzeuge, chips, erinnere] : [...hostWerkzeuge, steuere, chips, merke, erinnere];
+  // Web-Recherche: lesend, deshalb auch im Morgenlauf. Mit Claude-Websuche entfällt die eigene Suche (sonst zwei Suchen).
+  const web: StructuredToolInterface[] = [];
+  if (opt.web?.suche && !serverWerkzeuge(opt.modell, opt.web).length) {
+    const suche = opt.web.suche;
+    web.push(tool(async ({ anfrage }) => {
+      const treffer = await suche(anfrage);
+      return treffer.length ? kuerzen(JSON.stringify(treffer), grenze) : 'Keine Treffer.';
+    }, { name: 'websuche', description: 'Sucht im Internet (Web und Nachrichten) — für Lage, Umfeld, Marktpreise, vergleichbare Angebote, Firmen und Personen. Nicht für Daten der Anwendung (dafür die GET-Werkzeuge). Liefert Titel, Adresse und Auszug.', schema: z.object({ anfrage: z.string().min(2).describe('Suchanfrage, z. B. „Mietspiegel Stuttgart-West 2026“') }) }));
+  }
+  if (opt.web?.lesen) {
+    const lesen = opt.web.lesen;
+    web.push(tool(async ({ url }) => {
+      try { return kuerzen(await lesen(url), grenze); } catch (e) { return `Nicht lesbar: ${(e as Error).message}`; }
+    }, { name: 'seite_lesen', description: 'Liest den Text einer öffentlichen Webseite (z. B. einen Treffer der Websuche oder ein Inserat). Nur http(s), keine internen Adressen.', schema: z.object({ url: z.string().url() }) }));
+  }
+  return opt.nurLesen ? [...hostWerkzeuge, ...web, chips, erinnere] : [...hostWerkzeuge, ...web, steuere, chips, merke, erinnere];
 }
 
 export function graphBauen(opt: GraphOptionen, checkpointer: BaseCheckpointSaver) {
   const werkzeuge = werkzeugeBauen(opt);
-  const modell = opt.modell.bindTools ? opt.modell.bindTools(werkzeuge) : opt.modell;
+  const modell = opt.modell.bindTools ? opt.modell.bindTools([...werkzeuge, ...serverWerkzeuge(opt.modell, opt.web)] as never) : opt.modell;
 
   const meister = async (zustand: AgentZustand): Promise<Partial<AgentZustand>> => {
     const [fakten, routinen] = await Promise.all([opt.gedaechtnis.erinnere('fakt', undefined, 10), opt.gedaechtnis.erinnere('routine', undefined, 5)]);

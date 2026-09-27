@@ -1,6 +1,7 @@
 import { AIMessage, HumanMessage, ToolMessage } from '@langchain/core/messages';
 import { describe, expect, it } from 'vitest';
-import { letzterText, verlaufFenster } from '../src/graph.ts';
+import { letzterText, serverWerkzeuge, verlaufFenster } from '../src/graph.ts';
+import { anthropicModell, drehbuchModell } from '../src/modell.ts';
 
 describe('letzterText', () => {
   it('sammelt alle Agenten-Texte seit der letzten Nutzernachricht — das echte Modell antwortet oft neben einem Werkzeugaufruf', () => {
@@ -51,5 +52,13 @@ describe('verlaufFenster', () => {
     expect(f.at(-1)!.content).toBe('Antwort 3');
     // Auch wenn schon der letzte Zug allein zu groß ist: er bleibt, sonst hätte das Modell keine Frage
     expect(verlaufFenster(v, 100)[0]!.content).toBe('Frage 3');
+  });
+});
+
+describe('serverWerkzeuge', () => {
+  it('bindet die Claude-Websuche nur bei Anthropic und nur, wenn sie eingeschaltet ist', () => {
+    expect(serverWerkzeuge(anthropicModell('sk-test'), { claudeSuche: true })).toEqual([{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }]);
+    expect(serverWerkzeuge(anthropicModell('sk-test'), { claudeSuche: false })).toEqual([]);
+    expect(serverWerkzeuge(drehbuchModell([]), { claudeSuche: true })).toEqual([]);
   });
 });

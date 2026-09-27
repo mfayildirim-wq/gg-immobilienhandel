@@ -10,7 +10,7 @@ import { Command } from '@langchain/langgraph';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { DrizzleSaver } from './checkpointer.ts';
 import { gedaechtnis as gedaechtnisBauen, type Db, type Gedaechtnis } from './gedaechtnis.ts';
-import { graphBauen, GRUNDREGELN, letzterText, type Aufruf, type ZielBeschreibung } from './graph.ts';
+import { graphBauen, GRUNDREGELN, letzterText, type Aufruf, type WebWerkzeuge, type ZielBeschreibung } from './graph.ts';
 export { GRUNDREGELN } from './graph.ts';
 import { katalogFingerabdruck, werkzeugeAusOpenapi, type KatalogWerkzeug, type OpenapiDokument } from './katalog.ts';
 import { drehbuchModell, type Modell } from './modell.ts';
@@ -43,6 +43,8 @@ export interface KernOptionen {
   antwortGrenze?: number;
   /** Auftrag des Morgenvorschlags — nur lesen, nichts ändern */
   morgenAuftrag?: string;
+  /** Web-Recherche (Suche, Seite lesen, Claude-Websuche) */
+  web?: WebWerkzeuge;
   /** Für die Einstellungsseite: welche Anbieter der Host kennt und ob ein Schlüssel hinterlegt ist */
   anbieterListe?: () => Promise<AnbieterStand[]>;
 }
@@ -93,7 +95,7 @@ export function agentKern(opt: KernOptionen) {
     const aufruf: Aufruf = (methode, pfad, body) => opt.aufruf(nutzer, methode, pfad, body);
     const d = await dnaLaden();
     const modell = nurZustand ? drehbuchModell([]) : await modellFuer(d);
-    return graphBauen({ modell, dna: d, werkzeuge, ziele: opt.ziele, aufruf, gedaechtnis, antwortGrenze: opt.antwortGrenze, nurLesen }, new DrizzleSaver(db));
+    return graphBauen({ modell, dna: d, werkzeuge, ziele: opt.ziele, aufruf, gedaechtnis, antwortGrenze: opt.antwortGrenze, nurLesen, web: opt.web }, new DrizzleSaver(db));
   };
 
   async function sitzungSicherstellen(nutzer: Nutzer, sitzungId: string | undefined, ort: string, kontext: Record<string, unknown>): Promise<string> {
