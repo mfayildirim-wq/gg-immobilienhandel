@@ -20,3 +20,4 @@ export * from './m365/graph.ts';
 export { autoImportFromMail, klemmeZeitlimit, zielPruefen, type ImportOptions, type ImportOutcome, type ImportResult, type ImportStep } from './autoimport/engine.ts';
 export { pdfEinordnen, ersteSeiten, type PdfEinordnung } from './autoimport/pdfPruefung.ts';
 export type { AgbFreigabe } from './autoimport/seite.ts';
+export * from './web/seiteLesen.ts';

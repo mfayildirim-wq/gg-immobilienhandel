@@ -57,12 +57,13 @@ export interface WebWerkzeuge {
 }
 
 /**
- * Server-Werkzeuge des Anbieters: mit Anthropic die Websuche von Claude (`web_search_20260209`, höchstens 5 Suchen je
- * Antwort). Sie läuft bei Anthropic — LangChain führt `server_tool_use` nicht als Werkzeugaufruf, der Graph ruft also
+ * Server-Werkzeuge des Anbieters: mit Anthropic die Websuche von Claude (höchstens 5 Suchen je Antwort). Bewusst die
+ * Basisversion `web_search_20250305`: die neuere `_20260209` filtert per Code-Ausführung und verträgt sich nicht mit
+ * `disable_parallel_tool_use` (400) — und die serielle Ausführung braucht die Rückfrage in `steuere`. Sie läuft bei Anthropic — LangChain führt `server_tool_use` nicht als Werkzeugaufruf, der Graph ruft also
  * nichts selbst auf; Ergebnisse und Quellen stehen im Inhalt der Antwort.
  */
 export function serverWerkzeuge(modell: Modell, web?: WebWerkzeuge): Record<string, unknown>[] {
-  return web?.claudeSuche && modell._llmType() === 'anthropic' ? [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }] : [];
+  return web?.claudeSuche && modell._llmType() === 'anthropic' ? [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }] : [];
 }
 
 const ANTWORT_GRENZE = 8000;

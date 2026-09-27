@@ -97,7 +97,7 @@ import {
 import type { Db } from '@gg/db';
 import { AUFBEWAHRUNG, DealStatus, geplanteStufe, rueckwegPruefen, type RueckwegRegeln } from '@gg/domain';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
-import { agentKern, type AnbieterStand, type Modell, type ModellWahl, type OpenapiDokument } from '@cosai/kern';
+import { agentKern, type AnbieterStand, type Modell, type ModellWahl, type OpenapiDokument, type WebWerkzeuge } from '@cosai/kern';
 import { agentRouten } from '@cosai/kern/hono';
 import { sql } from 'drizzle-orm';
 import { bankgespraechPdf, type BilderPorts, browserStarten, erzeugeSchleuse, finanzpraesPdf, finanzpraesPptx, KeinBrowserError, praesentationDateiname, SCHLEUSE_STANDARD, type Schleuse } from '@gg/documents/pdf';
@@ -130,7 +130,7 @@ import { autoSicherungDatei, autoSicherungEinspielen, autoSicherungErstellen, au
 import { filterAnlegen, filterListe, filterLoeschen, filterUmbenennen, filterVorlagenEinrichten, listenAltformat } from './services/listen.ts';
 import { projektAnlegen, projektDealAuswahl, projektDetail, projekteListe, projektLoeschen, projektSpeichern } from './services/projekte.ts';
 import { fotoDatei, fotoHochladen, fotoLoeschen, fotoPort, fotosListe, fotosSortieren } from './services/fotos.ts';
-import { type Dateispeicher, type GraphClient, type KiClient, type PropstackClient, nachrichtenSuche, webSuche, anthropicClient } from '@gg/integrations';
+import { type Dateispeicher, type GraphClient, type KiClient, type PropstackClient, nachrichtenSuche, webSuche, anthropicClient, seiteLesen } from '@gg/integrations';
 import { bekannteExposeDateien, exposeAnalysieren, exposeEingang, exposeEingangUebernehmen, type ExposeKontext, exposeUebernehmen, MAX_EXPOSE_BYTES } from './services/expose.ts';
 import { auth, type AuthOptionen } from './middleware/auth.ts';
 import {
@@ -203,7 +203,7 @@ export interface AppKontext {
    */
   autoImport?: { aktiv?: boolean; browserStarten?: () => Promise<import('playwright-core').Browser>; maxZeitlimitSek?: number; lokaleZieleErlaubt?: boolean };
   /** AgentMode: das Sprachmodell des Agenten (LangChain-ChatModel oder Drehbuch/Attrappe); ohne Modell antwortet /api/agent/stand mit 503. */
-  agent?: { modell?: Modell | ModellWahl | null; ziele?: ZielBeschreibung[]; anbieterListe?: () => Promise<AnbieterStand[]> };
+  agent?: { modell?: Modell | ModellWahl | null; ziele?: ZielBeschreibung[]; anbieterListe?: () => Promise<AnbieterStand[]>; web?: WebWerkzeuge };
   /** `CRON_SECRET`: ohne dieses Geheimnis antworten die Cron-Routen immer mit 401. */
   cronGeheimnis?: string;
   /** Wohin die Microsoft-Anmeldung zurückleiten darf; Standard: nur lokale Adressen (`rueckwegRegelnAusUmgebung`). */
@@ -1205,6 +1205,19 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
       db,
       modell: agentOpt.modell,
       anbieterListe: agentOpt.anbieterListe,
+      // Recherche außerhalb der App: DuckDuckGo + Google News (wie die Makler-Anlässe), Seiten nur öffentlich;
+      // mit Anthropic zusätzlich die Websuche von Claude (Entscheidung des Auftraggebers, 27.09.)
+      web: agentOpt.web ?? {
+        suche: async (anfrage) => {
+          const [web, news] = await Promise.all([suche().web(anfrage), suche().news(anfrage)]);
+          return [
+            ...web.map((t) => ({ titel: t.titel, url: t.url, auszug: t.snippet })),
+            ...news.slice(0, 3).map((n) => ({ titel: n.titel, url: '', auszug: `${n.quelle}, ${n.datum}: ${n.snippet}` })),
+          ];
+        },
+        lesen: (url) => seiteLesen(url),
+        claudeSuche: true,
+      },
       openapi: app.getOpenAPI31Document({ openapi: '3.1.0', info: { title: 'GG Immobilienhandel API', version: '0.1.0' } }) as OpenapiDokument,
       ziele: [...(agentOpt.ziele ?? OBERFLAECHENKARTE)],
       // In-process, mit den Kopfzeilen des Nutzers: Anmeldung und Rechte gelten wie bei jedem Aufruf aus dem Browser

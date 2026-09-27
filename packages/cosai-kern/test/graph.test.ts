@@ -57,7 +57,7 @@ describe('verlaufFenster', () => {
 
 describe('serverWerkzeuge', () => {
   it('bindet die Claude-Websuche nur bei Anthropic und nur, wenn sie eingeschaltet ist', () => {
-    expect(serverWerkzeuge(anthropicModell('sk-test'), { claudeSuche: true })).toEqual([{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }]);
+    expect(serverWerkzeuge(anthropicModell('sk-test'), { claudeSuche: true })).toEqual([{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }]);
     expect(serverWerkzeuge(anthropicModell('sk-test'), { claudeSuche: false })).toEqual([]);
     expect(serverWerkzeuge(drehbuchModell([]), { claudeSuche: true })).toEqual([]);
   });
