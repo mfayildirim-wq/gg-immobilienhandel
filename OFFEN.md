@@ -147,6 +147,11 @@ Die alte App verhält sich genauso; eine Änderung ist eine bewusste Abweichung 
 - [ ] AgentMode, bewusst offen aus dem Review: (1) Speichert der Agent nach „Ja“, lernt das Gedächtnis das wie eine
       eigene Eingabe — eine Routine verstärkt sich so selbst. (2) Checkpoints wachsen je Sitzung und werden nie
       aufgeräumt; jeder Aufruf baut den Graphen neu. Beides erst angehen, wenn es im Betrieb stört.
+- [x] **AgentMode Einstellungen, Sprache** (27.09.2026): Einstellungsseite (Grundregeln, Immer/Nie, Anbieter),
+      Vorlesen kurz und stoppbar, Mikrofon in Firefox über Transkription, Morgenlauf nur lesend.
+- [ ] **OpenAI, DeepSeek, Kimi mit echtem Schlüssel prüfen** — gebaut und mit Tests abgesichert, aber ohne Schlüssel
+      nie gegen die echten Schnittstellen gelaufen (insbesondere `parallel_tool_calls` bei DeepSeek/Kimi).
+- [ ] **Firefox-Mikrofon im echten Firefox prüfen** — nur mit nachgebauter Aufnahme getestet.
 - [ ] AgentMode Lieferung 3–5: Realtime-Sprache, Meta-Agent,
       CoSAi-Backend in Python. Freigegebene Routinen ohne Rückfrage fehlen noch — heute wird jedes `sende` bestätigt.
 
