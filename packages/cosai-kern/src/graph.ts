@@ -301,13 +301,29 @@ export function verlaufFenster(messages: BaseMessage[], maxZeichen = VERLAUF_ZEI
  * neben einen Werkzeugaufruf und danach nur noch einen Schlusssatz. Werkzeugaufrufe ohne Text zählen nicht, eine
  * wörtliche Wiederholung direkt danach auch nicht.
  */
+/**
+ * Text aus Inhaltsblöcken: direkt aufeinanderfolgende Textblöcke gehören zusammen (Claude teilt Sätze an Zitaten),
+ * liegt ein anderer Block dazwischen (z. B. eine Websuche), beginnt ein neuer Absatz.
+ */
+function textAusBloecken(bloecke: { type: string; text?: string }[]): string {
+  const absaetze: string[] = [];
+  let aktuell = '';
+  for (const b of bloecke) {
+    if (b.type === 'text') { aktuell += b.text ?? ''; continue; }
+    if (aktuell.trim()) absaetze.push(aktuell.trim());
+    aktuell = '';
+  }
+  if (aktuell.trim()) absaetze.push(aktuell.trim());
+  return absaetze.join('\n\n');
+}
+
 export function letzterText(messages: BaseMessage[]): string {
   const texte: string[] = [];
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const m = messages[i]!;
     if (m instanceof HumanMessage) break;
     if (!(m instanceof AIMessage)) continue;
-    const text = (typeof m.content === 'string' ? m.content : m.content.map((t) => (t.type === 'text' ? t.text : '')).join('')).trim();
+    const text = (typeof m.content === 'string' ? m.content : textAusBloecken(m.content as { type: string; text?: string }[])).trim();
     // Denselben Satz noch einmal (nach einem Werkzeugaufruf) nicht doppelt zeigen
     if (text && text !== texte[0]) texte.unshift(text);
   }

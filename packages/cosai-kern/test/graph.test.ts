@@ -26,6 +26,20 @@ describe('letzterText', () => {
     expect(letzterText(verlauf)).toBe('Gut, nicht gesendet.');
   });
 
+  it('trennt Text vor und nach einer Claude-Websuche durch einen Absatz, Zitat-Stücke bleiben zusammen', () => {
+    const verlauf = [
+      new HumanMessage('Webanalyse'),
+      new AIMessage({ content: [
+        { type: 'text', text: 'Ich recherchiere kurz.' },
+        { type: 'server_tool_use', id: 's1', name: 'web_search', input: { query: 'Esslingen' } },
+        { type: 'web_search_tool_result', tool_use_id: 's1', content: [] },
+        { type: 'text', text: 'Die Preise liegen bei ' },
+        { type: 'text', text: 'rund 4.000 €/m².', citations: [] },
+      ] as never }),
+    ];
+    expect(letzterText(verlauf)).toBe('Ich recherchiere kurz.\n\nDie Preise liegen bei rund 4.000 €/m².');
+  });
+
   it('Werkzeugaufrufe ohne Text zählen nicht', () => {
     expect(letzterText([new HumanMessage('los'), new AIMessage({ content: '', tool_calls: [{ id: 't', name: 'lies', args: {} }] })])).toBe('');
   });
