@@ -46,3 +46,16 @@ describe.skipIf(!url)('AgentMode mit Attrappe', () => {
     expect(b.text).toBe('Erledigt — gespeichert.');
   });
 });
+
+describe.skipIf(!url)('AgentMode ohne Modell für den gewählten Anbieter', () => {
+  const { db, client } = url ? createDb(url) : ({} as ReturnType<typeof createDb>);
+  afterAll(async () => { await client?.end(); });
+
+  it('antwortet mit 409 und einer Meldung, nicht mit „Interner Fehler“', async () => {
+    const app = createApp({ db, auth: offen, agent: { modell: async () => null } });
+    const res = await app.request('/api/agent/nachricht', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: 'Hallo', ort: '/' }) });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { fehler: string }).fehler).toMatch(/kein Modell/);
+  });
+});
+

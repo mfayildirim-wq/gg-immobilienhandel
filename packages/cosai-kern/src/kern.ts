@@ -43,7 +43,11 @@ export interface KernOptionen {
   antwortGrenze?: number;
   /** Auftrag des Morgenvorschlags — nur lesen, nichts ändern */
   morgenAuftrag?: string;
+  /** Für die Einstellungsseite: welche Anbieter der Host kennt und ob ein Schlüssel hinterlegt ist */
+  anbieterListe?: () => Promise<AnbieterStand[]>;
 }
+
+export interface AnbieterStand { id: string; label: string; vorgabeModell: string; verfuegbar: boolean }
 
 /** Längste Notiz, die als Formulierung (Vorschlag) gemerkt wird */
 export const FORMULIERUNG_MAX = 500;
@@ -280,7 +284,7 @@ export function agentKern(opt: KernOptionen) {
     /** Für die Einstellungsseite: feste Grundregeln, änderbare Immer/Nie, Anbieter und Modell. */
     async einstellungen() {
       const d = await dnaLaden();
-      return { grundregeln: GRUNDREGELN, regeln: d.regeln, nie: d.nie, anbieter: d.anbieter, modell: d.modell };
+      return { grundregeln: GRUNDREGELN, regeln: d.regeln, nie: d.nie, anbieter: d.anbieter, modell: d.modell, anbieterListe: (await opt.anbieterListe?.()) ?? [] };
     },
 
     async einstellungenSpeichern(eingabe: AgentEinstellungen) {

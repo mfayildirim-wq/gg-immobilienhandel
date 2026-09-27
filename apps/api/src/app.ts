@@ -97,7 +97,7 @@ import {
 import type { Db } from '@gg/db';
 import { AUFBEWAHRUNG, DealStatus, geplanteStufe, rueckwegPruefen, type RueckwegRegeln } from '@gg/domain';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
-import { agentKern, type Modell, type OpenapiDokument } from '@cosai/kern';
+import { agentKern, type AnbieterStand, type Modell, type ModellWahl, type OpenapiDokument } from '@cosai/kern';
 import { agentRouten } from '@cosai/kern/hono';
 import { sql } from 'drizzle-orm';
 import { bankgespraechPdf, type BilderPorts, browserStarten, erzeugeSchleuse, finanzpraesPdf, finanzpraesPptx, KeinBrowserError, praesentationDateiname, SCHLEUSE_STANDARD, type Schleuse } from '@gg/documents/pdf';
@@ -203,7 +203,7 @@ export interface AppKontext {
    */
   autoImport?: { aktiv?: boolean; browserStarten?: () => Promise<import('playwright-core').Browser>; maxZeitlimitSek?: number; lokaleZieleErlaubt?: boolean };
   /** AgentMode: das Sprachmodell des Agenten (LangChain-ChatModel oder Drehbuch/Attrappe); ohne Modell antwortet /api/agent/stand mit 503. */
-  agent?: { modell?: Modell | null; ziele?: ZielBeschreibung[] };
+  agent?: { modell?: Modell | ModellWahl | null; ziele?: ZielBeschreibung[]; anbieterListe?: () => Promise<AnbieterStand[]> };
   /** `CRON_SECRET`: ohne dieses Geheimnis antworten die Cron-Routen immer mit 401. */
   cronGeheimnis?: string;
   /** Wohin die Microsoft-Anmeldung zurückleiten darf; Standard: nur lokale Adressen (`rueckwegRegelnAusUmgebung`). */
@@ -1204,6 +1204,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
     const kern = agentKern({
       db,
       modell: agentOpt.modell,
+      anbieterListe: agentOpt.anbieterListe,
       openapi: app.getOpenAPI31Document({ openapi: '3.1.0', info: { title: 'GG Immobilienhandel API', version: '0.1.0' } }) as OpenapiDokument,
       ziele: [...(agentOpt.ziele ?? OBERFLAECHENKARTE)],
       // In-process, mit den Kopfzeilen des Nutzers: Anmeldung und Rechte gelten wie bei jedem Aufruf aus dem Browser

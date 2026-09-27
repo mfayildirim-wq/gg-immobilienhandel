@@ -1,7 +1,8 @@
 import { AIMessage, HumanMessage, ToolMessage } from '@langchain/core/messages';
 import type { ChatAnthropic } from '@langchain/anthropic';
 import { describe, expect, it } from 'vitest';
-import { anthropicModell, attrappenModell } from '../src/modell.ts';
+import type { ChatOpenAI } from '@langchain/openai';
+import { ANBIETER, anthropicModell, attrappenModell, openaiKompatibel } from '../src/modell.ts';
 
 /**
  * Die Klicktests laufen mit der Attrappe — ob das echte Modell die Aufrufparameter annimmt, prüft nur dieser Test.
@@ -45,5 +46,22 @@ describe('Attrappe: Routinen', () => {
     ])) as AIMessage;
     expect(m.tool_calls?.[0]?.name).toBe('steuere');
     expect(aktionen(m)).toEqual(offen);
+  });
+});
+
+describe('openaiKompatibel (OpenAI, DeepSeek, Kimi)', () => {
+  it('spricht die Adresse des Anbieters an und ruft Werkzeuge nacheinander auf', () => {
+    const deepseek = ANBIETER.find((a) => a.id === 'deepseek')!;
+    const m = openaiKompatibel('sk-test', 'deepseek-chat', deepseek.basisUrl) as ChatOpenAI;
+    expect(m.model).toBe('deepseek-chat');
+    expect((m as unknown as { clientConfig: { baseURL?: string } }).clientConfig.baseURL).toBe('https://api.deepseek.com');
+    const werkzeug = { name: 'lies', description: 'liest', schema: { type: 'object', properties: {} } };
+    const gebunden = m.bindTools([werkzeug]) as unknown as { defaultOptions: { parallel_tool_calls?: boolean } };
+    expect(gebunden.defaultOptions.parallel_tool_calls).toBe(false);
+  });
+
+  it('kennt die unterstützten Anbieter mit ihrem Zugang', () => {
+    expect(ANBIETER.map((a) => a.id)).toEqual(['anthropic', 'openai', 'deepseek', 'kimi']);
+    expect(ANBIETER.every((a) => a.zugang.endsWith('-api-key'))).toBe(true);
   });
 });

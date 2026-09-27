@@ -9,8 +9,12 @@ import { auditSchreiben } from './audit.ts';
 export const ZUGAENGE = [
   { schluessel: 'anthropic-api-key', label: 'Anthropic (Claude)', umgebung: 'ANTHROPIC_API_KEY', hinweis: 'Für Exposé-Analyse, Makler-KI und Einheiten-Erkennung.',
     quelleUrl: 'https://console.anthropic.com/settings/keys', quelleText: 'console.anthropic.com' },
-  { schluessel: 'openai-api-key', label: 'OpenAI (Whisper)', umgebung: 'OPENAI_API_KEY', hinweis: 'Nur für die Transkription von Anrufen.',
+  { schluessel: 'openai-api-key', label: 'OpenAI', umgebung: 'OPENAI_API_KEY', hinweis: 'Transkription (Anrufe, Mikrofon in Firefox) und — wenn gewählt — Modell des AgentMode.',
     quelleUrl: 'https://platform.openai.com/api-keys', quelleText: 'platform.openai.com' },
+  { schluessel: 'deepseek-api-key', label: 'DeepSeek', umgebung: 'DEEPSEEK_API_KEY', hinweis: 'Nur für den AgentMode, wenn dort DeepSeek gewählt ist.',
+    quelleUrl: 'https://platform.deepseek.com/api_keys', quelleText: 'platform.deepseek.com' },
+  { schluessel: 'moonshot-api-key', label: 'Kimi (Moonshot)', umgebung: 'MOONSHOT_API_KEY', hinweis: 'Nur für den AgentMode, wenn dort Kimi gewählt ist.',
+    quelleUrl: 'https://platform.moonshot.ai/console/api-keys', quelleText: 'platform.moonshot.ai' },
   { schluessel: 'propstack-api-key', label: 'Propstack', umgebung: 'PROPSTACK_API_KEY', hinweis: 'Für die Bewertung von Einheiten.',
     quelleUrl: 'https://crm.propstack.de/app/admin/api_keys', quelleText: 'crm.propstack.de/app/admin/api_keys' },
 ] as const;

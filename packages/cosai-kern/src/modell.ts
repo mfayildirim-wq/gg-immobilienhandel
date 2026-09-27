@@ -3,6 +3,7 @@
  * `anthropicModell` für den Betrieb, `drehbuchModell` für Tests und Klicktests (gibt vorbereitete Antworten der Reihe nach).
  */
 import { ChatAnthropic } from '@langchain/anthropic';
+import { ChatOpenAI } from '@langchain/openai';
 import { BaseChatModel, type BaseChatModelParams } from '@langchain/core/language_models/chat_models';
 import { AIMessage, type BaseMessage } from '@langchain/core/messages';
 import type { ChatResult } from '@langchain/core/outputs';
@@ -22,6 +23,31 @@ class SeriellesAnthropic extends ChatAnthropic {
 export function anthropicModell(apiKey: string, model = 'claude-sonnet-5'): Modell {
   // Keine temperature: neuere Claude-Modelle lehnen gesetzte Werte ab
   return new SeriellesAnthropic({ apiKey, model, maxTokens: 1500 });
+}
+
+/**
+ * Die Anbieter, zwischen denen die Einstellungen wählen. OpenAI, DeepSeek und Kimi sprechen dieselbe Schnittstelle
+ * (Chat Completions mit Werkzeugen) — nur Adresse und Schlüssel unterscheiden sich. `vorgabeModell` leer heißt: das
+ * Modell muss in den Einstellungen eingetragen werden (die Namen wechseln bei diesen Anbietern häufig).
+ */
+export const ANBIETER = [
+  { id: 'anthropic', label: 'Anthropic (Claude)', zugang: 'anthropic-api-key', vorgabeModell: 'claude-sonnet-5', basisUrl: undefined },
+  { id: 'openai', label: 'OpenAI', zugang: 'openai-api-key', vorgabeModell: '', basisUrl: undefined },
+  { id: 'deepseek', label: 'DeepSeek', zugang: 'deepseek-api-key', vorgabeModell: 'deepseek-chat', basisUrl: 'https://api.deepseek.com' },
+  { id: 'kimi', label: 'Kimi (Moonshot)', zugang: 'moonshot-api-key', vorgabeModell: '', basisUrl: 'https://api.moonshot.ai/v1' },
+] as const;
+export type AnbieterId = (typeof ANBIETER)[number]['id'];
+
+/** Werkzeuge nacheinander — aus demselben Grund wie bei Anthropic (Rückfrage in `steuere`). */
+class SeriellesOpenAI extends ChatOpenAI {
+  override bindTools(...[werkzeuge, optionen]: Parameters<ChatOpenAI['bindTools']>) {
+    return super.bindTools(werkzeuge, { parallel_tool_calls: false, ...optionen });
+  }
+}
+
+/** OpenAI oder ein Anbieter mit derselben Schnittstelle (DeepSeek, Kimi) — über die Basis-Adresse. */
+export function openaiKompatibel(apiKey: string, model: string, basisUrl?: string): Modell {
+  return new SeriellesOpenAI({ apiKey, model, maxTokens: 1500, ...(basisUrl ? { configuration: { baseURL: basisUrl } } : {}) });
 }
 
 /** Ein Drehbuch-Modell: antwortet mit den vorbereiteten Nachrichten der Reihe nach; danach mit einem festen Satz. */

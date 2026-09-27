@@ -198,16 +198,19 @@ importers:
     dependencies:
       '@langchain/anthropic':
         specifier: ^1.5.11
-        version: 1.5.11(@langchain/core@1.2.12)
+        version: 1.5.11(@langchain/core@1.2.13(openai@7.23.0(undici@8.10.2)(zod@4.6.5)))
       '@langchain/core':
-        specifier: ^1.2.12
-        version: 1.2.12
+        specifier: ^1.2.13
+        version: 1.2.13(openai@7.23.0(undici@8.10.2)(zod@4.6.5))
       '@langchain/langgraph':
         specifier: ^1.4.18
-        version: 1.4.18(@langchain/core@1.2.12)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
+        version: 1.4.18(@langchain/core@1.2.13(openai@7.23.0(undici@8.10.2)(zod@4.6.5)))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)
       '@langchain/langgraph-checkpoint':
         specifier: ^1.1.5
-        version: 1.1.5(@langchain/core@1.2.12)
+        version: 1.1.5(@langchain/core@1.2.13(openai@7.23.0(undici@8.10.2)(zod@4.6.5)))
+      '@langchain/openai':
+        specifier: ^1.6.0
+        version: 1.6.0(@langchain/core@1.2.13(openai@7.23.0(undici@8.10.2)(zod@4.6.5)))(undici@8.10.2)
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(postgres@3.4.9)
@@ -931,8 +934,8 @@ packages:
     peerDependencies:
       '@langchain/core': ^1.2.12
 
-  '@langchain/core@1.2.12':
-    resolution: {integrity: sha512-DvNsrN5Gz+bgEy/B/kK1AvxxcrwdrflI8hZJxqo/DtA17FMUeWM5k0o1c6G8ChH8+sIakV2UsDudFmNZJp1ugQ==}
+  '@langchain/core@1.2.13':
+    resolution: {integrity: sha512-ADGTxZ84n3civruUX1LlTOdua/PDGoni2U6TmKTX7hvRU2Jlepu8vLJI4Wnwj45KUKhUCrW94Il12Q2bxE3e8A==}
     engines: {node: '>=20'}
 
   '@langchain/langgraph-checkpoint@1.1.5':
@@ -959,6 +962,12 @@ packages:
     peerDependencies:
       '@langchain/core': ^1.1.48
       zod: ^3.25.32 || ^4.2.0
+
+  '@langchain/openai@1.6.0':
+    resolution: {integrity: sha512-jSIn2q47QniLEI/lk5McJ21yMV+8ea7PQmlHeZ750clyhw+SS3nI+8Jpb73bUBZazGDgFOata/6hSXljeyNiag==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      '@langchain/core': ^1.2.13
 
   '@langchain/protocol@0.0.19':
     resolution: {integrity: sha512-9hKcRrH7cBX6gfutdfXPoft1OCchHe4FEpALoDJMl5Qu+n/YG5ynZmyu8+8cxORlPwHBoKTxggvXz+76M1yX1Q==}
@@ -1898,6 +1907,30 @@ packages:
   once@1.4.0:
     resolution: {integrity: sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==}
 
+  openai@7.23.0:
+    resolution: {integrity: sha512-0ecOXnFSMNWZq6cUBcTV6Lf93y+fm8BH/+QzFvpoP1UGNOE5pnytRa6HAPGCw+3IS9SIAW7rc1M8yyzN1PiBAQ==}
+    engines: {node: '>=22.0.0'}
+    peerDependencies:
+      '@aws-sdk/credential-provider-node': '>=3.972.0 <4'
+      '@smithy/hash-node': '>=4.3.0 <5'
+      '@smithy/signature-v4': '>=5.4.0 <6'
+      undici: '>=5 <9'
+      ws: ^8.21.0
+      zod: ^3.25 || ^4.0
+    peerDependenciesMeta:
+      '@aws-sdk/credential-provider-node':
+        optional: true
+      '@smithy/hash-node':
+        optional: true
+      '@smithy/signature-v4':
+        optional: true
+      undici:
+        optional: true
+      ws:
+        optional: true
+      zod:
+        optional: true
+
   openapi3-ts@4.6.1:
     resolution: {integrity: sha512-XW9MOldkhoICNeXVzzmXzmOW5G73ppOEGmh7fLCqHjgfdEYCGGN+00MlVCeUZgovjjfC56j9tvtDt1zGabNjjA==}
 
@@ -2716,18 +2749,18 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@langchain/anthropic@1.5.11(@langchain/core@1.2.12)':
+  '@langchain/anthropic@1.5.11(@langchain/core@1.2.13(openai@7.23.0(undici@8.10.2)(zod@4.6.5)))':
     dependencies:
       '@anthropic-ai/sdk': 0.122.0(zod@4.6.5)
-      '@langchain/core': 1.2.12
+      '@langchain/core': 1.2.13(openai@7.23.0(undici@8.10.2)(zod@4.6.5))
       zod: 4.6.5
 
-  '@langchain/core@1.2.12':
+  '@langchain/core@1.2.13(openai@7.23.0(undici@8.10.2)(zod@4.6.5))':
     dependencies:
       '@cfworker/json-schema': 4.1.1
       '@standard-schema/spec': 1.1.0
       js-tiktoken: 1.0.21
-      langsmith: 0.10.5
+      langsmith: 0.10.5(openai@7.23.0(undici@8.10.2)(zod@4.6.5))
       mustache: 4.2.0
       p-queue: 6.6.2
       zod: 4.6.5
@@ -2738,13 +2771,13 @@ snapshots:
       - openai
       - ws
 
-  '@langchain/langgraph-checkpoint@1.1.5(@langchain/core@1.2.12)':
+  '@langchain/langgraph-checkpoint@1.1.5(@langchain/core@1.2.13(openai@7.23.0(undici@8.10.2)(zod@4.6.5)))':
     dependencies:
-      '@langchain/core': 1.2.12
+      '@langchain/core': 1.2.13(openai@7.23.0(undici@8.10.2)(zod@4.6.5))
 
-  '@langchain/langgraph-sdk@1.12.0(@langchain/core@1.2.12)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@langchain/langgraph-sdk@1.12.0(@langchain/core@1.2.13(openai@7.23.0(undici@8.10.2)(zod@4.6.5)))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
-      '@langchain/core': 1.2.12
+      '@langchain/core': 1.2.13(openai@7.23.0(undici@8.10.2)(zod@4.6.5))
       '@langchain/protocol': 0.0.19
       '@types/json-schema': 7.0.15
       p-queue: 9.3.3
@@ -2753,17 +2786,30 @@ snapshots:
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
 
-  '@langchain/langgraph@1.4.18(@langchain/core@1.2.12)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)':
+  '@langchain/langgraph@1.4.18(@langchain/core@1.2.13(openai@7.23.0(undici@8.10.2)(zod@4.6.5)))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.5)':
     dependencies:
-      '@langchain/core': 1.2.12
-      '@langchain/langgraph-checkpoint': 1.1.5(@langchain/core@1.2.12)
-      '@langchain/langgraph-sdk': 1.12.0(@langchain/core@1.2.12)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@langchain/core': 1.2.13(openai@7.23.0(undici@8.10.2)(zod@4.6.5))
+      '@langchain/langgraph-checkpoint': 1.1.5(@langchain/core@1.2.13(openai@7.23.0(undici@8.10.2)(zod@4.6.5)))
+      '@langchain/langgraph-sdk': 1.12.0(@langchain/core@1.2.13(openai@7.23.0(undici@8.10.2)(zod@4.6.5)))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@langchain/protocol': 0.0.19
       '@standard-schema/spec': 1.1.0
       zod: 4.6.5
     transitivePeerDependencies:
       - react
       - react-dom
+
+  '@langchain/openai@1.6.0(@langchain/core@1.2.13(openai@7.23.0(undici@8.10.2)(zod@4.6.5)))(undici@8.10.2)':
+    dependencies:
+      '@langchain/core': 1.2.13(openai@7.23.0(undici@8.10.2)(zod@4.6.5))
+      js-tiktoken: 1.0.21
+      openai: 7.23.0(undici@8.10.2)(zod@4.6.5)
+      zod: 4.6.5
+    transitivePeerDependencies:
+      - '@aws-sdk/credential-provider-node'
+      - '@smithy/hash-node'
+      - '@smithy/signature-v4'
+      - undici
+      - ws
 
   '@langchain/protocol@0.0.19': {}
 
@@ -3399,9 +3445,11 @@ snapshots:
       readable-stream: 2.3.8
       setimmediate: 1.0.5
 
-  langsmith@0.10.5:
+  langsmith@0.10.5(openai@7.23.0(undici@8.10.2)(zod@4.6.5)):
     dependencies:
       p-queue: 6.6.2
+    optionalDependencies:
+      openai: 7.23.0(undici@8.10.2)(zod@4.6.5)
 
   lie@3.3.0:
     dependencies:
@@ -3475,6 +3523,11 @@ snapshots:
   once@1.4.0:
     dependencies:
       wrappy: 1.0.2
+
+  openai@7.23.0(undici@8.10.2)(zod@4.6.5):
+    optionalDependencies:
+      undici: 8.10.2
+      zod: 4.6.5
 
   openapi3-ts@4.6.1:
     dependencies:

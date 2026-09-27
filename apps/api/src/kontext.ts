@@ -1,8 +1,9 @@
 import { createDb, verlangeLokaleDatenbank } from '@gg/db';
 import { rueckwegRegelnAusUmgebung } from '@gg/domain';
 import { anthropicClient, kiAttrappe, supabaseSpeicher, graphAttrappe, propstackAttrappe } from '@gg/integrations';
-import { anthropicModell, attrappenModell } from '@cosai/kern';
+import { ANBIETER, anthropicModell, attrappenModell, openaiKompatibel, type ModellWahl } from '@cosai/kern';
 import { createApp } from './app.ts';
+import { ZUGAENGE, zugangLesen } from './services/zugaenge.ts';
 
 /**
  * Der AgentMode schickt, was der Nutzer lesen darf, an den Modellanbieter — online deshalb erst nach ausdrücklicher
@@ -41,11 +42,25 @@ export function appAusUmgebung(env: Record<string, string | undefined> = process
   const graph = env.M365_ATTRAPPE === '1' && !produktion ? graphAttrappe() : null;
   const propstack = env.PROPSTACK_ATTRAPPE === '1' && !produktion ? propstackAttrappe() : null;
 
-  // AgentMode: dasselbe Prinzip wie die KI — Attrappe nur ausdrücklich und nie in Produktion, sonst der Schlüssel
-  const agentModell = !agentModusAn(env) ? null : attrappe ? attrappenModell() : env.ANTHROPIC_API_KEY ? anthropicModell(env.ANTHROPIC_API_KEY, env.AGENT_MODELL) : null;
+  // AgentMode: dasselbe Prinzip wie die KI — Attrappe nur ausdrücklich und nie in Produktion. Sonst das Modell des in
+  // den AgentMode-Einstellungen gewählten Anbieters; Schlüssel aus Einstellungen → Zugänge, ersatzweise aus der Umgebung.
+  const agentSchluessel = async (a: (typeof ANBIETER)[number]) => {
+    const umgebung = ZUGAENGE.find((z) => z.schluessel === a.zugang)?.umgebung;
+    return (await zugangLesen(db, a.zugang)) || (umgebung ? env[umgebung] : '') || '';
+  };
+  const agentWahl: ModellWahl = async ({ anbieter, modell }) => {
+    const a = ANBIETER.find((x) => x.id === (anbieter || 'anthropic'));
+    if (!a) return null;
+    const schluessel = await agentSchluessel(a);
+    const name = modell || (a.id === 'anthropic' ? env.AGENT_MODELL || a.vorgabeModell : a.vorgabeModell);
+    if (!schluessel || !name) return null;
+    return a.id === 'anthropic' ? anthropicModell(schluessel, name) : openaiKompatibel(schluessel, name, a.basisUrl);
+  };
+  const agentModell = !agentModusAn(env) ? null : attrappe ? attrappenModell() : agentWahl;
+  const anbieterListe = async () => Promise.all(ANBIETER.map(async (a) => ({ id: a.id, label: a.label, vorgabeModell: a.vorgabeModell, verfuegbar: !!(await agentSchluessel(a)) })));
 
   const app = createApp({
-    agent: { modell: agentModell },
+    agent: { modell: agentModell, anbieterListe },
     expose: speicher ? { speicher, ki, attrappe } : undefined,
     ki,
     graph,
