@@ -106,28 +106,50 @@ function erkennungKlasse(): ErkennungKonstruktor | null {
  * Zuhören: ein Druck auf den Kreis startet, das Ergebnis kommt als Text (Zwischenstand während des Sprechens,
  * `fertig` am Ende). Der Pegel kommt aus der Lautstärke des Mikrofons (AudioContext), damit der Kreis mitatmet.
  */
-export function useZuhoeren(aufText: (text: string, fertig: boolean) => void) {
-  const [moeglich] = useState(() => erkennungKlasse() !== null);
+export interface ZuhoerenOptionen {
+  /**
+   * Für Browser ohne eigene Spracherkennung (Firefox): Aufnahme per MediaRecorder, der Host macht Text daraus
+   * (in gg-immo: Whisper über /api/transkription). Ohne diese Option gibt es dort kein Mikrofon.
+   */
+  transkribieren?: (audio: Blob) => Promise<string>;
+  /** Fehler der Aufnahme oder Transkription (z. B. kein Schlüssel hinterlegt) */
+  onFehler?: (meldung: string) => void;
+}
+
+/** Nach so viel Stille endet die Aufnahme von selbst (nur ohne eigene Spracherkennung) */
+const STILLE_MS = 1600;
+/** Längste Aufnahme */
+const AUFNAHME_MAX_MS = 30_000;
+
+export function useZuhoeren(aufText: (text: string, fertig: boolean) => void, optionen: ZuhoerenOptionen = {}) {
+  const aufnahmeMoeglich = () => typeof window !== 'undefined' && !!optionen.transkribieren && typeof (window as unknown as { MediaRecorder?: unknown }).MediaRecorder === 'function' && !!navigator.mediaDevices?.getUserMedia;
+  const [moeglich] = useState(() => erkennungKlasse() !== null || aufnahmeMoeglich());
   const [hoert, setHoert] = useState(false);
   const [pegel, setPegel] = useState(0);
   const erkennung = useRef<Erkennung | null>(null);
-  const audio = useRef<{ ctx: AudioContext; strom: MediaStream; timer: number } | null>(null);
+  const aufnahme = useRef<{ recorder: MediaRecorder; strom: MediaStream; ende: number } | null>(null);
+  const audio = useRef<{ ctx: AudioContext; strom: MediaStream; timer: number; eigen: boolean } | null>(null);
+  const laut = useRef<{ gehoert: boolean; zuletzt: number }>({ gehoert: false, zuletzt: 0 });
   const aufTextRef = useRef(aufText);
   aufTextRef.current = aufText;
+  const optionenRef = useRef(optionen);
+  optionenRef.current = optionen;
+  const stoppeRef = useRef<() => void>(() => undefined);
 
   const pegelStoppen = useCallback(() => {
     if (!audio.current) return;
     window.clearInterval(audio.current.timer);
-    audio.current.strom.getTracks().forEach((t) => t.stop());
+    if (audio.current.eigen) audio.current.strom.getTracks().forEach((t) => t.stop());
     void audio.current.ctx.close();
     audio.current = null;
     setPegel(0);
   }, []);
 
-  const pegelStarten = useCallback(async () => {
+  /** Pegel für den Sprechkreis — und ohne eigene Erkennung: Ende der Aufnahme nach Stille. */
+  const pegelStarten = useCallback(async (vorhanden?: MediaStream) => {
     if (!navigator.mediaDevices?.getUserMedia || typeof AudioContext === 'undefined') return;
     try {
-      const strom = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const strom = vorhanden ?? await navigator.mediaDevices.getUserMedia({ audio: true });
       const ctx = new AudioContext();
       const quelle = ctx.createMediaStreamSource(strom);
       const analyse = ctx.createAnalyser();
@@ -138,9 +160,15 @@ export function useZuhoeren(aufText: (text: string, fertig: boolean) => void) {
         analyse.getByteTimeDomainData(daten);
         let summe = 0;
         for (const d of daten) summe += (d - 128) ** 2;
-        setPegel(Math.min(1, Math.sqrt(summe / daten.length) / 40));
+        const p = Math.min(1, Math.sqrt(summe / daten.length) / 40);
+        setPegel(p);
+        if (aufnahme.current) {
+          const jetzt = Date.now();
+          if (p > 0.12) laut.current = { gehoert: true, zuletzt: jetzt };
+          if ((laut.current.gehoert && jetzt - laut.current.zuletzt > STILLE_MS) || jetzt > aufnahme.current.ende) stoppeRef.current();
+        }
       }, 80);
-      audio.current = { ctx, strom, timer };
+      audio.current = { ctx, strom, timer, eigen: !vorhanden };
     } catch {
       // kein Mikrofon-Pegel — die Erkennung läuft trotzdem
     }
@@ -149,13 +177,49 @@ export function useZuhoeren(aufText: (text: string, fertig: boolean) => void) {
   const stoppe = useCallback(() => {
     erkennung.current?.stop();
     erkennung.current = null;
+    const a = aufnahme.current;
+    aufnahme.current = null;
+    if (a && a.recorder.state !== 'inactive') a.recorder.stop();
     setHoert(false);
     pegelStoppen();
   }, [pegelStoppen]);
+  stoppeRef.current = stoppe;
+
+  /** Ohne eigene Spracherkennung: aufnehmen, bei Stille oder Klick beenden, dann transkribieren lassen. */
+  const aufnahmeStarten = useCallback(async () => {
+    const { transkribieren, onFehler } = optionenRef.current;
+    if (!transkribieren || aufnahme.current) return;
+    let strom: MediaStream;
+    try {
+      strom = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      onFehler?.('Kein Zugriff aufs Mikrofon — bitte im Browser erlauben.');
+      return;
+    }
+    const Recorder = (window as unknown as { MediaRecorder: typeof MediaRecorder }).MediaRecorder;
+    const recorder = new Recorder(strom);
+    const teile: Blob[] = [];
+    recorder.ondataavailable = (e) => { if (e.data.size) teile.push(e.data); };
+    recorder.onstop = () => {
+      strom.getTracks().forEach((t) => t.stop());
+      const ton = new Blob(teile, { type: recorder.mimeType || 'audio/webm' });
+      if (!ton.size) return;
+      aufTextRef.current('…', false);
+      transkribieren(ton)
+        .then((text) => aufTextRef.current(text.trim(), true))
+        .catch((e: Error) => { aufTextRef.current('', false); onFehler?.(e.message); });
+    };
+    laut.current = { gehoert: false, zuletzt: Date.now() };
+    aufnahme.current = { recorder, strom, ende: Date.now() + AUFNAHME_MAX_MS };
+    recorder.start();
+    setHoert(true);
+    void pegelStarten(strom);
+  }, [pegelStarten]);
 
   const starte = useCallback(() => {
     const Klasse = erkennungKlasse();
-    if (!Klasse || erkennung.current) return;
+    if (!Klasse) { void aufnahmeStarten(); return; }
+    if (erkennung.current) return;
     const e = new Klasse();
     e.lang = 'de-DE';
     e.interimResults = true;
@@ -176,9 +240,16 @@ export function useZuhoeren(aufText: (text: string, fertig: boolean) => void) {
     setHoert(true);
     void pegelStarten();
     e.start();
-  }, [pegelStarten, pegelStoppen]);
+  }, [aufnahmeStarten, pegelStarten, pegelStoppen]);
 
-  useEffect(() => () => { erkennung.current?.abort(); pegelStoppen(); }, [pegelStoppen]);
+  // Beim Schließen: Aufnahme verwerfen (nichts mehr zur kostenpflichtigen Transkription schicken)
+  useEffect(() => () => {
+    erkennung.current?.abort();
+    const a = aufnahme.current;
+    aufnahme.current = null;
+    if (a) { a.recorder.onstop = () => a.strom.getTracks().forEach((t) => t.stop()); if (a.recorder.state === 'recording') a.recorder.stop(); }
+    pegelStoppen();
+  }, [pegelStoppen]);
 
   return { moeglich, hoert, pegel, starte, stoppe };
 }

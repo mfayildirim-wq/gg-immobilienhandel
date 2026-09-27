@@ -8,7 +8,7 @@ import { OBERFLAECHENKARTE } from '@gg/api-contract';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useCallback, type CSSProperties, type ReactNode } from 'react';
-import { agentAnfrage } from '../lib/api.ts';
+import { agentAnfrage, transkribieren } from '../lib/api.ts';
 import { useEinstellung } from '../lib/ansicht.ts';
 
 export const AGENT_STILE = ['kern', 'puls', 'orbit'] as const;
@@ -60,6 +60,8 @@ export function AgentModeHost({ modus, children, schliessen }: { modus: 'overlay
       schliessen={schliessen}
       // Nach einem Klick des Agenten die Daten neu laden — wie nach einem Klick des Nutzers
       onSteuerung={(s) => { if (s.art === 'sende') void qc.invalidateQueries(); }}
+      // Firefox kennt keine eingebaute Spracherkennung: dort nimmt das Mikrofon auf, Whisper macht Text daraus
+      transkribieren={transkribieren}
     >
       {children}
     </AgentMode>

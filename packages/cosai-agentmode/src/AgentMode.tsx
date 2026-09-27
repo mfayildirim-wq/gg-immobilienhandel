@@ -48,11 +48,13 @@ export interface AgentModeProps {
   farbe?: string;
   /** Wird nach einer ausgeführten Steuerung gerufen — z. B. um Daten neu zu laden */
   onSteuerung?: (s: Steuerung) => void;
+  /** Für Browser ohne eigene Spracherkennung (Firefox): Aufnahme → Text über den Host */
+  transkribieren?: (audio: Blob) => Promise<string>;
 }
 
 const SITZUNG = 'cosai.sitzung';
 
-export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, stil, onStil, children, schliessen, schrittMs = 700, farbe, onSteuerung }: AgentModeProps) {
+export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, stil, onStil, children, schliessen, schrittMs = 700, farbe, onSteuerung, transkribieren }: AgentModeProps) {
   const [sitzungId, setSitzungId] = useState<string | null>(() => { try { return window.localStorage.getItem(SITZUNG); } catch { return null; } });
   const [zeilen, setZeilen] = useState<Zeile[]>([]);
   const [chips, setChips] = useState<ChipDaten[]>([]);
@@ -264,7 +266,7 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
     const kurz = text.toLowerCase().replace(/[.!?]/g, '').trim();
     const treffer = chips.find((c) => c.label.toLowerCase() === kurz || c.wert.toLowerCase() === kurz) ?? (wartetAuf && /^(ja|ok|okay|abschicken|mach)$/.test(kurz) ? chips.find((c) => c.wert === 'ja') : undefined) ?? (wartetAuf && /^(nein|nicht|stopp?|abbrechen)$/.test(kurz) ? chips.find((c) => c.wert === 'nein') : undefined);
     if (treffer) chipWaehlen(treffer); else nachricht(text);
-  });
+  }, { transkribieren, onFehler: setFehler });
 
   /** Ein neues Gespräch: die alte Sitzung bleibt in der Datenbank, der Faden beginnt frisch. */
   const neuesGespraech = useCallback(() => {
