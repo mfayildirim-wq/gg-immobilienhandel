@@ -111,6 +111,25 @@ export function melden(b: Beobachtung): void {
   document.dispatchEvent(new CustomEvent<Beobachtung>(EREIGNIS, { detail: b }));
 }
 
+/**
+ * Der Fokus der App: was gerade offen ist, markiert mit `data-agent-fokus='{"dealId":"…","deal":"Musterweg 1"}'`.
+ * Mehrere Marken werden zusammengeführt. Jeder Schlüssel `<typ>Id` ist ein Objekt, auf das sich Ergebnisse beziehen.
+ */
+export function fokusLesen(root: Document = document): Record<string, string | number | boolean | null> {
+  const fokus: Record<string, string | number | boolean | null> = {};
+  for (const el of root.querySelectorAll<HTMLElement>('[data-agent-fokus]')) {
+    try { Object.assign(fokus, JSON.parse(el.dataset.agentFokus ?? '{}')); } catch { /* ungültige Marke überspringen */ }
+  }
+  return fokus;
+}
+
+/** Die Objekte im Fokus: `<typ>Id` → { typ, id, name } */
+export function fokusBezuege(fokus: Record<string, unknown>): { typ: string; id: string; name: string }[] {
+  return Object.entries(fokus)
+    .filter(([k, v]) => /^[a-z][a-zA-Z0-9]*Id$/.test(k) && typeof v === 'string' && v !== '')
+    .map(([k, v]) => ({ typ: k.slice(0, -2), id: v as string, name: typeof fokus[k.slice(0, -2)] === 'string' ? (fokus[k.slice(0, -2)] as string) : '' }));
+}
+
 /** Der Kontext eines Ziels (z. B. welcher Deal offen ist) als Text — zum Vergleich vor einer Bestätigung. */
 export function zielKontext(ziel: string): string | null {
   const el = zielFinden(ziel);

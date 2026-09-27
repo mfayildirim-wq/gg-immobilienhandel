@@ -65,3 +65,11 @@ describe('openaiKompatibel (OpenAI, DeepSeek, Kimi)', () => {
     expect(ANBIETER.every((a) => a.zugang.endsWith('-api-key'))).toBe(true);
   });
 });
+
+describe('Attrappe: Analyse speichern', () => {
+  it('antwortet auf „Analysiere …“ mit einer Analyse und bietet das Speichern an', async () => {
+    const m = (await attrappenModell().invoke([new HumanMessage('Analysiere die Lage')])) as AIMessage;
+    expect(m.tool_calls?.[0]?.name).toBe('ergebnis_speichern');
+    expect(m.tool_calls?.[0]?.args).toMatchObject({ titel: 'Analyse: Lage', art: 'recherche' });
+  });
+});

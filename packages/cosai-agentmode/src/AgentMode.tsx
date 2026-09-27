@@ -8,7 +8,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Chips, Gedaechtnisleiste, Schaufenster, Sprechblase, type ChipDaten, type GedaechtnisEintragDaten, type Schritt } from './Bausteine.tsx';
-import { ausfuehren, beobachten, zielFinden, zielKontext, type Beobachtung, type Steuerung } from './kanal.ts';
+import { ErgebnisBereich, ErgebnisDialog, type ErgebnisDaten } from './Ergebnisse.tsx';
+import { ausfuehren, beobachten, fokusBezuege, fokusLesen, zielFinden, zielKontext, type Beobachtung, type Steuerung } from './kanal.ts';
 import { saatAus } from './konstellation.ts';
 import { heuteLokal } from './lernen.tsx';
 import { Sprechkreis, SPRECHKREIS_STILE, type SprechkreisStil, type SprechkreisZustand } from './Sprechkreis.tsx';
@@ -70,6 +71,12 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
   const [gedaechtnisOffen, setGedaechtnisOffen] = useState(false);
   const [gedaechtnis, setGedaechtnis] = useState<GedaechtnisEintragDaten[]>([]);
   const [routinen, setRoutinen] = useState<RoutineDaten[]>([]);
+  // Fokus der App (data-agent-fokus): was gerade offen ist — geht als Kontext mit und bestimmt die Ergebnisse
+  const [fokusText, setFokusText] = useState(() => (typeof document === 'undefined' ? '{}' : JSON.stringify(fokusLesen())));
+  const fokus = useMemo(() => JSON.parse(fokusText) as Record<string, string | number | boolean | null>, [fokusText]);
+  const [ergebnisse, setErgebnisse] = useState<ErgebnisDaten[]>([]);
+  const [ergebnisOffen, setErgebnisOffen] = useState(false);
+  const [ergebnisGross, setErgebnisGross] = useState(false);
   const nr = useRef(0);
   const abgebrochen = useRef(false);
   /** Welcher Eintrag offen war, als gefragt wurde — „Ja“ gilt nur dafür */
@@ -196,6 +203,32 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
     return { verwerfen: false };
   }, [sitzungMerken, steuern, vorlesen, wartendesZielZeigen, zeile]);
 
+  useEffect(() => {
+    const neu = () => setFokusText(JSON.stringify(fokusLesen()));
+    neu();
+    const beobachter = new MutationObserver(neu);
+    beobachter.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-agent-fokus'] });
+    return () => beobachter.disconnect();
+  }, []);
+
+  /** Ergebnisse zu allen Objekten im Fokus (ohne Fokus: die jüngsten) */
+  const ergebnisseLaden = useCallback(async () => {
+    const bezuege = fokusBezuege(fokus);
+    const pfade = bezuege.length ? bezuege.map((b) => `${api}/ergebnisse?typ=${encodeURIComponent(b.typ)}&id=${encodeURIComponent(b.id)}`) : [`${api}/ergebnisse`];
+    const listen = await Promise.all(pfade.map(async (p) => {
+      const r = await anfrage(p).catch(() => null);
+      return r?.ok ? ((await r.json()) as { ergebnisse: ErgebnisDaten[] }).ergebnisse : [];
+    }));
+    const alle = new Map<string, ErgebnisDaten>();
+    for (const e of listen.flat()) alle.set(e.id, e);
+    setErgebnisse([...alle.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+  }, [anfrage, api, fokus]);
+  useEffect(() => { void ergebnisseLaden(); }, [ergebnisseLaden]);
+  const ergebnisLoeschen = useCallback((id: string) => {
+    void anfrage(`${api}/ergebnisse/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(ergebnisseLaden);
+  }, [anfrage, api, ergebnisseLaden]);
+  const fokusTitel = fokusBezuege(fokus).map((b) => `${b.typ[0]!.toUpperCase()}${b.typ.slice(1)} ${b.name || b.id}`).join(' · ') || 'Alle Ergebnisse';
+
   /** Erkannte Routinen — beim Öffnen, nach jeder Antwort und nach jedem Speichern in der App neu laden. */
   const routinenLaden = useCallback(async () => {
     const r = await anfrage(`${api}/routinen`).catch(() => null);
@@ -229,20 +262,21 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
     } finally {
       setBeschaeftigt(false);
       void routinenLaden();
+      void ergebnisseLaden();
     }
-  }, [anfrage, api, beschaeftigt, routinenLaden, verarbeiten, zeile]);
+  }, [anfrage, api, beschaeftigt, ergebnisseLaden, routinenLaden, verarbeiten, zeile]);
 
   /** Eine Routine starten: der Auftrag geht an den Agenten, im Gespräch steht nur ihr Name. */
   const routineStarten = useCallback((r: RoutineDaten) => {
-    void senden('nachricht', { sitzungId: sitzungId ?? undefined, text: r.auftrag, ort, kontext }, `▶ ${r.label}`);
-  }, [kontext, ort, senden, sitzungId]);
+    void senden('nachricht', { sitzungId: sitzungId ?? undefined, text: r.auftrag, ort, kontext: { ...kontext, ...fokus } }, `▶ ${r.label}`);
+  }, [fokus, kontext, ort, senden, sitzungId]);
 
   const nachricht = useCallback((text: string) => {
     const t = text.trim();
     if (!t) return;
     setEingabe('');
-    void senden('nachricht', { sitzungId: sitzungId ?? undefined, text: t, ort, kontext }, t);
-  }, [kontext, ort, senden, sitzungId]);
+    void senden('nachricht', { sitzungId: sitzungId ?? undefined, text: t, ort, kontext: { ...kontext, ...fokus } }, t);
+  }, [fokus, kontext, ort, senden, sitzungId]);
 
   const chipWaehlen = useCallback((c: ChipDaten) => {
     if (c.art === 'entscheidung' && sitzungId && wartetAuf) {
@@ -323,6 +357,10 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
         ))}
         {schliessen && <button type="button" className="am-symbol" aria-label="AgentMode schließen" data-tipp="Schließen" onClick={schliessen}>✕</button>}
       </div>
+      {ergebnisOffen ? (
+        <ErgebnisBereich titel={fokusTitel} ergebnisse={ergebnisse} loeschen={ergebnisLoeschen}
+          vergroessern={() => setErgebnisGross(true)} schliessen={() => setErgebnisOffen(false)} />
+      ) : (<>
       <div className="am-du">
         {letzteNutzer ? <Sprechblase wer="nutzer" text={letzteNutzer.text} schluessel={letzteNutzer.nr} /> : <div className="am-blase" data-wer="nutzer"><span className="am-wer">Du</span>…</div>}
       </div>
@@ -335,6 +373,9 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
         )}
         <button type="button" className="am-symbol" aria-pressed={transkriptOffen} aria-label="Transkript" data-tipp="Transkript" onClick={() => setTranskriptOffen((o) => !o)}>📜</button>
         <button type="button" className="am-symbol" aria-pressed={gedaechtnisOffen} aria-label="Gedächtnis" data-tipp="Gedächtnis" onClick={() => setGedaechtnisOffen((o) => !o)}>🧠</button>
+        <button type="button" className="am-symbol am-mit-zahl" aria-label={`Ergebnisse (${ergebnisse.length})`} data-tipp={`Ergebnisse — ${fokusTitel}`} onClick={() => { void ergebnisseLaden(); setErgebnisOffen(true); }}>
+          🗂{!!ergebnisse.length && <span className="am-zahl">{ergebnisse.length}</span>}
+        </button>
         {onStil && (
           <button type="button" className="am-symbol" aria-label="Stil des Sprechkreises wechseln" data-tipp={`Stil: ${SPRECHKREIS_STILE.find((x) => x.wert === stil)?.label ?? stil}`} onClick={naechsterStil}>✦</button>
         )}
@@ -347,6 +388,7 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
         <button type="button" className="am-symbol" aria-label="Neues Gespräch" data-tipp="Neues Gespräch" onClick={neuesGespraech}>↻</button>
         {einstellungen && <button type="button" className="am-symbol" aria-label="Einstellungen des Agenten" data-tipp="Einstellungen (Immer/Nie, Modell)" onClick={einstellungen}>⚙</button>}
       </form>
+      </>)}
       {(fehler || transkriptOffen || gedaechtnisOffen) && (
         <div className="am-unterteil">
           {fehler && <span className="am-hinweis" role="alert">{fehler}</span>}
@@ -362,6 +404,7 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
           )}
         </div>
       )}
+      {ergebnisGross && <ErgebnisDialog titel={fokusTitel} ergebnisse={ergebnisse} loeschen={ergebnisLoeschen} schliessen={() => { setErgebnisGross(false); setErgebnisOffen(false); }} />}
     </div>
   );
 

@@ -132,6 +132,14 @@ function attrappenAntwort(messages: BaseMessage[]): AIMessage {
   const offen = werkzeugAntworten.at(-1)?.match(/Noch nicht ausgeführt[^:]*: (\[.*\])$/s)?.[1];
   if (offen) return ki('', [['steuere', { aktionen: JSON.parse(offen) as unknown[] }]]);
 
+  // „Analysiere …“ / „Recherchiere …“: eine feste Kurzanalyse und das Angebot, sie zu speichern (Klicktests)
+  if (/^(analysiere|recherchiere)\b/.test(t) && !werkzeugAntworten.length) {
+    const thema = text.replace(/^(analysiere|recherchiere)\s+(die|den|das)?\s*/i, '').replace(/[.!?]+$/, '').trim() || 'Objekt';
+    const titel = `Analyse: ${thema[0]!.toUpperCase()}${thema.slice(1)}`;
+    return ki(`Kurzanalyse (Attrappe): ${thema} — ruhige Wohnlage, Preise seitwärts.`, [['ergebnis_speichern', { titel, art: 'recherche', inhalt: `**${titel}**\n\n- ruhige Wohnlage\n- Preise seitwärts (Attrappe)`, quellen: [{ titel: 'Attrappe', url: 'https://example.org/attrappe' }] }]]);
+  }
+  if (werkzeugAntworten.at(-1)?.startsWith('Gespeichert:')) return ki('Gespeichert — unter 🗂 Ergebnisse zu finden.');
+
   // Routine: „… 1. Name (schritt), 2. Name (schritt) … Wortlaut für …: „…““ → die Schritte der Reihe nach
   if (/^routine ausführen/.test(t) && !werkzeugAntworten.length) {
     const schritte = [...text.matchAll(/\d+\. [^(]+\(([a-z0-9.\-]+)\)/g)].map((m) => m[1]!);

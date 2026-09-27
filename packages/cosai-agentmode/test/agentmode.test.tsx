@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { AgentMode } from '../src/AgentMode.tsx';
 import { melden } from '../src/kanal.ts';
@@ -10,6 +10,7 @@ function kernErsatz() {
   let morgen: unknown = null;
   let routinen: unknown[] = [];
   let sitzung: unknown = { sitzungId: null, verlauf: [] };
+  let ergebnisse: Record<string, unknown[]> = {};
   const antwort = (daten: unknown, status = 200) => new Response(JSON.stringify(daten), { status, headers: { 'content-type': 'application/json' } });
   const anfrage = async (pfad: string, init?: RequestInit) => {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
@@ -18,6 +19,8 @@ function kernErsatz() {
     if (pfad === '/api/agent/ereignis') return antwort({ ok: true });
     if (pfad === '/api/agent/morgen') return antwort({ antwort: morgen });
     if (pfad === '/api/agent/routinen') return antwort({ routinen });
+    if (pfad.startsWith('/api/agent/ergebnisse?')) { const q = new URLSearchParams(pfad.split('?')[1]); return antwort({ ergebnisse: ergebnisse[`${q.get('typ')}:${q.get('id')}`] ?? [] }); }
+    if (pfad.startsWith('/api/agent/ergebnisse/') && init?.method === 'DELETE') { for (const k of Object.keys(ergebnisse)) ergebnisse[k] = []; return antwort({ geloescht: true }); }
     if (pfad === '/api/agent/nachricht') {
       wartet = true;
       return antwort({
@@ -34,7 +37,7 @@ function kernErsatz() {
     }
     return antwort({ fehler: 'unbekannt' }, 404);
   };
-  return { anfrage, aufrufe, setzeMorgen: (m: unknown) => { morgen = m; }, setzeRoutinen: (r: unknown[]) => { routinen = r; }, setzeSitzung: (x: { wartetAuf?: unknown; [feld: string]: unknown }) => { sitzung = x; wartet = !!x.wartetAuf; } };
+  return { anfrage, aufrufe, setzeMorgen: (m: unknown) => { morgen = m; }, setzeRoutinen: (r: unknown[]) => { routinen = r; }, setzeSitzung: (x: { wartetAuf?: unknown; [feld: string]: unknown }) => { sitzung = x; wartet = !!x.wartetAuf; }, setzeErgebnisse: (e: Record<string, unknown[]>) => { ergebnisse = e; } };
 }
 
 function App() {
@@ -193,5 +196,43 @@ describe('AgentMode (Vorlesen stoppen)', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Vorlesen stoppen' })).toBeNull());
     expect(stopp).toBeTruthy();
     window.localStorage.removeItem('cosai.ton');
+  });
+});
+
+describe('AgentMode (Ergebnisse)', () => {
+  const ergebnis = { id: 'e1', titel: 'Lage Esslingen', art: 'recherche', inhalt: '**Ø 4.000 €/m²**, seitwärts.', quellen: [{ titel: 'immowelt', url: 'https://www.immowelt.de/x' }], frage: 'Analysiere die Lage', werkzeuge: ['web_search'], modell: 'anthropic', nutzer: 'n', createdAt: '2026-09-27T12:00:00.000Z', bezuege: [{ typ: 'deal', refId: 'd1', bezeichnung: 'Musterweg 1' }] };
+
+  it('zeigt zum geöffneten Objekt 🗂 mit Anzahl, die Ergebnisse im zweiten Bereich, ⤢ als Dialog, ✕ zurück zu den Knöpfen', async () => {
+    const k = kernErsatz();
+    k.setzeErgebnisse({ 'deal:d1': [ergebnis] });
+    render(
+      <AgentMode api="/api/agent" anfrage={k.anfrage} modus="overlay" navigiere={vi.fn()} ort="/" stil="kern" schrittMs={10}>
+        <section data-agent-fokus='{"dealId":"d1","deal":"Musterweg 1"}'><App /></section>
+      </AgentMode>,
+    );
+    const knopf = await screen.findByRole('button', { name: 'Ergebnisse (1)' });
+    await act(async () => { fireEvent.click(knopf); });
+    const bereich = screen.getByRole('region', { name: 'Ergebnisse' });
+    expect(bereich.textContent).toContain('Musterweg 1');
+    expect(screen.queryByLabelText('Nachricht an den Agenten')).toBeNull();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Lage Esslingen/ })); });
+    expect(bereich.querySelector('.am-ergebnis-inhalt strong')?.textContent).toBe('Ø 4.000 €/m²');
+    expect(screen.getByRole('link', { name: 'immowelt' }).getAttribute('href')).toBe('https://www.immowelt.de/x');
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Ergebnisse vergrößern' })); });
+    const dialog = screen.getByRole('dialog', { name: /Ergebnisse/ });
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: 'Ergebnisse schließen' })); });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Ergebnisse' })).toBeNull();
+    expect(screen.getByLabelText('Nachricht an den Agenten')).toBeTruthy();
+  });
+
+  it('schickt den Fokus der App als Kontext mit — daraus entsteht der Bezug beim Speichern', async () => {
+    const k = kernErsatz();
+    render(<AgentMode api="/api/agent" anfrage={k.anfrage} modus="overlay" navigiere={vi.fn()} ort="/deals" stil="kern" schrittMs={10}><section data-agent-fokus='{"dealId":"d1","deal":"Musterweg 1"}'><App /></section></AgentMode>);
+    const eingabe = await screen.findByLabelText('Nachricht an den Agenten');
+    fireEvent.change(eingabe, { target: { value: 'Analysiere die Lage' } });
+    await act(async () => { fireEvent.submit(eingabe.closest('form')!); });
+    await waitFor(() => expect(k.aufrufe.find((a) => a.pfad === '/api/agent/nachricht')?.body).toMatchObject({ kontext: { dealId: 'd1', deal: 'Musterweg 1' } }));
   });
 });

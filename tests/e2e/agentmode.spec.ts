@@ -33,6 +33,11 @@ test.afterEach(async ({ page }) => {
   for (const e of g.eintraege ?? []) {
     if (e.inhalt.includes('(Test ') || e.art === 'routine' || (e.kontext?.dealId && testDeals.has(e.kontext.dealId))) await page.request.delete(`/api/agent/gedaechtnis/${e.id}`).catch(() => undefined);
   }
+  // Ergebnisse, die an den Test-Deals hängen
+  for (const id of angelegt.deals) {
+    const e = (await (await page.request.get(`/api/agent/ergebnisse?typ=deal&id=${id}`)).json().catch(() => ({ ergebnisse: [] }))) as { ergebnisse?: { id: string }[] };
+    for (const x of e.ergebnisse ?? []) await page.request.delete(`/api/agent/ergebnisse/${x.id}`).catch(() => undefined);
+  }
   for (const id of angelegt.deals.splice(0)) await page.request.delete(`/api/deals/${id}`).catch(() => undefined);
   for (const id of angelegt.objekte.splice(0)) await page.request.delete(`/api/objekte/${id}`).catch(() => undefined);
   for (const id of angelegt.makler.splice(0)) await page.request.delete(`/api/makler/${id}`).catch(() => undefined);
@@ -248,5 +253,37 @@ test.describe('AgentMode', () => {
       await page.request.delete(`/api/agent/mcp/${encodeURIComponent(name)}`);
       await new Promise((r) => mcp.close(r));
     }
+  });
+
+  test('Ergebnis: Analyse im geöffneten Deal nach „Ja“ speichern, unter 🗂 sehen, vergrößern, schließen', async ({ page }) => {
+    const { dealId, titel } = await faelligerDeal(page, `Agent-Ergebnis ${Date.now()}`);
+    await page.goto('/');
+    const oben = await agentOeffnen(page);
+    await page.getByLabel(`Deal ${titel}`).click();
+    await expect(page.locator(`[data-agent-fokus*="${dealId}"]`)).toHaveCount(1);
+    await expect(oben.getByRole('button', { name: 'Ergebnisse (0)' })).toBeVisible();
+
+    const eingabe = page.getByLabel('Nachricht an den Agenten');
+    await eingabe.fill('Analysiere die Lage');
+    await eingabe.press('Enter');
+    await expect(page.locator('.am-blase[data-wer="agent"]').last()).toContainText(`Als Ergebnis „Analyse: Lage“ bei Deal ${titel}`, { timeout: 15_000 });
+    await page.getByRole('button', { name: 'Ja, ausführen' }).click();
+    await expect(oben.getByRole('button', { name: 'Ergebnisse (1)' })).toBeVisible({ timeout: 15_000 });
+    // Gespeichert in CoSAi mit Bezug auf Deal und Objekt — nicht in den Tabellen der App
+    const e = (await (await page.request.get(`/api/agent/ergebnisse?typ=deal&id=${dealId}`)).json()) as { ergebnisse: { titel: string; bezuege: { typ: string }[] }[] };
+    expect(e.ergebnisse[0]).toMatchObject({ titel: 'Analyse: Lage' });
+    expect(e.ergebnisse[0]!.bezuege.map((b) => b.typ).sort()).toEqual(['deal', 'objekt']);
+
+    await oben.getByRole('button', { name: 'Ergebnisse (1)' }).click();
+    const bereich = oben.getByRole('region', { name: 'Ergebnisse' });
+    await expect(page.getByLabel('Nachricht an den Agenten')).toHaveCount(0);
+    await bereich.getByRole('button', { name: /Analyse: Lage/ }).click();
+    await expect(bereich).toContainText('ruhige Wohnlage');
+    await bereich.getByRole('button', { name: 'Ergebnisse vergrößern' }).click();
+    const dialog = page.getByRole('dialog', { name: /Ergebnisse/ });
+    await expect(dialog).toContainText('Preise seitwärts');
+    await dialog.getByRole('button', { name: 'Ergebnisse schließen' }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByLabel('Nachricht an den Agenten')).toBeVisible();
   });
 });
