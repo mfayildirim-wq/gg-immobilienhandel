@@ -103,6 +103,7 @@ function systemtext(dna: DNA, ziele: ZielBeschreibung[], erinnerungen: string[],
     'Reihenfolge einer Bedienung: navigiere (Seite) → oeffne (Eintrag/Reiter) → fuelle (Feld) → sende (Knopf). Vor jeder Aktion, die etwas speichert, wird der Nutzer gefragt; das übernimmt die Anwendung.',
     'Lesen (Listen, Details) machst du direkt über die GET-Werkzeuge. Antworte danach mit dem, was für den Nutzer wichtig ist, nicht mit Rohdaten.',
     'Für Recherche außerhalb der Anwendung (Lage, Umfeld, Marktpreise, vergleichbare Angebote) nutze die Websuche, falls vorhanden. Nenne dann die Quellen mit Adresse und trenne Gefundenes klar von deiner Einschätzung.',
+    'Nach einer Recherche oder Analyse rufe `ergebnis_speichern` direkt auf, falls vorhanden — frage nicht selbst im Text, ob gespeichert werden soll; die Anwendung fragt den Nutzer und speichert nur nach seinem „Ja“.',
     'Biete am Ende deiner Antwort mit `chips` passende nächste Schritte an (2–6 kurze Möglichkeiten).',
     'Merke dir mit `merke` Fakten, die der Nutzer dir sagt (art „fakt“) und Formulierungen, die er in Felder schreibt (art „formulierung“, schluessel = Ziel des Feldes).',
     'Grundregeln (gelten immer):', ...GRUNDREGELN.map((r) => `- ${r}`),
@@ -149,6 +150,21 @@ function listenBeschneiden(wert: unknown, anteil: number): unknown {
     return Object.fromEntries(Object.entries(wert as Record<string, unknown>).map(([k, v]) => [k, Array.isArray(v) ? listenBeschneiden(v, anteil) : v]));
   }
   return wert;
+}
+
+/**
+ * Welche Werkzeuge zu einem Ergebnis geführt haben: die der letzten zwei Züge des Nutzers (die Recherche läuft oft im
+ * Zug vor „speichern“), einschließlich der Websuche von Claude (`server_tool_use`), ohne `ergebnis_speichern`.
+ */
+export function verwendeteWerkzeuge(messages: BaseMessage[]): string[] {
+  const menschen = messages.map((m, i) => (m instanceof HumanMessage ? i : -1)).filter((i) => i >= 0);
+  const ab = menschen.length >= 2 ? menschen[menschen.length - 2]! : 0;
+  const namen = messages.slice(ab).flatMap((m) => {
+    if (!(m instanceof AIMessage)) return [];
+    const server = Array.isArray(m.content) ? (m.content as { type: string; name?: string }[]).filter((b) => b.type === 'server_tool_use' && b.name).map((b) => b.name!) : [];
+    return [...server, ...(m.tool_calls ?? []).map((t) => t.name)];
+  });
+  return [...new Set(namen.filter((n) => n !== 'ergebnis_speichern'))];
 }
 
 /** Der Zustand des laufenden Graphen — für Werkzeuge, die Kontext und Verlauf brauchen */
@@ -263,14 +279,13 @@ export function werkzeugeBauen(opt: GraphOptionen): StructuredToolInterface[] {
         const frage = `Als Ergebnis „${titel}“${wo} speichern?`;
         const antwort = interrupt({ frage, aktion: { art: 'werkzeug', ziel: 'ergebnis_speichern', wert: titel, text: frage }, vorher: [] }) as string;
         if (!istZustimmung(antwort)) return `Der Nutzer hat nicht bestätigt: „${antwort}“. Nicht gespeichert.`;
-        const seitFrage = zustand.messages.slice(zustand.messages.map((m) => m instanceof HumanMessage).lastIndexOf(true));
-        const werkzeuge = [...new Set(seitFrage.flatMap((m) => (m instanceof AIMessage ? (m.tool_calls ?? []).map((t) => t.name) : [])).filter((n) => n !== 'ergebnis_speichern'))];
+        const werkzeuge = verwendeteWerkzeuge(zustand.messages);
         const letzteFrage = [...zustand.messages].reverse().find((m) => m instanceof HumanMessage);
         const e = await speicher.speichern({ titel, art, inhalt, quellen: quellen ?? [], bezuege, werkzeuge, modell: opt.modell._llmType(), frage: letzteFrage ? String(letzteFrage.content) : undefined });
         return `Gespeichert: „${e.titel}“${wo}.`;
       }, {
         name: 'ergebnis_speichern',
-        description: 'Speichert ein Ergebnis (Recherche, Dokumentanalyse, Vergleich) dauerhaft beim Objekt, das der Nutzer offen hat. Biete es nach einer Recherche oder Analyse an; der Nutzer wird vorher gefragt. inhalt: das Ergebnis vollständig und lesbar (Markdown), quellen: Webseiten oder Dokumente.',
+        description: 'Speichert ein Ergebnis (Recherche, Dokumentanalyse, Vergleich) dauerhaft beim Objekt, das der Nutzer offen hat. Rufe es nach einer Recherche oder Analyse direkt auf — frage NICHT vorher im Text, ob gespeichert werden soll: die Anwendung fragt den Nutzer selbst und speichert nur nach seinem „Ja“. inhalt: das Ergebnis vollständig und lesbar (Markdown), quellen: Webseiten oder Dokumente.',
         schema: z.object({
           titel: z.string().min(2).max(200),
           art: z.enum(['recherche', 'dokumentanalyse', 'vergleich', 'zusammenfassung', 'sonstiges']),

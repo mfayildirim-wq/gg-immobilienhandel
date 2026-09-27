@@ -1,6 +1,6 @@
 import { AIMessage, HumanMessage, ToolMessage } from '@langchain/core/messages';
 import { describe, expect, it } from 'vitest';
-import { letzterText, serverWerkzeuge, verlaufFenster } from '../src/graph.ts';
+import { letzterText, serverWerkzeuge, verlaufFenster, verwendeteWerkzeuge } from '../src/graph.ts';
 import { anthropicModell, drehbuchModell } from '../src/modell.ts';
 
 describe('letzterText', () => {
@@ -74,5 +74,19 @@ describe('serverWerkzeuge', () => {
     expect(serverWerkzeuge(anthropicModell('sk-test'), { claudeSuche: true })).toEqual([{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }]);
     expect(serverWerkzeuge(anthropicModell('sk-test'), { claudeSuche: false })).toEqual([]);
     expect(serverWerkzeuge(drehbuchModell([]), { claudeSuche: true })).toEqual([]);
+  });
+});
+
+describe('verwendeteWerkzeuge', () => {
+  it('nimmt die Werkzeuge der letzten Züge — auch die Websuche von Claude —, ohne ergebnis_speichern', () => {
+    const verlauf = [
+      new HumanMessage('Alt'), new AIMessage({ content: '', tool_calls: [{ id: 'a', name: 'uralt', args: {} }] }),
+      new HumanMessage('Analysiere die Lage'),
+      new AIMessage({ content: [{ type: 'server_tool_use', id: 's1', name: 'web_search', input: {} }, { type: 'text', text: 'Analyse …' }] as never }),
+      new AIMessage({ content: '', tool_calls: [{ id: 'b', name: 'seite_lesen', args: {} }] }),
+      new HumanMessage('speichern'),
+      new AIMessage({ content: '', tool_calls: [{ id: 'c', name: 'ergebnis_speichern', args: {} }] }),
+    ];
+    expect(verwendeteWerkzeuge(verlauf)).toEqual(['web_search', 'seite_lesen']);
   });
 });
