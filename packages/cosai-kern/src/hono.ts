@@ -4,8 +4,8 @@
  */
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import type { Kern, Nutzer } from './kern.ts';
-import { Beobachtung, Eingabe, Entscheidung } from './vertrag.ts';
+import { KernHinweis, type Kern, type Nutzer } from './kern.ts';
+import { AgentEinstellungen, Beobachtung, Eingabe, Entscheidung } from './vertrag.ts';
 
 const SitzungsParam = z.object({ sitzungId: z.string().optional() });
 
@@ -22,6 +22,19 @@ export function agentRouten(kern: Kern, nutzerAus: (c: Context) => Nutzer | null
   app.use('*', async (c, next) => {
     if (!nutzerAus(c)) return c.json({ fehler: 'Nicht angemeldet' }, 401);
     await next();
+  });
+
+  // Meldungen für den Nutzer (z. B. kein Modell für den gewählten Anbieter) sind keine Störung
+  app.onError((e, c) => {
+    if (e instanceof KernHinweis) return c.json({ fehler: e.message }, 409);
+    throw e;
+  });
+
+  app.get('/einstellungen', async (c) => c.json(await kern.einstellungen()));
+  app.put('/einstellungen', async (c) => {
+    const e = await json(c, AgentEinstellungen);
+    if (e instanceof Response) return e;
+    return c.json(await kern.einstellungenSpeichern(e));
   });
 
   app.get('/stand', (c) => c.json(kern.stand()));

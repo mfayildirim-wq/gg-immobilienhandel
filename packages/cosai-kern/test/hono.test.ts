@@ -3,6 +3,8 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { agentRouten } from '../src/hono.ts';
 import { agentKern } from '../src/kern.ts';
 import { drehbuchModell, ki } from '../src/modell.ts';
+import { eq } from 'drizzle-orm';
+import { agenten } from '../src/schema.ts';
 import { testDb, url } from './db.ts';
 
 /** Ein Tag, den es für den Testnutzer noch nicht gab: Jahr aus der Uhrzeit, Monat und Tag zufällig */
@@ -13,10 +15,11 @@ function einmaligerTag(): string {
 
 describe.skipIf(!url)('Hono-Routen', () => {
   const { db, client } = url ? testDb() : ({} as ReturnType<typeof testDb>);
-  afterAll(async () => { await client?.end(); });
+  afterAll(async () => { if (url) await db.delete(agenten).where(eq(agenten.slug, 'test-hono')); await client?.end(); });
   const ziele = [{ ziel: 'deal.kommentar.senden', beschreibung: 'Knopf' }];
-  const bauen = (drehbuch = [ki('Hallo!')]) => {
-    const kern = agentKern({ db, modell: drehbuchModell(drehbuch), openapi: { paths: {} }, ziele, aufruf: async () => ({ status: 200, text: '{}' }) });
+  const bauen = (drehbuch = [ki('Hallo!')], modell?: Parameters<typeof agentKern>[0]['modell']) => {
+    // Eigener Agent-Name: die Einstellungen der Entwicklung bleiben unberührt
+    const kern = agentKern({ db, modell: modell ?? drehbuchModell(drehbuch), openapi: { paths: {} }, ziele, aufruf: async () => ({ status: 200, text: '{}' }), dna: { slug: 'test-hono' } });
     const app = new Hono();
     app.route('/api/agent', agentRouten(kern, (c) => (c.req.header('x-nutzer') ? { id: c.req.header('x-nutzer')!, kopf: {} } : null)));
     return app;
@@ -62,5 +65,24 @@ describe.skipIf(!url)('Hono-Routen', () => {
     const erst = (await (await post(app, '/api/agent/morgen', { heute: tag })).json()) as { antwort: { text: string } | null };
     expect(erst.antwort?.text).toBe('Guten Morgen, heute ist wenig los.');
     expect(await (await post(app, '/api/agent/morgen', { heute: tag })).json()).toEqual({ antwort: null });
+  });
+
+  it('Einstellungen: GET zeigt die Grundregeln, PUT prüft die Eingabe und speichert', async () => {
+    const app = bauen();
+    const put = (body: unknown) => app.request('/api/agent/einstellungen', { method: 'PUT', headers: { 'content-type': 'application/json', 'x-nutzer': 'hono@example' }, body: JSON.stringify(body) });
+    expect((await put({ regeln: [''], nie: [] })).status).toBe(400);
+    expect((await put({ regeln: Array.from({ length: 31 }, (_, i) => `Regel ${i}`), nie: [] })).status).toBe(400);
+    const ok = await put({ regeln: ['Immer kurz antworten'], nie: ['Nie duzen'], anbieter: 'openai', modell: 'gpt-x' });
+    expect(ok.status).toBe(200);
+    const e = (await (await app.request('/api/agent/einstellungen', { headers: { 'x-nutzer': 'hono@example' } })).json()) as { grundregeln: string[]; regeln: string[]; nie: string[]; anbieter: string };
+    expect(e.grundregeln.length).toBeGreaterThan(0);
+    expect(e).toMatchObject({ regeln: ['Immer kurz antworten'], nie: ['Nie duzen'], anbieter: 'openai' });
+  });
+
+  it('ohne Modell für den gewählten Anbieter: 409 mit verständlicher Meldung statt 500', async () => {
+    const app = bauen([], async () => null);
+    const res = await post(app, '/api/agent/nachricht', { text: 'Hi' });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { fehler: string }).fehler).toMatch(/kein Modell/);
   });
 });

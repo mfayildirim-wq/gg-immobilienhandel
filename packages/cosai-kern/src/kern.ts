@@ -10,12 +10,13 @@ import { Command } from '@langchain/langgraph';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { DrizzleSaver } from './checkpointer.ts';
 import { gedaechtnis as gedaechtnisBauen, type Db, type Gedaechtnis } from './gedaechtnis.ts';
-import { graphBauen, letzterText, type Aufruf, type ZielBeschreibung } from './graph.ts';
+import { graphBauen, GRUNDREGELN, letzterText, type Aufruf, type ZielBeschreibung } from './graph.ts';
+export { GRUNDREGELN } from './graph.ts';
 import { katalogFingerabdruck, werkzeugeAusOpenapi, type KatalogWerkzeug, type OpenapiDokument } from './katalog.ts';
-import type { Modell } from './modell.ts';
+import { drehbuchModell, type Modell } from './modell.ts';
 import { routinenAus, type Routine } from './routinen.ts';
-import { ereignisse, laeufe, nachrichten, sitzungen } from './schema.ts';
-import { DNA, type AgentAntwort, type Beobachtung, type Chip, type Eingabe, type Entscheidung, type Steuerung } from './vertrag.ts';
+import { agenten, ereignisse, laeufe, nachrichten, sitzungen } from './schema.ts';
+import { AgentEinstellungen, DNA, type AgentAntwort, type Beobachtung, type Chip, type Eingabe, type Entscheidung, type Steuerung } from './vertrag.ts';
 
 /** Wer gerade spricht — und was der Host-Aufruf braucht, um in dessen Namen zu lesen (z. B. Authorization). */
 export interface Nutzer {
@@ -23,9 +24,16 @@ export interface Nutzer {
   kopf?: Record<string, string>;
 }
 
+/** Der Host baut das Modell des in den Einstellungen gewählten Anbieters (null = kein Schlüssel, nicht unterstützt) */
+export type ModellWahl = (wahl: { anbieter: string; modell: string }) => Promise<Modell | null> | Modell | null;
+
+/** Eine Meldung für den Nutzer (z. B. kein Modell für den gewählten Anbieter) — keine Störung */
+export class KernHinweis extends Error {}
+
 export interface KernOptionen {
   db: Db;
-  modell: Modell;
+  /** Ein festes Modell — oder die Wahl nach den Einstellungen */
+  modell: Modell | ModellWahl;
   openapi: OpenapiDokument;
   ziele: ZielBeschreibung[];
   /** Lesender Aufruf einer Host-Operation im Namen des Nutzers */
@@ -42,14 +50,17 @@ export const FORMULIERUNG_MAX = 500;
 
 export const MORGEN_AUFTRAG = 'Guten Morgen. Was steht heute an? Nenne, wie viele Einträge fällig sind, und schlage vor, womit ich anfange. Nur lesen, nichts ändern.';
 
+/** Die vorgegebenen „Immer“-Regeln — in den Einstellungen änderbar */
+export const MEISTER_REGELN = [
+  'Wenn der Nutzer etwas erfassen will (Kommentar, Notiz), schreibe genau seinen Wortlaut ins Feld — nicht umformulieren.',
+  'Wenn du nicht weißt, welcher Eintrag gemeint ist, lies die Liste und frage kurz nach — mit Chips.',
+];
+
 export const MEISTER_DNA: DNA = DNA.parse({
   slug: 'meister',
   name: 'Agent',
   rolle: 'Du hilfst dem Nutzer, die Anwendung zu bedienen: du liest nach, führst durch fällige Aufgaben, füllst Felder aus und schickst ab — immer sichtbar und nur nach Bestätigung.',
-  regeln: [
-    'Wenn der Nutzer etwas erfassen will (Kommentar, Notiz), schreibe genau seinen Wortlaut ins Feld — nicht umformulieren.',
-    'Wenn du nicht weißt, welcher Eintrag gemeint ist, lies die Liste und frage kurz nach — mit Chips.',
-  ],
+  regeln: MEISTER_REGELN,
 });
 
 export type Kern = ReturnType<typeof agentKern>;
@@ -60,9 +71,25 @@ export function agentKern(opt: KernOptionen) {
   const fingerabdruck = katalogFingerabdruck(werkzeuge, opt.ziele.map((z) => z.ziel));
   const { db } = opt;
 
-  const graphFuer = (nutzer: Nutzer, gedaechtnis: Gedaechtnis, nurLesen = false) => {
+  /** Die DNA mit den gespeicherten Einstellungen (cosai.agenten, Version 1 des Slugs) — bei jedem Lauf frisch gelesen */
+  async function dnaLaden(): Promise<DNA> {
+    const [z] = await db.select({ dna: agenten.dna }).from(agenten).where(and(eq(agenten.slug, dna.slug), eq(agenten.version, 1))).limit(1);
+    return z ? DNA.parse({ ...dna, ...(z.dna as Partial<DNA>), slug: dna.slug }) : dna;
+  }
+
+  async function modellFuer(d: DNA): Promise<Modell> {
+    if (typeof opt.modell !== 'function') return opt.modell;
+    const m = await (opt.modell as ModellWahl)({ anbieter: d.anbieter, modell: d.modell });
+    if (!m) throw new KernHinweis(`Für den Anbieter „${d.anbieter || 'Standard'}“ ist kein Modell verfügbar — Schlüssel unter Einstellungen → Zugänge hinterlegen oder in den AgentMode-Einstellungen einen anderen Anbieter wählen.`);
+    return m;
+  }
+
+  /** `nurZustand`: nur den gespeicherten Zustand lesen — dafür wird kein Modell gebraucht (und keines gebaut). */
+  const graphFuer = async (nutzer: Nutzer, gedaechtnis: Gedaechtnis, nurLesen = false, nurZustand = false) => {
     const aufruf: Aufruf = (methode, pfad, body) => opt.aufruf(nutzer, methode, pfad, body);
-    return graphBauen({ modell: opt.modell, dna, werkzeuge, ziele: opt.ziele, aufruf, gedaechtnis, antwortGrenze: opt.antwortGrenze, nurLesen }, new DrizzleSaver(db));
+    const d = await dnaLaden();
+    const modell = nurZustand ? drehbuchModell([]) : await modellFuer(d);
+    return graphBauen({ modell, dna: d, werkzeuge, ziele: opt.ziele, aufruf, gedaechtnis, antwortGrenze: opt.antwortGrenze, nurLesen }, new DrizzleSaver(db));
   };
 
   async function sitzungSicherstellen(nutzer: Nutzer, sitzungId: string | undefined, ort: string, kontext: Record<string, unknown>): Promise<string> {
@@ -87,7 +114,7 @@ export function agentKern(opt: KernOptionen) {
   }
 
   /** Liest nach dem Lauf aus dem Zustand, was die Oberfläche bekommt — und ob der Graph auf eine Bestätigung wartet. */
-  async function antwortAus(graph: ReturnType<typeof graphFuer>, nutzer: Nutzer, sitzungId: string, vorher: number): Promise<AgentAntwort> {
+  async function antwortAus(graph: Awaited<ReturnType<typeof graphFuer>>, nutzer: Nutzer, sitzungId: string, vorher: number): Promise<AgentAntwort> {
     const config = { configurable: { thread_id: sitzungId } };
     const stand = await graph.getState(config);
     const werte = stand.values as { messages: import('@langchain/core/messages').BaseMessage[]; steuerung: Steuerung[]; chips: Chip[] };
@@ -107,7 +134,7 @@ export function agentKern(opt: KernOptionen) {
   async function nachricht(nutzer: Nutzer, eingabe: Eingabe, nurLesen = false): Promise<AgentAntwort> {
     const sitzungId = await sitzungSicherstellen(nutzer, eingabe.sitzungId, eingabe.ort, eingabe.kontext);
     await db.insert(nachrichten).values({ sitzungId, rolle: 'nutzer', text: eingabe.text });
-    const graph = graphFuer(nutzer, gedaechtnisBauen(db, nutzer.id), nurLesen);
+    const graph = await graphFuer(nutzer, gedaechtnisBauen(db, nutzer.id), nurLesen);
     const config = { configurable: { thread_id: sitzungId } };
     // Wartet der Graph noch auf eine Bestätigung, gilt der neue Text als Antwort darauf (kein „ja“ → abgebrochen)
     const stand = await graph.getState(config);
@@ -173,7 +200,7 @@ export function agentKern(opt: KernOptionen) {
       const [s] = await db.select().from(sitzungen).where(eq(sitzungen.id, e.sitzungId)).limit(1);
       if (!s || s.nutzer !== nutzer.id) throw new Error('Sitzung unbekannt');
       await db.insert(nachrichten).values({ sitzungId: e.sitzungId, rolle: 'nutzer', text: e.wert });
-      const graph = graphFuer(nutzer, gedaechtnisBauen(db, nutzer.id));
+      const graph = await graphFuer(nutzer, gedaechtnisBauen(db, nutzer.id));
       const config = { configurable: { thread_id: e.sitzungId } };
       const stand = await graph.getState(config);
       if (!stand.tasks.some((t) => t.interrupts?.length)) throw new Error('Nichts wartet auf eine Entscheidung');
@@ -239,7 +266,7 @@ export function agentKern(opt: KernOptionen) {
     async wartetAuf(nutzer: Nutzer, sitzungId: string): Promise<AgentAntwort['wartetAuf']> {
       const [s] = await db.select().from(sitzungen).where(eq(sitzungen.id, sitzungId)).limit(1);
       if (!s || s.nutzer !== nutzer.id) return undefined;
-      const graph = graphFuer(nutzer, gedaechtnisBauen(db, nutzer.id));
+      const graph = await graphFuer(nutzer, gedaechtnisBauen(db, nutzer.id), false, true);
       const stand = await graph.getState({ configurable: { thread_id: sitzungId } });
       const u = stand.tasks.flatMap((t) => t.interrupts ?? [])[0]?.value as { frage: string; aktion: Steuerung } | undefined;
       return u ? { frage: u.frage, aktion: u.aktion } : undefined;
@@ -250,8 +277,22 @@ export function agentKern(opt: KernOptionen) {
       return s?.id;
     },
 
+    /** Für die Einstellungsseite: feste Grundregeln, änderbare Immer/Nie, Anbieter und Modell. */
+    async einstellungen() {
+      const d = await dnaLaden();
+      return { grundregeln: GRUNDREGELN, regeln: d.regeln, nie: d.nie, anbieter: d.anbieter, modell: d.modell };
+    },
+
+    async einstellungenSpeichern(eingabe: AgentEinstellungen) {
+      const e = AgentEinstellungen.parse(eingabe);
+      const neu = DNA.parse({ ...(await dnaLaden()), ...e, slug: dna.slug });
+      await db.insert(agenten).values({ slug: dna.slug, version: 1, dna: neu, status: 'aktiv' })
+        .onConflictDoUpdate({ target: [agenten.slug, agenten.version], set: { dna: neu, updatedAt: new Date().toISOString() } });
+      return this.einstellungen();
+    },
+
     stand() {
-      return { dna, fingerabdruck, werkzeuge: werkzeuge.length, ziele: opt.ziele.length, modell: opt.modell._llmType() };
+      return { dna, fingerabdruck, werkzeuge: werkzeuge.length, ziele: opt.ziele.length, modell: typeof opt.modell === 'function' ? 'wahl' : opt.modell._llmType() };
     },
   };
 }

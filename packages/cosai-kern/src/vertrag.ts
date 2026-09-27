@@ -60,13 +60,29 @@ export const DNA = z.object({
   rolle: z.string().min(1),
   /** Namen erlaubter Werkzeuge aus dem Katalog; `*` = alle lesenden */
   werkzeuge: z.array(z.string()).default(['*']),
+  /** „Immer“ (Dos) — in den Einstellungen ergänzbar */
   regeln: z.array(z.string()).default([]),
+  /** „Nie“ (Don'ts) — in den Einstellungen ergänzbar */
+  nie: z.array(z.string()).default([]),
+  /** Modellanbieter und Modell; leer = Vorgabe des Hosts */
+  anbieter: z.string().default(''),
+  modell: z.string().default(''),
   beispiele: z.array(z.object({ nutzer: z.string(), agent: z.string() })).default([]),
   version: z.number().int().min(1).default(1),
   /** Hash von OpenAPI + Oberflächenkarte, gegen den die DNA entworfen wurde */
   fingerabdruck: z.string().optional(),
 });
 export type DNA = z.infer<typeof DNA>;
+
+const Regel = z.string().trim().min(1).max(300);
+/** Was die Einstellungsseite ändern darf — die Grundregeln gehören nicht dazu */
+export const AgentEinstellungen = z.object({
+  regeln: z.array(Regel).max(30),
+  nie: z.array(Regel).max(30),
+  anbieter: z.string().max(40).default(''),
+  modell: z.string().max(100).default(''),
+});
+export type AgentEinstellungen = z.infer<typeof AgentEinstellungen>;
 
 export const GedaechtnisArt = z.enum(['episode', 'formulierung', 'fakt', 'routine']);
 export const GedaechtnisEintrag = z.object({

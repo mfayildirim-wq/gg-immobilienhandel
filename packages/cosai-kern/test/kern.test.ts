@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { agentKern, type Nutzer } from '../src/kern.ts';
+import { agentKern, GRUNDREGELN, MEISTER_REGELN, type Nutzer } from '../src/kern.ts';
 import { drehbuchModell, ki } from '../src/modell.ts';
 import type { OpenapiDokument } from '../src/katalog.ts';
+import { like } from 'drizzle-orm';
+import { agenten } from '../src/schema.ts';
 import { testDb, url } from './db.ts';
 
 const openapi: OpenapiDokument = {
@@ -34,7 +36,7 @@ describe.skipIf(!url)('Kern', () => {
     return { status: 200, text: JSON.stringify({ deals: [{ id: 'd1', objekt: 'Weraststraße 12', makler: 'Huber' }] }) };
   };
   beforeAll(async () => { if (url) await agentKern({ db, modell: drehbuchModell([]), openapi, ziele, aufruf }).gedaechtnis(nutzer).leeren(); });
-  afterAll(async () => { await client?.end(); });
+  afterAll(async () => { if (url) await db.delete(agenten).where(like(agenten.slug, 'test-%')); await client?.end(); });
 
   it('liest über ein Host-Werkzeug im Namen des Nutzers und antwortet mit Chips', async () => {
     const modell = drehbuchModell([
@@ -221,5 +223,34 @@ describe.skipIf(!url)('Kern', () => {
     expect(a?.steuerung).toEqual([]);
     expect(await kern.wartetAuf(nutzer, a!.sitzungId)).toBeUndefined();
     expect((await kern.gedaechtnis(nutzer).alles()).some((e) => e.art === 'fakt' && e.schluessel === 'x')).toBe(false);
+  });
+
+  it('Einstellungen: Grundregeln fest im Systemtext, Immer/Nie speicherbar und im nächsten Lauf wirksam', async () => {
+    // Eigener Agent-Name: die Tests laufen gegen dieselbe Datenbank wie die Entwicklung
+    const dna = { slug: `test-einst-${Date.now()}` };
+    const modell = drehbuchModell([ki('Ok.')]);
+    const kern = agentKern({ db, modell, openapi, ziele, aufruf, dna });
+    expect((await kern.einstellungen()).regeln).toEqual(MEISTER_REGELN);
+    await kern.einstellungenSpeichern({ regeln: ['Immer mit Sie ansprechen'], nie: ['Nie Kaufpreise nennen'], anbieter: '', modell: '' });
+    const e = await agentKern({ db, modell, openapi, ziele, aufruf, dna }).einstellungen();
+    expect(e.grundregeln).toEqual(GRUNDREGELN);
+    expect(e.grundregeln.join(' ')).toMatch(/nie von dir aus/i);
+    expect(e.regeln).toEqual(['Immer mit Sie ansprechen']);
+    expect(e.nie).toEqual(['Nie Kaufpreise nennen']);
+    await kern.nachricht(nutzer, { text: 'Hallo', ort: '/', kontext: {} });
+    const system = String(modell.aufrufe[0]![0]!.content);
+    for (const r of [...GRUNDREGELN, 'Immer mit Sie ansprechen', 'Nie Kaufpreise nennen']) expect(system).toContain(r);
+  });
+
+  it('Einstellungen: der gewählte Anbieter geht an die Modellwahl des Hosts; ohne Modell eine klare Meldung', async () => {
+    const dna = { slug: `test-wahl-${Date.now()}` };
+    const gesehen: unknown[] = [];
+    const wahl = async (w: { anbieter: string; modell: string }) => { gesehen.push(w); return w.anbieter === 'deepseek' ? drehbuchModell([ki('Hallo aus DeepSeek.')]) : null; };
+    const kern = agentKern({ db, modell: wahl, openapi, ziele, aufruf, dna });
+    await kern.einstellungenSpeichern({ regeln: [], nie: [], anbieter: 'deepseek', modell: 'deepseek-chat' });
+    expect((await kern.nachricht(nutzer, { text: 'Hi', ort: '/', kontext: {} })).text).toBe('Hallo aus DeepSeek.');
+    expect(gesehen.at(-1)).toEqual({ anbieter: 'deepseek', modell: 'deepseek-chat' });
+    await kern.einstellungenSpeichern({ regeln: [], nie: [], anbieter: 'kimi', modell: '' });
+    await expect(kern.nachricht(nutzer, { text: 'Hi', ort: '/', kontext: {} })).rejects.toThrow(/kimi/i);
   });
 });
