@@ -285,6 +285,9 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   app.use('/api/deals/:id/einheiten-aus-pdf', begrenzung(GRENZEN.ki));
   app.use('/api/transkription', begrenzung(GRENZEN.diktat));
   app.use('/api/auto-import/lauf', begrenzung(GRENZEN.ki));
+  // AgentMode: jede Nachricht startet mehrere Modellaufrufe — dieselbe Grenze wie die übrigen KI-Routen, gemeinsam gezählt
+  const agentGrenze = begrenzung(GRENZEN.ki);
+  for (const pfad of ['/api/agent/nachricht', '/api/agent/entscheidung', '/api/agent/morgen']) app.use(pfad, agentGrenze);
   app.use('/api/m365/posteingang', begrenzung(GRENZEN.abruf));
   app.use('/api/m365/konfiguration', begrenzung(GRENZEN.zugang));
   app.use('/api/m365/anmeldung', begrenzung(GRENZEN.zugang));

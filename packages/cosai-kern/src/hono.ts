@@ -25,7 +25,7 @@ export function agentRouten(kern: Kern, nutzerAus: (c: Context) => Nutzer | null
   });
 
   app.get('/stand', (c) => c.json(kern.stand()));
-  app.get('/ziele', (c) => c.json({ ziele: kern.werkzeuge.length, dna: kern.dna }));
+  app.get('/ziele', (c) => c.json({ ziele: kern.stand().ziele, werkzeuge: kern.werkzeuge.length, dna: kern.dna }));
 
   app.post('/nachricht', async (c) => {
     const eingabe = await json(c, Eingabe);

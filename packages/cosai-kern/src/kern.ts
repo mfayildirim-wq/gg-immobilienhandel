@@ -37,6 +37,9 @@ export interface KernOptionen {
   morgenAuftrag?: string;
 }
 
+/** Längste Notiz, die als Formulierung (Vorschlag) gemerkt wird */
+export const FORMULIERUNG_MAX = 500;
+
 export const MORGEN_AUFTRAG = 'Guten Morgen. Was steht heute an? Nenne, wie viele Einträge fällig sind, und schlage vor, womit ich anfange. Nur lesen, nichts ändern.';
 
 export const MEISTER_DNA: DNA = DNA.parse({
@@ -182,7 +185,8 @@ export function agentKern(opt: KernOptionen) {
       await db.insert(ereignisse).values({ nutzer: nutzer.id, sitzungId: sitzungId ?? null, richtung: 'beobachtung', art: b.art, ziel: b.ziel, wert: b.wert ?? null, kontext: b.kontext });
       if (b.art === 'gespeichert') {
         const g = gedaechtnisBauen(db, nutzer.id);
-        if (b.wert?.trim()) await g.merke('formulierung', b.ziel, b.wert, b.kontext);
+        // Lange Texte (eingefügte Mails) taugen nicht als Vorschlag — und sprengen den eindeutigen Index
+        if (b.wert?.trim() && b.wert.trim().length <= FORMULIERUNG_MAX) await g.merke('formulierung', b.ziel, b.wert, b.kontext);
         await g.merke('episode', b.ziel, b.wert?.trim() ? `${b.ziel}: ${b.wert.trim().slice(0, 200)}` : b.ziel, { ...b.kontext, ...(sitzungId ? { sitzungId } : {}) });
         await routinenNeu(nutzer);
       }

@@ -191,4 +191,22 @@ describe.skipIf(!url)('Kern', () => {
       .nachricht(nutzer, { text: 'öffne', ort: '/', kontext: {} });
     expect(harmlos.steuerung).toEqual([{ art: 'oeffne', ziel: 'deal.reiter.kommunikation' }]);
   });
+  it('versteht getippte Zustimmung („Ja.“, „ja bitte“), aber nicht „ja, aber …“', async () => {
+    const aktion = { art: 'sende', ziel: 'deal.kommentar.senden', text: 'Abschicken?' };
+    for (const [eingabe, gesendet] of [['Ja.', true], ['ja bitte', true], ['OK!', true], ['ja, aber ändere den Text', false]] as const) {
+      const kern = agentKern({ db, modell: drehbuchModell([ki('', [['steuere', { aktionen: [aktion] }]]), ki('Gut.')]), openapi, ziele, aufruf });
+      const a = await kern.nachricht(nutzer, { text: 'schick', ort: '/', kontext: {} });
+      const b = await agentKern({ db, modell: drehbuchModell([ki('Gut.')]), openapi, ziele, aufruf }).nachricht(nutzer, { sitzungId: a.sitzungId, text: eingabe, ort: '/', kontext: {} });
+      expect(b.steuerung.some((s) => s.art === 'sende'), eingabe).toBe(gesendet);
+    }
+  });
+
+  it('merkt sich lange Notizen nicht als Formulierung (Index-Grenze), aber als Episode', async () => {
+    const lang = { id: `test-lang-${Date.now()}@example` };
+    const kern = agentKern({ db, modell: drehbuchModell([]), openapi, ziele, aufruf });
+    await kern.ereignis(lang, { art: 'gespeichert', ziel: 'deal.kommentar', wert: 'x'.repeat(5000), kontext: { dealId: 'd1' } });
+    expect(await kern.vorschlaege(lang, 'deal.kommentar')).toEqual([]);
+    expect((await kern.gedaechtnis(lang).verlauf(5)).length).toBe(1);
+    await kern.gedaechtnis(lang).leeren();
+  });
 });

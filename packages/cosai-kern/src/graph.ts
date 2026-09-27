@@ -135,7 +135,9 @@ export function werkzeugeBauen(opt: GraphOptionen): StructuredToolInterface[] {
     const danach = aktionen.slice(erstesSenden + 1);
     // Die Unterbrechung: die Schritte davor führt die Oberfläche schon aus, das Senden wartet auf den Nutzer.
     const antwort = interrupt({ frage: senden.text ?? `${senden.ziel} ausführen?`, aktion: senden, vorher }) as string;
-    if (antwort.trim().toLowerCase() === 'ja') {
+    // Getippt heißt es oft „Ja.“ oder „ja bitte“ — aber „ja, aber …“ ist keine Zustimmung
+    const zustimmung = /^(ja|ok|okay)( bitte)?$/.test(antwort.trim().toLowerCase().replace(/[.!]+$/, ''));
+    if (zustimmung) {
       // Jedes Senden braucht seine eigene Bestätigung: nach „Ja“ nur bis vor das nächste `sende`, den Rest meldet der
       // Kern zurück — das Modell ruft `steuere` damit erneut auf, und der Nutzer wird wieder gefragt.
       const naechstes = danach.findIndex(schreibend);
