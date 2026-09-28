@@ -333,6 +333,11 @@ export const M365Stand = z.object({
   autoImport: z.boolean(),
 });
 export type M365Stand = z.infer<typeof M365Stand>;
+/** SharePoint als Dokumentablage (Protokoll 19): Site, Wurzelordner, Schalter; die Azure-App kommt aus Microsoft 365. */
+export const SharepointStand = z.object({ siteUrl: z.string(), wurzel: z.string(), aktiv: z.boolean(), m365Eingerichtet: z.boolean(), wurzelStandard: z.string() });
+export type SharepointStand = z.infer<typeof SharepointStand>;
+export const SharepointKonfiguration = z.object({ siteUrl: z.string().max(500), wurzel: z.string().max(200), aktiv: z.boolean() });
+
 export const M365Mail = z.object({
   uid: z.string(), datum: z.string(), von: z.string(), vonName: z.string(), betreff: z.string(), vorschau: z.string(),
   anhaenge: z.array(z.object({ id: z.string(), name: z.string(), groesseMb: z.number(), art: z.string(), auswertbar: z.boolean() })),
@@ -937,8 +942,24 @@ export const ListenAltformat = z.object({
 export type ListenAltformat = z.infer<typeof ListenAltformat>;
 
 // ── Deal-Dokumente ─────────────────────────────────────────
-export const DealDokument = z.object({ id: z.string(), dateiname: z.string(), mimeType: z.string(), groesseBytes: z.number(), label: z.string(), hochgeladenAm: z.string() });
-export type DealDokument = z.infer<typeof DealDokument>;
+/** Woran ein Dokument hängt (Protokoll 19): Deal oder Objekt — Makler und Projekt folgen. */
+export const DokumentBezug = z.object({ art: z.enum(['deal', 'objekt']), id: z.string().min(1) });
+export type DokumentBezug = z.infer<typeof DokumentBezug>;
+export const Dokument = z.object({
+  id: z.string(), dateiname: z.string(), mimeType: z.string(), groesseBytes: z.number(), label: z.string(), hochgeladenAm: z.string(),
+  istExpose: z.boolean(),
+  /** wo die Datei liegt; `pfad` ist bei SharePoint der Pfad in der Bibliothek, sonst Bucket/Schlüssel */
+  ablage: z.enum(['supabase', 'sharepoint']), pfad: z.string(),
+  /** „In SharePoint öffnen“ — nur bei SharePoint */
+  webUrl: z.string().nullable(),
+  /** vom Abgleich gesetzt, wenn die Datei in SharePoint nicht mehr gefunden wird */
+  fehltSeit: z.string().nullable(),
+  bezug: DokumentBezug,
+});
+export type Dokument = z.infer<typeof Dokument>;
+/** @deprecated Name aus der Zeit, als Dokumente nur am Deal hingen */
+export const DealDokument = Dokument;
+export type DealDokument = Dokument;
 
 // ── Textvorlagen ───────────────────────────────────────────
 export const Textvorlage = z.object({ id: z.string().max(100), name: z.string().max(300), kanal: z.enum(['email', 'whatsapp', 'beide']), betreff: z.string().max(1000).optional(), text: z.string().max(20000) });

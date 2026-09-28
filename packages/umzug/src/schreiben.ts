@@ -46,7 +46,7 @@ export async function schreiben(tx: Tx, z: Zeilen) {
   await einfuegen(tx, schema.dealKommentare, z.dealKommentare);
   await einfuegen(tx, schema.dealKalkVarianten, z.dealKalkVarianten);
   await einfuegen(tx, schema.dealStatusHistorie, z.dealStatusHistorie);
-  await einfuegen(tx, schema.dealDokumente, z.dealDokumente);
+  await einfuegen(tx, schema.dokumente, z.dokumente);
   await einfuegen(tx, schema.kundenkalkulationen, z.kundenkalkulationen);
   await einfuegen(tx, schema.finanzpraesentationen, z.finanzpraesentationen);
   await einfuegen(tx, schema.praesentationFolien, z.praesentationFolien);

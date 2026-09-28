@@ -47,7 +47,7 @@ async function eintraege(db: Db, bereich: PapierkorbBereich): Promise<Papierkorb
 async function dealDateienRaeumen(db: Db, speicher: Dateispeicher | undefined, dealId: string) {
   if (!speicher) return;
   try {
-    const dokumente = await db.select().from(schema.dealDokumente).where(eq(schema.dealDokumente.dealId, dealId));
+    const dokumente = await db.select().from(schema.dokumente).where(eq(schema.dokumente.dealId, dealId));
     const schluessel = dokumente.map((d) => d.storageKey ?? dokumentSchluessel(dealId, d.id, d.dateiname ?? ''));
     if (schluessel.length) await speicher.loeschen(BUCKETS.dealDocs, schluessel);
   } catch (e) {

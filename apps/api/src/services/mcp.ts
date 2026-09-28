@@ -20,7 +20,7 @@ import {
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { auditListe, auditSchreiben } from './audit.ts';
 import { dealDetail, dealListe } from './deals.ts';
-import { dokumenteListe } from './dealDokumente.ts';
+import { dokumenteListe } from './dateien.ts';
 import { freigabeBeantragen } from './outward.ts';
 import { maklerDetail, maklerListe } from './makler.ts';
 import { objektDetail, objekteListe } from './objekte.ts';
@@ -118,7 +118,7 @@ export const MCP_WERKZEUGE: Werkzeug[] = [
     description: 'Nennt die Dokumente eines Deals (Name, Bezeichnung, Größe).',
     inputSchema: { type: 'object', properties: { dealId: { type: 'string' } }, required: ['dealId'], additionalProperties: false },
     async run(db, args) {
-      return { dateien: await dokumenteListe(db, text(args, 'dealId')) };
+      return { dateien: await dokumenteListe(db, { art: 'deal', id: text(args, 'dealId') }) };
     },
   },
   {

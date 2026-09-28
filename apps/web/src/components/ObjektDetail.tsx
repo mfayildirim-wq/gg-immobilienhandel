@@ -5,6 +5,7 @@ import {
 } from '@gg/domain';
 import { ActionIcon, Alert, Anchor, Button, Group, Loader, NativeSelect, NumberInput, Paper, SimpleGrid, Stack, Table, Tabs, Text, Textarea, TextInput, Title } from '@mantine/core';
 import { Reiterleiste } from './Reiterleiste.tsx';
+import { Dokumente } from './Dokumente.tsx';
 import { IconDeviceFloppy, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useState } from 'react';
 import { useObjektAendern, useObjektDetail, useObjektLoeschen } from '../lib/api.ts';
@@ -47,9 +48,12 @@ function ObjektInhalt({ o, geloescht }: { o: Detail; geloescht?: () => void }) {
       <Tabs value={reiter} onChange={setReiter} keepMounted={false}>
         <Reiterleiste>
           <Tabs.Tab value="details">📋 Details</Tabs.Tab>
+          <Tabs.Tab value="dokumente">📁 Dokumente</Tabs.Tab>
           <Tabs.Tab value="bearbeiten">✏️ Bearbeiten</Tabs.Tab>
         </Reiterleiste>
         <Tabs.Panel value="details" pt="sm"><Details o={o} /></Tabs.Panel>
+        {/* Dokumente zum Objekt — mit denen seiner Deals, damit alles zu einer Immobilie an einem Ort steht (Protokoll 19) */}
+        <Tabs.Panel value="dokumente" pt="sm"><Dokumente bezug={{ art: 'objekt', id: o.id }} mitDeals /></Tabs.Panel>
         <Tabs.Panel value="bearbeiten" pt="sm"><Formular o={o} /></Tabs.Panel>
       </Tabs>
 

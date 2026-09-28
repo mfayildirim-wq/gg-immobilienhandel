@@ -3,6 +3,7 @@ import { rueckwegRegelnAusUmgebung } from '@gg/domain';
 import { anthropicClient, kiAttrappe, supabaseSpeicher, graphAttrappe, propstackAttrappe } from '@gg/integrations';
 import { ANBIETER, anthropicModell, attrappenModell, openaiKompatibel, type ModellWahl } from '@cosai/kern';
 import { createApp } from './app.ts';
+import { sharepointAblageBauen } from './services/sharepoint.ts';
 import { ZUGAENGE, zugangLesen } from './services/zugaenge.ts';
 
 /**
@@ -69,6 +70,8 @@ export function appAusUmgebung(env: Record<string, string | undefined> = process
     speicher: speicher ?? undefined,
     oauthRueckweg: rueckwegRegelnAusUmgebung(env),
     cronGeheimnis: env.CRON_SECRET,
+    // SharePoint als Dokumentablage, wenn unter Einstellungen → SharePoint aktiv (Protokoll 19)
+    sharepoint: () => sharepointAblageBauen(db),
     // Der Bot ist online ausgeschaltet, bis AUTO_IMPORT_AKTIV=ja gesetzt ist (lokal an, AUTO_IMPORT_AKTIV=nein schaltet ab).
     // Online endet die Function nach 300 s — das Zeitlimit des Bots bleibt darunter, damit das Ergebnis noch geschrieben wird
     autoImport: {

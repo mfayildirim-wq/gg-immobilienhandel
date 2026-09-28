@@ -29,6 +29,9 @@ describe('dokumentAlsText (Werkzeug dokument_lesen)', () => {
     expect(await dokumentAlsText({ bytes: new TextEncoder().encode('Kaltmiete;Fläche\n480;62'), mime: 'text/csv' })).toContain('480;62');
     expect(await dokumentAlsText({ bytes: new Uint8Array([1, 2]), mime: 'image/jpeg' })).toMatch(/nicht lesbar/);
   });
+  it('erkennt ein PDF am Dateianfang, auch wenn die Ablage keinen Typ nennt (SharePoint-Download)', async () => {
+    expect(await dokumentAlsText({ bytes: pdfMitText(['Teilungserklaerung Musterweg 1']), mime: 'application/octet-stream' })).toContain('Teilungserklaerung Musterweg 1');
+  });
   it('meldet ein PDF ohne Textebene (Scan)', async () => {
     expect(await dokumentAlsText({ bytes: pdfMitText([]), mime: 'application/pdf' })).toMatch(/keine Textebene/);
   });

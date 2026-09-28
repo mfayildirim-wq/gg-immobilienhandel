@@ -32,7 +32,7 @@ export interface Zeilen {
   dealStatusHistorie: Zeile<typeof schema.dealStatusHistorie>[];
   kundenkalkulationen: Zeile<typeof schema.kundenkalkulationen>[];
   objektFotos: Zeile<typeof schema.objektFotos>[];
-  dealDokumente: Zeile<typeof schema.dealDokumente>[];
+  dokumente: Zeile<typeof schema.dokumente>[];
   finanzpraesentationen: Zeile<typeof schema.finanzpraesentationen>[];
   praesentationFolien: Zeile<typeof schema.praesentationFolien>[];
   begleitscheinVorlagen: Zeile<typeof schema.begleitscheinVorlagen>[];
@@ -222,7 +222,7 @@ export function umformen(kv: KvDaten, stichtag = new Date().toISOString()): Umfo
   const z: Zeilen = {
     makler: [], maklerKommunikation: [], objekte: [], objektEinheiten: [], deals: [],
     dealEinheiten: [], dealSanierungen: [], dealKommentare: [], dealKalkVarianten: [], dealStatusHistorie: [],
-    kundenkalkulationen: [], objektFotos: [], dealDokumente: [], finanzpraesentationen: [], praesentationFolien: [],
+    kundenkalkulationen: [], objektFotos: [], dokumente: [], finanzpraesentationen: [], praesentationFolien: [],
     begleitscheinVorlagen: [], vordrucke: [], begleitscheinAktionen: [], begleitscheine: [], vertriebslisten: [], vertriebslisteZeilen: [],
     projekte: [], projektEinheiten: [], projektMieterhistorie: [], projektAufgaben: [], projektGebaeudeMassnahmen: [], gespeicherteFilter: [], textvorlagen: [], ddChecklisteVorlage: [], einstellungen: [],
   };
@@ -643,6 +643,7 @@ export function umformen(kv: KvDaten, stichtag = new Date().toISOString()): Umfo
 
   // ── Deal-Dokumente (Metadaten; Dateien bleiben im Bucket) ──
   const dealIdsDok = new Set(z.deals.map((d) => d.id));
+  const objektJeDeal = new Map(z.deals.map((d) => [d.id, d.objektId]));
   for (const f of liste(kv[DOKUMENT_TABELLE])) {
     const id = text(f.id);
     const dealId = text(f.deal_id);
@@ -657,8 +658,8 @@ export function umformen(kv: KvDaten, stichtag = new Date().toISOString()): Umfo
     }
     const sekunden = Number(f.uploaded_at);
     const label = typeof f.label === 'string' ? f.label : '';
-    z.dealDokumente.push({
-      id, dealId, dateiname: name, mimeType: text(f.mime_type) ?? 'application/octet-stream', groesseBytes: Number(f.size_bytes) || 0,
+    z.dokumente.push({
+      id, dealId, objektId: objektJeDeal.get(dealId) ?? null, dateiname: name, mimeType: text(f.mime_type) ?? 'application/octet-stream', groesseBytes: Number(f.size_bytes) || 0,
       label, istExpose: istExposeDokument(label, name), storageKey: dokumentSchluessel(dealId, id, name),
       ...(Number.isFinite(sekunden) && sekunden > 0 ? { hochgeladenAm: new Date(sekunden * 1000).toISOString() } : {}),
     });

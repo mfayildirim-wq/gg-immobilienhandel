@@ -5,18 +5,21 @@ import {
   maklerHatDaten, normalisiereFrequenz, telefonErsetzen, telefonNormalisieren, weitereKontakte, wizardKalkSpeichern, wizardKalkVorbelegen,
 } from '@gg/domain';
 import {
-  analysiereExpose, BUCKETS, type Dateispeicher, dokumentSchluessel, EINGANG, istEingangsSchluessel, istPdf, type KiClient, kostenBuchung, pdfText,
+  analysiereExpose, BUCKETS, type Dateispeicher, EINGANG, istEingangsSchluessel, istPdf, type KiClient, kostenBuchung, pdfText, type SharepointAblage,
 } from '@gg/integrations';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { auditSchreiben } from './audit.ts';
 import { FachFehler } from '../fehler.ts';
 import { kalkStandardLesen } from './einstellungen.ts';
 import { objektTitel } from './objekte.ts';
+import { dokumenteHochladen } from './dateien.ts';
 
 export interface ExposeKontext {
   speicher: Dateispeicher;
   ki: KiClient | null;
   attrappe: boolean;
+  /** SharePoint als Ablage des Exposé-Dokuments, wenn eingerichtet */
+  sharepoint?: SharepointAblage | null;
 }
 
 export const MAX_EXPOSE_BYTES = 200 * 1024 * 1024;
@@ -182,17 +185,15 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
     return { dealId, objektId, maklerId };
   });
 
-  // 5. PDF an den Deal: pdfs/<dealId>.pdf und Eintrag im Dokumentenreiter. Der Deal besteht auch, wenn das scheitert.
+  // 5. PDF an den Deal: Eintrag im Dokumentenreiter — nach SharePoint, wenn eingerichtet, sonst deal-docs (Protokoll 19);
+  //    dazu wie bisher pdfs/<dealId>.pdf. Der Deal besteht auch, wenn das scheitert.
   const adresse = [e.objekt.daten.strasse, e.objekt.daten.hausnr].filter(Boolean).join(' ') || 'Objekt';
   const dateiname = `Exposé_${adresse}.pdf`;
   try {
     const zielKey = `${ids.dealId}.pdf`;
     await k.speicher.verschieben(BUCKETS.pdfs, e.key, zielKey);
-    const docId = crypto.randomUUID();
-    const docKey = dokumentSchluessel(ids.dealId, docId, dateiname);
-    await k.speicher.kopieren(BUCKETS.pdfs, zielKey, BUCKETS.dealDocs, docKey);
-    const groesse = (await k.speicher.holen(BUCKETS.dealDocs, docKey)).byteLength;
-    await db.insert(schema.dealDokumente).values({ id: docId, dealId: ids.dealId, dateiname, mimeType: 'application/pdf', groesseBytes: groesse, label: 'Exposé (Import)', istExpose: true, storageKey: docKey });
+    const bytes = await k.speicher.holen(BUCKETS.pdfs, zielKey);
+    await dokumenteHochladen({ db, speicher: k.speicher, sharepoint: k.sharepoint }, { art: 'deal', id: ids.dealId }, [{ name: dateiname, typ: 'application/pdf', bytes }], { istExpose: true, label: 'Exposé (Import)' });
     return { ...ids, pdfGespeichert: true };
   } catch (err) {
     console.error('[expose] PDF-Übernahme fehlgeschlagen:', err);

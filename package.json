@@ -29,6 +29,7 @@
     "demo:daten": "tsx werkzeuge/demo-daten.ts",
     "ui:abgleich": "tsx werkzeuge/ui-abgleich.ts",
     "bestand:rundgang": "tsx werkzeuge/bestand-rundgang.ts",
+    "sharepoint:probe": "tsx werkzeuge/sharepoint-probe.ts",
     "vercel:probe": "tsx --env-file-if-exists=.env werkzeuge/vercel-probe.ts"
   },
   "devDependencies": {

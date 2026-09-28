@@ -1,6 +1,6 @@
 {
   "id": "81c3789e-589a-4fa9-8ac5-545a800c01c3",
-  "prevId": "59fd408a-644e-4a72-9a09-a4040be8d8b3",
+  "prevId": "9c196118-6fae-4906-87d5-b78bf5ee19f6",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -705,89 +705,6 @@
       "checkConstraints": {},
       "isRLSEnabled": true
     },
-    "fach.deal_dokumente": {
-      "name": "deal_dokumente",
-      "schema": "fach",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "deal_id": {
-          "name": "deal_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "dateiname": {
-          "name": "dateiname",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "mime_type": {
-          "name": "mime_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "groesse_bytes": {
-          "name": "groesse_bytes",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "label": {
-          "name": "label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ist_expose": {
-          "name": "ist_expose",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "storage_key": {
-          "name": "storage_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "hochgeladen_am": {
-          "name": "hochgeladen_am",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "deal_dokumente_deal_id_deals_id_fk": {
-          "name": "deal_dokumente_deal_id_deals_id_fk",
-          "tableFrom": "deal_dokumente",
-          "tableTo": "deals",
-          "schemaTo": "fach",
-          "columnsFrom": [
-            "deal_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": true
-    },
     "fach.deal_einheiten": {
       "name": "deal_einheiten",
       "schema": "fach",
@@ -1254,7 +1171,7 @@
       "checkConstraints": {
         "deal_status_historie_nach_check": {
           "name": "deal_status_historie_nach_check",
-          "value": "\"fach\".\"deal_status_historie\".\"nach_status\" in ('In Prüfung', 'Angebot abgegeben', 'Über Zeit nachfassen', 'Closing Path', 'Angekauft', 'Archiv')"
+          "value": "\"fach\".\"deal_status_historie\".\"nach_status\" in ('In Pr\u00fcfung', 'Angebot abgegeben', '\u00dcber Zeit nachfassen', 'Closing Path', 'Angekauft', 'Archiv')"
         }
       },
       "isRLSEnabled": true
@@ -1286,7 +1203,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'In Prüfung'"
+          "default": "'In Pr\u00fcfung'"
         },
         "prio": {
           "name": "prio",
@@ -1477,7 +1394,194 @@
       "checkConstraints": {
         "deals_status_check": {
           "name": "deals_status_check",
-          "value": "\"fach\".\"deals\".\"status\" in ('In Prüfung', 'Angebot abgegeben', 'Über Zeit nachfassen', 'Closing Path', 'Angekauft', 'Archiv')"
+          "value": "\"fach\".\"deals\".\"status\" in ('In Pr\u00fcfung', 'Angebot abgegeben', '\u00dcber Zeit nachfassen', 'Closing Path', 'Angekauft', 'Archiv')"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "fach.dokumente": {
+      "name": "dokumente",
+      "schema": "fach",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "deal_id": {
+          "name": "deal_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "objekt_id": {
+          "name": "objekt_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dateiname": {
+          "name": "dateiname",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mime_type": {
+          "name": "mime_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "groesse_bytes": {
+          "name": "groesse_bytes",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ist_expose": {
+          "name": "ist_expose",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ablage": {
+          "name": "ablage",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'supabase'"
+        },
+        "bucket": {
+          "name": "bucket",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'deal-docs'"
+        },
+        "storage_key": {
+          "name": "storage_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sp_item_id": {
+          "name": "sp_item_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sp_pfad": {
+          "name": "sp_pfad",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sp_web_url": {
+          "name": "sp_web_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sp_etag": {
+          "name": "sp_etag",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sp_fehlt_seit": {
+          "name": "sp_fehlt_seit",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hochgeladen_am": {
+          "name": "hochgeladen_am",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "dokumente_objekt_idx": {
+          "name": "dokumente_objekt_idx",
+          "columns": [
+            {
+              "expression": "objekt_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "dokumente_deal_idx": {
+          "name": "dokumente_deal_idx",
+          "columns": [
+            {
+              "expression": "deal_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "dokumente_deal_id_deals_id_fk": {
+          "name": "dokumente_deal_id_deals_id_fk",
+          "tableFrom": "dokumente",
+          "tableTo": "deals",
+          "schemaTo": "fach",
+          "columnsFrom": [
+            "deal_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "dokumente_objekt_id_objekte_id_fk": {
+          "name": "dokumente_objekt_id_objekte_id_fk",
+          "tableFrom": "dokumente",
+          "tableTo": "objekte",
+          "schemaTo": "fach",
+          "columnsFrom": [
+            "objekt_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "dokumente_bezug_check": {
+          "name": "dokumente_bezug_check",
+          "value": "\"fach\".\"dokumente\".\"deal_id\" is not null or \"fach\".\"dokumente\".\"objekt_id\" is not null"
+        },
+        "dokumente_ablage_check": {
+          "name": "dokumente_ablage_check",
+          "value": "\"fach\".\"dokumente\".\"ablage\" in ('supabase', 'sharepoint')"
         }
       },
       "isRLSEnabled": true

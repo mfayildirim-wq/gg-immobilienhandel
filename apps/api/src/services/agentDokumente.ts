@@ -3,7 +3,9 @@ import { pdfText } from '@gg/integrations';
 /** Eine Datei der App als Text für den Agenten: PDF über die Textebene, Text direkt, sonst ein Hinweis. */
 export async function dokumentAlsText(d: { bytes: Uint8Array; mime: string }): Promise<string> {
   const MAX = 40_000;
-  if (d.mime === 'application/pdf') {
+  // Am Dateianfang erkennen: SharePoint-Downloads kommen oft als application/octet-stream
+  const istPdf = d.mime === 'application/pdf' || new TextDecoder().decode(d.bytes.slice(0, 5)) === '%PDF-';
+  if (istPdf) {
     const r = await pdfText(Buffer.from(d.bytes));
     const text = r.text.trim();
     // Seitenmarken („──── Seite 1“) zählen nicht: ein Scan hat Marken, aber keinen Text
