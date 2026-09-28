@@ -181,6 +181,9 @@ test.describe('AgentMode', () => {
     await expect(oben.locator('.am-blase[data-wer="agent"]')).toContainText(/Heute sind \d+ Deals/, { timeout: 15_000 });
 
     await page.getByRole('link', { name: 'Deals', exact: true }).click();
+    // Gab es bei Deals schon einen Faden (derselbe lokale Nutzer wie die Entwicklung), fragt er erst „weitermachen oder neu?“
+    await expect(oben.locator('.am-blase[data-wer="agent"]')).toContainText(/Du bist bei Deals|Hier bei Deals waren wir/);
+    if (await oben.getByRole('button', { name: 'Neu beginnen' }).isVisible()) await oben.getByRole('button', { name: 'Neu beginnen' }).click();
     await expect(oben.locator('.am-blase[data-wer="agent"]')).toContainText('Du bist bei Deals');
     await expect(oben.getByRole('button', { name: 'Welche Deals sind überfällig?' })).toBeVisible();
 

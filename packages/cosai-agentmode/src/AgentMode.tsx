@@ -13,7 +13,7 @@ import { ausfuehren, bereichVon, beobachten, fokusBezuege, fokusLesen, zielFinde
 import { saatAus } from './konstellation.ts';
 import { heuteLokal } from './lernen.tsx';
 import { Sprechkreis, SPRECHKREIS_STILE, type SprechkreisStil, type SprechkreisZustand } from './Sprechkreis.tsx';
-import { istStoppwort, RUFNAME, useVorlesen, useZuhoeren } from './sprache.ts';
+import { ENDWOERTER, istStoppwort, RUFNAME, useVorlesen, useZuhoeren } from './sprache.ts';
 
 export interface AgentAntwortDaten {
   sitzungId: string;
@@ -58,9 +58,48 @@ export interface AgentModeProps {
 }
 
 const SITZUNG = 'cosai.sitzung';
+
+/** Popup am 👂: „Immer zuhören“, Startwort (Rufname) und Endwörter — Esc, Enter oder Klick daneben schließt und speichert */
+function Sprachmenue({ dauer, dauerMoeglich, dauerSchalten, rufname, endwoerter, speichern, schliessen }: {
+  dauer: boolean; dauerMoeglich: boolean; dauerSchalten: (an: boolean) => void; rufname: string; endwoerter: string[];
+  speichern: (rufname: string, endwoerter: string) => void; schliessen: () => void;
+}) {
+  const [start, setStart] = useState(rufname);
+  const [ende, setEnde] = useState(endwoerter.join(', '));
+  const feld = useRef<HTMLDivElement>(null);
+  const zu = useRef(schliessen);
+  zu.current = schliessen;
+  // Gespeichert wird beim Schließen — egal wie (Esc, Klick daneben, 👂, Enter)
+  const stand = useRef({ start, ende, speichern });
+  stand.current = { start, ende, speichern };
+  useEffect(() => () => stand.current.speichern(stand.current.start, stand.current.ende), []);
+  useEffect(() => {
+    const taste = (e: KeyboardEvent) => { if (e.key === 'Escape') zu.current(); };
+    const klick = (e: MouseEvent) => { if (feld.current && !feld.current.parentElement?.contains(e.target as Node)) zu.current(); };
+    window.addEventListener('keydown', taste);
+    document.addEventListener('mousedown', klick);
+    return () => { window.removeEventListener('keydown', taste); document.removeEventListener('mousedown', klick); };
+  }, []);
+  return (
+    <div ref={feld} className="am-menue" role="dialog" aria-label="Sprachsteuerung">
+      <label className="am-menue-zeile">
+        <input type="checkbox" checked={dauer} disabled={!dauerMoeglich} onChange={(e) => { speichern(start, ende); dauerSchalten(e.currentTarget.checked); }} />
+        <span>👂 Immer zuhören{dauerMoeglich ? ` — reagiert auf „${start.trim() || RUFNAME}“` : ' (in diesem Browser nicht möglich)'}</span>
+      </label>
+      <label className="am-menue-feld">Startwort
+        <input aria-label="Startwort" value={start} maxLength={30} placeholder={RUFNAME} onChange={(e) => setStart(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === 'Enter') zu.current(); }} />
+      </label>
+      <label className="am-menue-feld">Endwörter
+        <input aria-label="Endwörter" value={ende} maxLength={80} placeholder={ENDWOERTER.join(', ')} onChange={(e) => setEnde(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === 'Enter') zu.current(); }} />
+      </label>
+      <p className="am-hinweis">Zum Beispiel: „{start.trim() || RUFNAME}, Notiz Rückruf Montag, {ende.split(',')[0]?.trim() || 'fertig'}“ — das Endwort schickt sofort ab, sonst nach 2,5 s Pause.</p>
+    </div>
+  );
+}
 /** Dauerhaft zuhören bleibt an, bis es ausgeschaltet wird (auch nach dem Neuladen) — und der Rufname dazu */
 const DAUERHOEREN = 'cosai.dauerhoeren';
 const RUFNAME_SCHLUESSEL = 'cosai.rufname';
+const ENDWOERTER_SCHLUESSEL = 'cosai.endwoerter';
 const lesen = (k: string) => { try { return window.localStorage.getItem(k); } catch { return null; } };
 const schreiben = (k: string, v: string | null) => { try { if (v === null) window.localStorage.removeItem(k); else window.localStorage.setItem(k, v); } catch { /* privater Modus */ } };
 
@@ -74,7 +113,8 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
   const [schritt, setSchritt] = useState<Schritt | null>(null);
   const [eingabe, setEingabe] = useState('');
   const [rufname, setRufname] = useState(() => lesen(RUFNAME_SCHLUESSEL) || RUFNAME);
-  const [rufnameBearbeiten, setRufnameBearbeiten] = useState(false);
+  const [endwoerter, setEndwoerter] = useState(() => (lesen(ENDWOERTER_SCHLUESSEL) ?? ENDWOERTER.join(', ')).split(',').map((w) => w.trim()).filter(Boolean));
+  const [sprachMenue, setSprachMenue] = useState(false);
   const [fehler, setFehler] = useState<string | null>(null);
   const [transkriptOffen, setTranskriptOffen] = useState(false);
   const [gedaechtnisOffen, setGedaechtnisOffen] = useState(false);
@@ -343,7 +383,7 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
     const kurz = text.toLowerCase().replace(/[.!?]/g, '').trim();
     const treffer = chips.find((c) => c.label.toLowerCase() === kurz || c.wert.toLowerCase() === kurz) ?? (wartetAuf && /^(ja|ok|okay|abschicken|mach)$/.test(kurz) ? chips.find((c) => c.wert === 'ja') : undefined) ?? (wartetAuf && /^(nein|nicht|stopp?|abbrechen)$/.test(kurz) ? chips.find((c) => c.wert === 'nein') : undefined);
     if (treffer) chipWaehlen(treffer); else nachricht(text);
-  }, { transkribieren, onFehler: setFehler, rufname, stumm: vorlesen.spricht });
+  }, { transkribieren, onFehler: setFehler, rufname, endwoerter, stumm: vorlesen.spricht });
   // Dauerhaft zuhören: war es an, geht es nach dem Öffnen gleich wieder an
   useEffect(() => {
     if (lesen(DAUERHOEREN) === 'an') zuhoeren.dauerSchalten(true);
@@ -424,16 +464,22 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
         {zuhoeren.moeglich && !zuhoeren.dauer && (
           <button type="button" className="am-symbol" aria-pressed={zuhoeren.hoert} aria-label={zuhoeren.hoert ? 'Zuhören beenden' : 'Zuhören'} data-tipp={zuhoeren.hoert ? 'Zuhören beenden' : 'Zuhören (bis zur Pause)'} onClick={zuhoeren.hoert ? zuhoeren.stoppe : zuhoeren.starte}>🎤</button>
         )}
-        {zuhoeren.dauerMoeglich && (<>
-          <button type="button" className="am-symbol" aria-pressed={zuhoeren.dauer} aria-label={zuhoeren.dauer ? 'Immer zuhören ausschalten' : 'Immer zuhören'} data-tipp={zuhoeren.dauer ? `Hört auf „${rufname}“ — ausschalten` : `Immer zuhören — reagiert auf „${rufname}“`} onClick={() => dauerSchalten(!zuhoeren.dauer)}>👂</button>
-          {rufnameBearbeiten ? (
-            <input className="am-rufname-feld" aria-label="Rufname" defaultValue={rufname} autoFocus maxLength={30}
-              onBlur={(e) => { const n = e.currentTarget.value.trim() || RUFNAME; setRufname(n); schreiben(RUFNAME_SCHLUESSEL, n === RUFNAME ? null : n); setRufnameBearbeiten(false); }}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') e.currentTarget.blur(); }} />
-          ) : (
-            <button type="button" className="am-rufname" data-an={zuhoeren.dauer} data-wach={zuhoeren.wach} aria-label={`Rufname: ${rufname} (ändern)`} data-tipp="Rufname ändern" onClick={() => setRufnameBearbeiten(true)}>„{rufname}“</button>
-          )}
-        </>)}
+        {zuhoeren.moeglich && (
+          <div className="am-menue-anker">
+            <button type="button" className="am-symbol" aria-haspopup="dialog" aria-expanded={sprachMenue} aria-pressed={zuhoeren.dauer}
+              aria-label="Sprachsteuerung" data-tipp={zuhoeren.dauer ? `Hört auf „${rufname}“` : 'Sprachsteuerung'} data-wach={zuhoeren.wach} onClick={() => setSprachMenue((o) => !o)}>👂</button>
+            {sprachMenue && (
+              <Sprachmenue dauer={zuhoeren.dauer} dauerMoeglich={zuhoeren.dauerMoeglich} dauerSchalten={dauerSchalten}
+                rufname={rufname} endwoerter={endwoerter} schliessen={() => setSprachMenue(false)}
+                speichern={(r, e) => {
+                  const n = r.trim() || RUFNAME;
+                  setRufname(n); schreiben(RUFNAME_SCHLUESSEL, n === RUFNAME ? null : n);
+                  const liste = e.split(',').map((w) => w.trim()).filter(Boolean);
+                  setEndwoerter(liste); schreiben(ENDWOERTER_SCHLUESSEL, liste.join(', ') === ENDWOERTER.join(', ') ? null : liste.join(', '));
+                }} />
+            )}
+          </div>
+        )}
         <button type="button" className="am-symbol" aria-pressed={transkriptOffen} aria-label="Transkript" data-tipp="Transkript" onClick={() => setTranskriptOffen((o) => !o)}>📜</button>
         <button type="button" className="am-symbol" aria-pressed={gedaechtnisOffen} aria-label="Gedächtnis" data-tipp="Gedächtnis" onClick={() => setGedaechtnisOffen((o) => !o)}>🧠</button>
         <button type="button" className="am-symbol am-mit-zahl" aria-label={`Ergebnisse (${ergebnisse.length})`} data-tipp={`Ergebnisse — ${fokusTitel}`} onClick={() => { void ergebnisseLaden(); setErgebnisOffen(true); }}>

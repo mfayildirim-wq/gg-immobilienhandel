@@ -116,8 +116,23 @@ export interface ZuhoerenOptionen {
   onFehler?: (meldung: string) => void;
   /** Dauerhaft zuhören: nur, was nach diesem Namen gesagt wird, gilt als Auftrag (Standard „Superagent“) */
   rufname?: string;
+  /** Endwörter: steht eines am Ende („… Rückruf Montag, fertig“), geht der Auftrag gleich ab — ohne die Pause */
+  endwoerter?: string[];
   /** Solange der Agent selbst spricht, nichts aufnehmen — sonst hört er sich selbst */
   stumm?: boolean;
+}
+
+/** Standard-Endwörter */
+export const ENDWOERTER = ['fertig', 'mach'];
+
+/** Der Text ohne das Endwort an seinem Ende — `null`, wenn keines am Ende steht */
+export function ohneEndwort(text: string, endwoerter: string[]): string | null {
+  const t = text.trim().replace(/[\s.!?,;:]+$/, '');
+  for (const w of endwoerter.map((x) => x.trim()).filter(Boolean)) {
+    const m = new RegExp(`(^|[\\s,.;:!?-])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i').exec(t);
+    if (m) return t.slice(0, m.index + m[1]!.length).replace(/[\s,.;:!?-]+$/, '').trim();
+  }
+  return null;
 }
 
 /** Standard-Rufname für das dauerhafte Zuhören */
@@ -140,6 +155,8 @@ export function nachRufname(text: string, rufname: string): string | null {
  * Browser-Erkennung: kurzes Luftholen schnitt ab, Rückmeldung des Auftraggebers 28.09.)
  */
 export const STILLE_MS = 2500;
+/** Nach einem Endwort so lange warten, ob noch etwas folgt */
+const ENDWORT_MS = 700;
 /** Nach dem Rufnamen allein so lange auf den Auftrag warten */
 const WACH_MS = 8000;
 /** Längste Aufnahme */
@@ -230,7 +247,7 @@ export function useZuhoeren(aufText: (text: string, fertig: boolean) => void, op
       if (!ton.size) return;
       aufTextRef.current('…', false);
       transkribieren(ton)
-        .then((text) => aufTextRef.current(text.trim(), true))
+        .then((text) => aufTextRef.current(ohneEndwort(text, optionenRef.current.endwoerter ?? ENDWOERTER) ?? text.trim(), true))
         .catch((e: Error) => { aufTextRef.current('', false); onFehler?.(e.message); });
     };
     laut.current = { gehoert: false, zuletzt: Date.now() };
@@ -279,10 +296,12 @@ export function useZuhoeren(aufText: (text: string, fertig: boolean) => void, op
         // Nur der Name — auf den Auftrag warten, ohne die Erkennung abzubrechen
         if (!text) return;
       }
-      letzter = text;
-      aufTextRef.current(text, false);
+      // Endwort am Ende: kurz abwarten, ob noch etwas kommt („mach …“ kann auch ein Satzanfang sein), dann ab
+      const ohne = ohneEndwort(text, optionenRef.current.endwoerter ?? ENDWOERTER);
+      letzter = ohne ?? text;
+      aufTextRef.current(letzter, false);
       window.clearTimeout(pause);
-      pause = window.setTimeout(abschliessen, STILLE_MS);
+      pause = window.setTimeout(abschliessen, ohne !== null ? ENDWORT_MS : STILLE_MS);
     };
     e.onend = () => {
       window.clearTimeout(pause);

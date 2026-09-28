@@ -284,3 +284,23 @@ describe('AgentMode (Knöpfe unter dem Kreis)', () => {
     expect(zurSeite).toHaveBeenCalledOnce();
   });
 });
+
+describe('AgentMode (Sprachmenü)', () => {
+  it('👂 öffnet das Menü: Immer zuhören, Startwort und Endwörter — gespeichert beim Schließen', async () => {
+    const k = kernErsatz();
+    Object.assign(window, { SpeechRecognition: class { start() {} stop() {} abort() {} } });
+    render(<AgentMode api="/api/agent" anfrage={k.anfrage} modus="overlay" navigiere={vi.fn()} ort="/" stil="kern" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Sprachsteuerung' }));
+    const menue = screen.getByRole('dialog', { name: 'Sprachsteuerung' });
+    expect(within(menue).getByText(/Immer zuhören — reagiert auf „Superagent“/)).toBeTruthy();
+    fireEvent.change(within(menue).getByLabelText('Startwort'), { target: { value: 'Jarvis' } });
+    fireEvent.change(within(menue).getByLabelText('Endwörter'), { target: { value: 'fertig, los' } });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Sprachsteuerung' })).toBeNull();
+    expect(window.localStorage.getItem('cosai.rufname')).toBe('Jarvis');
+    expect(window.localStorage.getItem('cosai.endwoerter')).toBe('fertig, los');
+    window.localStorage.removeItem('cosai.rufname');
+    window.localStorage.removeItem('cosai.endwoerter');
+    delete (window as unknown as { SpeechRecognition?: unknown }).SpeechRecognition;
+  });
+});

@@ -152,3 +152,28 @@ describe('useZuhoeren mit Browser-Erkennung', () => {
     weg();
   });
 });
+
+describe('Endwort', () => {
+  it('ohneEndwort: nur am Ende, ohne Satzzeichen', async () => {
+    const { ohneEndwort } = await import('../src/sprache.ts');
+    expect(ohneEndwort('Notiz Rückruf Montag, fertig.', ['fertig', 'mach'])).toBe('Notiz Rückruf Montag');
+    expect(ohneEndwort('Öffne den ersten Deal mach', ['fertig', 'mach'])).toBe('Öffne den ersten Deal');
+    expect(ohneEndwort('mach eine Notiz', ['fertig', 'mach'])).toBeNull();
+    expect(ohneEndwort('Machbarkeit prüfen', ['mach'])).toBeNull();
+  });
+
+  it('das Endwort schickt gleich ab — ohne die Pause abzuwarten', async () => {
+    const { act, renderHook } = await import('@testing-library/react');
+    const { useZuhoeren } = await import('../src/sprache.ts');
+    const { instanzen, weg } = fakeErkennung();
+    vi.useFakeTimers();
+    const texte: [string, boolean][] = [];
+    const { result } = renderHook(() => useZuhoeren((t, f) => texte.push([t, f]), { endwoerter: ['fertig'] }));
+    act(() => { result.current.starte(); });
+    act(() => { instanzen[0]!.sage('Notiz Rückruf Montag fertig'); });
+    act(() => { vi.advanceTimersByTime(800); });
+    expect(texte.at(-1)).toEqual(['Notiz Rückruf Montag', true]);
+    vi.useRealTimers();
+    weg();
+  });
+});

@@ -85,12 +85,6 @@
 /* Unter dem Kreis: klein ✕ (schließen) und ↗ (zum Agent-Dialog) */
 .am-kreis-knoepfe { display: flex; gap: 2px; }
 .am-symbol.am-klein { width: 22px; height: 22px; font-size: 12px; color: var(--am-text-2, var(--am-text)); }
-/* Rufname fürs dauerhafte Zuhören — gedimmt, solange es aus ist; farbig, wenn der Name gerade fiel */
-.am-rufname { font: inherit; font-size: 12px; padding: 2px 6px; border-radius: 6px; border: 1px dashed var(--am-linie); background: transparent; color: var(--am-text); opacity: 0.55; cursor: pointer; white-space: nowrap; position: relative; }
-.am-rufname[data-an='true'] { opacity: 1; border-style: solid; border-color: var(--am-farbe); }
-.am-rufname[data-wach='true'] { background: var(--am-farbe-weich); }
-.am-rufname[data-tipp]:hover::after { content: attr(data-tipp); position: absolute; top: calc(100% + 4px); left: 50%; transform: translateX(-50%); z-index: 1003; padding: 3px 8px; border-radius: 6px; background: var(--am-text); color: var(--am-flaeche); font-size: 12px; white-space: nowrap; pointer-events: none; }
-.am-rufname-feld { font: inherit; font-size: 12px; width: 110px; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--am-farbe); }
 .am-agent { grid-area: agent; min-width: 0; }
 .am-du { grid-area: du; min-width: 0; }
 .am-oben-rechts { grid-area: oben; display: flex; align-items: center; gap: 6px; justify-content: flex-end; max-width: 46vw; }
@@ -143,3 +137,12 @@
 .am-agentknopf { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 1001; padding: 0; border: none; border-radius: 50%; background: transparent; cursor: pointer; line-height: 0; }
 .am-agentknopf:hover, .am-agentknopf:focus-visible { outline: 2px solid #e03131; outline-offset: 2px; }
 .am-agentknopf[data-tipp]:hover::after, .am-agentknopf[data-tipp]:focus-visible::after { content: attr(data-tipp); position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); padding: 3px 8px; border-radius: 6px; background: var(--am-text, #1c2530); color: var(--am-flaeche, #fff); font: 500 12px/1.4 system-ui, sans-serif; white-space: nowrap; pointer-events: none; }
+
+/* Popup am 👂: Immer zuhören, Startwort, Endwörter */
+.am-menue-anker { position: relative; display: inline-flex; }
+.am-menue-anker .am-symbol[data-wach='true'] { background: var(--am-farbe-weich); }
+.am-menue { position: absolute; top: calc(100% + 6px); right: 0; z-index: 1004; width: 300px; display: grid; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--am-flaeche); color: var(--am-text); border: 1px solid var(--am-linie); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); font-size: 13px; }
+.am-menue-zeile { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
+.am-menue-feld { display: grid; gap: 3px; font-size: 12px; font-weight: 600; }
+.am-menue-feld input { font: inherit; font-weight: 400; font-size: 13px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--am-linie); background: var(--am-flaeche-2); color: var(--am-text); }
+.am-menue .am-hinweis { margin: 0; font-size: 12px; }
