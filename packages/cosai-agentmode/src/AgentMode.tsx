@@ -281,11 +281,14 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
   }, [bereich, beschaeftigt, handelt, kontextZeigen, wartetAuf]);
 
   useEffect(() => {
-    const neu = () => setFokusText(JSON.stringify(fokusLesen()));
-    neu();
+    const lesenJetzt = () => setFokusText(JSON.stringify(fokusLesen()));
+    lesenJetzt();
+    // Höchstens einmal je Bild lesen — der Beobachter feuert bei jeder DOM-Änderung der App
+    let bild = 0;
+    const neu = () => { if (!bild) bild = requestAnimationFrame(() => { bild = 0; lesenJetzt(); }); };
     const beobachter = new MutationObserver(neu);
     beobachter.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-agent-fokus'] });
-    return () => beobachter.disconnect();
+    return () => { beobachter.disconnect(); cancelAnimationFrame(bild); };
   }, []);
 
   /** Ergebnisse zu allen Objekten im Fokus (ohne Fokus: die jüngsten) */

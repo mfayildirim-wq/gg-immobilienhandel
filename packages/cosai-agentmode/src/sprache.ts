@@ -172,6 +172,7 @@ export function useZuhoeren(aufText: (text: string, fertig: boolean) => void, op
   const [moeglich] = useState(() => erkennungKlasse() !== null || aufnahmeMoeglich());
   const [hoert, setHoert] = useState(false);
   const [pegel, setPegel] = useState(0);
+  const pegelStufe = useRef(0);
   const erkennung = useRef<Erkennung | null>(null);
   const aufnahme = useRef<{ recorder: MediaRecorder; strom: MediaStream; ende: number } | null>(null);
   const audio = useRef<{ ctx: AudioContext; strom: MediaStream; timer: number; eigen: boolean } | null>(null);
@@ -188,6 +189,7 @@ export function useZuhoeren(aufText: (text: string, fertig: boolean) => void, op
     if (audio.current.eigen) audio.current.strom.getTracks().forEach((t) => t.stop());
     void audio.current.ctx.close();
     audio.current = null;
+    pegelStufe.current = 0;
     setPegel(0);
   }, []);
 
@@ -207,7 +209,9 @@ export function useZuhoeren(aufText: (text: string, fertig: boolean) => void, op
         let summe = 0;
         for (const d of daten) summe += (d - 128) ** 2;
         const p = Math.min(1, Math.sqrt(summe / daten.length) / 40);
-        setPegel(p);
+        // Neu zeichnen nur bei spürbarer Änderung — und im Dauerbetrieb nur im Gespräch (sonst 12× je Sekunde der ganze Block)
+        const stufe = dauerRef.current && Date.now() > wachBis.current ? 0 : Math.round(p * 10) / 10;
+        if (stufe !== pegelStufe.current) { pegelStufe.current = stufe; setPegel(stufe); }
         if (aufnahme.current) {
           const jetzt = Date.now();
           if (p > 0.12) laut.current = { gehoert: true, zuletzt: jetzt };
