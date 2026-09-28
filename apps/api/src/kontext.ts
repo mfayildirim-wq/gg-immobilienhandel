@@ -1,10 +1,10 @@
 import { createDb, verlangeLokaleDatenbank } from '@gg/db';
 import { rueckwegRegelnAusUmgebung } from '@gg/domain';
 import { anthropicClient, kiAttrappe, supabaseSpeicher, graphAttrappe, propstackAttrappe } from '@gg/integrations';
-import { ANBIETER, anthropicModell, attrappenModell, openaiKompatibel, type ModellWahl } from '@cosai/kern';
+import { ANBIETER, anthropicModell, attrappenModell, OLLAMA_URL, ollamaModell, openaiKompatibel, type ModellWahl } from '@cosai/kern';
 import { createApp } from './app.ts';
 import { sharepointAblageBauen } from './services/sharepoint.ts';
-import { ZUGAENGE, zugangLesen } from './services/zugaenge.ts';
+import { ZUGAENGE, zugangLesen, type ZugangSchluessel } from './services/zugaenge.ts';
 
 /**
  * Der AgentMode schickt, was der Nutzer lesen darf, an den Modellanbieter — online deshalb erst nach ausdrücklicher
@@ -45,15 +45,20 @@ export function appAusUmgebung(env: Record<string, string | undefined> = process
 
   // AgentMode: dasselbe Prinzip wie die KI — Attrappe nur ausdrücklich und nie in Produktion. Sonst das Modell des in
   // den AgentMode-Einstellungen gewählten Anbieters; Schlüssel aus Einstellungen → Zugänge, ersatzweise aus der Umgebung.
+  // Ollama (lokale, offene Modelle): kein Schlüssel; nur außerhalb der Produktion oder mit ausdrücklicher OLLAMA_URL
+  const ollamaUrl = env.OLLAMA_URL || (produktion ? '' : OLLAMA_URL);
+  const ollamaErreichbar = async () => !!ollamaUrl && (await fetch(`${ollamaUrl}/api/version`, { signal: AbortSignal.timeout(1500) }).then((r) => r.ok).catch(() => false));
   const agentSchluessel = async (a: (typeof ANBIETER)[number]) => {
+    if (a.lokal) return (await ollamaErreichbar()) ? 'lokal' : '';
     const umgebung = ZUGAENGE.find((z) => z.schluessel === a.zugang)?.umgebung;
-    return (await zugangLesen(db, a.zugang)) || (umgebung ? env[umgebung] : '') || '';
+    return (await zugangLesen(db, a.zugang as ZugangSchluessel)) || (umgebung ? env[umgebung] : '') || '';
   };
   const agentWahl: ModellWahl = async ({ anbieter, modell }) => {
     const a = ANBIETER.find((x) => x.id === (anbieter || 'anthropic'));
     if (!a) return null;
-    const schluessel = await agentSchluessel(a);
     const name = modell || (a.id === 'anthropic' ? env.AGENT_MODELL || a.vorgabeModell : a.vorgabeModell);
+    if (a.lokal) return ollamaUrl && name ? ollamaModell(name, ollamaUrl) : null;
+    const schluessel = await agentSchluessel(a);
     if (!schluessel || !name) return null;
     return a.id === 'anthropic' ? anthropicModell(schluessel, name) : openaiKompatibel(schluessel, name, a.basisUrl);
   };
@@ -61,7 +66,7 @@ export function appAusUmgebung(env: Record<string, string | undefined> = process
   const anbieterListe = async () => Promise.all(ANBIETER.map(async (a) => ({ id: a.id, label: a.label, vorgabeModell: a.vorgabeModell, verfuegbar: !!(await agentSchluessel(a)) })));
 
   const app = createApp({
-    agent: { modell: agentModell, anbieterListe },
+    agent: { modell: agentModell, anbieterListe, ollamaUrl: ollamaUrl || undefined },
     expose: speicher ? { speicher, ki, attrappe } : undefined,
     ki,
     graph,

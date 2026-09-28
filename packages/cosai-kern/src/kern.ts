@@ -17,7 +17,7 @@ import { ergebnisseVon } from './ergebnisse.ts';
 import { mcpVerbinden, mcpWerkzeugName, type McpWerkzeug } from './mcp.ts';
 import { tool } from '@langchain/core/tools';
 import type { z } from 'zod';
-import { ANBIETER, aufgabeGruendlich, drehbuchModell, openrouterModelle, type Modell, type ModellEintrag } from './modell.ts';
+import { ANBIETER, aufgabeGruendlich, drehbuchModell, OLLAMA_URL, ollamaModelle, openrouterModelle, type Modell, type ModellEintrag } from './modell.ts';
 import { routinenAus, type Routine } from './routinen.ts';
 import { agenten, ereignisse, laeufe, nachrichten, sitzungen } from './schema.ts';
 import { AgentEinstellungen, DNA, McpServerNeu, type AgentAntwort, type Beobachtung, type Chip, type Eingabe, type Entscheidung, type Steuerung } from './vertrag.ts';
@@ -57,6 +57,8 @@ export interface KernOptionen {
   zusatzWerkzeuge?: (nutzer: Nutzer) => HostWerkzeug[];
   /** Für die Einstellungsseite: welche Anbieter der Host kennt und ob ein Schlüssel hinterlegt ist */
   anbieterListe?: () => Promise<AnbieterStand[]>;
+  /** Adresse eines lokalen Ollama (Modellliste in den Einstellungen); Vorgabe `http://localhost:11434` */
+  ollamaUrl?: string;
 }
 
 /** Ein lesendes Werkzeug der App — ohne LangChain beim Host; der Kern macht daraus ein Werkzeug für das Modell. */
@@ -540,8 +542,9 @@ export function agentKern(opt: KernOptionen) {
         mcp: d.mcp.map((m) => ({ name: m.name, url: m.url, aktiv: m.aktiv, mitZugang: !!m.kopf })) };
     },
 
-    /** Modelle zur Auswahl (heute: OpenRouter, mit „frei“ markiert) — andere Anbieter: leer, Name wird eingetragen */
+    /** Modelle zur Auswahl (OpenRouter mit „frei“ markiert, Ollama: installierte) — andere Anbieter: leer, Name wird eingetragen */
     async modelle(anbieter: string): Promise<ModellEintrag[]> {
+      if (anbieter === 'ollama') return ollamaModelle(opt.ollamaUrl ?? OLLAMA_URL);
       if (anbieter !== 'openrouter') return [];
       if (openrouterVorrat && Date.now() - openrouterVorrat.zeit < LISTE_CACHE_MS) return openrouterVorrat.liste;
       const liste = await openrouterModelle();

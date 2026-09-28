@@ -61,8 +61,8 @@ describe('openaiKompatibel (OpenAI, DeepSeek, Kimi)', () => {
   });
 
   it('kennt die unterstützten Anbieter mit ihrem Zugang', () => {
-    expect(ANBIETER.map((a) => a.id)).toEqual(['anthropic', 'openai', 'deepseek', 'kimi', 'openrouter']);
-    expect(ANBIETER.every((a) => a.zugang.endsWith('-api-key'))).toBe(true);
+    expect(ANBIETER.map((a) => a.id)).toEqual(['anthropic', 'openai', 'deepseek', 'kimi', 'openrouter', 'ollama']);
+    expect(ANBIETER.every((a) => a.lokal || a.zugang.endsWith('-api-key'))).toBe(true);
   });
 });
 
@@ -92,5 +92,23 @@ describe('OpenRouter', () => {
       { id: 'a/frei:free', name: 'Frei', frei: true, werkzeuge: true, kontext: 2000 },
       { id: 'b/bezahlt', name: 'b/bezahlt', frei: false, werkzeuge: true, kontext: 1000 },
     ]);
+  });
+});
+
+describe('Ollama', () => {
+  it('listet installierte Modelle mit Werkzeugen, mit Kontextlänge', async () => {
+    const { ollamaModelle } = await import('../src/modell.ts');
+    const holen = (async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/tags')) return new Response(JSON.stringify({ models: [{ name: 'qwen3:30b-a3b' }, { name: 'llama3.2-vision:latest' }] }));
+      const name = (JSON.parse(String(init?.body)) as { model: string }).model;
+      return new Response(JSON.stringify(name.startsWith('qwen') ? { capabilities: ['completion', 'tools'], model_info: { 'qwen3moe.context_length': 262144 } } : { capabilities: ['completion', 'vision'] }));
+    }) as unknown as typeof fetch;
+    expect(await ollamaModelle('http://x:11434', holen)).toEqual([{ id: 'qwen3:30b-a3b', name: 'qwen3:30b-a3b', frei: true, werkzeuge: true, kontext: 262144 }]);
+  });
+
+  it('baut ein Modell mit 32k Kontext und ohne Denken', async () => {
+    const { ollamaModell } = await import('../src/modell.ts');
+    const m = ollamaModell('qwen3:30b-a3b') as unknown as { model: string; numCtx: number; think: boolean; _llmType: () => string };
+    expect([m.model, m.numCtx, m.think, m._llmType()]).toEqual(['qwen3:30b-a3b', 32768, false, 'ollama']);
   });
 });

@@ -77,7 +77,7 @@ export function AgentEinstellungen() {
   const [entwurf, setEntwurf] = useState<Aenderbar | null>(null);
   useEffect(() => { if (data && !entwurf) setEntwurf(aenderbar(data)); }, [data, entwurf]);
   const gewaehlt = entwurf?.anbieter || 'anthropic';
-  const { data: modelle = [] } = useQuery({ queryKey: ['agent', 'modelle', gewaehlt], queryFn: () => modelleHolen(gewaehlt), enabled: gewaehlt === 'openrouter', staleTime: 10 * 60_000 });
+  const { data: modelle = [] } = useQuery({ queryKey: ['agent', 'modelle', gewaehlt], queryFn: () => modelleHolen(gewaehlt), enabled: gewaehlt === 'openrouter' || gewaehlt === 'ollama', staleTime: gewaehlt === 'ollama' ? 15_000 : 10 * 60_000 });
   // Erfolg selbst merken: `isSuccess` von React Query kommt erst nach dem globalen onSettled der App (Listen neu laden)
   const [gespeichert, setGespeichert] = useState(false);
   const sichern = useMutation({
@@ -124,7 +124,9 @@ export function AgentEinstellungen() {
             // OpenRouter: aus der Liste wählen (kostenlose zuerst) oder einen Namen eintragen
             <Autocomplete size="xs" label="Modell" style={{ flex: 1, minWidth: 260 }} value={entwurf.modell} maxLength={100} limit={40}
               placeholder={anbieter?.vorgabeModell ? `Vorgabe: ${anbieter.vorgabeModell}` : 'Modell wählen'}
-              data={[{ group: 'Kostenlos', items: modelle.filter((m) => m.frei).map((m) => m.id) }, { group: 'Kostenpflichtig', items: modelle.filter((m) => !m.frei).map((m) => m.id) }]}
+              data={gewaehlt === 'ollama'
+                ? [{ group: 'Installiert, mit Werkzeugen', items: modelle.map((m) => m.id) }]
+                : [{ group: 'Kostenlos', items: modelle.filter((m) => m.frei).map((m) => m.id) }, { group: 'Kostenpflichtig', items: modelle.filter((m) => !m.frei).map((m) => m.id) }]}
               onChange={(v) => setEntwurf({ ...entwurf, modell: v.trim() })} />
           ) : (
             <TextInput size="xs" label="Modell" style={{ flex: 1, minWidth: 200 }} value={entwurf.modell} maxLength={100}
@@ -134,6 +136,13 @@ export function AgentEinstellungen() {
         </Group>
         {anbieter && !anbieter.verfuegbar && <Alert mt="xs" color="yellow" p="xs">Für {anbieter.label} ist kein Schlüssel hinterlegt — der Agent meldet das, statt zu antworten.</Alert>}
         {anbieter && !anbieter.vorgabeModell && !entwurf.modell && <Alert mt="xs" color="yellow" p="xs">Für {anbieter.label} bitte den Modellnamen eintragen.</Alert>}
+        {gewaehlt === 'ollama' && (
+          <Alert mt="xs" color="blue" p="xs">
+            Offene Modelle auf diesem Rechner: kostenlos, die Daten bleiben lokal — nur in der lokalen Entwicklung (online gibt es kein
+            lokales Ollama). Langsamer als Claude und bei der Bedienung weniger sicher; gespeichert wird trotzdem nur nach „Ja“.
+            Gezeigt werden installierte Modelle mit Werkzeugen{modelle.length ? '' : ' — keines gefunden (z. B. „ollama pull qwen3:30b-a3b“)'}.
+          </Alert>
+        )}
         {gewaehlt === 'openrouter' && (
           <Alert mt="xs" color="blue" p="xs">
             Kostenlose Modelle (Name endet auf „:free“, <code>openrouter/free</code> wählt selbst eines) sind langsamer, beherrschen die Bedienung

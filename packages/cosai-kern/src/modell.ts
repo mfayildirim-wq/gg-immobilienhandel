@@ -3,6 +3,7 @@
  * `anthropicModell` für den Betrieb, `drehbuchModell` für Tests und Klicktests (gibt vorbereitete Antworten der Reihe nach).
  */
 import { ChatAnthropic } from '@langchain/anthropic';
+import { ChatOllama } from '@langchain/ollama';
 import { ChatOpenAI } from '@langchain/openai';
 import { BaseChatModel, type BaseChatModelParams } from '@langchain/core/language_models/chat_models';
 import { AIMessage, type BaseMessage } from '@langchain/core/messages';
@@ -31,13 +32,16 @@ export function anthropicModell(apiKey: string, model = 'claude-sonnet-5'): Mode
  * Modell muss in den Einstellungen eingetragen werden (die Namen wechseln bei diesen Anbietern häufig).
  */
 export const ANBIETER = [
-  { id: 'anthropic', label: 'Anthropic (Claude)', zugang: 'anthropic-api-key', vorgabeModell: 'claude-sonnet-5', schnellesModell: 'claude-haiku-4-5-20251001', basisUrl: undefined },
-  { id: 'openai', label: 'OpenAI', zugang: 'openai-api-key', vorgabeModell: '', schnellesModell: '', basisUrl: undefined },
-  { id: 'deepseek', label: 'DeepSeek', zugang: 'deepseek-api-key', vorgabeModell: 'deepseek-chat', schnellesModell: '', basisUrl: 'https://api.deepseek.com' },
-  { id: 'kimi', label: 'Kimi (Moonshot)', zugang: 'moonshot-api-key', vorgabeModell: '', schnellesModell: '', basisUrl: 'https://api.moonshot.ai/v1' },
+  { id: 'anthropic', label: 'Anthropic (Claude)', zugang: 'anthropic-api-key', vorgabeModell: 'claude-sonnet-5', schnellesModell: 'claude-haiku-4-5-20251001', basisUrl: undefined, lokal: false },
+  { id: 'openai', label: 'OpenAI', zugang: 'openai-api-key', vorgabeModell: '', schnellesModell: '', basisUrl: undefined, lokal: false },
+  { id: 'deepseek', label: 'DeepSeek', zugang: 'deepseek-api-key', vorgabeModell: 'deepseek-chat', schnellesModell: '', basisUrl: 'https://api.deepseek.com', lokal: false },
+  { id: 'kimi', label: 'Kimi (Moonshot)', zugang: 'moonshot-api-key', vorgabeModell: '', schnellesModell: '', basisUrl: 'https://api.moonshot.ai/v1', lokal: false },
   // OpenRouter: viele Anbieter hinter einem Schlüssel, auch kostenlose Modelle (Name endet auf „:free“); `openrouter/free`
   // wählt selbst ein freies Modell. Die Liste kommt aus `modellListe` (öffentlich, ohne Schlüssel).
-  { id: 'openrouter', label: 'OpenRouter (auch kostenlose Modelle)', zugang: 'openrouter-api-key', vorgabeModell: 'openrouter/free', schnellesModell: '', basisUrl: 'https://openrouter.ai/api/v1' },
+  { id: 'openrouter', label: 'OpenRouter (auch kostenlose Modelle)', zugang: 'openrouter-api-key', vorgabeModell: 'openrouter/free', schnellesModell: '', basisUrl: 'https://openrouter.ai/api/v1', lokal: false },
+  // Ollama: offene Modelle auf dem eigenen Rechner — ohne Schlüssel, ohne Kosten, Daten bleiben lokal. Die Adresse gibt
+  // der Host (`ollamaUrl`); online (Vercel) gibt es kein lokales Ollama.
+  { id: 'ollama', label: 'Ollama (lokal, offene Modelle)', zugang: '', vorgabeModell: '', schnellesModell: '', basisUrl: 'http://localhost:11434', lokal: true },
 ] as const;
 export type AnbieterId = (typeof ANBIETER)[number]['id'];
 
@@ -65,8 +69,33 @@ export function openaiKompatibel(apiKey: string, model: string, basisUrl?: strin
   return new SeriellesOpenAI({ apiKey, model, maxTokens: 1500, ...(basisUrl ? { configuration: { baseURL: basisUrl, ...kopf } } : {}) });
 }
 
+export const OLLAMA_URL = 'http://localhost:11434';
+
+/**
+ * Ein Modell über Ollama. 32k Kontext: der Agent schickt je Schritt 11–25k Tokens (Werkzeuge, Karte, Regeln) — mit der
+ * Vorgabe von Ollama schnitte er still ab. Ohne „Denken“ (qwen3 denkt sonst vor jeder Antwort lange).
+ */
+export function ollamaModell(model: string, baseUrl = OLLAMA_URL): Modell {
+  return new ChatOllama({ model, baseUrl, numCtx: 32_768, think: false, numPredict: 1500 });
+}
+
 /** Ein Modell zur Auswahl in den Einstellungen */
 export interface ModellEintrag { id: string; name: string; frei: boolean; werkzeuge: boolean; kontext: number }
+
+/** Die installierten Ollama-Modelle mit Werkzeugen (lokal: `api/tags`, Fähigkeiten aus `api/show`). */
+export async function ollamaModelle(baseUrl = OLLAMA_URL, holen: typeof fetch = fetch): Promise<ModellEintrag[]> {
+  const r = await holen(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(3000) });
+  if (!r.ok) throw new Error(`Ollama antwortet mit ${r.status}`);
+  const namen = (((await r.json()) as { models?: { name: string }[] }).models ?? []).map((m) => m.name);
+  const liste = await Promise.all(namen.map(async (name) => {
+    const s = await holen(`${baseUrl}/api/show`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: name }), signal: AbortSignal.timeout(3000) });
+    const d = s.ok ? ((await s.json()) as { capabilities?: string[]; model_info?: Record<string, unknown> }) : {};
+    const kontext = Object.entries(d.model_info ?? {}).find(([k]) => k.endsWith('.context_length'))?.[1];
+    return { id: name, name, frei: true, werkzeuge: !!d.capabilities?.includes('tools'), kontext: Number(kontext ?? 0) };
+  }));
+  // Ohne Werkzeuge kann der Agent weder lesen noch bedienen
+  return liste.filter((m) => m.werkzeuge).sort((a, b) => a.id.localeCompare(b.id));
+}
 
 /**
  * Die Modelle von OpenRouter (öffentliche Liste, ohne Schlüssel) — nur solche mit Werkzeugen (der Agent braucht sie),

@@ -326,7 +326,7 @@ export function graphBauen(opt: GraphOptionen, checkpointer: BaseCheckpointSaver
     const erinnerungen = await erinnerungenVorrat;
     const teile = systemteile(opt.dna, opt.ziele, erinnerungen, zustand);
     const antwort = (await modell.invoke(mitCache(teile, verlaufFenster(zustand.messages), cachen))) as AIMessage;
-    return { messages: [antwort] };
+    return { messages: [nurEinWerkzeug(antwort)] };
   };
 
   const weiter = (zustand: AgentZustand) => {
@@ -353,6 +353,21 @@ export const VERLAUF_ZEICHEN = 60_000;
  * immer vor einer Nutzernachricht, damit kein Werkzeug-Ergebnis ohne seinen Aufruf beginnt. Der aktuelle Zug bleibt
  * immer ganz. Der gespeicherte Verlauf (Checkpoint) bleibt vollständig; nur das Modell sieht weniger.
  */
+/**
+ * Werkzeuge nacheinander, auch wenn ein Anbieter das nicht abschalten kann (Ollama, manche OpenRouter-Modelle): mehrere
+ * Aufrufe in einer Antwort — nur der erste gilt, das Modell ruft den nächsten danach selbst. Eine Rückfrage (`steuere`)
+ * hielte sonst den ganzen Schritt an, und die übrigen Aufrufe liefen nach dem „Ja“ ungefragt mit.
+ */
+export function nurEinWerkzeug(antwort: AIMessage): AIMessage {
+  if ((antwort.tool_calls?.length ?? 0) <= 1) return antwort;
+  const erster = antwort.tool_calls![0]!;
+  const inhalt = Array.isArray(antwort.content)
+    ? antwort.content.filter((b) => (b as { type?: string; id?: string }).type !== 'tool_use' || (b as { id?: string }).id === erster.id)
+    : antwort.content;
+  const { tool_calls: _roh, ...weitere } = antwort.additional_kwargs as Record<string, unknown>;
+  return new AIMessage({ content: inhalt as AIMessage['content'], tool_calls: [erster], additional_kwargs: weitere, response_metadata: antwort.response_metadata, usage_metadata: antwort.usage_metadata, id: antwort.id });
+}
+
 /**
  * Setzt die Cache-Marken für Anthropic: am Ende des festen Systemteils (davor stehen die Werkzeuge — beides wird
  * wiederverwendet, solange sich Einstellungen und Karte nicht ändern) und an der letzten Nutzernachricht (die weiteren

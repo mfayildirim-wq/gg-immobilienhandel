@@ -119,3 +119,15 @@ describe('Prompt-Caching', () => {
     expect(schlicht.slice(1)).toEqual(verlauf);
   });
 });
+
+describe('nurEinWerkzeug', () => {
+  it('lässt bei mehreren Werkzeugaufrufen in einer Antwort nur den ersten gelten', async () => {
+    const { nurEinWerkzeug } = await import('../src/graph.ts');
+    const zwei = new AIMessage({ content: 'Ich mache beides.', tool_calls: [{ id: 'a', name: 'steuere', args: {} }, { id: 'b', name: 'merke', args: {} }] });
+    const eins = nurEinWerkzeug(zwei);
+    expect(eins.tool_calls?.map((t) => t.id)).toEqual(['a']);
+    expect(eins.content).toBe('Ich mache beides.');
+    const einzeln = new AIMessage({ content: 'x', tool_calls: [{ id: 'a', name: 'steuere', args: {} }] });
+    expect(nurEinWerkzeug(einzeln)).toBe(einzeln);
+  });
+});

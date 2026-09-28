@@ -210,7 +210,7 @@ export interface AppKontext {
    */
   autoImport?: { aktiv?: boolean; browserStarten?: () => Promise<import('playwright-core').Browser>; maxZeitlimitSek?: number; lokaleZieleErlaubt?: boolean };
   /** AgentMode: das Sprachmodell des Agenten (LangChain-ChatModel oder Drehbuch/Attrappe); ohne Modell antwortet /api/agent/stand mit 503. */
-  agent?: { modell?: Modell | ModellWahl | null; ziele?: ZielBeschreibung[]; anbieterListe?: () => Promise<AnbieterStand[]>; web?: WebWerkzeuge };
+  agent?: { modell?: Modell | ModellWahl | null; ziele?: ZielBeschreibung[]; anbieterListe?: () => Promise<AnbieterStand[]>; web?: WebWerkzeuge; ollamaUrl?: string };
   /** `CRON_SECRET`: ohne dieses Geheimnis antworten die Cron-Routen immer mit 401. */
   cronGeheimnis?: string;
   /**
@@ -1280,6 +1280,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
       // MCP-Zugangsdaten verschlüsselt wie die Zugänge (AES-256-GCM); lokale MCP-Server nur außerhalb der Produktion
       geheimnis: { verpacken: geheimnisVerpacken, auspacken: (v) => geheimnisAuspacken(v) },
       mcpLokalErlaubt: !authOpt.produktion,
+      ollamaUrl: agentOpt.ollamaUrl,
       openapi: app.getOpenAPI31Document({ openapi: '3.1.0', info: { title: 'GG Immobilienhandel API', version: '0.1.0' } }) as OpenapiDokument,
       ziele: [...(agentOpt.ziele ?? OBERFLAECHENKARTE)],
       // In-process, mit den Kopfzeilen des Nutzers: Anmeldung und Rechte gelten wie bei jedem Aufruf aus dem Browser
