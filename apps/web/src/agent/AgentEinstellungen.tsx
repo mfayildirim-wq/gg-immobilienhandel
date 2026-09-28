@@ -2,7 +2,7 @@
  * Einstellungen → AgentMode: feste Grundregeln (nicht löschbar), ergänzbare Listen „Immer“ und „Nie“, Wahl des
  * Modellanbieters. Gespeichert im Kern (`cosai.agenten`); wirkt ab der nächsten Nachricht.
  */
-import { ActionIcon, Alert, Anchor, Badge, Button, Group, List, Loader, Paper, Select, Stack, Text, TextInput, Title } from '@mantine/core';
+import { ActionIcon, Alert, Anchor, Autocomplete, Badge, Button, Group, List, Loader, Paper, Select, Stack, Text, TextInput, Title } from '@mantine/core';
 import { IconLock, IconTrash } from '@tabler/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -20,6 +20,14 @@ async function holen(): Promise<Einstellungen> {
   const r = await agentAnfrage('/api/agent/einstellungen');
   if (!r.ok) throw new Error(r.status === 503 ? 'Der AgentMode ist ausgeschaltet.' : `Fehler ${r.status}`);
   return (await r.json()) as Einstellungen;
+}
+
+interface ModellEintrag { id: string; name: string; frei: boolean; kontext: number }
+
+/** Modelle zur Auswahl (OpenRouter: mit Werkzeugen, kostenlose zuerst) */
+async function modelleHolen(anbieter: string): Promise<ModellEintrag[]> {
+  const r = await agentAnfrage(`/api/agent/modelle?anbieter=${encodeURIComponent(anbieter)}`);
+  return r.ok ? ((await r.json()) as { modelle: ModellEintrag[] }).modelle : [];
 }
 
 async function speichern(e: Aenderbar): Promise<Einstellungen> {
@@ -68,6 +76,8 @@ export function AgentEinstellungen() {
   const { data, isLoading, error } = useQuery({ queryKey: ['agent', 'einstellungen'], queryFn: holen, retry: false });
   const [entwurf, setEntwurf] = useState<Aenderbar | null>(null);
   useEffect(() => { if (data && !entwurf) setEntwurf(aenderbar(data)); }, [data, entwurf]);
+  const gewaehlt = entwurf?.anbieter || 'anthropic';
+  const { data: modelle = [] } = useQuery({ queryKey: ['agent', 'modelle', gewaehlt], queryFn: () => modelleHolen(gewaehlt), enabled: gewaehlt === 'openrouter', staleTime: 10 * 60_000 });
   // Erfolg selbst merken: `isSuccess` von React Query kommt erst nach dem globalen onSettled der App (Listen neu laden)
   const [gespeichert, setGespeichert] = useState(false);
   const sichern = useMutation({
@@ -110,12 +120,27 @@ export function AgentEinstellungen() {
             value={entwurf.anbieter || 'anthropic'}
             onChange={(v) => setEntwurf({ ...entwurf, anbieter: v === 'anthropic' ? '' : (v ?? ''), modell: '' })}
             data={data.anbieterListe.map((a) => ({ value: a.id, label: a.verfuegbar ? a.label : `${a.label} — kein Schlüssel` }))} />
-          <TextInput size="xs" label="Modell" style={{ flex: 1, minWidth: 200 }} value={entwurf.modell} maxLength={100}
-            placeholder={anbieter?.vorgabeModell ? `Vorgabe: ${anbieter.vorgabeModell}` : 'Modellname eintragen (siehe Anbieter)'}
-            onChange={(e) => setEntwurf({ ...entwurf, modell: e.currentTarget.value.trim() })} />
+          {modelle.length ? (
+            // OpenRouter: aus der Liste wählen (kostenlose zuerst) oder einen Namen eintragen
+            <Autocomplete size="xs" label="Modell" style={{ flex: 1, minWidth: 260 }} value={entwurf.modell} maxLength={100} limit={40}
+              placeholder={anbieter?.vorgabeModell ? `Vorgabe: ${anbieter.vorgabeModell}` : 'Modell wählen'}
+              data={[{ group: 'Kostenlos', items: modelle.filter((m) => m.frei).map((m) => m.id) }, { group: 'Kostenpflichtig', items: modelle.filter((m) => !m.frei).map((m) => m.id) }]}
+              onChange={(v) => setEntwurf({ ...entwurf, modell: v.trim() })} />
+          ) : (
+            <TextInput size="xs" label="Modell" style={{ flex: 1, minWidth: 200 }} value={entwurf.modell} maxLength={100}
+              placeholder={anbieter?.vorgabeModell ? `Vorgabe: ${anbieter.vorgabeModell}` : 'Modellname eintragen (siehe Anbieter)'}
+              onChange={(e) => setEntwurf({ ...entwurf, modell: e.currentTarget.value.trim() })} />
+          )}
         </Group>
         {anbieter && !anbieter.verfuegbar && <Alert mt="xs" color="yellow" p="xs">Für {anbieter.label} ist kein Schlüssel hinterlegt — der Agent meldet das, statt zu antworten.</Alert>}
         {anbieter && !anbieter.vorgabeModell && !entwurf.modell && <Alert mt="xs" color="yellow" p="xs">Für {anbieter.label} bitte den Modellnamen eintragen.</Alert>}
+        {gewaehlt === 'openrouter' && (
+          <Alert mt="xs" color="blue" p="xs">
+            Kostenlose Modelle (Name endet auf „:free“, <code>openrouter/free</code> wählt selbst eines) sind langsamer, beherrschen die Bedienung
+            weniger sicher und sind begrenzt (ohne Guthaben etwa 50 Anfragen am Tag; eine Nachricht braucht 2–4). Anbieter kostenloser Modelle
+            dürfen die Eingaben oft speichern oder zum Training nutzen — für Geschäftsdaten besser ein bezahltes Modell.
+          </Alert>
+        )}
         <Group gap="xs" align="flex-end" mt="xs">
           <Select size="xs" label="Tempo" style={{ minWidth: 220 }} allowDeselect={false} value={entwurf.tempo}
             onChange={(v) => setEntwurf({ ...entwurf, tempo: (v ?? 'auto') as Tempo })}

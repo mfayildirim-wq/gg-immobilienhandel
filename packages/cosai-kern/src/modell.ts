@@ -35,6 +35,9 @@ export const ANBIETER = [
   { id: 'openai', label: 'OpenAI', zugang: 'openai-api-key', vorgabeModell: '', schnellesModell: '', basisUrl: undefined },
   { id: 'deepseek', label: 'DeepSeek', zugang: 'deepseek-api-key', vorgabeModell: 'deepseek-chat', schnellesModell: '', basisUrl: 'https://api.deepseek.com' },
   { id: 'kimi', label: 'Kimi (Moonshot)', zugang: 'moonshot-api-key', vorgabeModell: '', schnellesModell: '', basisUrl: 'https://api.moonshot.ai/v1' },
+  // OpenRouter: viele Anbieter hinter einem Schlüssel, auch kostenlose Modelle (Name endet auf „:free“); `openrouter/free`
+  // wählt selbst ein freies Modell. Die Liste kommt aus `modellListe` (öffentlich, ohne Schlüssel).
+  { id: 'openrouter', label: 'OpenRouter (auch kostenlose Modelle)', zugang: 'openrouter-api-key', vorgabeModell: 'openrouter/free', schnellesModell: '', basisUrl: 'https://openrouter.ai/api/v1' },
 ] as const;
 export type AnbieterId = (typeof ANBIETER)[number]['id'];
 
@@ -53,9 +56,28 @@ class SeriellesOpenAI extends ChatOpenAI {
   }
 }
 
-/** OpenAI oder ein Anbieter mit derselben Schnittstelle (DeepSeek, Kimi) — über die Basis-Adresse. */
+/** OpenAI oder ein Anbieter mit derselben Schnittstelle (DeepSeek, Kimi, OpenRouter) — über die Basis-Adresse. */
 export function openaiKompatibel(apiKey: string, model: string, basisUrl?: string): Modell {
-  return new SeriellesOpenAI({ apiKey, model, maxTokens: 1500, ...(basisUrl ? { configuration: { baseURL: basisUrl } } : {}) });
+  // OpenRouter ordnet Aufrufe über diese Kopfzeilen der Anwendung zu (optional, sonst „unbekannt“)
+  const kopf = basisUrl?.includes('openrouter.ai') ? { defaultHeaders: { 'X-Title': 'CoSAi AgentMode' } } : {};
+  return new SeriellesOpenAI({ apiKey, model, maxTokens: 1500, ...(basisUrl ? { configuration: { baseURL: basisUrl, ...kopf } } : {}) });
+}
+
+/** Ein Modell zur Auswahl in den Einstellungen */
+export interface ModellEintrag { id: string; name: string; frei: boolean; werkzeuge: boolean; kontext: number }
+
+/**
+ * Die Modelle von OpenRouter (öffentliche Liste, ohne Schlüssel) — nur solche mit Werkzeugen (der Agent braucht sie),
+ * kostenlose zuerst. `holen` ist austauschbar (Tests).
+ */
+export async function openrouterModelle(holen: typeof fetch = fetch): Promise<ModellEintrag[]> {
+  const r = await holen('https://openrouter.ai/api/v1/models', { signal: AbortSignal.timeout(8000) });
+  if (!r.ok) throw new Error(`OpenRouter antwortet mit ${r.status}`);
+  const d = (await r.json()) as { data?: { id: string; name?: string; context_length?: number; pricing?: { prompt?: string; completion?: string }; supported_parameters?: string[] }[] };
+  return (d.data ?? [])
+    .map((m) => ({ id: m.id, name: m.name ?? m.id, frei: Number(m.pricing?.prompt ?? 1) === 0 && Number(m.pricing?.completion ?? 1) === 0, werkzeuge: !!m.supported_parameters?.includes('tools'), kontext: m.context_length ?? 0 }))
+    .filter((m) => m.werkzeuge)
+    .sort((a, b) => Number(b.frei) - Number(a.frei) || a.id.localeCompare(b.id));
 }
 
 /** Ein Drehbuch-Modell: antwortet mit den vorbereiteten Nachrichten der Reihe nach; danach mit einem festen Satz. */

@@ -17,7 +17,7 @@ import { ergebnisseVon } from './ergebnisse.ts';
 import { mcpVerbinden, mcpWerkzeugName, type McpWerkzeug } from './mcp.ts';
 import { tool } from '@langchain/core/tools';
 import type { z } from 'zod';
-import { ANBIETER, aufgabeGruendlich, drehbuchModell, type Modell } from './modell.ts';
+import { ANBIETER, aufgabeGruendlich, drehbuchModell, openrouterModelle, type Modell, type ModellEintrag } from './modell.ts';
 import { routinenAus, type Routine } from './routinen.ts';
 import { agenten, ereignisse, laeufe, nachrichten, sitzungen } from './schema.ts';
 import { AgentEinstellungen, DNA, McpServerNeu, type AgentAntwort, type Beobachtung, type Chip, type Eingabe, type Entscheidung, type Steuerung } from './vertrag.ts';
@@ -101,6 +101,9 @@ const MCP_CACHE_MS = 60_000;
 /** DNA (Einstellungen) und gebaute Modelle kurz vorhalten — Speichern der Einstellungen leert den Vorrat sofort */
 const DNA_CACHE_MS = 10_000;
 const MODELL_CACHE_MS = 60_000;
+/** Modelllisten der Anbieter (OpenRouter ändert sie oft, aber nicht minütlich) */
+const LISTE_CACHE_MS = 10 * 60_000;
+let openrouterVorrat: { zeit: number; liste: ModellEintrag[] } | null = null;
 const mcpCache = new Map<string, { zeit: number; werkzeuge: McpWerkzeug[] }>();
 
 /** Längste Notiz, die als Formulierung (Vorschlag) gemerkt wird */
@@ -535,6 +538,15 @@ export function agentKern(opt: KernOptionen) {
       return { grundregeln: GRUNDREGELN, regeln: d.regeln, nie: d.nie, anbieter: d.anbieter, modell: d.modell, tempo: d.tempo, schnellesModell: d.schnellesModell, anbieterListe: ((await opt.anbieterListe?.()) ?? []).map((a) => ({ ...a, schnellesModell: a.schnellesModell ?? ANBIETER.find((x) => x.id === a.id)?.schnellesModell ?? '' })),
         // Zugangsdaten nie zurück an die Oberfläche — nur, ob welche hinterlegt sind
         mcp: d.mcp.map((m) => ({ name: m.name, url: m.url, aktiv: m.aktiv, mitZugang: !!m.kopf })) };
+    },
+
+    /** Modelle zur Auswahl (heute: OpenRouter, mit „frei“ markiert) — andere Anbieter: leer, Name wird eingetragen */
+    async modelle(anbieter: string): Promise<ModellEintrag[]> {
+      if (anbieter !== 'openrouter') return [];
+      if (openrouterVorrat && Date.now() - openrouterVorrat.zeit < LISTE_CACHE_MS) return openrouterVorrat.liste;
+      const liste = await openrouterModelle();
+      openrouterVorrat = { zeit: Date.now(), liste };
+      return liste;
     },
 
     async einstellungenSpeichern(eingabe: AgentEinstellungen) {

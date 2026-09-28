@@ -61,7 +61,7 @@ describe('openaiKompatibel (OpenAI, DeepSeek, Kimi)', () => {
   });
 
   it('kennt die unterstützten Anbieter mit ihrem Zugang', () => {
-    expect(ANBIETER.map((a) => a.id)).toEqual(['anthropic', 'openai', 'deepseek', 'kimi']);
+    expect(ANBIETER.map((a) => a.id)).toEqual(['anthropic', 'openai', 'deepseek', 'kimi', 'openrouter']);
     expect(ANBIETER.every((a) => a.zugang.endsWith('-api-key'))).toBe(true);
   });
 });
@@ -71,5 +71,26 @@ describe('Attrappe: Analyse speichern', () => {
     const m = (await attrappenModell().invoke([new HumanMessage('Analysiere die Lage')])) as AIMessage;
     expect(m.tool_calls?.[0]?.name).toBe('ergebnis_speichern');
     expect(m.tool_calls?.[0]?.args).toMatchObject({ titel: 'Analyse: Lage', art: 'recherche' });
+  });
+});
+
+describe('OpenRouter', () => {
+  it('ist ein Anbieter mit eigener Adresse und openrouter/free als Vorgabe', async () => {
+    const { ANBIETER } = await import('../src/modell.ts');
+    expect(ANBIETER.find((a) => a.id === 'openrouter')).toMatchObject({ zugang: 'openrouter-api-key', vorgabeModell: 'openrouter/free', basisUrl: 'https://openrouter.ai/api/v1' });
+  });
+
+  it('listet nur Modelle mit Werkzeugen, kostenlose zuerst', async () => {
+    const { openrouterModelle } = await import('../src/modell.ts');
+    const liste = { data: [
+      { id: 'b/bezahlt', pricing: { prompt: '0.000001', completion: '0.000002' }, supported_parameters: ['tools'], context_length: 1000 },
+      { id: 'a/frei:free', name: 'Frei', pricing: { prompt: '0', completion: '0' }, supported_parameters: ['tools', 'temperature'], context_length: 2000 },
+      { id: 'c/ohne-werkzeuge:free', pricing: { prompt: '0', completion: '0' }, supported_parameters: ['temperature'] },
+    ] };
+    const holen = (async () => new Response(JSON.stringify(liste), { status: 200 })) as unknown as typeof fetch;
+    expect(await openrouterModelle(holen)).toEqual([
+      { id: 'a/frei:free', name: 'Frei', frei: true, werkzeuge: true, kontext: 2000 },
+      { id: 'b/bezahlt', name: 'b/bezahlt', frei: false, werkzeuge: true, kontext: 1000 },
+    ]);
   });
 });

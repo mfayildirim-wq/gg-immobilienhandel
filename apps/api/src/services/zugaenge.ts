@@ -15,6 +15,8 @@ export const ZUGAENGE = [
     quelleUrl: 'https://platform.deepseek.com/api_keys', quelleText: 'platform.deepseek.com' },
   { schluessel: 'moonshot-api-key', label: 'Kimi (Moonshot)', umgebung: 'MOONSHOT_API_KEY', hinweis: 'Nur für den AgentMode, wenn dort Kimi gewählt ist.',
     quelleUrl: 'https://platform.moonshot.ai/console/api-keys', quelleText: 'platform.moonshot.ai' },
+  { schluessel: 'openrouter-api-key', label: 'OpenRouter', umgebung: 'OPENROUTER_API_KEY', hinweis: 'Nur für den AgentMode, wenn dort OpenRouter gewählt ist — auch kostenlose Modelle.',
+    quelleUrl: 'https://openrouter.ai/settings/keys', quelleText: 'openrouter.ai' },
   { schluessel: 'propstack-api-key', label: 'Propstack', umgebung: 'PROPSTACK_API_KEY', hinweis: 'Für die Bewertung von Einheiten.',
     quelleUrl: 'https://crm.propstack.de/app/admin/api_keys', quelleText: 'crm.propstack.de/app/admin/api_keys' },
 ] as const;

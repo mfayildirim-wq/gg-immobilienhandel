@@ -55,6 +55,13 @@ export function agentRouten(kern: Kern, nutzerAus: (c: Context) => Nutzer | null
   });
 
   app.get('/einstellungen', async (c) => c.json(await kern.einstellungen()));
+  app.get('/modelle', async (c) => {
+    try {
+      return c.json({ modelle: await kern.modelle(c.req.query('anbieter') ?? '') });
+    } catch (e) {
+      return c.json({ modelle: [], fehler: (e as Error).message }, 502);
+    }
+  });
 
   // Werkzeuge: alle mit Quelle und Recht; Freigabe ohne Rückfrage nur für MCP-Werkzeuge
   // Ergebnisse (Recherchen, Analysen) zu einem Objekt der App — Typ und ID sind nur Werte, keine Fremdschlüssel
