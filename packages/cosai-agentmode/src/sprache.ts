@@ -247,7 +247,10 @@ export function useZuhoeren(aufText: (text: string, fertig: boolean) => void, op
       if (!ton.size) return;
       aufTextRef.current('…', false);
       transkribieren(ton)
-        .then((text) => aufTextRef.current(ohneEndwort(text, optionenRef.current.endwoerter ?? ENDWOERTER) ?? text.trim(), true))
+        .then((roh) => {
+          const text = nachRufname(roh, optionenRef.current.rufname || RUFNAME) || roh;
+          aufTextRef.current(ohneEndwort(text, optionenRef.current.endwoerter ?? ENDWOERTER) ?? text.trim(), true);
+        })
         .catch((e: Error) => { aufTextRef.current('', false); onFehler?.(e.message); });
     };
     laut.current = { gehoert: false, zuletzt: Date.now() };
@@ -295,6 +298,10 @@ export function useZuhoeren(aufText: (text: string, fertig: boolean) => void, op
         text = auftrag ?? text;
         // Nur der Name — auf den Auftrag warten, ohne die Erkennung abzubrechen
         if (!text) return;
+      } else {
+        // Startwort gilt immer: beim Drücken-und-Sprechen nicht nötig, aber wenn gesagt, nicht Teil des Auftrags
+        const auftrag = nachRufname(text, optionenRef.current.rufname || RUFNAME);
+        if (auftrag) text = auftrag;
       }
       // Endwort am Ende: kurz abwarten, ob noch etwas kommt („mach …“ kann auch ein Satzanfang sein), dann ab
       const ohne = ohneEndwort(text, optionenRef.current.endwoerter ?? ENDWOERTER);

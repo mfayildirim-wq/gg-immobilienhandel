@@ -141,6 +141,11 @@
 /* Popup am 👂: Immer zuhören, Startwort, Endwörter */
 .am-menue-anker { position: relative; display: inline-flex; }
 .am-menue-anker .am-symbol[data-wach='true'] { background: var(--am-farbe-weich); }
+/* 🎤 mit ▾ daneben wie ein Auswahlfeld; 👂-Marke zeigt die Betriebsart „Immer zuhören“ */
+.am-mikrofon { gap: 0; border: 1px solid var(--am-linie); border-radius: 7px; }
+.am-mikrofon .am-symbol { border-radius: 6px 0 0 6px; }
+.am-mikrofon .am-pfeil { width: 18px; font-size: 11px; border-radius: 0 6px 6px 0; border-left: 1px solid var(--am-linie); }
+.am-ohr-marke { position: absolute; right: -3px; bottom: -4px; font-size: 10px; }
 .am-menue { position: absolute; top: calc(100% + 6px); right: 0; z-index: 1004; width: 300px; display: grid; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--am-flaeche); color: var(--am-text); border: 1px solid var(--am-linie); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); font-size: 13px; }
 .am-menue-zeile { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
 .am-menue-feld { display: grid; gap: 3px; font-size: 12px; font-weight: 600; }

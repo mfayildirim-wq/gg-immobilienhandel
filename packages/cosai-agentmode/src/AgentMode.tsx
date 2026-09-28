@@ -59,9 +59,9 @@ export interface AgentModeProps {
 
 const SITZUNG = 'cosai.sitzung';
 
-/** Popup am 👂: „Immer zuhören“, Startwort (Rufname) und Endwörter — Esc, Enter oder Klick daneben schließt und speichert */
-function Sprachmenue({ dauer, dauerMoeglich, dauerSchalten, rufname, endwoerter, speichern, schliessen }: {
-  dauer: boolean; dauerMoeglich: boolean; dauerSchalten: (an: boolean) => void; rufname: string; endwoerter: string[];
+/** Popup am ▾ neben 🎤: Betriebsart „Immer zuhören“, Startwort (Rufname) und Endwörter — Esc, Enter oder Klick daneben schließt und speichert */
+function Sprachmenue({ ohr, ohrMoeglich, ohrSchalten, rufname, endwoerter, speichern, schliessen }: {
+  ohr: boolean; ohrMoeglich: boolean; ohrSchalten: (an: boolean) => void; rufname: string; endwoerter: string[];
   speichern: (rufname: string, endwoerter: string) => void; schliessen: () => void;
 }) {
   const [start, setStart] = useState(rufname);
@@ -83,8 +83,8 @@ function Sprachmenue({ dauer, dauerMoeglich, dauerSchalten, rufname, endwoerter,
   return (
     <div ref={feld} className="am-menue" role="dialog" aria-label="Sprachsteuerung">
       <label className="am-menue-zeile">
-        <input type="checkbox" checked={dauer} disabled={!dauerMoeglich} onChange={(e) => { speichern(start, ende); dauerSchalten(e.currentTarget.checked); }} />
-        <span>👂 Immer zuhören{dauerMoeglich ? ` — reagiert auf „${start.trim() || RUFNAME}“` : ' (in diesem Browser nicht möglich)'}</span>
+        <input type="checkbox" checked={ohr} disabled={!ohrMoeglich} onChange={(e) => ohrSchalten(e.currentTarget.checked)} />
+        <span>👂 Immer zuhören{ohrMoeglich ? ` — 🎤 bleibt nach dem Drücken an und reagiert auf „${start.trim() || RUFNAME}“` : ' (in diesem Browser nicht möglich)'}</span>
       </label>
       <label className="am-menue-feld">Startwort
         <input aria-label="Startwort" value={start} maxLength={30} placeholder={RUFNAME} onChange={(e) => setStart(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === 'Enter') zu.current(); }} />
@@ -92,12 +92,14 @@ function Sprachmenue({ dauer, dauerMoeglich, dauerSchalten, rufname, endwoerter,
       <label className="am-menue-feld">Endwörter
         <input aria-label="Endwörter" value={ende} maxLength={80} placeholder={ENDWOERTER.join(', ')} onChange={(e) => setEnde(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === 'Enter') zu.current(); }} />
       </label>
-      <p className="am-hinweis">Zum Beispiel: „{start.trim() || RUFNAME}, Notiz Rückruf Montag, {ende.split(',')[0]?.trim() || 'fertig'}“ — das Endwort schickt sofort ab, sonst nach 2,5 s Pause.</p>
+      <p className="am-hinweis">Zum Beispiel: „{start.trim() || RUFNAME}, Notiz Rückruf Montag, {ende.split(',')[0]?.trim() || 'fertig'}“ — das Endwort schickt sofort ab, sonst nach 2,5 s Pause. Ohne 👂: 🎤 drücken und sprechen, das Startwort ist dann nicht nötig.</p>
     </div>
   );
 }
 /** Dauerhaft zuhören bleibt an, bis es ausgeschaltet wird (auch nach dem Neuladen) — und der Rufname dazu */
 const DAUERHOEREN = 'cosai.dauerhoeren';
+/** Betriebsart: 👂 angehakt = 🎤 bleibt nach dem Drücken an */
+const OHRMODUS = 'cosai.ohrmodus';
 const RUFNAME_SCHLUESSEL = 'cosai.rufname';
 const ENDWOERTER_SCHLUESSEL = 'cosai.endwoerter';
 const lesen = (k: string) => { try { return window.localStorage.getItem(k); } catch { return null; } };
@@ -115,6 +117,7 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
   const [rufname, setRufname] = useState(() => lesen(RUFNAME_SCHLUESSEL) || RUFNAME);
   const [endwoerter, setEndwoerter] = useState(() => (lesen(ENDWOERTER_SCHLUESSEL) ?? ENDWOERTER.join(', ')).split(',').map((w) => w.trim()).filter(Boolean));
   const [sprachMenue, setSprachMenue] = useState(false);
+  const [ohrModus, setOhrModus] = useState(() => lesen(OHRMODUS) === 'an');
   const [fehler, setFehler] = useState<string | null>(null);
   const [transkriptOffen, setTranskriptOffen] = useState(false);
   const [gedaechtnisOffen, setGedaechtnisOffen] = useState(false);
@@ -386,10 +389,21 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
   }, { transkribieren, onFehler: setFehler, rufname, endwoerter, stumm: vorlesen.spricht });
   // Dauerhaft zuhören: war es an, geht es nach dem Öffnen gleich wieder an
   useEffect(() => {
-    if (lesen(DAUERHOEREN) === 'an') zuhoeren.dauerSchalten(true);
+    if (lesen(OHRMODUS) === 'an' && lesen(DAUERHOEREN) === 'an') zuhoeren.dauerSchalten(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const dauerSchalten = (an: boolean) => { schreiben(DAUERHOEREN, an ? 'an' : null); zuhoeren.dauerSchalten(an); };
+  const ohrSchalten = (an: boolean) => {
+    setOhrModus(an);
+    schreiben(OHRMODUS, an ? 'an' : null);
+    if (!an && zuhoeren.dauer) dauerSchalten(false);
+  };
+  /** 🎤 (und der Kreis): mit 👂 bleibt es an bis zum nächsten Druck, sonst einmal sprechen bis zur Pause oder zum Endwort */
+  const mikrofon = () => {
+    if (ohrModus && zuhoeren.dauerMoeglich) { dauerSchalten(!zuhoeren.dauer); return; }
+    if (zuhoeren.hoert) zuhoeren.stoppe(); else zuhoeren.starte();
+  };
+  const mikrofonAn = zuhoeren.dauer || zuhoeren.hoert;
 
   /** Ein neues Gespräch: die alte Sitzung bleibt in der Datenbank, der Faden beginnt frisch. */
   const neuesGespraech = useCallback(() => {
@@ -433,7 +447,7 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
     <div className={`am-block ${modus === 'overlay' ? 'am-overlay-oben' : ''}`} data-agentmode-oben>
       <div className="am-kreis">
         <Sprechkreis stil={stil} zustand={zustand} pegel={zustand === 'hoert' ? zuhoeren.pegel : vorlesen.spricht ? 0.6 : 0} groesse={kreisGroesse} saat={saat} farbe={farbe} titel="Agent"
-          onClick={vorlesen.spricht ? vorlesen.stoppe : zuhoeren.moeglich && !zuhoeren.dauer ? (zuhoeren.hoert ? zuhoeren.stoppe : zuhoeren.starte) : undefined} />
+          onClick={vorlesen.spricht ? vorlesen.stoppe : zuhoeren.moeglich ? mikrofon : undefined} />
         {(schliessen || zurSeite) && (
           <div className="am-kreis-knoepfe">
             {zurSeite && <button type="button" className="am-symbol am-klein" aria-label="Zum Agent-Dialog" data-tipp="Zum Agent-Dialog" onClick={zurSeite}>↗</button>}
@@ -461,15 +475,15 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
         <input className="am-eingabe" aria-label="Nachricht an den Agenten" placeholder="Nachricht … (Enter)" value={eingabe} onChange={(e) => setEingabe(e.currentTarget.value)} disabled={beschaeftigt} />
         {/* Abschicken auch per Klick — nur mit Enter sah man nicht, wie die Nachricht ankommt (Rückmeldung des Auftraggebers) */}
         <button type="submit" className="am-symbol am-senden" aria-label="Senden" data-tipp="Senden (Enter)" disabled={beschaeftigt || !eingabe.trim()}>➤</button>
-        {zuhoeren.moeglich && !zuhoeren.dauer && (
-          <button type="button" className="am-symbol" aria-pressed={zuhoeren.hoert} aria-label={zuhoeren.hoert ? 'Zuhören beenden' : 'Zuhören'} data-tipp={zuhoeren.hoert ? 'Zuhören beenden' : 'Zuhören (bis zur Pause)'} onClick={zuhoeren.hoert ? zuhoeren.stoppe : zuhoeren.starte}>🎤</button>
-        )}
         {zuhoeren.moeglich && (
-          <div className="am-menue-anker">
-            <button type="button" className="am-symbol" aria-haspopup="dialog" aria-expanded={sprachMenue} aria-pressed={zuhoeren.dauer}
-              aria-label="Sprachsteuerung" data-tipp={zuhoeren.dauer ? `Hört auf „${rufname}“` : 'Sprachsteuerung'} data-wach={zuhoeren.wach} onClick={() => setSprachMenue((o) => !o)}>👂</button>
+          <div className="am-menue-anker am-mikrofon">
+            <button type="button" className="am-symbol" aria-pressed={mikrofonAn} data-ohr={ohrModus} data-wach={zuhoeren.wach}
+              aria-label={mikrofonAn ? 'Zuhören beenden' : 'Zuhören'}
+              data-tipp={zuhoeren.dauer ? `Hört auf „${rufname}“ — drücken zum Ausschalten` : mikrofonAn ? 'Zuhören beenden' : ohrModus ? `Immer zuhören (auf „${rufname}“)` : 'Drücken und sprechen'}
+              onClick={mikrofon}>🎤{ohrModus && <span className="am-ohr-marke" aria-hidden>👂</span>}</button>
+            <button type="button" className="am-symbol am-pfeil" aria-haspopup="dialog" aria-expanded={sprachMenue} aria-label="Sprachoptionen" data-tipp="Sprachoptionen" onClick={() => setSprachMenue((o) => !o)}>▾</button>
             {sprachMenue && (
-              <Sprachmenue dauer={zuhoeren.dauer} dauerMoeglich={zuhoeren.dauerMoeglich} dauerSchalten={dauerSchalten}
+              <Sprachmenue ohr={ohrModus} ohrMoeglich={zuhoeren.dauerMoeglich} ohrSchalten={ohrSchalten}
                 rufname={rufname} endwoerter={endwoerter} schliessen={() => setSprachMenue(false)}
                 speichern={(r, e) => {
                   const n = r.trim() || RUFNAME;

@@ -285,14 +285,22 @@ describe('AgentMode (Knöpfe unter dem Kreis)', () => {
   });
 });
 
-describe('AgentMode (Sprachmenü)', () => {
-  it('👂 öffnet das Menü: Immer zuhören, Startwort und Endwörter — gespeichert beim Schließen', async () => {
+describe('AgentMode (Mikrofon und Sprachoptionen)', () => {
+  /** Browser-Erkennung zum Zählen: jede Instanz ist ein Zuhören */
+  function erkennung() {
+    const laeufe: { continuous: boolean; laeuft: boolean }[] = [];
+    Object.assign(window, { SpeechRecognition: class { continuous = false; laeuft = false; onend: (() => void) | null = null; constructor() { laeufe.push(this); } start() { this.laeuft = true; } stop() { this.laeuft = false; this.onend?.(); } abort() { this.laeuft = false; } } });
+    return { laeufe, weg: () => { delete (window as unknown as { SpeechRecognition?: unknown }).SpeechRecognition; } };
+  }
+
+  it('▾ öffnet das Menü: 👂, Startwort und Endwörter — 🎤 bleibt dabei sichtbar; gespeichert beim Schließen', async () => {
     const k = kernErsatz();
-    Object.assign(window, { SpeechRecognition: class { start() {} stop() {} abort() {} } });
+    const { weg } = erkennung();
     render(<AgentMode api="/api/agent" anfrage={k.anfrage} modus="overlay" navigiere={vi.fn()} ort="/" stil="kern" />);
-    fireEvent.click(screen.getByRole('button', { name: 'Sprachsteuerung' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sprachoptionen' }));
     const menue = screen.getByRole('dialog', { name: 'Sprachsteuerung' });
-    expect(within(menue).getByText(/Immer zuhören — reagiert auf „Superagent“/)).toBeTruthy();
+    expect(within(menue).getByText(/Immer zuhören — 🎤 bleibt nach dem Drücken an und reagiert auf „Superagent“/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Zuhören' })).toBeTruthy();
     fireEvent.change(within(menue).getByLabelText('Startwort'), { target: { value: 'Jarvis' } });
     fireEvent.change(within(menue).getByLabelText('Endwörter'), { target: { value: 'fertig, los' } });
     fireEvent.keyDown(window, { key: 'Escape' });
@@ -301,6 +309,37 @@ describe('AgentMode (Sprachmenü)', () => {
     expect(window.localStorage.getItem('cosai.endwoerter')).toBe('fertig, los');
     window.localStorage.removeItem('cosai.rufname');
     window.localStorage.removeItem('cosai.endwoerter');
-    delete (window as unknown as { SpeechRecognition?: unknown }).SpeechRecognition;
+    weg();
+  });
+
+  it('ohne 👂: 🎤 drücken und sprechen; mit 👂: 🎤 bleibt an, bis es wieder gedrückt wird', async () => {
+    const k = kernErsatz();
+    const { laeufe, weg } = erkennung();
+    render(<AgentMode api="/api/agent" anfrage={k.anfrage} modus="overlay" navigiere={vi.fn()} ort="/" stil="kern" />);
+    // Drücken und sprechen
+    fireEvent.click(screen.getByRole('button', { name: 'Zuhören' }));
+    expect(laeufe).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Zuhören beenden' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Zuhören beenden' }));
+    expect(screen.getByRole('button', { name: 'Zuhören' }).getAttribute('aria-pressed')).toBe('false');
+
+    // 👂 wählen — das schaltet noch nichts ein
+    fireEvent.click(screen.getByRole('button', { name: 'Sprachoptionen' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Sprachsteuerung' })).getByRole('checkbox'));
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(laeufe).toHaveLength(1);
+    expect(window.localStorage.getItem('cosai.ohrmodus')).toBe('an');
+    // 🎤 drücken → bleibt an (auch wenn die Erkennung zwischendurch endet)
+    fireEvent.click(screen.getByRole('button', { name: 'Zuhören' }));
+    expect(screen.getByRole('button', { name: 'Zuhören beenden' }).getAttribute('aria-pressed')).toBe('true');
+    await act(async () => { (laeufe.at(-1) as unknown as { stop: () => void }).stop(); await new Promise((r) => setTimeout(r, 300)); });
+    expect(screen.getByRole('button', { name: 'Zuhören beenden' })).toBeTruthy();
+    expect(laeufe.at(-1)!.laeuft).toBe(true);
+    // wieder drücken → aus
+    fireEvent.click(screen.getByRole('button', { name: 'Zuhören beenden' }));
+    expect(screen.getByRole('button', { name: 'Zuhören' }).getAttribute('aria-pressed')).toBe('false');
+    window.localStorage.removeItem('cosai.ohrmodus');
+    window.localStorage.removeItem('cosai.dauerhoeren');
+    weg();
   });
 });

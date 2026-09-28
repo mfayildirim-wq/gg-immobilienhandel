@@ -177,3 +177,22 @@ describe('Endwort', () => {
     weg();
   });
 });
+
+describe('Startwort beim Drücken und Sprechen', () => {
+  it('ist nicht nötig, wird aber abgezogen, wenn es fällt', async () => {
+    const { act, renderHook } = await import('@testing-library/react');
+    const { useZuhoeren } = await import('../src/sprache.ts');
+    const { instanzen, weg } = fakeErkennung();
+    vi.useFakeTimers();
+    const texte: [string, boolean][] = [];
+    const { result } = renderHook(() => useZuhoeren((t, f) => texte.push([t, f]), { rufname: 'Superagent', endwoerter: ['fertig'] }));
+    act(() => { result.current.starte(); });
+    act(() => { instanzen.at(-1)!.sage('Superagent was ist heute fällig fertig'); vi.advanceTimersByTime(800); });
+    expect(texte.at(-1)).toEqual(['was ist heute fällig', true]);
+    act(() => { result.current.starte(); });
+    act(() => { instanzen.at(-1)!.sage('zeig die Makler'); vi.advanceTimersByTime(3000); });
+    expect(texte.at(-1)).toEqual(['zeig die Makler', true]);
+    vi.useRealTimers();
+    weg();
+  });
+});
