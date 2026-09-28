@@ -270,3 +270,17 @@ describe('AgentMode (Ergebnisse)', () => {
     await waitFor(() => expect(k.aufrufe.find((a) => a.pfad === '/api/agent/nachricht')?.body).toMatchObject({ kontext: { dealId: 'd1', deal: 'Musterweg 1' } }));
   });
 });
+
+describe('AgentMode (Knöpfe unter dem Kreis)', () => {
+  it('✕ schließt, ↗ wechselt zum Agent-Dialog — beide unter dem Kreis', async () => {
+    const k = kernErsatz();
+    const schliessen = vi.fn();
+    const zurSeite = vi.fn();
+    render(<AgentMode api="/api/agent" anfrage={k.anfrage} modus="overlay" navigiere={vi.fn()} ort="/" stil="kern" schliessen={schliessen} zurSeite={zurSeite} />);
+    const kreis = document.querySelector('.am-kreis') as HTMLElement;
+    fireEvent.click(within(kreis).getByRole('button', { name: 'AgentMode schließen' }));
+    fireEvent.click(within(kreis).getByRole('button', { name: 'Zum Agent-Dialog' }));
+    expect(schliessen).toHaveBeenCalledOnce();
+    expect(zurSeite).toHaveBeenCalledOnce();
+  });
+});

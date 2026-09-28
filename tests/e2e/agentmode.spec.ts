@@ -59,7 +59,7 @@ async function faelligerDeal(page: Page, titel: string) {
 
 /** Overlay einschalten und ein frisches Gespräch beginnen (eine ältere Sitzung könnte noch auf eine Antwort warten). */
 async function agentOeffnen(page: Page) {
-  await page.getByRole('button', { name: 'Agent-Overlay' }).click();
+  await page.getByRole('button', { name: 'Agent öffnen' }).click();
   const oben = page.locator('[data-agentmode-oben]');
   await expect(oben).toBeVisible();
   await oben.getByRole('button', { name: 'Neues Gespräch' }).click();

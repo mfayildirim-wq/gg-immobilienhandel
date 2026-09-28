@@ -13,7 +13,7 @@ import { ausfuehren, bereichVon, beobachten, fokusBezuege, fokusLesen, zielFinde
 import { saatAus } from './konstellation.ts';
 import { heuteLokal } from './lernen.tsx';
 import { Sprechkreis, SPRECHKREIS_STILE, type SprechkreisStil, type SprechkreisZustand } from './Sprechkreis.tsx';
-import { istStoppwort, useVorlesen, useZuhoeren } from './sprache.ts';
+import { istStoppwort, RUFNAME, useVorlesen, useZuhoeren } from './sprache.ts';
 
 export interface AgentAntwortDaten {
   sitzungId: string;
@@ -53,11 +53,18 @@ export interface AgentModeProps {
   transkribieren?: (audio: Blob) => Promise<string>;
   /** ⚙ im Block: öffnet die Einstellungen des Agenten (Immer/Nie, Anbieter) beim Host */
   einstellungen?: () => void;
+  /** Overlay: Knopf unter dem Kreis, der zum Agent-Dialog (eigene Seite des Hosts) wechselt */
+  zurSeite?: () => void;
 }
 
 const SITZUNG = 'cosai.sitzung';
+/** Dauerhaft zuhören bleibt an, bis es ausgeschaltet wird (auch nach dem Neuladen) — und der Rufname dazu */
+const DAUERHOEREN = 'cosai.dauerhoeren';
+const RUFNAME_SCHLUESSEL = 'cosai.rufname';
+const lesen = (k: string) => { try { return window.localStorage.getItem(k); } catch { return null; } };
+const schreiben = (k: string, v: string | null) => { try { if (v === null) window.localStorage.removeItem(k); else window.localStorage.setItem(k, v); } catch { /* privater Modus */ } };
 
-export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, stil, onStil, children, schliessen, schrittMs = 700, farbe, onSteuerung, transkribieren, einstellungen }: AgentModeProps) {
+export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, stil, onStil, children, schliessen, schrittMs = 700, farbe, onSteuerung, transkribieren, einstellungen, zurSeite }: AgentModeProps) {
   const [sitzungId, setSitzungId] = useState<string | null>(() => { try { return window.localStorage.getItem(SITZUNG); } catch { return null; } });
   const [zeilen, setZeilen] = useState<Zeile[]>([]);
   const [chips, setChips] = useState<ChipDaten[]>([]);
@@ -66,6 +73,8 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
   const [handelt, setHandelt] = useState(false);
   const [schritt, setSchritt] = useState<Schritt | null>(null);
   const [eingabe, setEingabe] = useState('');
+  const [rufname, setRufname] = useState(() => lesen(RUFNAME_SCHLUESSEL) || RUFNAME);
+  const [rufnameBearbeiten, setRufnameBearbeiten] = useState(false);
   const [fehler, setFehler] = useState<string | null>(null);
   const [transkriptOffen, setTranskriptOffen] = useState(false);
   const [gedaechtnisOffen, setGedaechtnisOffen] = useState(false);
@@ -334,7 +343,13 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
     const kurz = text.toLowerCase().replace(/[.!?]/g, '').trim();
     const treffer = chips.find((c) => c.label.toLowerCase() === kurz || c.wert.toLowerCase() === kurz) ?? (wartetAuf && /^(ja|ok|okay|abschicken|mach)$/.test(kurz) ? chips.find((c) => c.wert === 'ja') : undefined) ?? (wartetAuf && /^(nein|nicht|stopp?|abbrechen)$/.test(kurz) ? chips.find((c) => c.wert === 'nein') : undefined);
     if (treffer) chipWaehlen(treffer); else nachricht(text);
-  }, { transkribieren, onFehler: setFehler });
+  }, { transkribieren, onFehler: setFehler, rufname, stumm: vorlesen.spricht });
+  // Dauerhaft zuhören: war es an, geht es nach dem Öffnen gleich wieder an
+  useEffect(() => {
+    if (lesen(DAUERHOEREN) === 'an') zuhoeren.dauerSchalten(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const dauerSchalten = (an: boolean) => { schreiben(DAUERHOEREN, an ? 'an' : null); zuhoeren.dauerSchalten(an); };
 
   /** Ein neues Gespräch: die alte Sitzung bleibt in der Datenbank, der Faden beginnt frisch. */
   const neuesGespraech = useCallback(() => {
@@ -362,7 +377,7 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
     return () => window.removeEventListener('keydown', taste);
   }, [vorlesen]);
 
-  const zustand: SprechkreisZustand = zuhoeren.hoert ? 'hoert' : vorlesen.spricht ? 'spricht' : beschaeftigt || handelt ? 'denkt' : 'ruhig';
+  const zustand: SprechkreisZustand = zuhoeren.hoert && (!zuhoeren.dauer || zuhoeren.wach) ? 'hoert' : vorlesen.spricht ? 'spricht' : beschaeftigt || handelt ? 'denkt' : 'ruhig';
   const letzteAgent = [...zeilen].reverse().find((z) => z.wer === 'agent');
   const letzteNutzer = [...zeilen].reverse().find((z) => z.wer === 'nutzer');
   const kreisGroesse = modus === 'seite' ? 140 : 110;
@@ -377,8 +392,14 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
   const block = (
     <div className={`am-block ${modus === 'overlay' ? 'am-overlay-oben' : ''}`} data-agentmode-oben>
       <div className="am-kreis">
-        <Sprechkreis stil={stil} zustand={zustand} pegel={zuhoeren.hoert ? zuhoeren.pegel : vorlesen.spricht ? 0.6 : 0} groesse={kreisGroesse} saat={saat} farbe={farbe} titel="Agent"
-          onClick={vorlesen.spricht ? vorlesen.stoppe : zuhoeren.moeglich ? (zuhoeren.hoert ? zuhoeren.stoppe : zuhoeren.starte) : undefined} />
+        <Sprechkreis stil={stil} zustand={zustand} pegel={zustand === 'hoert' ? zuhoeren.pegel : vorlesen.spricht ? 0.6 : 0} groesse={kreisGroesse} saat={saat} farbe={farbe} titel="Agent"
+          onClick={vorlesen.spricht ? vorlesen.stoppe : zuhoeren.moeglich && !zuhoeren.dauer ? (zuhoeren.hoert ? zuhoeren.stoppe : zuhoeren.starte) : undefined} />
+        {(schliessen || zurSeite) && (
+          <div className="am-kreis-knoepfe">
+            {zurSeite && <button type="button" className="am-symbol am-klein" aria-label="Zum Agent-Dialog" data-tipp="Zum Agent-Dialog" onClick={zurSeite}>↗</button>}
+            {schliessen && <button type="button" className="am-symbol am-klein" aria-label="AgentMode schließen" data-tipp="Schließen" onClick={schliessen}>✕</button>}
+          </div>
+        )}
       </div>
       <div className="am-agent">
         {letzteAgent ? <Sprechblase wer="agent" text={letzteAgent.text} schluessel={letzteAgent.nr} lebendig /> : <div className="am-blase" data-wer="agent"><span className="am-wer">Agent</span>Ich höre. Sag mir, was ich tun soll — oder frag, was heute ansteht.</div>}
@@ -388,7 +409,6 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
         {!wartetAuf && routinen.map((r) => (
           <button key={r.id} type="button" className="am-chip" data-art="routine" aria-label={`Routine: ${r.label}`} disabled={beschaeftigt} onClick={() => routineStarten(r)}>▶ {r.label}</button>
         ))}
-        {schliessen && <button type="button" className="am-symbol" aria-label="AgentMode schließen" data-tipp="Schließen" onClick={schliessen}>✕</button>}
       </div>
       {ergebnisOffen ? (
         <ErgebnisBereich titel={fokusTitel} ergebnisse={ergebnisse} loeschen={ergebnisLoeschen}
@@ -401,9 +421,19 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
         <input className="am-eingabe" aria-label="Nachricht an den Agenten" placeholder="Nachricht … (Enter)" value={eingabe} onChange={(e) => setEingabe(e.currentTarget.value)} disabled={beschaeftigt} />
         {/* Abschicken auch per Klick — nur mit Enter sah man nicht, wie die Nachricht ankommt (Rückmeldung des Auftraggebers) */}
         <button type="submit" className="am-symbol am-senden" aria-label="Senden" data-tipp="Senden (Enter)" disabled={beschaeftigt || !eingabe.trim()}>➤</button>
-        {zuhoeren.moeglich && (
-          <button type="button" className="am-symbol" aria-pressed={zuhoeren.hoert} aria-label={zuhoeren.hoert ? 'Zuhören beenden' : 'Zuhören'} data-tipp={zuhoeren.hoert ? 'Zuhören beenden' : 'Zuhören'} onClick={zuhoeren.hoert ? zuhoeren.stoppe : zuhoeren.starte}>🎤</button>
+        {zuhoeren.moeglich && !zuhoeren.dauer && (
+          <button type="button" className="am-symbol" aria-pressed={zuhoeren.hoert} aria-label={zuhoeren.hoert ? 'Zuhören beenden' : 'Zuhören'} data-tipp={zuhoeren.hoert ? 'Zuhören beenden' : 'Zuhören (bis zur Pause)'} onClick={zuhoeren.hoert ? zuhoeren.stoppe : zuhoeren.starte}>🎤</button>
         )}
+        {zuhoeren.dauerMoeglich && (<>
+          <button type="button" className="am-symbol" aria-pressed={zuhoeren.dauer} aria-label={zuhoeren.dauer ? 'Immer zuhören ausschalten' : 'Immer zuhören'} data-tipp={zuhoeren.dauer ? `Hört auf „${rufname}“ — ausschalten` : `Immer zuhören — reagiert auf „${rufname}“`} onClick={() => dauerSchalten(!zuhoeren.dauer)}>👂</button>
+          {rufnameBearbeiten ? (
+            <input className="am-rufname-feld" aria-label="Rufname" defaultValue={rufname} autoFocus maxLength={30}
+              onBlur={(e) => { const n = e.currentTarget.value.trim() || RUFNAME; setRufname(n); schreiben(RUFNAME_SCHLUESSEL, n === RUFNAME ? null : n); setRufnameBearbeiten(false); }}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') e.currentTarget.blur(); }} />
+          ) : (
+            <button type="button" className="am-rufname" data-an={zuhoeren.dauer} data-wach={zuhoeren.wach} aria-label={`Rufname: ${rufname} (ändern)`} data-tipp="Rufname ändern" onClick={() => setRufnameBearbeiten(true)}>„{rufname}“</button>
+          )}
+        </>)}
         <button type="button" className="am-symbol" aria-pressed={transkriptOffen} aria-label="Transkript" data-tipp="Transkript" onClick={() => setTranskriptOffen((o) => !o)}>📜</button>
         <button type="button" className="am-symbol" aria-pressed={gedaechtnisOffen} aria-label="Gedächtnis" data-tipp="Gedächtnis" onClick={() => setGedaechtnisOffen((o) => !o)}>🧠</button>
         <button type="button" className="am-symbol am-mit-zahl" aria-label={`Ergebnisse (${ergebnisse.length})`} data-tipp={`Ergebnisse — ${fokusTitel}`} onClick={() => { void ergebnisseLaden(); setErgebnisOffen(true); }}>

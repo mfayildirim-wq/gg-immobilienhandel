@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { istStoppwort, sprechfassung } from '../src/sprache.ts';
 
 describe('sprechfassung', () => {
@@ -57,5 +57,98 @@ describe('useZuhoeren ohne Spracherkennung (Firefox)', () => {
     const { useZuhoeren } = await import('../src/sprache.ts');
     const { result } = renderHook(() => useZuhoeren(() => undefined));
     expect(result.current.moeglich).toBe(false);
+  });
+});
+
+describe('nachRufname', () => {
+  it('liefert den Auftrag nach dem Namen — auch getrennt geschrieben; ohne Namen null', async () => {
+    const { nachRufname } = await import('../src/sprache.ts');
+    expect(nachRufname('Superagent, was ist heute fällig?', 'Superagent')).toBe('was ist heute fällig?');
+    expect(nachRufname('hallo Super Agent öffne den ersten Deal', 'Superagent')).toBe('öffne den ersten Deal');
+    expect(nachRufname('super-agent', 'Superagent')).toBe('');
+    expect(nachRufname('was ist heute fällig', 'Superagent')).toBeNull();
+    expect(nachRufname('Jarvis zeig die Makler', 'Jarvis')).toBe('zeig die Makler');
+  });
+});
+
+/** Browser-Erkennung zum Steuern aus dem Test: `sage(text, final)` liefert ein Ergebnis, `ende()` beendet */
+function fakeErkennung() {
+  const instanzen: FakeErkennung[] = [];
+  class FakeErkennung {
+    lang = ''; interimResults = false; continuous = false; laeuft = false;
+    onresult: ((e: unknown) => void) | null = null;
+    onend: (() => void) | null = null;
+    onerror: ((e: { error: string }) => void) | null = null;
+    ergebnisse: { transcript: string; final: boolean }[] = [];
+    constructor() { instanzen.push(this); }
+    start() { this.laeuft = true; }
+    stop() { if (this.laeuft) { this.laeuft = false; this.onend?.(); } }
+    abort() { this.laeuft = false; }
+    sage(text: string, final = true) {
+      this.ergebnisse.push({ transcript: text, final });
+      const results = this.ergebnisse.map((r) => Object.assign([{ transcript: r.transcript }], { isFinal: r.final }));
+      this.onresult?.({ results, resultIndex: 0 });
+    }
+  }
+  Object.assign(window, { SpeechRecognition: FakeErkennung });
+  return { instanzen, weg: () => { delete (window as unknown as { SpeechRecognition?: unknown }).SpeechRecognition; } };
+}
+
+describe('useZuhoeren mit Browser-Erkennung', () => {
+  it('schneidet bei einer kurzen Atempause nicht ab — fertig erst nach der Stille', async () => {
+    const { act, renderHook } = await import('@testing-library/react');
+    const { useZuhoeren, STILLE_MS } = await import('../src/sprache.ts');
+    const { instanzen, weg } = fakeErkennung();
+    vi.useFakeTimers();
+    const texte: [string, boolean][] = [];
+    const { result } = renderHook(() => useZuhoeren((t, f) => texte.push([t, f])));
+    act(() => { result.current.starte(); });
+    const e = instanzen[0]!;
+    expect(e.continuous).toBe(true);
+    act(() => { e.sage('Kommentar Mailbox besprochen'); });
+    act(() => { vi.advanceTimersByTime(1200); });
+    act(() => { e.sage(' Rückruf Montag'); });
+    expect(texte.some(([, f]) => f)).toBe(false);
+    act(() => { vi.advanceTimersByTime(STILLE_MS + 10); });
+    expect(texte.at(-1)).toEqual(['Kommentar Mailbox besprochen Rückruf Montag', true]);
+    expect(result.current.hoert).toBe(false);
+    vi.useRealTimers();
+    weg();
+  });
+
+  it('dauerhaft: reagiert nur auf den Rufnamen, hört danach weiter und schweigt, solange der Agent spricht', async () => {
+    const { act, renderHook } = await import('@testing-library/react');
+    const { useZuhoeren, STILLE_MS } = await import('../src/sprache.ts');
+    const { instanzen, weg } = fakeErkennung();
+    vi.useFakeTimers();
+    const texte: [string, boolean][] = [];
+    let stumm = false;
+    const { result, rerender } = renderHook(() => useZuhoeren((t, f) => texte.push([t, f]), { rufname: 'Superagent', stumm }));
+    act(() => { result.current.dauerSchalten(true); });
+    expect(result.current.dauer).toBe(true);
+    let e = instanzen.at(-1)!;
+    act(() => { e.sage('wir reden über das Wetter'); });
+    act(() => { vi.advanceTimersByTime(STILLE_MS + 10); });
+    expect(texte).toEqual([]);
+    // Chrome beendet nach Stille — die Erkennung startet von selbst neu
+    act(() => { e.stop(); vi.advanceTimersByTime(300); });
+    e = instanzen.at(-1)!;
+    expect(e.laeuft).toBe(true);
+    act(() => { e.sage('Super Agent was ist heute fällig'); });
+    expect(result.current.wach).toBe(true);
+    act(() => { vi.advanceTimersByTime(STILLE_MS + 10); });
+    expect(texte.at(-1)).toEqual(['was ist heute fällig', true]);
+    act(() => { vi.advanceTimersByTime(300); });
+    // Der Agent spricht: nichts aufnehmen
+    stumm = true;
+    rerender();
+    e = instanzen.at(-1)!;
+    const vorher = texte.length;
+    act(() => { e.sage('Superagent das hat der Agent selbst gesagt'); vi.advanceTimersByTime(STILLE_MS + 10); });
+    expect(texte.length).toBe(vorher);
+    act(() => { result.current.dauerSchalten(false); });
+    expect(result.current.hoert).toBe(false);
+    vi.useRealTimers();
+    weg();
   });
 });

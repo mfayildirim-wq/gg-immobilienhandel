@@ -114,10 +114,34 @@ export interface ZuhoerenOptionen {
   transkribieren?: (audio: Blob) => Promise<string>;
   /** Fehler der Aufnahme oder Transkription (z. B. kein Schlüssel hinterlegt) */
   onFehler?: (meldung: string) => void;
+  /** Dauerhaft zuhören: nur, was nach diesem Namen gesagt wird, gilt als Auftrag (Standard „Superagent“) */
+  rufname?: string;
+  /** Solange der Agent selbst spricht, nichts aufnehmen — sonst hört er sich selbst */
+  stumm?: boolean;
 }
 
-/** Nach so viel Stille endet die Aufnahme von selbst (nur ohne eigene Spracherkennung) */
-const STILLE_MS = 1600;
+/** Standard-Rufname für das dauerhafte Zuhören */
+export const RUFNAME = 'Superagent';
+
+/**
+ * Der Auftrag nach dem Rufnamen — `null`, wenn der Name nicht fiel. Die Erkennung schreibt Namen gern getrennt
+ * („Super Agent“, „Super-Agent“), deshalb sind Leerzeichen und Bindestriche zwischen den Buchstaben erlaubt.
+ */
+export function nachRufname(text: string, rufname: string): string | null {
+  const buchstaben = [...rufname.replace(/[\s-]/g, '')].map((b) => b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  if (!buchstaben.length) return null;
+  const m = new RegExp(buchstaben.join('[\\s-]?'), 'i').exec(text);
+  if (!m) return null;
+  return text.slice(m.index + m[0].length).replace(/^[\s,.:;!?-]+/, '').trim();
+}
+
+/**
+ * Nach so viel Stille gilt der Satz als fertig — lang genug für eine Atempause (vorher 1,6 s bzw. das Satzende der
+ * Browser-Erkennung: kurzes Luftholen schnitt ab, Rückmeldung des Auftraggebers 28.09.)
+ */
+export const STILLE_MS = 2500;
+/** Nach dem Rufnamen allein so lange auf den Auftrag warten */
+const WACH_MS = 8000;
 /** Längste Aufnahme */
 const AUFNAHME_MAX_MS = 30_000;
 
@@ -216,34 +240,99 @@ export function useZuhoeren(aufText: (text: string, fertig: boolean) => void, op
     void pegelStarten(strom);
   }, [pegelStarten]);
 
-  const starte = useCallback(() => {
+  const [dauer, setDauer] = useState(false);
+  const dauerRef = useRef(false);
+  /** Dauerhaft: der Rufname fiel gerade (auch ohne Auftrag) — der nächste Satz gilt */
+  const [wach, setWach] = useState(false);
+  const wachBis = useRef(0);
+  const dauerMoeglich = erkennungKlasse() !== null;
+
+  /**
+   * Browser-Erkennung fortlaufend: Zwischenstände gehen sofort hinaus, fertig ist der Satz erst nach `STILLE_MS`
+   * ohne neues Wort. Danach endet die Erkennung; im Dauerbetrieb startet sie von vorn.
+   */
+  const erkennen = useCallback(() => {
     const Klasse = erkennungKlasse();
-    if (!Klasse) { void aufnahmeStarten(); return; }
-    if (erkennung.current) return;
+    if (!Klasse || erkennung.current) return;
     const e = new Klasse();
     e.lang = 'de-DE';
     e.interimResults = true;
-    e.continuous = false;
-    e.onresult = (ev) => {
-      let text = '';
-      let fertig = false;
-      for (let i = ev.resultIndex; i < ev.results.length; i++) {
-        const r = ev.results[i]!;
-        text += r[0]?.transcript ?? '';
-        if (r.isFinal) fertig = true;
-      }
-      aufTextRef.current(text.trim(), fertig);
+    e.continuous = true;
+    let pause = 0;
+    let letzter = '';
+    const abschliessen = () => {
+      window.clearTimeout(pause);
+      if (letzter) aufTextRef.current(letzter, true);
+      letzter = '';
+      e.stop();
     };
-    e.onend = () => { erkennung.current = null; setHoert(false); pegelStoppen(); };
-    e.onerror = () => { erkennung.current = null; setHoert(false); pegelStoppen(); };
+    e.onresult = (ev) => {
+      if (optionenRef.current.stumm) return;
+      let text = '';
+      for (let i = 0; i < ev.results.length; i++) text += ev.results[i]![0]?.transcript ?? '';
+      text = text.trim();
+      if (dauerRef.current) {
+        const auftrag = nachRufname(text, optionenRef.current.rufname || RUFNAME);
+        if (auftrag === null && Date.now() > wachBis.current) return;
+        if (auftrag !== null) { wachBis.current = Date.now() + WACH_MS; setWach(true); }
+        text = auftrag ?? text;
+        // Nur der Name — auf den Auftrag warten, ohne die Erkennung abzubrechen
+        if (!text) return;
+      }
+      letzter = text;
+      aufTextRef.current(text, false);
+      window.clearTimeout(pause);
+      pause = window.setTimeout(abschliessen, STILLE_MS);
+    };
+    e.onend = () => {
+      window.clearTimeout(pause);
+      // Beendet per Klick, bevor die Pause um war: das Gesagte gilt trotzdem
+      if (letzter) aufTextRef.current(letzter, true);
+      letzter = '';
+      erkennung.current = null;
+      if (dauerRef.current) {
+        if (Date.now() > wachBis.current) setWach(false);
+        // Chrome beendet die Erkennung nach Stille von selbst — im Dauerbetrieb gleich wieder zuhören
+        window.setTimeout(() => { if (dauerRef.current) erkennenRef.current(); }, 250);
+        return;
+      }
+      setHoert(false);
+      pegelStoppen();
+    };
+    e.onerror = (f) => {
+      if (f.error === 'not-allowed' || f.error === 'service-not-allowed') {
+        dauerRef.current = false;
+        setDauer(false);
+        optionenRef.current.onFehler?.('Kein Zugriff aufs Mikrofon — bitte im Browser erlauben.');
+      }
+    };
     erkennung.current = e;
     setHoert(true);
-    void pegelStarten();
+    if (!audio.current) void pegelStarten();
     e.start();
-  }, [aufnahmeStarten, pegelStarten, pegelStoppen]);
+  }, [pegelStarten, pegelStoppen]);
+  const erkennenRef = useRef(erkennen);
+  erkennenRef.current = erkennen;
+
+  const starte = useCallback(() => {
+    if (!erkennungKlasse()) { void aufnahmeStarten(); return; }
+    erkennen();
+  }, [aufnahmeStarten, erkennen]);
+
+  /** Dauerhaft zuhören an/aus — reagiert nur auf den Rufnamen */
+  const dauerSchalten = useCallback((an: boolean) => {
+    if (!dauerMoeglich) return;
+    dauerRef.current = an;
+    setDauer(an);
+    setWach(false);
+    wachBis.current = 0;
+    if (an) erkennen();
+    else { erkennung.current?.abort(); erkennung.current = null; setHoert(false); pegelStoppen(); }
+  }, [dauerMoeglich, erkennen, pegelStoppen]);
 
   // Beim Schließen: Aufnahme verwerfen (nichts mehr zur kostenpflichtigen Transkription schicken)
   useEffect(() => () => {
+    dauerRef.current = false;
     erkennung.current?.abort();
     const a = aufnahme.current;
     aufnahme.current = null;
@@ -251,5 +340,5 @@ export function useZuhoeren(aufText: (text: string, fertig: boolean) => void, op
     pegelStoppen();
   }, [pegelStoppen]);
 
-  return { moeglich, hoert, pegel, starte, stoppe };
+  return { moeglich, hoert, pegel, starte, stoppe, dauer, dauerMoeglich, dauerSchalten, wach };
 }

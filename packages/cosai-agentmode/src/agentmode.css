@@ -81,7 +81,16 @@
 
 /* Ein Block über die ganze Breite: links der Kreis, daneben zwei Zeilen — Agent-Blase + Chips, Du-Blase + Eingabe */
 .am-block { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: 'kreis agent oben' 'kreis du zeile' 'unter unter unter'; column-gap: 12px; row-gap: 6px; align-items: center; padding: 10px 12px; background: var(--am-flaeche-2); color: var(--am-text); border-bottom: 1px solid var(--am-linie); font-size: 14px; }
-.am-kreis { grid-area: kreis; align-self: center; }
+.am-kreis { grid-area: kreis; align-self: center; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+/* Unter dem Kreis: klein ✕ (schließen) und ↗ (zum Agent-Dialog) */
+.am-kreis-knoepfe { display: flex; gap: 2px; }
+.am-symbol.am-klein { width: 22px; height: 22px; font-size: 12px; color: var(--am-text-2, var(--am-text)); }
+/* Rufname fürs dauerhafte Zuhören — gedimmt, solange es aus ist; farbig, wenn der Name gerade fiel */
+.am-rufname { font: inherit; font-size: 12px; padding: 2px 6px; border-radius: 6px; border: 1px dashed var(--am-linie); background: transparent; color: var(--am-text); opacity: 0.55; cursor: pointer; white-space: nowrap; position: relative; }
+.am-rufname[data-an='true'] { opacity: 1; border-style: solid; border-color: var(--am-farbe); }
+.am-rufname[data-wach='true'] { background: var(--am-farbe-weich); }
+.am-rufname[data-tipp]:hover::after { content: attr(data-tipp); position: absolute; top: calc(100% + 4px); left: 50%; transform: translateX(-50%); z-index: 1003; padding: 3px 8px; border-radius: 6px; background: var(--am-text); color: var(--am-flaeche); font-size: 12px; white-space: nowrap; pointer-events: none; }
+.am-rufname-feld { font: inherit; font-size: 12px; width: 110px; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--am-farbe); }
 .am-agent { grid-area: agent; min-width: 0; }
 .am-du { grid-area: du; min-width: 0; }
 .am-oben-rechts { grid-area: oben; display: flex; align-items: center; gap: 6px; justify-content: flex-end; max-width: 46vw; }

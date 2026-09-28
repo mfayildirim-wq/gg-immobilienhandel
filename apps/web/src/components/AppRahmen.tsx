@@ -12,7 +12,7 @@ import {
   IconFileImport,
   IconMail,
   IconSearch,
-  IconUsers, IconChecklist, IconTableShare, IconChartBar, IconSparkles } from '@tabler/icons-react';
+  IconUsers, IconChecklist, IconTableShare, IconChartBar } from '@tabler/icons-react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { AbmeldenKnopf } from './Anmeldung.tsx';
@@ -49,7 +49,7 @@ export function AppRahmen() {
   const leisteSichtbar = desktop ? true : mobilOffen;
   // Untermenü Einstellungen: auf einer Einstellungsseite offen, sonst per Klick
   const [einstellungenOffen, setEinstellungenOffen] = useState(pfad.startsWith('/einstellungen'));
-  // AgentMode: Overlay über jeder Seite (Schalter), eigene Seite unter /agent — nur wenn die API ein Modell hat
+  // AgentMode: Overlay über jeder Seite (roter Kreis oben öffnet, ✕ im Block schließt), eigene Seite /agent aus dem Block — nur wenn die API ein Modell hat
   const agentVerfuegbar = useAgentVerfuegbar().data === true;
   const [agentAktiv, setAgentAktiv] = useAgentAktiv();
   const agentOverlay = agentVerfuegbar && agentAktiv === 'an' && pfad !== '/agent';
@@ -144,19 +144,6 @@ export function AppRahmen() {
           </Tooltip>
         </div>
 
-        {agentVerfuegbar && (
-          <Group gap={4} wrap="nowrap" pt="xs" style={{ borderTop: '1px solid var(--mantine-color-default-border)', flexDirection: schmal ? 'column' : 'row' }}>
-            <Tooltip label="AgentMode-Seite" position="right" disabled={!schmal}>
-              <NavLink component={Link} to="/agent" label={schmal ? undefined : 'AgentMode'} aria-label="AgentMode" leftSection={<IconSparkles size={18} />} active={pfad === '/agent'}
-                styles={{ root: { flex: 1 }, label: { fontWeight: pfad === '/agent' ? 700 : undefined } }} onClick={() => { mobilSchliessen(); setUeberfahren(false); }} />
-            </Tooltip>
-            <Tooltip label={agentAktiv === 'an' ? 'Agent-Overlay ausschalten' : 'Agent-Overlay einschalten'} position="right">
-              <ActionIcon variant={agentAktiv === 'an' ? 'filled' : 'subtle'} color="teal" aria-label="Agent-Overlay" aria-pressed={agentAktiv === 'an'} onClick={() => setAgentAktiv(agentAktiv === 'an' ? 'aus' : 'an')}>
-                <IconSparkles size={18} />
-              </ActionIcon>
-            </Tooltip>
-          </Group>
-        )}
 
         {/* Abmelden und Auf-/Zuklappen stehen immer unten in der Leiste; eingeklappt untereinander, sonst nebeneinander. */}
         <Group justify={schmal ? 'center' : 'space-between'} gap="xs" pt="xs" style={{ borderTop: '1px solid var(--mantine-color-default-border)', flexDirection: schmal ? 'column' : 'row' }}>

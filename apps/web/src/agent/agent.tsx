@@ -58,12 +58,14 @@ export function AgentModeHost({ modus, children, schliessen }: { modus: 'overlay
       ort={ort}
       stil={stil}
       onStil={setStil}
-      schliessen={schliessen}
+      schliessen={schliessen ?? (modus === 'seite' ? () => { if (window.history.length > 1) window.history.back(); else void navigate({ to: '/' }); } : undefined)}
       // Nach einem Klick des Agenten die Daten neu laden — wie nach einem Klick des Nutzers
       onSteuerung={(s) => { if (s.art === 'sende') void qc.invalidateQueries(); }}
       // Firefox kennt keine eingebaute Spracherkennung: dort nimmt das Mikrofon auf, Whisper macht Text daraus
       transkribieren={transkribieren}
       einstellungen={() => void navigate({ to: '/einstellungen/agentmode' as '/' })}
+      // Unter dem Kreis: im Overlay ↗ zum Agent-Dialog; auf der Seite ✕ zurück, woher man kam
+      zurSeite={modus === 'overlay' ? () => void navigate({ to: '/agent' as '/' }) : undefined}
     >
       {children}
     </AgentMode>
