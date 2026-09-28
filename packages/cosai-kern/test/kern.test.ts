@@ -264,3 +264,15 @@ describe.skipIf(!url)('Kern', () => {
     expect(JSON.stringify(modell.aufrufe.at(-1))).toContain('Mietspiegel Stuttgart 2026');
   });
 });
+
+describe.skipIf(!url)('Entscheidung ohne offene Frage', () => {
+  it('speichert kein „Ja“ in den Verlauf, wenn nichts wartet', async () => {
+    const { db, client } = testDb();
+    const nutzer: Nutzer = { id: `test-ja-${Date.now()}@example` };
+    const kern = agentKern({ db, modell: drehbuchModell([ki('Hallo.')]), openapi: { paths: {} }, ziele: [], aufruf: async () => ({ status: 200, text: '{}' }) });
+    const a = await kern.nachricht(nutzer, { text: 'Hi', ort: '/', kontext: {} });
+    await expect(kern.entscheidung(nutzer, { sitzungId: a.sitzungId, wert: 'ja' })).rejects.toThrow(/Nichts wartet/);
+    expect((await kern.verlauf(nutzer, a.sitzungId)).map((v) => v.rolle)).toEqual(['nutzer', 'agent']);
+    await client.end();
+  });
+});

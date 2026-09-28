@@ -453,13 +453,12 @@ export function agentKern(opt: KernOptionen) {
       const [s] = await db.select().from(sitzungen).where(eq(sitzungen.id, e.sitzungId)).limit(1);
       if (!s || s.nutzer !== nutzer.id) throw new Error('Sitzung unbekannt');
       // Bestätigen ist Bedienen — das schnelle Modell genügt (bei `tempo: auto`)
-      const [graph] = await Promise.all([
-        graphFuer(nutzer, gedaechtnisBauen(db, nutzer.id), false, false, e.wert),
-        db.insert(nachrichten).values({ sitzungId: e.sitzungId, rolle: 'nutzer', text: e.wert }),
-      ]);
+      const graph = await graphFuer(nutzer, gedaechtnisBauen(db, nutzer.id), false, false, e.wert);
       const config = { configurable: { thread_id: e.sitzungId } };
       const stand = await graph.getState(config);
+      // Erst prüfen, dann speichern — sonst stünde ein „Ja“ ohne Frage im Verlauf
       if (!stand.tasks.some((t) => t.interrupts?.length)) throw new Error('Nichts wartet auf eine Entscheidung');
+      await db.insert(nachrichten).values({ sitzungId: e.sitzungId, rolle: 'nutzer', text: e.wert });
       await laufen(graph, new Command({ resume: e.wert, update: { steuerung: null } }), config, melden);
       return antwortAus(graph, nutzer, e.sitzungId, anzahlNachrichten(stand), start);
     },
