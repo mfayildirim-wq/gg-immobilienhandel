@@ -8,7 +8,7 @@ import { testDb, url } from './db.ts';
 describe('aufgabeGruendlich', () => {
   it('Recherche, Analyse, Dokumente → gründlich; Bedienen, Lesen, Bestätigen → schnell', () => {
     for (const t of ['Analysiere die Lage', 'Recherchiere vergleichbare Angebote', 'Fasse die Mietdokumente zusammen', 'Warum ist der Deal überfällig?']) expect(aufgabeGruendlich(t), t).toBe(true);
-    for (const t of ['Was ist heute fällig?', 'Öffne den ersten Deal', 'ja', 'Kommentar: Rückruf Montag. Abschicken.']) expect(aufgabeGruendlich(t), t).toBe(false);
+    for (const t of ['Was ist heute fällig?', 'Öffne den ersten Deal', 'ja', 'Kommentar: Rückruf Montag. Abschicken.', 'Kommentar: Exposé angefragt, Lage prüfen. Abschicken.', 'Notiz: Mietliste kommt Montag']) expect(aufgabeGruendlich(t), t).toBe(false);
   });
 });
 

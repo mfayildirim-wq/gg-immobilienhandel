@@ -46,7 +46,9 @@ export type AnbieterId = (typeof ANBIETER)[number]['id'];
  * lesen, bestätigen — nein (dort zählt Tempo).
  */
 export function aufgabeGruendlich(text: string): boolean {
-  return /recherch|analys|vergleich|bewert|einschätz|web|internet|markt|lage\b|umfeld|dokument|exposé|expose|miet|zusammenfass|bericht|warum|erklär|strategie|empfiehl|empfehl/i.test(text);
+  // Nur den Auftrag ansehen, nicht den Wortlaut: „Kommentar: Exposé angefragt“ ist Bedienen, keine Dokumentanalyse
+  const auftrag = text.replace(/^(.{0,60}?\b(kommentar|notiz|gesprächsnotiz|text|nachricht|mail|betreff|wortlaut)\b[^:]{0,20}):[\s\S]*$/i, '$1');
+  return /recherch|analys|vergleich|bewert|einschätz|web|internet|markt|lage\b|umfeld|dokument|exposé|expose|miet|zusammenfass|bericht|warum|erklär|strategie|empfiehl|empfehl/i.test(auftrag);
 }
 
 /** Werkzeuge nacheinander — aus demselben Grund wie bei Anthropic (Rückfrage in `steuere`). */
