@@ -92,7 +92,7 @@ function Sprachmenue({ ohr, ohrMoeglich, ohrSchalten, rufname, endwoerter, speic
       <label className="am-menue-feld">Endwörter
         <input aria-label="Endwörter" value={ende} maxLength={80} placeholder={ENDWOERTER.join(', ')} onChange={(e) => setEnde(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === 'Enter') zu.current(); }} />
       </label>
-      <p className="am-hinweis">Zum Beispiel: „{start.trim() || RUFNAME}, Notiz Rückruf Montag, {ende.split(',')[0]?.trim() || 'fertig'}“ — das Endwort schickt sofort ab, sonst nach 2,5 s Pause. Ohne 👂: 🎤 drücken und sprechen, das Startwort ist dann nicht nötig.</p>
+      <p className="am-hinweis">Zum Beispiel: „{start.trim() || RUFNAME}, Notiz Rückruf Montag, {ende.split(',')[0]?.trim() || 'fertig'}“ — das Endwort schickt sofort ab, sonst nach 1,5 s Pause. Im Gespräch (30 s nach Startwort, Auftrag oder Antwort) ist kein Startwort nötig. Ohne 👂: 🎤 drücken und sprechen, das Startwort ist dann nicht nötig.</p>
     </div>
   );
 }
@@ -386,7 +386,7 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
     const kurz = text.toLowerCase().replace(/[.!?]/g, '').trim();
     const treffer = chips.find((c) => c.label.toLowerCase() === kurz || c.wert.toLowerCase() === kurz) ?? (wartetAuf && /^(ja|ok|okay|abschicken|mach)$/.test(kurz) ? chips.find((c) => c.wert === 'ja') : undefined) ?? (wartetAuf && /^(nein|nicht|stopp?|abbrechen)$/.test(kurz) ? chips.find((c) => c.wert === 'nein') : undefined);
     if (treffer) chipWaehlen(treffer); else nachricht(text);
-  }, { transkribieren, onFehler: setFehler, rufname, endwoerter, stumm: vorlesen.spricht });
+  }, { transkribieren, onFehler: setFehler, rufname, endwoerter, stumm: vorlesen.spricht || beschaeftigt || handelt });
   // Dauerhaft zuhören: war es an, geht es nach dem Öffnen gleich wieder an
   useEffect(() => {
     if (lesen(OHRMODUS) === 'an' && lesen(DAUERHOEREN) === 'an') zuhoeren.dauerSchalten(true);

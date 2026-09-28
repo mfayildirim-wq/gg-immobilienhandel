@@ -118,7 +118,9 @@ export interface ZuhoerenOptionen {
   rufname?: string;
   /** Endwörter: steht eines am Ende („… Rückruf Montag, fertig“), geht der Auftrag gleich ab — ohne die Pause */
   endwoerter?: string[];
-  /** Solange der Agent selbst spricht, nichts aufnehmen — sonst hört er sich selbst */
+  /** Gesprächsfenster ohne Startwort (Standard `GESPRAECH_MS`) */
+  gespraechMs?: number;
+  /** Solange der Agent selbst spricht oder arbeitet, nichts aufnehmen — sonst hört er sich selbst */
   stumm?: boolean;
 }
 
@@ -151,14 +153,17 @@ export function nachRufname(text: string, rufname: string): string | null {
 }
 
 /**
- * Nach so viel Stille gilt der Satz als fertig — lang genug für eine Atempause (vorher 1,6 s bzw. das Satzende der
- * Browser-Erkennung: kurzes Luftholen schnitt ab, Rückmeldung des Auftraggebers 28.09.)
+ * Nach so viel Stille gilt der Satz als fertig. Das Satzende der Browser-Erkennung schnitt beim Luftholen ab (28.09.),
+ * 2,5 s waren zu lang — 1,5 s trägt eine Atempause; wer schneller will, sagt das Endwort.
  */
-export const STILLE_MS = 2500;
-/** Nach einem Endwort so lange warten, ob noch etwas folgt */
-const ENDWORT_MS = 700;
-/** Nach dem Rufnamen allein so lange auf den Auftrag warten */
-const WACH_MS = 8000;
+export const STILLE_MS = 1500;
+/** Nach einem Endwort so lange warten, ob noch etwas folgt („mach …“ kann auch ein Satzanfang sein) */
+export const ENDWORT_MS = 400;
+/**
+ * Im Gespräch: nach dem Startwort, nach jedem Auftrag und nach jeder Antwort gilt so lange kein Startwort
+ * (zum Testen 30 s, Wunsch des Auftraggebers 28.09.)
+ */
+export const GESPRAECH_MS = 30_000;
 /** Längste Aufnahme */
 const AUFNAHME_MAX_MS = 30_000;
 
@@ -267,6 +272,25 @@ export function useZuhoeren(aufText: (text: string, fertig: boolean) => void, op
   const wachBis = useRef(0);
   const dauerMoeglich = erkennungKlasse() !== null;
 
+  const wachTimer = useRef(0);
+  /** Gesprächsfenster (neu) öffnen: so lange gilt kein Startwort */
+  const gespraechOffen = useCallback(() => {
+    const ms = optionenRef.current.gespraechMs ?? GESPRAECH_MS;
+    wachBis.current = Date.now() + ms;
+    setWach(true);
+    window.clearTimeout(wachTimer.current);
+    wachTimer.current = window.setTimeout(() => { if (Date.now() >= wachBis.current) setWach(false); }, ms + 50);
+  }, []);
+  // Hat der Agent geantwortet (spricht/arbeitet nicht mehr), beginnt das Fenster von vorn — man antwortet ohne Startwort
+  const stumm = !!optionen.stumm;
+  // Das Fenster ruht, solange der Agent arbeitet — auch wenn die Antwort länger als das Fenster dauert
+  const imGespraech = useRef(false);
+  useEffect(() => {
+    if (stumm) { imGespraech.current = dauerRef.current && Date.now() < wachBis.current; return; }
+    if (imGespraech.current && dauerRef.current) gespraechOffen();
+    imGespraech.current = false;
+  }, [stumm, gespraechOffen]);
+
   /**
    * Browser-Erkennung fortlaufend: Zwischenstände gehen sofort hinaus, fertig ist der Satz erst nach `STILLE_MS`
    * ohne neues Wort. Danach endet die Erkennung; im Dauerbetrieb startet sie von vorn.
@@ -280,8 +304,11 @@ export function useZuhoeren(aufText: (text: string, fertig: boolean) => void, op
     e.continuous = true;
     let pause = 0;
     let letzter = '';
+    /** Dieser Satz wurde angenommen (Startwort oder im Gespräch) — er gilt zu Ende, auch wenn das Fenster abläuft */
+    let angenommen = false;
     const abschliessen = () => {
       window.clearTimeout(pause);
+      if (letzter && dauerRef.current) gespraechOffen();
       if (letzter) aufTextRef.current(letzter, true);
       letzter = '';
       e.stop();
@@ -293,8 +320,10 @@ export function useZuhoeren(aufText: (text: string, fertig: boolean) => void, op
       text = text.trim();
       if (dauerRef.current) {
         const auftrag = nachRufname(text, optionenRef.current.rufname || RUFNAME);
-        if (auftrag === null && Date.now() > wachBis.current) return;
-        if (auftrag !== null) { wachBis.current = Date.now() + WACH_MS; setWach(true); }
+        // Außerhalb des Gesprächs zählt nur, was nach dem Startwort kommt
+        if (auftrag === null && !angenommen && Date.now() > wachBis.current) return;
+        if (auftrag !== null) gespraechOffen();
+        angenommen = true;
         text = auftrag ?? text;
         // Nur der Name — auf den Auftrag warten, ohne die Erkennung abzubrechen
         if (!text) return;
@@ -317,9 +346,8 @@ export function useZuhoeren(aufText: (text: string, fertig: boolean) => void, op
       letzter = '';
       erkennung.current = null;
       if (dauerRef.current) {
-        if (Date.now() > wachBis.current) setWach(false);
         // Chrome beendet die Erkennung nach Stille von selbst — im Dauerbetrieb gleich wieder zuhören
-        window.setTimeout(() => { if (dauerRef.current) erkennenRef.current(); }, 250);
+        window.setTimeout(() => { if (dauerRef.current) erkennenRef.current(); }, 100);
         return;
       }
       setHoert(false);

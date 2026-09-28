@@ -196,3 +196,35 @@ describe('Startwort beim Drücken und Sprechen', () => {
     weg();
   });
 });
+
+describe('Gesprächsfenster', () => {
+  it('nach Startwort, Auftrag und Antwort 30 s ohne Startwort — danach wieder nur mit', async () => {
+    const { act, renderHook } = await import('@testing-library/react');
+    const { useZuhoeren, STILLE_MS, GESPRAECH_MS } = await import('../src/sprache.ts');
+    const { instanzen, weg } = fakeErkennung();
+    vi.useFakeTimers();
+    const texte: [string, boolean][] = [];
+    let stumm = false;
+    const { result, rerender } = renderHook(() => useZuhoeren((t, f) => { if (f) texte.push([t, f]); }, { rufname: 'Superagent', stumm }));
+    act(() => { result.current.dauerSchalten(true); });
+    const sage = (t: string) => act(() => { instanzen.at(-1)!.sage(t); vi.advanceTimersByTime(STILLE_MS + 10); vi.advanceTimersByTime(150); });
+    sage('Superagent was ist heute fällig');
+    expect(texte.at(-1)?.[0]).toBe('was ist heute fällig');
+    // Der Agent arbeitet und antwortet 40 s lang — danach beginnt das Fenster neu
+    stumm = true; rerender();
+    act(() => { vi.advanceTimersByTime(40_000); });
+    stumm = false; rerender();
+    expect(result.current.wach).toBe(true);
+    sage('öffne den ersten');
+    expect(texte.at(-1)?.[0]).toBe('öffne den ersten');
+    // Ohne Antwort, nach Ablauf: Startwort wieder nötig
+    act(() => { vi.advanceTimersByTime(GESPRAECH_MS + 100); });
+    expect(result.current.wach).toBe(false);
+    const vorher = texte.length;
+    sage('das Wetter ist schön');
+    expect(texte.length).toBe(vorher);
+    act(() => { result.current.dauerSchalten(false); });
+    vi.useRealTimers();
+    weg();
+  });
+});
