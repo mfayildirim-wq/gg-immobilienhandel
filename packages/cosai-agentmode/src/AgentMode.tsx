@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Chips, Gedaechtnisleiste, Schaufenster, Sprechblase, type ChipDaten, type GedaechtnisEintragDaten, type Schritt } from './Bausteine.tsx';
 import { ErgebnisBereich, ErgebnisDialog, type ErgebnisDaten } from './Ergebnisse.tsx';
-import { ausfuehren, beobachten, fokusBezuege, fokusLesen, zielFinden, zielKontext, type Beobachtung, type Steuerung } from './kanal.ts';
+import { ausfuehren, bereichVon, beobachten, fokusBezuege, fokusLesen, zielFinden, zielKontext, type Beobachtung, type Steuerung } from './kanal.ts';
 import { saatAus } from './konstellation.ts';
 import { heuteLokal } from './lernen.tsx';
 import { Sprechkreis, SPRECHKREIS_STILE, type SprechkreisStil, type SprechkreisZustand } from './Sprechkreis.tsx';
@@ -95,41 +95,51 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
     setZeilen((z) => [...z.slice(-99), { wer, text, nr: nr.current }]);
   }, []);
 
-  // Beim Öffnen: den Verlauf der letzten Sitzung holen
+  /** Einen Faden wieder aufnehmen: Verlauf zeigen; eine offene Rückfrage von damals verfällt. */
+  const fadenLaden = useCallback(async (id: string) => {
+    const r = await anfrage(`${api}/sitzung?sitzungId=${encodeURIComponent(id)}`).catch(() => null);
+    const d = r?.ok ? ((await r.json()) as { sitzungId: string | null; verlauf: { rolle: string; text: string; chips?: ChipDaten[] | null }[]; wartetAuf?: AgentAntwortDaten['wartetAuf'] | null }) : null;
+    if (!d?.sitzungId) return;
+    sitzungMerken(d.sitzungId);
+    setZeilen(d.verlauf.filter((v) => v.text).map((v) => ({ wer: v.rolle === 'agent' ? 'agent' as const : 'nutzer' as const, text: v.text, nr: (nr.current += 1) })).slice(-100));
+    setChips([]);
+    // Eine Rückfrage von vorhin verfällt: der vorbereitete Stand (gefülltes Feld, offener Deal) ist nach dem
+    // Neuladen weg — ein „Ja“ träfe, was gerade offen ist. Der Kern bekommt ein „Nein“, der Nutzer einen Satz.
+    if (d.wartetAuf) {
+      void anfrage(`${api}/entscheidung`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sitzungId: d.sitzungId, wert: 'nein' }) }).catch(() => undefined);
+      zeile('agent', 'Die Rückfrage von vorhin ist verfallen — sag mir bitte noch einmal, was ich tun soll.');
+      return;
+    }
+    const letzte = [...d.verlauf].reverse().find((v) => v.rolle === 'agent');
+    if (letzte?.chips?.length) setChips(letzte.chips);
+  }, [anfrage, api, sitzungMerken, zeile]);
+
+  /**
+   * Was der Agent beim Öffnen und beim Wechsel des Bereichs sagt (CoSAi, ohne Modell): am Tagesbeginn „weitermachen
+   * oder zusammenfassen?“, im Bereich mit Faden „weitermachen oder neu?“, sonst was er hier tun kann.
+   * `behalten`: der Agent ist selbst hierher navigiert — sein Faden läuft weiter, er sagt nur, was es hier gibt.
+   */
+  const kontextZeigen = useCallback(async (o: { faehigkeiten?: boolean; behalten?: boolean; beimOeffnen?: boolean } = {}) => {
+    const r = await anfrage(`${api}/kontext`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ort, heute: heuteLokal(), faehigkeiten: o.faehigkeiten || o.behalten || undefined }) }).catch(() => null);
+    if (!r?.ok) return;
+    const k = (await r.json()) as { art: 'tagesbeginn' | 'fortsetzen' | 'neu'; sitzungId: string | null; text: string; chips: ChipDaten[] };
+    let gemerkt: string | null = null;
+    try { gemerkt = window.localStorage.getItem(SITZUNG); } catch { /* privater Modus */ }
+    // Neu geladen mitten im Faden dieses Bereichs: einfach weiter, ohne Rückfrage
+    if (o.beimOeffnen && k.art === 'fortsetzen' && k.sitzungId && k.sitzungId === gemerkt) { await fadenLaden(k.sitzungId); return; }
+    if (!o.behalten) {
+      setSitzungId(null);
+      try { window.localStorage.removeItem(SITZUNG); } catch { /* privater Modus */ }
+      setZeilen([]);
+    }
+    setWartetAuf(undefined);
+    zeile('agent', k.text);
+    setChips(k.chips);
+  }, [anfrage, api, fadenLaden, ort, zeile]);
+
+  // Beim Öffnen: nicht die letzte Zeile von gestern, sondern der Kontext (Tagesbeginn, Faden des Bereichs oder Neu)
   useEffect(() => {
-    let aktiv = true;
-    anfrage(`${api}/sitzung${sitzungId ? `?sitzungId=${encodeURIComponent(sitzungId)}` : ''}`)
-      .then(async (r) => (r.ok ? ((await r.json()) as { sitzungId: string | null; verlauf: { rolle: string; text: string; chips?: ChipDaten[] | null }[]; wartetAuf?: AgentAntwortDaten['wartetAuf'] | null }) : null))
-      .then((d) => {
-        if (!aktiv) return;
-        if (d?.sitzungId) sitzungMerken(d.sitzungId);
-        if (d?.verlauf.length) {
-          const alt = d.verlauf.filter((v) => v.text).map((v) => ({ wer: v.rolle === 'agent' ? 'agent' as const : 'nutzer' as const, text: v.text, nr: (nr.current += 1) }));
-          setZeilen(alt.slice(-100));
-          // Wartet die Sitzung noch auf eine Bestätigung, zeigt die Oberfläche das — sonst würde die
-          // nächste Nachricht stumm als Antwort auf eine längst vergessene Frage gedeutet.
-          if (d.wartetAuf && d.sitzungId) {
-            // Eine Rückfrage von vorhin verfällt: der vorbereitete Stand (gefülltes Feld, offener Deal) ist nach dem
-            // Neuladen weg — ein „Ja“ träfe, was gerade offen ist. Der Kern bekommt ein „Nein“, der Nutzer einen Satz.
-            void anfrage(`${api}/entscheidung`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sitzungId: d.sitzungId, wert: 'nein' }) }).catch(() => undefined);
-            zeile('agent', 'Die Rückfrage von vorhin ist verfallen — sag mir bitte noch einmal, was ich tun soll.');
-            return;
-          }
-          const letzte = [...d.verlauf].reverse().find((v) => v.rolle === 'agent');
-          if (letzte?.chips?.length) setChips(letzte.chips);
-        }
-        // Einmal am Tag: der Morgenvorschlag — nur lesend, Steuerungen daraus werden nicht ausgeführt
-        return anfrage(`${api}/morgen`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ heute: heuteLokal() }) })
-          .then(async (r) => (r.ok ? ((await r.json()) as { antwort: AgentAntwortDaten | null }).antwort : null))
-          .then((m) => {
-            if (!aktiv || !m) return;
-            sitzungMerken(m.sitzungId);
-            zeile('agent', m.text);
-            setChips(m.chips);
-          });
-      })
-      .catch(() => { /* ohne Verlauf beginnt das Gespräch leer */ });
-    return () => { aktiv = false; };
+    void kontextZeigen({ beimOeffnen: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -203,6 +213,21 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
     return { verwerfen: false };
   }, [sitzungMerken, steuern, vorlesen, wartendesZielZeigen, zeile]);
 
+  // Wechsel des Bereichs (Ankauf → Deals): im Leerlauf fragt der Agent, was er dort tun soll bzw. ob er den Faden dort
+  // fortsetzt. Navigiert der Agent selbst, unterbricht das nichts — ist er fertig, sagt er, was es im neuen Bereich gibt.
+  const bereich = bereichVon(ort);
+  const gezeigtFuer = useRef(bereich);
+  const unterwegsGewechselt = useRef(false);
+  useEffect(() => {
+    if (bereich === gezeigtFuer.current) return;
+    if (beschaeftigt || handelt) { unterwegsGewechselt.current = true; return; }
+    if (wartetAuf) return;
+    gezeigtFuer.current = bereich;
+    const behalten = unterwegsGewechselt.current;
+    unterwegsGewechselt.current = false;
+    void kontextZeigen({ behalten });
+  }, [bereich, beschaeftigt, handelt, kontextZeigen, wartetAuf]);
+
   useEffect(() => {
     const neu = () => setFokusText(JSON.stringify(fokusLesen()));
     neu();
@@ -237,7 +262,7 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
   useEffect(() => { void routinenLaden(); }, [routinenLaden]);
   useEffect(() => beobachten((b) => { if (b.art === 'gespeichert') window.setTimeout(() => void routinenLaden(), 500); }), [routinenLaden]);
 
-  const senden = useCallback(async (pfad: 'nachricht' | 'entscheidung', body: Record<string, unknown>, anzeige: string) => {
+  const senden = useCallback(async (pfad: 'nachricht' | 'entscheidung' | 'morgen', body: Record<string, unknown>, anzeige: string) => {
     if (beschaeftigt) return;
     setFehler(null);
     setBeschaeftigt(true);
@@ -250,7 +275,9 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
         const f = (await r.json().catch(() => ({}))) as { fehler?: string };
         throw new Error(f.fehler ?? `Fehler ${r.status}`);
       }
-      const antwort = (await r.json()) as AgentAntwortDaten;
+      const roh = (await r.json()) as AgentAntwortDaten & { antwort?: AgentAntwortDaten };
+      // /morgen liefert { antwort } — die Übersicht liest nur, Schritte daraus führt die Oberfläche nicht aus
+      const antwort = pfad === 'morgen' ? { ...roh.antwort!, steuerung: [] } : roh;
       const { verwerfen } = await verarbeiten(antwort);
       if (verwerfen) {
         const nein = await anfrage(`${api}/entscheidung`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sitzungId: antwort.sitzungId, wert: 'nein' }) });
@@ -288,10 +315,15 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
         return;
       }
       void senden('entscheidung', { sitzungId, wert: c.wert }, c.label);
+    } else if (c.art === 'kontext') {
+      if (c.wert.startsWith('weiter:')) void fadenLaden(c.wert.slice('weiter:'.length));
+      // Tagesübersicht nur auf Wunsch — nur lesend, eigener Faden
+      else if (c.wert === 'morgen') void senden('morgen', {}, c.label);
+      else void kontextZeigen({ faehigkeiten: true });
     } else {
       nachricht(c.wert);
     }
-  }, [nachricht, senden, sitzungId, wartetAuf, zeile]);
+  }, [fadenLaden, kontextZeigen, nachricht, senden, sitzungId, wartetAuf, zeile]);
 
   // Zuhören: Zwischenstand ins Eingabefeld, am Ende abschicken; kurze Bestätigungen treffen die Chips direkt
   const zuhoeren = useZuhoeren((text, fertig) => {
@@ -313,7 +345,8 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
     setWartetAuf(undefined);
     setSchritt(null);
     setFehler(null);
-  }, []);
+    void kontextZeigen({ faehigkeiten: true });
+  }, [kontextZeigen]);
 
   const gedaechtnisLaden = useCallback(async () => {
     const r = await anfrage(`${api}/gedaechtnis`);

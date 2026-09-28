@@ -21,12 +21,6 @@ const ziele = [
   { ziel: 'deal.kommentar.senden', beschreibung: 'Knopf: Notiz abschicken' },
 ];
 
-/** Ein Tag, den es für den Testnutzer noch nicht gab: Jahr aus der Uhrzeit, Monat und Tag zufällig */
-function einmaligerTag(): string {
-  const z = (n: number) => String(n).padStart(2, '0');
-  return `${2100 + (Math.floor(Date.now() / 1000) % 7000)}-${z(1 + Math.floor(Math.random() * 12))}-${z(1 + Math.floor(Math.random() * 28))}`;
-}
-
 describe.skipIf(!url)('Kern', () => {
   const { db, client } = url ? testDb() : ({} as ReturnType<typeof testDb>);
   const nutzer: Nutzer = { id: 'test-kern@example', kopf: { authorization: 'Bearer t' } };

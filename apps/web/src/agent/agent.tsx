@@ -3,7 +3,7 @@
  * Die Oberflächenkarte (Ziele) liegt in `@gg/api-contract`; die Marken stehen als `data-agent` in den Komponenten.
  */
 import '@cosai/agentmode/agentmode.css';
-import { AgentMode, FeldVorschlaege, Lernen, type SprechkreisStil } from '@cosai/agentmode';
+import { AgentKnopf, AgentMode, FeldVorschlaege, Lernen, type SprechkreisStil } from '@cosai/agentmode';
 import { OBERFLAECHENKARTE } from '@gg/api-contract';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
@@ -69,6 +69,12 @@ export function AgentModeHost({ modus, children, schliessen }: { modus: 'overlay
     </AgentMode>
     </div>
   );
+}
+
+/** Overlay zu: kleiner roter Agent oben in der Mitte — ein Klick öffnet das Overlay (Wunsch des Auftraggebers, 28.09.) */
+export function AgentOeffnen({ oeffnen }: { oeffnen: () => void }) {
+  const [stil] = useAgentStil();
+  return <AgentKnopf oeffnen={oeffnen} stil={stil} groesse={40} />;
 }
 
 /** Lernen auch ohne Overlay (Entscheidung 26.09.): gespeicherte Eingaben werden zu Formulierungen und Episoden. */

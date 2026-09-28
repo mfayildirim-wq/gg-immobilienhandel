@@ -12,15 +12,17 @@ export interface ZielBeschreibung {
   seite?: string;
   /** Das Ziel speichert etwas — jede Aktion darauf braucht das „Ja“ des Nutzers (Marke dazu: `data-agent-schreibt`) */
   schreibt?: boolean;
+  /** Nur an Seitenzielen (`nav.*`): was der Agent beim Betreten der Seite anbietet (Chips) */
+  vorschlaege?: string[];
 }
 
 export const OBERFLAECHENKARTE: readonly ZielBeschreibung[] = [
   // Navigation (Seitenleiste) — `navigiere` mit diesem Ziel wechselt die Seite
-  { ziel: 'nav.ankauf', beschreibung: 'Seite Ankauf: Cockpit mit fälligen Deals und Maklern', seite: '/' },
-  { ziel: 'nav.deals', beschreibung: 'Seite Deals: alle Deals als Liste mit Detail', seite: '/deals' },
-  { ziel: 'nav.objekte', beschreibung: 'Seite Objekte', seite: '/objekte' },
-  { ziel: 'nav.makler', beschreibung: 'Seite Makler', seite: '/makler' },
-  { ziel: 'nav.angebote', beschreibung: 'Seite Angebote (Posteingang, Exposés)', seite: '/angebote' },
+  { ziel: 'nav.ankauf', beschreibung: 'Seite Ankauf: Cockpit mit fälligen Deals und Maklern', seite: '/', vorschlaege: ['Was ist heute fällig?', 'Dringendsten Deal öffnen', 'Welche Makler soll ich anrufen?'] },
+  { ziel: 'nav.deals', beschreibung: 'Seite Deals: alle Deals als Liste mit Detail', seite: '/deals', vorschlaege: ['Welche Deals sind überfällig?', 'Lage des offenen Deals analysieren', 'Dokumente des Deals zusammenfassen'] },
+  { ziel: 'nav.objekte', beschreibung: 'Seite Objekte', seite: '/objekte', vorschlaege: ['Ähnliche Angebote zum Objekt suchen', 'Lage recherchieren'] },
+  { ziel: 'nav.makler', beschreibung: 'Seite Makler', seite: '/makler', vorschlaege: ['Welche Makler waren lange nicht dran?', 'Makler-Historie zusammenfassen'] },
+  { ziel: 'nav.angebote', beschreibung: 'Seite Angebote (Posteingang, Exposés)', seite: '/angebote', vorschlaege: ['Was ist neu reingekommen?', 'Angebote nach Rendite sortieren'] },
 
   // Ankauf (Cockpit)
   { ziel: 'ankauf.reiter.deals', beschreibung: 'Reiter „Deals kontaktieren“ im Ankauf', seite: '/' },

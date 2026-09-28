@@ -1,4 +1,5 @@
 export * from './AgentMode.tsx';
+export * from './AgentKnopf.tsx';
 export * from './Bausteine.tsx';
 export * from './Sprechkreis.tsx';
 export * from './konstellation.ts';

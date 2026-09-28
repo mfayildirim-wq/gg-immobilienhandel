@@ -131,6 +131,12 @@ export function fokusBezuege(fokus: Record<string, unknown>): { typ: string; id:
 }
 
 /** Der Kontext eines Ziels (z. B. welcher Deal offen ist) als Text — zum Vergleich vor einer Bestätigung. */
+/** Der Bereich einer Seite: erster Teil des Pfads (`/deals/abc` → `/deals`) — wie im Kern, je Bereich ein Gesprächsfaden */
+export function bereichVon(ort: string): string {
+  const erster = (ort.split(/[?#]/)[0] ?? '/').split('/').filter(Boolean)[0];
+  return erster ? `/${erster}` : '/';
+}
+
 export function zielKontext(ziel: string): string | null {
   const el = zielFinden(ziel);
   return el ? JSON.stringify(kontextVon(el)) : null;

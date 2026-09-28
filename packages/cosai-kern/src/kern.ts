@@ -227,9 +227,10 @@ export function agentKern(opt: KernOptionen) {
     return antwort;
   }
 
-  async function nachricht(nutzer: Nutzer, eingabe: Eingabe, nurLesen = false): Promise<AgentAntwort> {
+  /** `anzeige`: was im Verlauf als Nachricht des Nutzers steht (sonst der Text selbst) */
+  async function nachricht(nutzer: Nutzer, eingabe: Eingabe, nurLesen = false, anzeige?: string): Promise<AgentAntwort> {
     const sitzungId = await sitzungSicherstellen(nutzer, eingabe.sitzungId, eingabe.ort, eingabe.kontext);
-    await db.insert(nachrichten).values({ sitzungId, rolle: 'nutzer', text: eingabe.text });
+    await db.insert(nachrichten).values({ sitzungId, rolle: 'nutzer', text: anzeige ?? eingabe.text });
     const graph = await graphFuer(nutzer, gedaechtnisBauen(db, nutzer.id), nurLesen);
     const config = { configurable: { thread_id: sitzungId } };
     // Wartet der Graph noch auf eine Bestätigung, gilt der neue Text als Antwort darauf (kein „ja“ → abgebrochen)
@@ -311,7 +312,7 @@ export function agentKern(opt: KernOptionen) {
      */
     /** Was heute ansteht — nur auf Wunsch des Nutzers („Heute zusammenfassen“), nur lesend, in einem eigenen Faden. */
     async morgen(nutzer: Nutzer): Promise<AgentAntwort> {
-      return nachricht(nutzer, { text: opt.morgenAuftrag ?? MORGEN_AUFTRAG, ort: '/', kontext: {} }, true);
+      return nachricht(nutzer, { text: opt.morgenAuftrag ?? MORGEN_AUFTRAG, ort: '/', kontext: {} }, true, 'Heute zusammenfassen');
     },
 
     /**

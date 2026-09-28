@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AgentMode } from '../src/AgentMode.tsx';
 import { melden } from '../src/kanal.ts';
 
-/** Ein Kern-Ersatz hinter `anfrage`: antwortet wie der echte auf /sitzung, /nachricht, /entscheidung, /ereignis. */
+/** Ein Kern-Ersatz hinter `anfrage`: antwortet wie der echte auf /sitzung, /kontext, /morgen, /nachricht, /entscheidung, /ereignis. */
 function kernErsatz() {
   const aufrufe: { pfad: string; body?: unknown }[] = [];
   let wartet = false;
@@ -11,6 +11,7 @@ function kernErsatz() {
   let routinen: unknown[] = [];
   let sitzung: unknown = { sitzungId: null, verlauf: [] };
   let ergebnisse: Record<string, unknown[]> = {};
+  let kontext: unknown = { art: 'neu', sitzungId: null, text: 'Du bist bei Ankauf. Womit kann ich helfen?', chips: [{ label: 'Was kann ich hier tun?', wert: 'Was kann ich hier tun?', art: 'vorschlag' }] };
   const antwort = (daten: unknown, status = 200) => new Response(JSON.stringify(daten), { status, headers: { 'content-type': 'application/json' } });
   const anfrage = async (pfad: string, init?: RequestInit) => {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
@@ -18,6 +19,7 @@ function kernErsatz() {
     if (pfad.startsWith('/api/agent/sitzung')) return antwort(sitzung);
     if (pfad === '/api/agent/ereignis') return antwort({ ok: true });
     if (pfad === '/api/agent/morgen') return antwort({ antwort: morgen });
+    if (pfad === '/api/agent/kontext') return antwort(kontext);
     if (pfad === '/api/agent/routinen') return antwort({ routinen });
     if (pfad.startsWith('/api/agent/ergebnisse?')) { const q = new URLSearchParams(pfad.split('?')[1]); return antwort({ ergebnisse: ergebnisse[`${q.get('typ')}:${q.get('id')}`] ?? [] }); }
     if (pfad.startsWith('/api/agent/ergebnisse/') && init?.method === 'DELETE') { for (const k of Object.keys(ergebnisse)) ergebnisse[k] = []; return antwort({ geloescht: true }); }
@@ -37,7 +39,7 @@ function kernErsatz() {
     }
     return antwort({ fehler: 'unbekannt' }, 404);
   };
-  return { anfrage, aufrufe, setzeMorgen: (m: unknown) => { morgen = m; }, setzeRoutinen: (r: unknown[]) => { routinen = r; }, setzeSitzung: (x: { wartetAuf?: unknown; [feld: string]: unknown }) => { sitzung = x; wartet = !!x.wartetAuf; }, setzeErgebnisse: (e: Record<string, unknown[]>) => { ergebnisse = e; } };
+  return { anfrage, aufrufe, setzeMorgen: (m: unknown) => { morgen = m; }, setzeRoutinen: (r: unknown[]) => { routinen = r; }, setzeSitzung: (x: { wartetAuf?: unknown; [feld: string]: unknown }) => { sitzung = x; wartet = !!x.wartetAuf; }, setzeErgebnisse: (e: Record<string, unknown[]>) => { ergebnisse = e; }, setzeKontext: (x: unknown) => { kontext = x; } };
 }
 
 function App() {
@@ -82,23 +84,52 @@ describe('AgentMode (Overlay)', () => {
 });
 
 describe('AgentMode (Öffnen)', () => {
-  it('zeigt beim Öffnen den Morgenvorschlag — ohne dessen Steuerung auszuführen', async () => {
+  it('fragt am Tagesbeginn: weitermachen oder zusammenfassen — die Übersicht erst auf Wunsch, ohne deren Steuerung', async () => {
     const k = kernErsatz();
+    k.setzeKontext({ art: 'tagesbeginn', sitzungId: 's0', text: 'Guten Morgen! Zuletzt bei Ankauf: „Notiz zu Musterweg“. Dort weitermachen, oder soll ich zusammenfassen, was heute ansteht?',
+      chips: [{ label: 'Weitermachen', wert: 'weiter:s0', art: 'kontext' }, { label: 'Heute zusammenfassen', wert: 'morgen', art: 'kontext' }, { label: 'Neu beginnen', wert: 'neu', art: 'kontext' }] });
     k.setzeMorgen({ sitzungId: 'm1', text: 'Heute sind 3 Deals fällig.', steuerung: [{ art: 'oeffne', ziel: 'deal.reiter.kommunikation' }], chips: [{ label: 'Ersten Deal öffnen', wert: 'Öffne den ersten Deal' }] });
-    const navigiere = vi.fn();
-    render(<AgentMode api="/api/agent" anfrage={k.anfrage} modus="seite" navigiere={navigiere} ort="/" stil="kern"><App /></AgentMode>);
+    render(<AgentMode api="/api/agent" anfrage={k.anfrage} modus="seite" navigiere={vi.fn()} ort="/" stil="kern"><App /></AgentMode>);
+    expect((await screen.findAllByText(/Guten Morgen! Zuletzt bei Ankauf/)).length).toBeGreaterThan(0);
+    expect((k.aufrufe.find((a) => a.pfad === '/api/agent/kontext')?.body as { heute: string }).heute).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // Keine Übersicht, kein alter Verlauf von allein
+    expect(k.aufrufe.some((a) => a.pfad === '/api/agent/morgen' || a.pfad.startsWith('/api/agent/sitzung'))).toBe(false);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Heute zusammenfassen' })); });
     expect((await screen.findAllByText('Heute sind 3 Deals fällig.')).length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Ersten Deal öffnen' })).toBeTruthy();
-    const m = k.aufrufe.find((a) => a.pfad === '/api/agent/morgen');
-    expect((m?.body as { heute: string }).heute).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     await new Promise((r) => setTimeout(r, 50));
     expect(document.querySelector('[data-etikett]')).toBeNull();
+  });
+
+  it('„Weitermachen“ lädt den Faden; ein neuer Bereich fragt, was der Agent dort tun soll', async () => {
+    const k = kernErsatz();
+    k.setzeKontext({ art: 'fortsetzen', sitzungId: 's0', text: 'Hier bei Ankauf waren wir zuletzt bei: „Notiz“. Weitermachen oder neu beginnen?', chips: [{ label: 'Weitermachen', wert: 'weiter:s0', art: 'kontext' }, { label: 'Neu beginnen', wert: 'neu', art: 'kontext' }] });
+    k.setzeSitzung({ sitzungId: 's0', verlauf: [{ rolle: 'nutzer', text: 'Notiz zu Musterweg' }, { rolle: 'agent', text: 'Notiz gespeichert.' }] });
+    const { rerender } = render(<AgentMode api="/api/agent" anfrage={k.anfrage} modus="seite" navigiere={vi.fn()} ort="/" stil="kern" />);
+    const weiter = await screen.findByRole('button', { name: 'Weitermachen' });
+    await act(async () => { fireEvent.click(weiter); });
+    expect(k.aufrufe.some((a) => a.pfad === '/api/agent/sitzung?sitzungId=s0')).toBe(true);
+    expect((await screen.findAllByText('Notiz gespeichert.')).length).toBeGreaterThan(0);
+
+    k.setzeKontext({ art: 'neu', sitzungId: null, text: 'Du bist bei Deals. Womit kann ich helfen?', chips: [{ label: 'Welche Deals sind überfällig?', wert: 'Welche Deals sind überfällig?', art: 'vorschlag' }] });
+    rerender(<AgentMode api="/api/agent" anfrage={k.anfrage} modus="seite" navigiere={vi.fn()} ort="/deals" stil="kern" />);
+    expect((await screen.findAllByText('Du bist bei Deals. Womit kann ich helfen?')).length).toBeGreaterThan(0);
+    expect(k.aufrufe.filter((a) => a.pfad === '/api/agent/kontext').at(-1)?.body).toMatchObject({ ort: '/deals' });
+    // Innerhalb des Bereichs (ein Deal geöffnet) fragt er nicht erneut
+    const anzahl = k.aufrufe.filter((a) => a.pfad === '/api/agent/kontext').length;
+    rerender(<AgentMode api="/api/agent" anfrage={k.anfrage} modus="seite" navigiere={vi.fn()} ort="/deals/d1" stil="kern" />);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(k.aufrufe.filter((a) => a.pfad === '/api/agent/kontext').length).toBe(anzahl);
+    // Ein Vorschlag geht als neuer Faden an den Agenten (ohne alte Sitzung)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Welche Deals sind überfällig?' })); });
+    await waitFor(() => expect(k.aufrufe.find((a) => a.pfad === '/api/agent/nachricht')?.body).toMatchObject({ text: 'Welche Deals sind überfällig?', ort: '/deals/d1' }));
+    expect((k.aufrufe.find((a) => a.pfad === '/api/agent/nachricht')?.body as { sitzungId?: string }).sitzungId).toBeUndefined();
   });
 
   it('meldet gespeicherte Eingaben nicht selbst — das macht <Lernen>', async () => {
     const k = kernErsatz();
     render(<AgentMode api="/api/agent" anfrage={k.anfrage} modus="seite" navigiere={vi.fn()} ort="/" stil="kern" />);
-    await waitFor(() => expect(k.aufrufe.some((a) => a.pfad === '/api/agent/morgen')).toBe(true));
+    await waitFor(() => expect(k.aufrufe.some((a) => a.pfad === '/api/agent/kontext')).toBe(true));
     act(() => melden({ art: 'gespeichert', ziel: 'deal.kommentar', wert: 'x' }));
     await new Promise((r) => setTimeout(r, 50));
     expect(k.aufrufe.some((a) => a.pfad === '/api/agent/ereignis')).toBe(false);
@@ -163,6 +194,9 @@ describe('AgentMode (Rückfrage absichern)', () => {
   it('lässt eine Rückfrage aus einer früheren Sitzung beim Öffnen verfallen', async () => {
     const k = kernErsatz();
     k.setzeSitzung({ sitzungId: 's1', verlauf: [{ rolle: 'agent', text: 'Notiz abschicken?' }], wartetAuf: { frage: 'Notiz abschicken?', aktion: { art: 'sende', ziel: 'deal.kommentar.senden' } } });
+    // Neu geladen mitten im Faden dieses Bereichs: er wird ohne Rückfrage wieder aufgenommen
+    k.setzeKontext({ art: 'fortsetzen', sitzungId: 's1', text: '…', chips: [] });
+    window.localStorage.setItem('cosai.sitzung', 's1');
     render(<AgentMode api="/api/agent" anfrage={k.anfrage} modus="seite" navigiere={vi.fn()} ort="/" stil="kern" />);
     await waitFor(() => expect(k.aufrufe.find((a) => a.pfad === '/api/agent/entscheidung')?.body).toEqual({ sitzungId: 's1', wert: 'nein' }));
     expect(screen.queryByRole('button', { name: 'Ja, ausführen' })).toBeNull();

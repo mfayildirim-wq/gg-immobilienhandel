@@ -61,7 +61,8 @@ export function Sprechblase({ wer, text, schluessel, lebendig = false }: { wer: 
   );
 }
 
-export interface ChipDaten { label: string; wert: string; art?: 'entscheidung' | 'vorschlag' }
+/** `kontext`: wertet die Oberfläche selbst aus (Faden fortsetzen, neu beginnen, Tagesübersicht) — keine Nachricht an das Modell */
+export interface ChipDaten { label: string; wert: string; art?: 'entscheidung' | 'vorschlag' | 'kontext' }
 
 export function Chips({ chips, waehlen, aus }: { chips: ChipDaten[]; waehlen: (c: ChipDaten) => void; aus?: boolean }) {
   if (!chips.length) return null;

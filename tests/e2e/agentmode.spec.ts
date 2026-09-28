@@ -18,10 +18,10 @@ const notiz = () => `Mailbox besprochen, Rückruf Montag (Test ${Date.now()})`;
 
 const angelegt: { makler: string[]; objekte: string[]; deals: string[] } = { makler: [], objekte: [], deals: [] };
 
-// Der Morgenvorschlag kommt einmal am Tag beim Öffnen — für die übrigen Tests vorab verbrauchen, sonst platzt er
-// in ein laufendes Gespräch (sein eigener Test stellt die Uhr auf einen neuen Tag)
+// Die Frage zum Tagesbeginn kommt einmal am Tag beim Öffnen — für die übrigen Tests vorab verbrauchen
+// (ihr eigener Test stellt die Uhr auf einen neuen Tag)
 test.beforeEach(async ({ page }) => {
-  await page.request.post('/api/agent/morgen', { data: { heute: heute() } });
+  await page.request.post('/api/agent/kontext', { data: { ort: '/', heute: heute() } });
 });
 
 test.afterEach(async ({ page }) => {
@@ -149,20 +149,48 @@ test.describe('AgentMode', () => {
     await expect(page.getByRole('textbox', { name: 'Neue Gesprächsnotiz' })).toHaveValue(text);
   });
 
-  test('begrüßt beim ersten Öffnen des Tages mit dem Morgenvorschlag, danach nicht noch einmal', async ({ page }) => {
+  test('Tagesbeginn: roter Kreis öffnet, fragt „weitermachen oder zusammenfassen“ — die Übersicht erst auf Wunsch', async ({ page }) => {
     // Ein Tag, den es für diesen Nutzer noch nicht gab
     await page.clock.setFixedTime(new Date(2090, 0, 1 + Math.floor(Math.random() * 3000), 9, 0));
-    const morgen = page.waitForResponse((r) => r.url().endsWith('/api/agent/morgen'));
-    await page.goto('/agent');
-    expect(((await (await morgen).json()) as { antwort: unknown }).antwort).not.toBeNull();
-    await expect(page.locator('.am-blase[data-wer="agent"]').last()).toContainText(/Heute sind \d+ Deals/, { timeout: 15_000 });
+    await page.goto('/');
+    // Overlay zu: der kleine rote Agent oben in der Mitte öffnet es
+    await expect(page.locator('[data-agentmode-oben]')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Agent öffnen' }).click();
+    const oben = page.locator('[data-agentmode-oben]');
+    await expect(oben).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Agent öffnen' })).toHaveCount(0);
+    await expect(oben.locator('.am-blase[data-wer="agent"]')).toContainText('Guten Morgen');
+    await oben.getByRole('button', { name: 'Heute zusammenfassen' }).click();
+    await expect(oben.locator('.am-blase[data-wer="agent"]')).toContainText(/Heute sind \d+ Deals/, { timeout: 15_000 });
 
-    const zweites = page.waitForResponse((r) => r.url().endsWith('/api/agent/morgen'));
+    // Am selben Tag fragt er nicht noch einmal — im Ankauf bietet er den Faden an
     await page.reload();
-    expect(((await (await zweites).json()) as { antwort: unknown }).antwort).toBeNull();
-    // Der Verlauf der Sitzung zeigt ihn weiter
-    await expect(page.locator('.am-blase[data-wer="agent"]').last()).toContainText(/Heute sind \d+ Deals/);
+    await expect(oben.locator('.am-blase[data-wer="agent"]')).not.toContainText('Guten Morgen');
+    // Overlay wieder zu → der rote Kreis ist zurück
+    await oben.getByRole('button', { name: 'AgentMode schließen' }).click();
+    await expect(page.getByRole('button', { name: 'Agent öffnen' })).toBeVisible();
   });
+
+  test('Bereichswechsel: Ankauf → Deals fragt, was er dort tun soll; zurück im Ankauf „weitermachen oder neu“', async ({ page }) => {
+    await faelligerDeal(page, `Agent-Faden ${Date.now()}`);
+    await page.goto('/');
+    const oben = await agentOeffnen(page);
+    const eingabe = page.getByLabel('Nachricht an den Agenten');
+    await eingabe.fill('Was ist heute fällig?');
+    await eingabe.press('Enter');
+    await expect(oben.locator('.am-blase[data-wer="agent"]')).toContainText(/Heute sind \d+ Deals/, { timeout: 15_000 });
+
+    await page.getByRole('link', { name: 'Deals', exact: true }).click();
+    await expect(oben.locator('.am-blase[data-wer="agent"]')).toContainText('Du bist bei Deals');
+    await expect(oben.getByRole('button', { name: 'Welche Deals sind überfällig?' })).toBeVisible();
+
+    await page.getByRole('link', { name: 'Ankauf', exact: true }).click();
+    await expect(oben.locator('.am-blase[data-wer="agent"]')).toContainText('Hier bei Ankauf waren wir zuletzt bei: „Was ist heute fällig?“');
+    await oben.getByRole('button', { name: 'Weitermachen' }).click();
+    await expect(oben.locator('.am-blase[data-wer="agent"]')).toContainText(/Heute sind \d+ Deals/);
+    await expect(oben.locator('.am-blase[data-wer="nutzer"]')).toContainText('Was ist heute fällig?');
+  });
+
   test('erkennt „Notiz → Erledigt“ als Routine und führt sie mit zwei Bestätigungen aus', async ({ page }) => {
     const text = notiz();
     // Dreimal derselbe Ablauf in eigenen Deals — so, wie die App ihn meldet
