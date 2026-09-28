@@ -54,6 +54,10 @@ test('Auto-Import: der Bot holt das Exposé aus der Mail, zeigt Ausgang und Schr
 });
 
 test('Microsoft 365: Zugang in den Einstellungen eintragen und Status sehen', async ({ page }) => {
+  // Die Klicktests laufen gegen die Entwicklungsdatenbank. Steht dort eine echte Azure-App (auch SharePoint nutzt sie),
+  // würde dieser Test sie überschreiben — das Geheimnis lässt sich nicht zurücklesen. Dann lieber überspringen.
+  const stand = (await (await page.request.get('/api/m365')).json()) as { eingerichtet?: boolean; clientId?: string };
+  test.skip(!!stand.eingerichtet && !/^app-(klicktest|1234)$/.test(stand.clientId ?? ''), 'echte Azure-App eingetragen — wird nicht überschrieben');
   await page.goto('/einstellungen/m365');
   await page.getByLabel('Client-ID').fill('app-klicktest');
   await page.getByLabel('Verzeichnis (Tenant)').fill('contoso.onmicrosoft.com');
