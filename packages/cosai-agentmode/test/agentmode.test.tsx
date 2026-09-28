@@ -343,3 +343,30 @@ describe('AgentMode (Mikrofon und Sprachoptionen)', () => {
     weg();
   });
 });
+
+describe('AgentMode (Strom)', () => {
+  it('zeigt Schritt und Text, während sie entstehen — am Ende die Antwort', async () => {
+    const k = kernErsatz();
+    let steuer!: ReadableStreamDefaultController<Uint8Array>;
+    const kodieren = (art: string, daten: unknown) => new TextEncoder().encode(`event: ${art}\ndata: ${JSON.stringify(daten)}\n\n`);
+    const anfrage = async (pfad: string, init?: RequestInit) => {
+      if (pfad === '/api/agent/nachricht' && new Headers(init?.headers).get('accept') === 'text/event-stream') {
+        const body = new ReadableStream<Uint8Array>({ start(c) { steuer = c; } });
+        return new Response(body, { headers: { 'content-type': 'text/event-stream' } });
+      }
+      return k.anfrage(pfad, init);
+    };
+    render(<AgentMode api="/api/agent" anfrage={anfrage} modus="seite" navigiere={vi.fn()} ort="/" stil="kern" />);
+    const eingabe = await screen.findByLabelText('Nachricht an den Agenten');
+    fireEvent.change(eingabe, { target: { value: 'Was ist fällig?' } });
+    await act(async () => { fireEvent.submit(eingabe.closest('form')!); });
+    await waitFor(() => expect(steuer).toBeTruthy());
+    act(() => { steuer.enqueue(kodieren('schritt', { art: 'schritt', text: 'liest /api/ankauf' })); });
+    await waitFor(() => expect(document.querySelector('[data-live] .am-schritt')?.textContent).toBe('liest /api/ankauf …'));
+    act(() => { steuer.enqueue(kodieren('text', { art: 'text', text: 'Heute sind ' })); steuer.enqueue(kodieren('text', { art: 'text', text: '3 Deals fällig.' })); });
+    await waitFor(() => expect(document.querySelector('[data-live] .am-blase-text')?.textContent).toBe('Heute sind 3 Deals fällig.'));
+    await act(async () => { steuer.enqueue(kodieren('antwort', { sitzungId: 's9', text: 'Heute sind 3 Deals fällig.', steuerung: [], chips: [{ label: 'Ersten Deal öffnen', wert: 'x' }] })); steuer.close(); });
+    await waitFor(() => expect(document.querySelector('[data-live]')).toBeNull());
+    expect(await screen.findByRole('button', { name: 'Ersten Deal öffnen' })).toBeTruthy();
+  });
+});

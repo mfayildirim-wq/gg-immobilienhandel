@@ -3,8 +3,10 @@
  * Der Host sagt, wer der Nutzer ist (`nutzerAus(c)`), der Kern prüft nichts weiter: Anmeldung ist Sache des Hosts.
  */
 import { Hono, type Context } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
-import { KernHinweis, type Kern, type Nutzer } from './kern.ts';
+import { KernHinweis, type Kern, type Melden, type Nutzer } from './kern.ts';
+import type { AgentAntwort } from './vertrag.ts';
 import { AgentEinstellungen, Beobachtung, Eingabe, Entscheidung, McpServerNeu } from './vertrag.ts';
 
 const SitzungsParam = z.object({ sitzungId: z.string().optional() });
@@ -14,6 +16,28 @@ async function json<T extends z.ZodTypeAny>(c: Context, schema: T): Promise<z.in
   const ergebnis = schema.safeParse(roh);
   if (!ergebnis.success) return c.json({ fehler: 'Eingabe ungültig', felder: ergebnis.error.issues.map((i) => `${i.path.join('.') || '(Rumpf)'}: ${i.message}`) }, 400);
   return ergebnis.data;
+}
+
+/** Will die Oberfläche einen Strom? (`Accept: text/event-stream`) — sonst die ganze Antwort als JSON wie bisher */
+const willStrom = (c: Context) => (c.req.header('accept') ?? '').includes('text/event-stream');
+
+/**
+ * Ein Lauf als Server-Sent Events: `schritt` und `text` während des Laufs, am Ende `antwort` (wie die JSON-Antwort) —
+ * oder `fehler`. Hinweise des Kerns (`KernHinweis`) gehen wörtlich an den Nutzer, andere Fehler nur allgemein.
+ */
+function alsStrom(c: Context, lauf: (melden: Melden) => Promise<AgentAntwort>, fehlerText: (e: Error) => string) {
+  return streamSSE(c, async (s) => {
+    let kette: Promise<unknown> = Promise.resolve();
+    const melden: Melden = (e) => { kette = kette.then(() => s.writeSSE({ event: e.art, data: JSON.stringify(e) })); };
+    try {
+      const antwort = await lauf(melden);
+      await kette;
+      await s.writeSSE({ event: 'antwort', data: JSON.stringify(antwort) });
+    } catch (e) {
+      await kette.catch(() => undefined);
+      await s.writeSSE({ event: 'fehler', data: JSON.stringify({ fehler: fehlerText(e as Error) }) });
+    }
+  });
 }
 
 export function agentRouten(kern: Kern, nutzerAus: (c: Context) => Nutzer | null) {
@@ -74,12 +98,20 @@ export function agentRouten(kern: Kern, nutzerAus: (c: Context) => Nutzer | null
   app.post('/nachricht', async (c) => {
     const eingabe = await json(c, Eingabe);
     if (eingabe instanceof Response) return eingabe;
+    if (willStrom(c)) {
+      return alsStrom(c, (melden) => kern.nachricht(nutzerAus(c)!, eingabe, false, undefined, melden), (e) => {
+        if (e instanceof KernHinweis) return e.message;
+        console.error('[cosai] Lauf fehlgeschlagen:', e);
+        return 'Der Agent konnte nicht antworten.';
+      });
+    }
     return c.json(await kern.nachricht(nutzerAus(c)!, eingabe));
   });
 
   app.post('/entscheidung', async (c) => {
     const e = await json(c, Entscheidung);
     if (e instanceof Response) return e;
+    if (willStrom(c)) return alsStrom(c, (melden) => kern.entscheidung(nutzerAus(c)!, e, melden), (f) => f.message);
     try {
       return c.json(await kern.entscheidung(nutzerAus(c)!, e));
     } catch (err) {

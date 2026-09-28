@@ -11,8 +11,10 @@ import { agentAnfrage } from '../lib/api.ts';
 import { AgentWerkzeuge } from './AgentWerkzeuge.tsx';
 
 interface AnbieterStand { id: string; label: string; vorgabeModell: string; verfuegbar: boolean }
-interface Einstellungen { grundregeln: string[]; regeln: string[]; nie: string[]; anbieter: string; modell: string; anbieterListe: AnbieterStand[]; mcp: { name: string; url: string; aktiv: boolean; mitZugang: boolean }[] }
-type Aenderbar = Pick<Einstellungen, 'regeln' | 'nie' | 'anbieter' | 'modell'>;
+type Tempo = 'auto' | 'schnell' | 'gruendlich';
+interface Einstellungen { grundregeln: string[]; regeln: string[]; nie: string[]; anbieter: string; modell: string; tempo: Tempo; schnellesModell: string; anbieterListe: (AnbieterStand & { schnellesModell?: string })[]; mcp: { name: string; url: string; aktiv: boolean; mitZugang: boolean }[] }
+type Aenderbar = Pick<Einstellungen, 'regeln' | 'nie' | 'anbieter' | 'modell' | 'tempo' | 'schnellesModell'>;
+const aenderbar = (d: Einstellungen): Aenderbar => ({ regeln: d.regeln, nie: d.nie, anbieter: d.anbieter, modell: d.modell, tempo: d.tempo, schnellesModell: d.schnellesModell });
 
 async function holen(): Promise<Einstellungen> {
   const r = await agentAnfrage('/api/agent/einstellungen');
@@ -65,20 +67,20 @@ export function AgentEinstellungen() {
   const qc = useQueryClient();
   const { data, isLoading, error } = useQuery({ queryKey: ['agent', 'einstellungen'], queryFn: holen, retry: false });
   const [entwurf, setEntwurf] = useState<Aenderbar | null>(null);
-  useEffect(() => { if (data && !entwurf) setEntwurf({ regeln: data.regeln, nie: data.nie, anbieter: data.anbieter, modell: data.modell }); }, [data, entwurf]);
+  useEffect(() => { if (data && !entwurf) setEntwurf(aenderbar(data)); }, [data, entwurf]);
   // Erfolg selbst merken: `isSuccess` von React Query kommt erst nach dem globalen onSettled der App (Listen neu laden)
   const [gespeichert, setGespeichert] = useState(false);
   const sichern = useMutation({
     mutationFn: speichern,
     onMutate: () => setGespeichert(false),
-    onSuccess: (d) => { qc.setQueryData(['agent', 'einstellungen'], d); setEntwurf({ regeln: d.regeln, nie: d.nie, anbieter: d.anbieter, modell: d.modell }); setGespeichert(true); },
+    onSuccess: (d) => { qc.setQueryData(['agent', 'einstellungen'], d); setEntwurf(aenderbar(d)); setGespeichert(true); },
   });
 
   if (isLoading) return <Loader size="sm" />;
   if (error) return <Alert color="red">{(error as Error).message}</Alert>;
   if (!data || !entwurf) return null;
   const anbieter = data.anbieterListe.find((a) => a.id === (entwurf.anbieter || 'anthropic'));
-  const geaendert = JSON.stringify(entwurf) !== JSON.stringify({ regeln: data.regeln, nie: data.nie, anbieter: data.anbieter, modell: data.modell });
+  const geaendert = JSON.stringify(entwurf) !== JSON.stringify(aenderbar(data));
 
   return (
     <Stack gap="sm">
@@ -114,6 +116,14 @@ export function AgentEinstellungen() {
         </Group>
         {anbieter && !anbieter.verfuegbar && <Alert mt="xs" color="yellow" p="xs">Für {anbieter.label} ist kein Schlüssel hinterlegt — der Agent meldet das, statt zu antworten.</Alert>}
         {anbieter && !anbieter.vorgabeModell && !entwurf.modell && <Alert mt="xs" color="yellow" p="xs">Für {anbieter.label} bitte den Modellnamen eintragen.</Alert>}
+        <Group gap="xs" align="flex-end" mt="xs">
+          <Select size="xs" label="Tempo" style={{ minWidth: 220 }} allowDeselect={false} value={entwurf.tempo}
+            onChange={(v) => setEntwurf({ ...entwurf, tempo: (v ?? 'auto') as Tempo })}
+            data={[{ value: 'auto', label: 'Automatisch (schnell bedienen, gründlich recherchieren)' }, { value: 'schnell', label: 'Immer schnell' }, { value: 'gruendlich', label: 'Immer gründlich' }]} />
+          <TextInput size="xs" label="Schnelles Modell" style={{ flex: 1, minWidth: 200 }} value={entwurf.schnellesModell} maxLength={100} disabled={entwurf.tempo === 'gruendlich'}
+            placeholder={anbieter?.schnellesModell ? `Vorgabe: ${anbieter.schnellesModell}` : 'ohne Eintrag kein Umschalten'}
+            onChange={(e) => setEntwurf({ ...entwurf, schnellesModell: e.currentTarget.value.trim() })} />
+        </Group>
       </Paper>
 
       {sichern.error && <Alert color="red">{(sichern.error as Error).message}</Alert>}

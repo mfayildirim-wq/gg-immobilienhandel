@@ -27,6 +27,26 @@ describe.skipIf(!url)('Hono-Routen', () => {
   const post = (app: Hono, pfad: string, body: unknown, nutzer = 'hono@example') =>
     app.request(pfad, { method: 'POST', headers: { 'content-type': 'application/json', 'x-nutzer': nutzer }, body: JSON.stringify(body) });
 
+  it('liefert mit Accept: text/event-stream einen Strom: Schritt, Text, am Ende die Antwort', async () => {
+    const app = bauen([ki('Ich schaue nach.', [['merke', { art: 'fakt', schluessel: 'strom-test', inhalt: 'x' }]]), ki('Fertig gelesen.')]);
+    const res = await app.request('/api/agent/nachricht', { method: 'POST', headers: { 'content-type': 'application/json', 'x-nutzer': 'hono@example', accept: 'text/event-stream' }, body: JSON.stringify({ text: 'Hi', ort: '/' }) });
+    expect(res.headers.get('content-type')).toContain('text/event-stream');
+    const roh = await res.text();
+    const ereignisse = [...roh.matchAll(/event: (\w+)\ndata: (.*)\n/g)].map((m) => ({ art: m[1]!, daten: JSON.parse(m[2]!) as Record<string, unknown> }));
+    expect(ereignisse.find((e) => e.art === 'schritt')?.daten).toEqual({ art: 'schritt', text: 'merkt sich das' });
+    expect(ereignisse.filter((e) => e.art === 'text').map((e) => e.daten.text).join('')).toContain('Fertig gelesen.');
+    const antwort = ereignisse.at(-1)!;
+    expect(antwort.art).toBe('antwort');
+    expect(antwort.daten).toMatchObject({ text: 'Ich schaue nach.\n\nFertig gelesen.' });
+  });
+
+  it('meldet einen Hinweis des Kerns im Strom als fehler', async () => {
+    const app = bauen([], async () => null);
+    const res = await app.request('/api/agent/nachricht', { method: 'POST', headers: { 'content-type': 'application/json', 'x-nutzer': 'hono@example', accept: 'text/event-stream' }, body: JSON.stringify({ text: 'Hi', ort: '/' }) });
+    const roh = await res.text();
+    expect(roh).toMatch(/event: fehler\ndata: .*kein Modell verfügbar/);
+  });
+
   it('verlangt einen Nutzer', async () => {
     expect((await bauen().request('/api/agent/stand')).status).toBe(401);
     expect((await bauen().request('/api/agent/stand', { headers: { 'x-nutzer': 'a' } })).status).toBe(200);

@@ -168,3 +168,31 @@ export function beobachten(senden: (b: Beobachtung) => void, root: Document = do
     root.removeEventListener(EREIGNIS, aufMeldung);
   };
 }
+
+/**
+ * Liest einen Strom aus Server-Sent Events (`event:` + `data:` je Block) und ruft `auf` je Ereignis mit den JSON-Daten.
+ * Für die Antworten des Kerns mit `Accept: text/event-stream` (schritt, text, antwort, fehler).
+ */
+export async function stromLesen(antwort: Response, auf: (art: string, daten: Record<string, unknown>) => void): Promise<void> {
+  const leser = antwort.body!.pipeThrough(new TextDecoderStream()).getReader();
+  let puffer = '';
+  const block = (roh: string) => {
+    let art = 'message';
+    const daten: string[] = [];
+    for (const zeile of roh.split(/\r?\n/)) {
+      if (zeile.startsWith('event:')) art = zeile.slice(6).trim();
+      else if (zeile.startsWith('data:')) daten.push(zeile.slice(5).replace(/^ /, ''));
+    }
+    if (!daten.length) return;
+    try { auf(art, JSON.parse(daten.join('\n')) as Record<string, unknown>); } catch { /* unvollständiger Block — ignorieren */ }
+  };
+  for (;;) {
+    const { value, done } = await leser.read();
+    if (done) break;
+    puffer += value;
+    const teile = puffer.split(/\r?\n\r?\n/);
+    puffer = teile.pop() ?? '';
+    for (const t of teile) block(t);
+  }
+  if (puffer.trim()) block(puffer);
+}

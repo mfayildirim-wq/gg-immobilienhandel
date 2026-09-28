@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Chips, Gedaechtnisleiste, Schaufenster, Sprechblase, type ChipDaten, type GedaechtnisEintragDaten, type Schritt } from './Bausteine.tsx';
 import { ErgebnisBereich, ErgebnisDialog, type ErgebnisDaten } from './Ergebnisse.tsx';
-import { ausfuehren, bereichVon, beobachten, fokusBezuege, fokusLesen, zielFinden, zielKontext, type Beobachtung, type Steuerung } from './kanal.ts';
+import { ausfuehren, bereichVon, beobachten, fokusBezuege, stromLesen, fokusLesen, zielFinden, zielKontext, type Beobachtung, type Steuerung } from './kanal.ts';
 import { saatAus } from './konstellation.ts';
 import { heuteLokal } from './lernen.tsx';
 import { Sprechkreis, SPRECHKREIS_STILE, type SprechkreisStil, type SprechkreisZustand } from './Sprechkreis.tsx';
@@ -111,6 +111,8 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
   const [chips, setChips] = useState<ChipDaten[]>([]);
   const [wartetAuf, setWartetAuf] = useState<AgentAntwortDaten['wartetAuf']>(undefined);
   const [beschaeftigt, setBeschaeftigt] = useState(false);
+  /** Während eines Laufs: der Text, wie er entsteht, und der laufende Schritt („liest /api/ankauf“) */
+  const [live, setLive] = useState<{ text: string; schritt: string } | null>(null);
   const [handelt, setHandelt] = useState(false);
   const [schritt, setSchritt] = useState<Schritt | null>(null);
   const [eingabe, setEingabe] = useState('');
@@ -325,12 +327,33 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
     setChips([]);
     setSchritt(null);
     try {
-      const r = await anfrage(`${api}/${pfad}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      // Als Strom, wenn der Kern ihn anbietet: der Text erscheint, während er entsteht (sonst die ganze Antwort als JSON)
+      const strom = pfad !== 'morgen';
+      const r = await anfrage(`${api}/${pfad}`, { method: 'POST', headers: { 'content-type': 'application/json', ...(strom ? { accept: 'text/event-stream' } : {}) }, body: JSON.stringify(body) });
       if (!r.ok) {
         const f = (await r.json().catch(() => ({}))) as { fehler?: string };
         throw new Error(f.fehler ?? `Fehler ${r.status}`);
       }
-      const roh = (await r.json()) as AgentAntwortDaten & { antwort?: AgentAntwortDaten };
+      let roh: (AgentAntwortDaten & { antwort?: AgentAntwortDaten }) | undefined;
+      if ((r.headers.get('content-type') ?? '').includes('text/event-stream') && r.body) {
+        let stoerung: string | null = null;
+        let absatz = false;
+        setLive({ text: '', schritt: '' });
+        await stromLesen(r, (art, d) => {
+          if (art === 'text') {
+            const neu = String(d.text ?? '');
+            setLive((l) => ({ text: `${l?.text ?? ''}${absatz && l?.text ? '\n\n' : ''}${neu}`, schritt: '' }));
+            absatz = false;
+          } else if (art === 'schritt') { absatz = true; setLive((l) => ({ text: l?.text ?? '', schritt: String(d.text ?? '') })); }
+          else if (art === 'antwort') roh = d as unknown as AgentAntwortDaten;
+          else if (art === 'fehler') stoerung = String(d.fehler ?? 'Fehler');
+        });
+        setLive(null);
+        if (stoerung) throw new Error(stoerung);
+        if (!roh) throw new Error('Die Antwort brach ab.');
+      } else {
+        roh = (await r.json()) as AgentAntwortDaten & { antwort?: AgentAntwortDaten };
+      }
       // /morgen liefert { antwort } — die Übersicht liest nur, Schritte daraus führt die Oberfläche nicht aus
       const antwort = pfad === 'morgen' ? { ...roh.antwort!, steuerung: [] } : roh;
       const { verwerfen } = await verarbeiten(antwort);
@@ -342,6 +365,7 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
       setFehler((e as Error).message);
       zeile('agent', `Das hat nicht geklappt: ${(e as Error).message}`);
     } finally {
+      setLive(null);
       setBeschaeftigt(false);
       void routinenLaden();
       void ergebnisseLaden();
@@ -459,7 +483,12 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
         )}
       </div>
       <div className="am-agent">
-        {letzteAgent ? <Sprechblase wer="agent" text={letzteAgent.text} schluessel={letzteAgent.nr} lebendig /> : <div className="am-blase" data-wer="agent"><span className="am-wer">Agent</span>Ich höre. Sag mir, was ich tun soll — oder frag, was heute ansteht.</div>}
+        {live ? (
+          <div className="am-blase" data-wer="agent" data-live aria-live="polite"><span className="am-wer">Agent</span>
+            <span className="am-blase-text">{live.text}</span>
+            {(live.schritt || !live.text) && <span className="am-schritt">{live.schritt ? `${live.schritt} …` : 'denkt …'}</span>}
+          </div>
+        ) : letzteAgent ? <Sprechblase wer="agent" text={letzteAgent.text} schluessel={letzteAgent.nr} lebendig /> : <div className="am-blase" data-wer="agent"><span className="am-wer">Agent</span>Ich höre. Sag mir, was ich tun soll — oder frag, was heute ansteht.</div>}
       </div>
       <div className="am-oben-rechts">
         <Chips chips={chips} waehlen={chipWaehlen} aus={beschaeftigt} />

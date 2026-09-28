@@ -94,6 +94,17 @@ export const GRUNDREGELN: readonly string[] = [
   'Du erfindest keine Daten: was du nicht über ein Werkzeug gelesen hast, weißt du nicht.',
 ];
 
+/**
+ * Der Systemtext in zwei Teilen: `fest` (Rolle, Oberflächenkarte, Regeln — ändert sich nur mit den Einstellungen) und
+ * `wechselnd` (Erinnerungen, Ort, Kontext). Der feste Teil steht vorn, damit ihn das Prompt-Caching wiederverwenden kann.
+ */
+export function systemteile(dna: DNA, ziele: ZielBeschreibung[], erinnerungen: string[], zustand: AgentZustand): { fest: string; wechselnd: string } {
+  const text = systemtext(dna, ziele, erinnerungen, zustand);
+  const grenze = text.indexOf(WECHSELND);
+  return { fest: text.slice(0, grenze).trimEnd(), wechselnd: text.slice(grenze + WECHSELND.length).trimStart() };
+}
+const WECHSELND = '\u0000wechselnd\u0000';
+
 function systemtext(dna: DNA, ziele: ZielBeschreibung[], erinnerungen: string[], zustand: AgentZustand): string {
   const zielListe = ziele.map((z) => `- ${z.ziel}: ${z.beschreibung}${z.seite ? ` (Seite ${z.seite})` : ''}`).join('\n');
   return [
@@ -111,6 +122,7 @@ function systemtext(dna: DNA, ziele: ZielBeschreibung[], erinnerungen: string[],
     ...(dna.regeln.length ? ['Immer:', ...dna.regeln.map((r) => `- ${r}`)] : []),
     ...(dna.nie.length ? ['Nie:', ...dna.nie.map((r) => `- ${r}`)] : []),
     ...(dna.beispiele.length ? ['Beispiele:', ...dna.beispiele.map((b) => `Nutzer: ${b.nutzer}\nDu: ${b.agent}`)] : []),
+    WECHSELND,
     ...(erinnerungen.length ? ['Aus deinem Gedächtnis:', ...erinnerungen.map((e) => `- ${e}`)] : []),
     `Der Nutzer ist gerade auf Seite ${zustand.ort}${Object.keys(zustand.kontext).length ? ` mit Kontext ${JSON.stringify(zustand.kontext)}` : ''}.`,
   ].join('\n');
@@ -304,11 +316,16 @@ export function graphBauen(opt: GraphOptionen, checkpointer: BaseCheckpointSaver
   const werkzeuge = werkzeugeBauen(opt);
   const modell = opt.modell.bindTools ? opt.modell.bindTools([...werkzeuge, ...serverWerkzeuge(opt.modell, opt.web)] as never) : opt.modell;
 
+  // Prompt-Caching (nur Anthropic): Werkzeuge + fester Systemteil und der Verlauf bis zur letzten Nutzernachricht
+  const cachen = opt.modell._llmType() === 'anthropic';
+  let erinnerungenVorrat: Promise<string[]> | undefined;
   const meister = async (zustand: AgentZustand): Promise<Partial<AgentZustand>> => {
-    const [fakten, routinen] = await Promise.all([opt.gedaechtnis.erinnere('fakt', undefined, 10), opt.gedaechtnis.erinnere('routine', undefined, 5)]);
-    const erinnerungen = [...fakten, ...routinen].map((e) => `${e.art} ${e.schluessel}: ${e.inhalt}`);
-    const system = new SystemMessage(systemtext(opt.dna, opt.ziele, erinnerungen, zustand));
-    const antwort = (await modell.invoke([system, ...verlaufFenster(zustand.messages)])) as AIMessage;
+    // Einmal je Lauf lesen, nicht bei jedem Modellschritt (ein Zug hat oft 2–4 Schritte)
+    erinnerungenVorrat ??= Promise.all([opt.gedaechtnis.erinnere('fakt', undefined, 10), opt.gedaechtnis.erinnere('routine', undefined, 5)])
+      .then(([fakten, routinen]) => [...fakten, ...routinen].map((e) => `${e.art} ${e.schluessel}: ${e.inhalt}`));
+    const erinnerungen = await erinnerungenVorrat;
+    const teile = systemteile(opt.dna, opt.ziele, erinnerungen, zustand);
+    const antwort = (await modell.invoke(mitCache(teile, verlaufFenster(zustand.messages), cachen))) as AIMessage;
     return { messages: [antwort] };
   };
 
@@ -336,6 +353,24 @@ export const VERLAUF_ZEICHEN = 60_000;
  * immer vor einer Nutzernachricht, damit kein Werkzeug-Ergebnis ohne seinen Aufruf beginnt. Der aktuelle Zug bleibt
  * immer ganz. Der gespeicherte Verlauf (Checkpoint) bleibt vollständig; nur das Modell sieht weniger.
  */
+/**
+ * Setzt die Cache-Marken für Anthropic: am Ende des festen Systemteils (davor stehen die Werkzeuge — beides wird
+ * wiederverwendet, solange sich Einstellungen und Karte nicht ändern) und an der letzten Nutzernachricht (die weiteren
+ * Schritte desselben Zugs — Werkzeug lesen, dann antworten — lesen den Verlauf aus dem Cache). Ohne `cachen` ein
+ * gewöhnlicher Systemtext.
+ */
+export function mitCache(teile: { fest: string; wechselnd: string }, verlauf: BaseMessage[], cachen: boolean): BaseMessage[] {
+  if (!cachen) return [new SystemMessage([teile.fest, teile.wechselnd].filter(Boolean).join('\n')), ...verlauf];
+  const marke = { cache_control: { type: 'ephemeral' } };
+  const system = new SystemMessage({ content: [{ type: 'text', text: teile.fest, ...marke }, ...(teile.wechselnd ? [{ type: 'text', text: teile.wechselnd }] : [])] });
+  let letzte = -1;
+  for (let i = verlauf.length - 1; i >= 0; i -= 1) if (verlauf[i] instanceof HumanMessage) { letzte = i; break; }
+  const mensch = verlauf[letzte];
+  if (!mensch || typeof mensch.content !== 'string' || !mensch.content) return [system, ...verlauf];
+  const markiert = new HumanMessage({ content: [{ type: 'text', text: mensch.content, ...marke }], id: mensch.id });
+  return [system, ...verlauf.slice(0, letzte), markiert, ...verlauf.slice(letzte + 1)];
+}
+
 export function verlaufFenster(messages: BaseMessage[], maxZeichen = VERLAUF_ZEICHEN): BaseMessage[] {
   const laenge = (m: BaseMessage) => (typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length) + JSON.stringify((m as AIMessage).tool_calls ?? []).length;
   let summe = 0;

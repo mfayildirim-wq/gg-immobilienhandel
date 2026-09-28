@@ -31,12 +31,20 @@ export function anthropicModell(apiKey: string, model = 'claude-sonnet-5'): Mode
  * Modell muss in den Einstellungen eingetragen werden (die Namen wechseln bei diesen Anbietern häufig).
  */
 export const ANBIETER = [
-  { id: 'anthropic', label: 'Anthropic (Claude)', zugang: 'anthropic-api-key', vorgabeModell: 'claude-sonnet-5', basisUrl: undefined },
-  { id: 'openai', label: 'OpenAI', zugang: 'openai-api-key', vorgabeModell: '', basisUrl: undefined },
-  { id: 'deepseek', label: 'DeepSeek', zugang: 'deepseek-api-key', vorgabeModell: 'deepseek-chat', basisUrl: 'https://api.deepseek.com' },
-  { id: 'kimi', label: 'Kimi (Moonshot)', zugang: 'moonshot-api-key', vorgabeModell: '', basisUrl: 'https://api.moonshot.ai/v1' },
+  { id: 'anthropic', label: 'Anthropic (Claude)', zugang: 'anthropic-api-key', vorgabeModell: 'claude-sonnet-5', schnellesModell: 'claude-haiku-4-5-20251001', basisUrl: undefined },
+  { id: 'openai', label: 'OpenAI', zugang: 'openai-api-key', vorgabeModell: '', schnellesModell: '', basisUrl: undefined },
+  { id: 'deepseek', label: 'DeepSeek', zugang: 'deepseek-api-key', vorgabeModell: 'deepseek-chat', schnellesModell: '', basisUrl: 'https://api.deepseek.com' },
+  { id: 'kimi', label: 'Kimi (Moonshot)', zugang: 'moonshot-api-key', vorgabeModell: '', schnellesModell: '', basisUrl: 'https://api.moonshot.ai/v1' },
 ] as const;
 export type AnbieterId = (typeof ANBIETER)[number]['id'];
+
+/**
+ * Braucht die Nachricht das gründliche Modell? Recherche, Analyse, Vergleich, Dokumente, Erklärungen — ja; bedienen,
+ * lesen, bestätigen — nein (dort zählt Tempo).
+ */
+export function aufgabeGruendlich(text: string): boolean {
+  return /recherch|analys|vergleich|bewert|einschätz|web|internet|markt|lage\b|umfeld|dokument|exposé|expose|miet|zusammenfass|bericht|warum|erklär|strategie|empfiehl|empfehl/i.test(text);
+}
 
 /** Werkzeuge nacheinander — aus demselben Grund wie bei Anthropic (Rückfrage in `steuere`). */
 class SeriellesOpenAI extends ChatOpenAI {

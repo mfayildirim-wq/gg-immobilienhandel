@@ -90,3 +90,32 @@ describe('verwendeteWerkzeuge', () => {
     expect(verwendeteWerkzeuge(verlauf)).toEqual(['web_search', 'seite_lesen']);
   });
 });
+
+describe('Prompt-Caching', () => {
+  it('teilt den Systemtext: fest (Karte, Regeln) vorn, wechselnd (Ort, Erinnerungen) hinten', async () => {
+    const { systemteile } = await import('../src/graph.ts');
+    const { DNA } = await import('../src/vertrag.ts');
+    const dna = DNA.parse({ slug: 't', name: 'Agent', rolle: 'hilft' });
+    const t = systemteile(dna, [{ ziel: 'nav.deals', beschreibung: 'Seite Deals', seite: '/deals' }], ['fakt a: b'], { ort: '/deals', kontext: { dealId: 'd1' } } as never);
+    expect(t.fest).toContain('nav.deals: Seite Deals');
+    expect(t.fest).toContain('Grundregeln');
+    expect(t.fest).not.toContain('/deals mit Kontext');
+    expect(t.wechselnd).toContain('fakt a: b');
+    expect(t.wechselnd).toContain('Der Nutzer ist gerade auf Seite /deals mit Kontext {"dealId":"d1"}');
+  });
+
+  it('setzt für Anthropic zwei Marken: fester Systemteil und letzte Nutzernachricht — sonst ein schlichter Systemtext', async () => {
+    const { mitCache } = await import('../src/graph.ts');
+    const { HumanMessage, AIMessage, SystemMessage } = await import('@langchain/core/messages');
+    const verlauf = [new HumanMessage('alt'), new AIMessage('ok'), new HumanMessage('Was ist fällig?'), new AIMessage('…')];
+    const [sys, ...rest] = mitCache({ fest: 'FEST', wechselnd: 'ORT' }, verlauf, true);
+    expect(sys).toBeInstanceOf(SystemMessage);
+    expect(sys!.content).toEqual([{ type: 'text', text: 'FEST', cache_control: { type: 'ephemeral' } }, { type: 'text', text: 'ORT' }]);
+    expect(rest[0]!.content).toBe('alt');
+    expect(rest[2]!.content).toEqual([{ type: 'text', text: 'Was ist fällig?', cache_control: { type: 'ephemeral' } }]);
+    expect(verlauf[2]!.content).toBe('Was ist fällig?');
+    const schlicht = mitCache({ fest: 'FEST', wechselnd: 'ORT' }, verlauf, false);
+    expect(schlicht[0]!.content).toBe('FEST\nORT');
+    expect(schlicht.slice(1)).toEqual(verlauf);
+  });
+});

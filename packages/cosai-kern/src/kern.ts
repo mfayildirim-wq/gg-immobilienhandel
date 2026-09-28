@@ -5,7 +5,7 @@
  * wartenden Bestätigung. Beobachtungen der Oberfläche landen im Ereignisprotokoll und — bei `gespeichert` — als
  * Formulierung und Episode im Gedächtnis. Der Kern hält keine Verbindung offen: jeder Aufruf ist für sich vollständig.
  */
-import { HumanMessage } from '@langchain/core/messages';
+import { HumanMessage, type AIMessage, type BaseMessage } from '@langchain/core/messages';
 import { Command } from '@langchain/langgraph';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { DrizzleSaver } from './checkpointer.ts';
@@ -17,7 +17,7 @@ import { ergebnisseVon } from './ergebnisse.ts';
 import { mcpVerbinden, mcpWerkzeugName, type McpWerkzeug } from './mcp.ts';
 import { tool } from '@langchain/core/tools';
 import type { z } from 'zod';
-import { drehbuchModell, type Modell } from './modell.ts';
+import { ANBIETER, aufgabeGruendlich, drehbuchModell, type Modell } from './modell.ts';
 import { routinenAus, type Routine } from './routinen.ts';
 import { agenten, ereignisse, laeufe, nachrichten, sitzungen } from './schema.ts';
 import { AgentEinstellungen, DNA, McpServerNeu, type AgentAntwort, type Beobachtung, type Chip, type Eingabe, type Entscheidung, type Steuerung } from './vertrag.ts';
@@ -71,7 +71,18 @@ const alsWerkzeug = (w: HostWerkzeug) => tool(async (args) => {
   try { return await w.ausfuehren(args as Record<string, unknown>); } catch (e) { return `Fehler: ${(e as Error).message}`; }
 }, { name: w.name, description: w.beschreibung, schema: w.parameter });
 
-export interface AnbieterStand { id: string; label: string; vorgabeModell: string; verfuegbar: boolean }
+/** Zwischenstände eines Laufs für die Oberfläche (Streaming): welcher Schritt läuft, und der Text, wie er entsteht */
+export type StromEreignis = { art: 'schritt'; text: string } | { art: 'text'; text: string };
+export type Melden = (e: StromEreignis) => void;
+
+/** Der Text in einem Stück der Modellantwort (Anthropic liefert Blöcke, OpenAI einen String) */
+export function textAusStueck(inhalt: unknown): string {
+  if (typeof inhalt === 'string') return inhalt;
+  if (!Array.isArray(inhalt)) return '';
+  return inhalt.map((b: { type?: string; text?: string }) => (b && (b.type === 'text' || b.type === 'text_delta') && typeof b.text === 'string' ? b.text : '')).join('');
+}
+
+export interface AnbieterStand { id: string; label: string; vorgabeModell: string; verfuegbar: boolean; schnellesModell?: string }
 
 /** Ein Werkzeug für die Einstellungsseite: woher, was es darf */
 export interface WerkzeugEintrag {
@@ -87,6 +98,9 @@ export interface WerkzeugEintrag {
 
 /** Werkzeuglisten der MCP-Server kurz zwischenspeichern — jede Nachricht baut den Graphen neu */
 const MCP_CACHE_MS = 60_000;
+/** DNA (Einstellungen) und gebaute Modelle kurz vorhalten — Speichern der Einstellungen leert den Vorrat sofort */
+const DNA_CACHE_MS = 10_000;
+const MODELL_CACHE_MS = 60_000;
 const mcpCache = new Map<string, { zeit: number; werkzeuge: McpWerkzeug[] }>();
 
 /** Längste Notiz, die als Formulierung (Vorschlag) gemerkt wird */
@@ -134,19 +148,36 @@ export function agentKern(opt: KernOptionen) {
   const { db } = opt;
 
   /** Die DNA mit den gespeicherten Einstellungen (cosai.agenten, Version 1 des Slugs) — bei jedem Lauf frisch gelesen */
+  let dnaVorrat: { zeit: number; dna: DNA } | null = null;
   async function dnaLaden(): Promise<DNA> {
+    if (dnaVorrat && Date.now() - dnaVorrat.zeit < DNA_CACHE_MS) return dnaVorrat.dna;
     const [z] = await db.select({ dna: agenten.dna }).from(agenten).where(and(eq(agenten.slug, dna.slug), eq(agenten.version, 1))).limit(1);
-    return z ? DNA.parse({ ...dna, ...(z.dna as Partial<DNA>), slug: dna.slug }) : dna;
+    const d = z ? DNA.parse({ ...dna, ...(z.dna as Partial<DNA>), slug: dna.slug }) : dna;
+    dnaVorrat = { zeit: Date.now(), dna: d };
+    return d;
   }
 
-  async function modellFuer(d: DNA): Promise<Modell> {
+  const modellVorrat = new Map<string, { zeit: number; modell: Modell }>();
+  async function modellFuer(d: DNA, name = d.modell): Promise<Modell> {
     if (typeof opt.modell !== 'function') return opt.modell;
-    const m = await (opt.modell as ModellWahl)({ anbieter: d.anbieter, modell: d.modell });
+    const schluessel = `${d.anbieter}|${name}`;
+    const vorrat = modellVorrat.get(schluessel);
+    if (vorrat && Date.now() - vorrat.zeit < MODELL_CACHE_MS) return vorrat.modell;
+    const m = await (opt.modell as ModellWahl)({ anbieter: d.anbieter, modell: name });
     if (!m) throw new KernHinweis(`Für den Anbieter „${d.anbieter || 'Standard'}“ ist kein Modell verfügbar — Schlüssel unter Einstellungen → Zugänge hinterlegen oder in den AgentMode-Einstellungen einen anderen Anbieter wählen.`);
+    modellVorrat.set(schluessel, { zeit: Date.now(), modell: m });
     return m;
   }
 
+  /** Das schnelle Modell für diese Aufgabe — oder `undefined` (dann das eingestellte) */
+  function schnellesModellFuer(d: DNA, aufgabe: string | undefined): string | undefined {
+    if (typeof opt.modell !== 'function' || d.tempo === 'gruendlich') return undefined;
+    if (d.tempo === 'auto' && (aufgabe === undefined || aufgabeGruendlich(aufgabe))) return undefined;
+    return d.schnellesModell || ANBIETER.find((a) => a.id === (d.anbieter || 'anthropic'))?.schnellesModell || undefined;
+  }
+
   async function dnaSpeichern(neu: DNA): Promise<void> {
+    dnaVorrat = null;
     await db.insert(agenten).values({ slug: dna.slug, version: 1, dna: neu, status: 'aktiv' })
       .onConflictDoUpdate({ target: [agenten.slug, agenten.version], set: { dna: neu, updatedAt: new Date().toISOString() } });
   }
@@ -180,21 +211,25 @@ export function agentKern(opt: KernOptionen) {
   }
 
   /** `nurZustand`: nur den gespeicherten Zustand lesen — dafür wird kein Modell gebraucht (und keines gebaut). */
-  const graphFuer = async (nutzer: Nutzer, gedaechtnis: Gedaechtnis, nurLesen = false, nurZustand = false) => {
+  const modellNamen = new WeakMap<object, string>();
+  /** `aufgabe`: der Text des Nutzers — entscheidet mit `tempo` über schnelles oder gründliches Modell */
+  const graphFuer = async (nutzer: Nutzer, gedaechtnis: Gedaechtnis, nurLesen = false, nurZustand = false, aufgabe?: string) => {
     const aufruf: Aufruf = (methode, pfad, body) => opt.aufruf(nutzer, methode, pfad, body);
     const d = await dnaLaden();
-    const modell = nurZustand ? drehbuchModell([]) : await modellFuer(d);
+    const modell = nurZustand ? drehbuchModell([]) : await modellFuer(d, schnellesModellFuer(d, aufgabe) ?? d.modell);
     const mcp = nurZustand ? [] : await mcpWerkzeuge(d);
-    return graphBauen({ modell, dna: d, werkzeuge, ziele: opt.ziele, aufruf, gedaechtnis, antwortGrenze: opt.antwortGrenze, nurLesen, web: opt.web, mcp, frei: d.frei, ergebnisse: ergebnisseVon(db, nutzer.id), zusatz: opt.zusatzWerkzeuge?.(nutzer).map(alsWerkzeug) }, new DrizzleSaver(db));
+    const graph = graphBauen({ modell, dna: d, werkzeuge, ziele: opt.ziele, aufruf, gedaechtnis, antwortGrenze: opt.antwortGrenze, nurLesen, web: opt.web, mcp, frei: d.frei, ergebnisse: ergebnisseVon(db, nutzer.id), zusatz: opt.zusatzWerkzeuge?.(nutzer).map(alsWerkzeug) }, new DrizzleSaver(db));
+    // Beim Streamen fehlt der Modellname in den Metadaten — für die Messung hier merken
+    modellNamen.set(graph, (modell as { model?: string }).model ?? modell._llmType());
+    return graph;
   };
 
   async function sitzungSicherstellen(nutzer: Nutzer, sitzungId: string | undefined, ort: string, kontext: Record<string, unknown>): Promise<string> {
     if (sitzungId) {
-      const [s] = await db.select().from(sitzungen).where(eq(sitzungen.id, sitzungId)).limit(1);
-      if (s && s.nutzer === nutzer.id) {
-        await db.update(sitzungen).set({ ort, kontext, updatedAt: new Date().toISOString() }).where(eq(sitzungen.id, sitzungId));
-        return sitzungId;
-      }
+      // Ein Weg zur DB: nur die eigene Sitzung wird aktualisiert — sonst eine neue
+      const [s] = await db.update(sitzungen).set({ ort, kontext, updatedAt: new Date().toISOString() })
+        .where(and(eq(sitzungen.id, sitzungId), eq(sitzungen.nutzer, nutzer.id))).returning({ id: sitzungen.id });
+      if (s) return s.id;
     }
     const [neu] = await db.insert(sitzungen).values({ nutzer: nutzer.id, agent: dna.slug, ort, kontext }).returning({ id: sitzungen.id });
     return neu!.id;
@@ -209,8 +244,60 @@ export function agentKern(opt: KernOptionen) {
     return (stand.values as { messages?: unknown[] }).messages?.length ?? 0;
   }
 
+  /** Was die Oberfläche während eines Werkzeugaufrufs zeigt — `null`: nichts zeigen */
+  function schrittText(name: string): string | null {
+    const w = werkzeuge.find((x) => x.name === name);
+    if (w) return `liest ${w.pfad}`;
+    if (name.startsWith('mcp_')) return `fragt ${name.split('_')[1] ?? 'MCP'}`;
+    const texte: Record<string, string | null> = {
+      steuere: 'bereitet die Bedienung vor', seite_lesen: 'liest eine Webseite', ergebnis_speichern: 'bereitet das Speichern vor',
+      ergebnisse_lesen: 'liest gespeicherte Ergebnisse', merke: 'merkt sich das', erinnere: 'schaut ins Gedächtnis', chips: null,
+    };
+    return name in texte ? texte[name]! : `nutzt ${name}`;
+  }
+
+  /** Den Graphen laufen lassen — mit `melden` als Strom (Text entsteht sichtbar, Schritte werden angesagt) */
+  async function laufen(graph: Awaited<ReturnType<typeof graphFuer>>, eingang: unknown, config: { configurable: { thread_id: string } }, melden?: Melden): Promise<void> {
+    type Eingang = Parameters<typeof graph.invoke>[0];
+    if (!melden) { await graph.invoke(eingang as Eingang, config); return; }
+    const strom = await graph.stream(eingang as Eingang, { ...config, streamMode: ['messages', 'updates'] });
+    for await (const [modus, daten] of strom as unknown as AsyncIterable<[string, unknown]>) {
+      if (modus === 'messages') {
+        const [stueck, meta] = daten as [BaseMessage, { langgraph_node?: string } | undefined];
+        if (meta?.langgraph_node !== 'meister') continue;
+        const text = textAusStueck(stueck.content);
+        if (text) melden({ art: 'text', text });
+      } else if (modus === 'updates') {
+        const letzte = (daten as { meister?: { messages?: BaseMessage[] } }).meister?.messages?.at(-1) as AIMessage | undefined;
+        for (const t of letzte?.tool_calls ?? []) {
+          const text = schrittText(t.name);
+          if (text) melden({ art: 'schritt', text });
+        }
+      }
+    }
+  }
+
+  /** Dauer, Modell, Modellschritte und Tokens des Laufs (aus `usage_metadata` der neuen Antworten des Modells) */
+  function messen(neu: import('@langchain/core/messages').BaseMessage[], start: number): NonNullable<AgentAntwort['messung']> {
+    const tokens = { eingabe: 0, cacheGelesen: 0, cacheGeschrieben: 0, ausgabe: 0 };
+    let schritte = 0;
+    let modell = '';
+    for (const m of neu) {
+      if (m.getType() !== 'ai') continue;
+      schritte += 1;
+      const u = (m as import('@langchain/core/messages').AIMessage).usage_metadata;
+      modell = String((m.response_metadata as { model?: string; model_name?: string } | undefined)?.model ?? (m.response_metadata as { model_name?: string } | undefined)?.model_name ?? modell);
+      if (!u) continue;
+      tokens.eingabe += u.input_tokens ?? 0;
+      tokens.ausgabe += u.output_tokens ?? 0;
+      tokens.cacheGelesen += u.input_token_details?.cache_read ?? 0;
+      tokens.cacheGeschrieben += u.input_token_details?.cache_creation ?? 0;
+    }
+    return { ms: Date.now() - start, modell, schritte, tokens };
+  }
+
   /** Liest nach dem Lauf aus dem Zustand, was die Oberfläche bekommt — und ob der Graph auf eine Bestätigung wartet. */
-  async function antwortAus(graph: Awaited<ReturnType<typeof graphFuer>>, nutzer: Nutzer, sitzungId: string, vorher: number): Promise<AgentAntwort> {
+  async function antwortAus(graph: Awaited<ReturnType<typeof graphFuer>>, nutzer: Nutzer, sitzungId: string, vorher: number, start = Date.now()): Promise<AgentAntwort> {
     const config = { configurable: { thread_id: sitzungId } };
     const stand = await graph.getState(config);
     const werte = stand.values as { messages: import('@langchain/core/messages').BaseMessage[]; steuerung: Steuerung[]; chips: Chip[] };
@@ -220,30 +307,37 @@ export function agentKern(opt: KernOptionen) {
     const chips: Chip[] = unterbrechung
       ? [{ label: 'Ja, ausführen', wert: 'ja', art: 'entscheidung' }, { label: 'Nein', wert: 'nein', art: 'entscheidung' }]
       : werte.chips;
-    const antwort: AgentAntwort = { sitzungId, text, steuerung, chips, ...(unterbrechung ? { wartetAuf: { frage: unterbrechung.frage, aktion: unterbrechung.aktion } } : {}) };
-    await db.insert(nachrichten).values({ sitzungId, rolle: 'agent', text, steuerung, chips });
-    for (const s of steuerung) await protokolliere(nutzer, sitzungId, 'steuerung', s.art, s.ziel, s.wert);
-    await db.insert(laeufe).values({ sitzungId, status: unterbrechung ? 'wartet' : 'fertig', wartetAuf: unterbrechung ? { frage: unterbrechung.frage, aktion: unterbrechung.aktion } : null });
+    const messung = messen(werte.messages.slice(vorher), start);
+    messung.modell ||= modellNamen.get(graph) ?? '';
+    const antwort: AgentAntwort = { sitzungId, text, steuerung, chips, ...(unterbrechung ? { wartetAuf: { frage: unterbrechung.frage, aktion: unterbrechung.aktion } } : {}), messung };
+    // Die Schreibvorgänge sind unabhängig — gleichzeitig statt nacheinander
+    await Promise.all([
+      db.insert(nachrichten).values({ sitzungId, rolle: 'agent', text, steuerung, chips }),
+      steuerung.length ? db.insert(ereignisse).values(steuerung.map((s) => ({ nutzer: nutzer.id, sitzungId, richtung: 'steuerung' as const, art: s.art, ziel: s.ziel ?? null, wert: s.wert ?? null, kontext: {} }))) : null,
+      db.insert(laeufe).values({ sitzungId, status: unterbrechung ? 'wartet' : 'fertig', wartetAuf: unterbrechung ? { frage: unterbrechung.frage, aktion: unterbrechung.aktion } : null }),
+    ]);
     return antwort;
   }
 
   /** `anzeige`: was im Verlauf als Nachricht des Nutzers steht (sonst der Text selbst) */
-  async function nachricht(nutzer: Nutzer, eingabe: Eingabe, nurLesen = false, anzeige?: string): Promise<AgentAntwort> {
+  async function nachricht(nutzer: Nutzer, eingabe: Eingabe, nurLesen = false, anzeige?: string, melden?: Melden): Promise<AgentAntwort> {
+    const start = Date.now();
     const sitzungId = await sitzungSicherstellen(nutzer, eingabe.sitzungId, eingabe.ort, eingabe.kontext);
-    await db.insert(nachrichten).values({ sitzungId, rolle: 'nutzer', text: anzeige ?? eingabe.text });
-    const graph = await graphFuer(nutzer, gedaechtnisBauen(db, nutzer.id), nurLesen);
+    const [graph] = await Promise.all([
+      graphFuer(nutzer, gedaechtnisBauen(db, nutzer.id), nurLesen, false, eingabe.text),
+      db.insert(nachrichten).values({ sitzungId, rolle: 'nutzer', text: anzeige ?? eingabe.text }),
+    ]);
     const config = { configurable: { thread_id: sitzungId } };
     // Wartet der Graph noch auf eine Bestätigung, gilt der neue Text als Antwort darauf (kein „ja“ → abgebrochen)
     const stand = await graph.getState(config);
     const wartet = stand.tasks.some((t) => t.interrupts?.length);
     // `null` setzt Steuerung und Chips des vorigen Zugs zurück (Reducer); die Typen von LangGraph kennen den Reset nicht
-    type Eingang = Parameters<typeof graph.invoke>[0];
     const zuruecksetzen = { steuerung: null, chips: null, ort: eingabe.ort, kontext: eingabe.kontext };
-    const eingang = (wartet
+    const eingang = wartet
       ? new Command({ resume: eingabe.text, update: zuruecksetzen })
-      : { messages: [new HumanMessage(eingabe.text)], ...zuruecksetzen }) as unknown as Eingang;
-    await graph.invoke(eingang, config);
-    return antwortAus(graph, nutzer, sitzungId, anzahlNachrichten(stand));
+      : { messages: [new HumanMessage(eingabe.text)], ...zuruecksetzen };
+    await laufen(graph, eingang, config, melden);
+    return antwortAus(graph, nutzer, sitzungId, anzahlNachrichten(stand), start);
   }
 
   /** Kurzname eines Schritts aus der Oberflächenkarte: der Text in „…“ der Beschreibung, sonst der Schlüssel. */
@@ -349,16 +443,20 @@ export function agentKern(opt: KernOptionen) {
       };
     },
 
-    async entscheidung(nutzer: Nutzer, e: Entscheidung): Promise<AgentAntwort> {
+    async entscheidung(nutzer: Nutzer, e: Entscheidung, melden?: Melden): Promise<AgentAntwort> {
+      const start = Date.now();
       const [s] = await db.select().from(sitzungen).where(eq(sitzungen.id, e.sitzungId)).limit(1);
       if (!s || s.nutzer !== nutzer.id) throw new Error('Sitzung unbekannt');
-      await db.insert(nachrichten).values({ sitzungId: e.sitzungId, rolle: 'nutzer', text: e.wert });
-      const graph = await graphFuer(nutzer, gedaechtnisBauen(db, nutzer.id));
+      // Bestätigen ist Bedienen — das schnelle Modell genügt (bei `tempo: auto`)
+      const [graph] = await Promise.all([
+        graphFuer(nutzer, gedaechtnisBauen(db, nutzer.id), false, false, e.wert),
+        db.insert(nachrichten).values({ sitzungId: e.sitzungId, rolle: 'nutzer', text: e.wert }),
+      ]);
       const config = { configurable: { thread_id: e.sitzungId } };
       const stand = await graph.getState(config);
       if (!stand.tasks.some((t) => t.interrupts?.length)) throw new Error('Nichts wartet auf eine Entscheidung');
-      await graph.invoke(new Command({ resume: e.wert, update: { steuerung: null } }) as unknown as Parameters<typeof graph.invoke>[0], config);
-      return antwortAus(graph, nutzer, e.sitzungId, anzahlNachrichten(stand));
+      await laufen(graph, new Command({ resume: e.wert, update: { steuerung: null } }), config, melden);
+      return antwortAus(graph, nutzer, e.sitzungId, anzahlNachrichten(stand), start);
     },
 
     /** Die Oberfläche meldet, was der Nutzer tut. `gespeichert` mit Wert wird zur Formulierung und Episode. */
@@ -369,6 +467,7 @@ export function agentKern(opt: KernOptionen) {
         // Lange Texte (eingefügte Mails) taugen nicht als Vorschlag — und sprengen den eindeutigen Index
         if (b.wert?.trim() && b.wert.trim().length <= FORMULIERUNG_MAX) await g.merke('formulierung', b.ziel, b.wert, b.kontext);
         await g.merke('episode', b.ziel, b.wert?.trim() ? `${b.ziel}: ${b.wert.trim().slice(0, 200)}` : b.ziel, { ...b.kontext, ...(sitzungId ? { sitzungId } : {}) });
+        // Bewusst abgewartet: der Browser wartet auf diese Meldung ohnehin nicht, und /routinen liest gleich danach
         await routinenNeu(nutzer);
       }
     },
@@ -433,7 +532,7 @@ export function agentKern(opt: KernOptionen) {
     /** Für die Einstellungsseite: feste Grundregeln, änderbare Immer/Nie, Anbieter und Modell. */
     async einstellungen() {
       const d = await dnaLaden();
-      return { grundregeln: GRUNDREGELN, regeln: d.regeln, nie: d.nie, anbieter: d.anbieter, modell: d.modell, anbieterListe: (await opt.anbieterListe?.()) ?? [],
+      return { grundregeln: GRUNDREGELN, regeln: d.regeln, nie: d.nie, anbieter: d.anbieter, modell: d.modell, tempo: d.tempo, schnellesModell: d.schnellesModell, anbieterListe: ((await opt.anbieterListe?.()) ?? []).map((a) => ({ ...a, schnellesModell: a.schnellesModell ?? ANBIETER.find((x) => x.id === a.id)?.schnellesModell ?? '' })),
         // Zugangsdaten nie zurück an die Oberfläche — nur, ob welche hinterlegt sind
         mcp: d.mcp.map((m) => ({ name: m.name, url: m.url, aktiv: m.aktiv, mitZugang: !!m.kopf })) };
     },

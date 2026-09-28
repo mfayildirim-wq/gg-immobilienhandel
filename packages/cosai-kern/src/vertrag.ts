@@ -69,6 +69,13 @@ export const DNA = z.object({
   /** Modellanbieter und Modell; leer = Vorgabe des Hosts */
   anbieter: z.string().default(''),
   modell: z.string().default(''),
+  /**
+   * Tempo: `schnell` nimmt für jede Nachricht das schnelle Modell, `gruendlich` immer das eingestellte, `auto` entscheidet
+   * je Nachricht (Recherche, Analyse, Dokumente → gründlich; Bedienen, Lesen, Bestätigen → schnell)
+   */
+  tempo: z.enum(['auto', 'schnell', 'gruendlich']).default('auto'),
+  /** Schnelles Modell; leer = Vorgabe des Anbieters (Anthropic: Haiku), ohne Vorgabe gibt es kein Umschalten */
+  schnellesModell: z.string().default(''),
   /** MCP-Server (Internet-Adresse); `kopf` nur verschlüsselt (Host-Funktion `geheimnis`) */
   mcp: z.array(z.object({ name: z.string(), url: z.string(), kopf: z.string().default(''), aktiv: z.boolean().default(true) })).default([]),
   /** MCP-Werkzeuge, die ohne Rückfrage laufen dürfen (in den Einstellungen freigegeben) */
@@ -87,6 +94,9 @@ export const AgentEinstellungen = z.object({
   nie: z.array(Regel).max(30),
   anbieter: z.string().max(40).default(''),
   modell: z.string().max(100).default(''),
+  // Ohne Angabe bleibt der gespeicherte Wert (ältere Oberflächen kennen die Felder nicht)
+  tempo: z.enum(['auto', 'schnell', 'gruendlich']).optional(),
+  schnellesModell: z.string().max(100).optional(),
 });
 export type AgentEinstellungen = z.infer<typeof AgentEinstellungen>;
 
@@ -128,6 +138,13 @@ export const AgentAntwort = z.object({
   chips: z.array(Chip).default([]),
   /** Der Agent wartet auf eine Bestätigung, bevor er das Ziel sendet */
   wartetAuf: z.object({ frage: z.string(), aktion: Steuerung }).optional(),
+  /** Wie lange der Lauf dauerte, mit welchem Modell, wie viele Modellschritte und Tokens (davon aus dem Cache) */
+  messung: z.object({
+    ms: z.number(),
+    modell: z.string(),
+    schritte: z.number(),
+    tokens: z.object({ eingabe: z.number(), cacheGelesen: z.number(), cacheGeschrieben: z.number(), ausgabe: z.number() }),
+  }).optional(),
 });
 export type AgentAntwort = z.infer<typeof AgentAntwort>;
 
