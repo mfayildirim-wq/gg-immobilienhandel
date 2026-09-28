@@ -87,11 +87,15 @@ export function agentRouten(kern: Kern, nutzerAus: (c: Context) => Nutzer | null
     }
   });
 
-  // Einmal am Tag je Nutzer; `heute` ist das lokale Datum des Browsers
-  app.post('/morgen', async (c) => {
-    const e = await json(c, z.object({ heute: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }));
+  // Tagesübersicht — nur auf Wunsch („Heute zusammenfassen“), nur lesend
+  app.post('/morgen', async (c) => c.json({ antwort: await kern.morgen(nutzerAus(c)!) }));
+
+  // Öffnen und Ortswechsel: Tagesbeginn, Faden des Bereichs oder was es hier gibt — ohne Modellaufruf.
+  // `heute` ist das lokale Datum des Browsers.
+  app.post('/kontext', async (c) => {
+    const e = await json(c, z.object({ ort: z.string().min(1).max(500), heute: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), faehigkeiten: z.boolean().optional() }));
     if (e instanceof Response) return e;
-    return c.json({ antwort: await kern.morgen(nutzerAus(c)!, e.heute) });
+    return c.json(await kern.kontext(nutzerAus(c)!, e));
   });
 
   app.post('/ereignis', async (c) => {

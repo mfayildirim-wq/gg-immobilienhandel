@@ -92,6 +92,24 @@ const mcpCache = new Map<string, { zeit: number; werkzeuge: McpWerkzeug[] }>();
 /** Längste Notiz, die als Formulierung (Vorschlag) gemerkt wird */
 export const FORMULIERUNG_MAX = 500;
 
+/** Der Bereich einer Seite: erster Teil des Pfads (`/deals/abc` → `/deals`). Je Bereich ein Gesprächsfaden. */
+export function bereichVon(ort: string): string {
+  const pfad = ort.split(/[?#]/)[0] ?? '/';
+  const erster = pfad.split('/').filter(Boolean)[0];
+  return erster ? `/${erster}` : '/';
+}
+
+/** Antwort auf einen Ortswechsel oder das Öffnen — ohne Modellaufruf */
+export interface KontextAntwort {
+  art: 'tagesbeginn' | 'fortsetzen' | 'neu';
+  bereich: string;
+  name: string;
+  /** Faden, den „Weitermachen“ fortsetzt (null = keiner) */
+  sitzungId: string | null;
+  text: string;
+  chips: { label: string; wert: string; art: 'kontext' | 'vorschlag' }[];
+}
+
 export const MORGEN_AUFTRAG = 'Guten Morgen. Was steht heute an? Nenne, wie viele Einträge fällig sind, und schlage vor, womit ich anfange. Nur lesen, nichts ändern.';
 
 /** Die vorgegebenen „Immer“-Regeln — in den Einstellungen änderbar */
@@ -254,6 +272,32 @@ export function agentKern(opt: KernOptionen) {
     }
   }
 
+  /** Name eines Bereichs aus der Oberflächenkarte: „Seite Ankauf: …“ → „Ankauf“ */
+  function bereichName(bereich: string): string {
+    const nav = opt.ziele.find((z) => z.ziel.startsWith('nav.') && z.seite === bereich);
+    const name = nav?.beschreibung.match(/^Seite\s+([^:(]+)/)?.[1]?.trim();
+    if (name) return name;
+    const teil = bereich.replace(/^\//, '');
+    return teil ? `${teil[0]!.toUpperCase()}${teil.slice(1)}` : 'Start';
+  }
+
+  /** Vorschläge der App für einen Bereich (Oberflächenkarte) — sonst eine offene Frage */
+  function vorschlaegeFuer(bereich: string): KontextAntwort['chips'] {
+    const liste = opt.ziele.find((z) => z.ziel.startsWith('nav.') && z.seite === bereich)?.vorschlaege ?? [];
+    return (liste.length ? liste : ['Was kann ich hier tun?']).slice(0, 4).map((v) => ({ label: v, wert: v, art: 'vorschlag' as const }));
+  }
+
+  /** Der jüngste Faden (mit einer Nachricht des Nutzers) — in einem Bereich oder überhaupt */
+  async function letzterFaden(nutzer: Nutzer, bereich?: string): Promise<{ sitzungId: string; bereich: string; frage: string } | undefined> {
+    const kandidaten = await db.select({ id: sitzungen.id, ort: sitzungen.ort }).from(sitzungen).where(eq(sitzungen.nutzer, nutzer.id)).orderBy(desc(sitzungen.updatedAt)).limit(50);
+    for (const k of kandidaten) {
+      if (bereich && bereichVon(k.ort ?? '/') !== bereich) continue;
+      const [n] = await db.select({ text: nachrichten.text }).from(nachrichten).where(and(eq(nachrichten.sitzungId, k.id), eq(nachrichten.rolle, 'nutzer'))).orderBy(desc(nachrichten.createdAt)).limit(1);
+      if (n?.text) return { sitzungId: k.id, bereich: bereichVon(k.ort ?? '/'), frage: n.text.length > 120 ? `${n.text.slice(0, 117)}…` : n.text };
+    }
+    return undefined;
+  }
+
   return {
     dna,
     werkzeuge,
@@ -265,13 +309,43 @@ export function agentKern(opt: KernOptionen) {
      * Der Morgenvorschlag: beim ersten Öffnen des Tages (Datum `heute` aus dem Browser, JJJJ-MM-TT) einmal je Nutzer.
      * Der Merker steht vor dem Lauf in `ereignisse` — zwei Fenster gleichzeitig erzeugen so höchstens selten zwei.
      */
-    async morgen(nutzer: Nutzer, heute: string): Promise<AgentAntwort | null> {
-      const [schon] = await db.select({ id: ereignisse.id }).from(ereignisse)
-        .where(and(eq(ereignisse.nutzer, nutzer.id), eq(ereignisse.art, 'morgen'), sql`${ereignisse.kontext}->>'datum' = ${heute}`)).limit(1);
-      if (schon) return null;
-      await db.insert(ereignisse).values({ nutzer: nutzer.id, sitzungId: null, richtung: 'steuerung', art: 'morgen', ziel: null, wert: null, kontext: { datum: heute } });
-      // Niemand hat ihn ausdrücklich angestoßen — deshalb nur lesend: kein steuere, kein merke, keine offene Rückfrage
+    /** Was heute ansteht — nur auf Wunsch des Nutzers („Heute zusammenfassen“), nur lesend, in einem eigenen Faden. */
+    async morgen(nutzer: Nutzer): Promise<AgentAntwort> {
       return nachricht(nutzer, { text: opt.morgenAuftrag ?? MORGEN_AUFTRAG, ort: '/', kontext: {} }, true);
+    },
+
+    /**
+     * Beim Öffnen und bei jedem Ortswechsel: Tagesbeginn (einmal am Tag: weitermachen oder zusammenfassen?), sonst der
+     * Faden des Bereichs (weitermachen oder neu?), sonst was es hier gibt. Ohne Modellaufruf, führt nichts aus.
+     * `faehigkeiten`: nur sagen, was es hier gibt (nach „Neu beginnen“ oder wenn der Agent selbst hierher navigiert hat).
+     */
+    async kontext(nutzer: Nutzer, e: { ort: string; heute: string; faehigkeiten?: boolean }): Promise<KontextAntwort> {
+      const bereich = bereichVon(e.ort);
+      const name = bereichName(bereich);
+      const neu: KontextAntwort = { art: 'neu', bereich, name, sitzungId: null, text: `Du bist bei ${name}. Womit kann ich helfen?`, chips: vorschlaegeFuer(bereich) };
+      if (e.faehigkeiten) return neu;
+      const [tag] = await db.select({ id: ereignisse.id }).from(ereignisse)
+        .where(and(eq(ereignisse.nutzer, nutzer.id), eq(ereignisse.art, 'tag'), sql`${ereignisse.kontext}->>'datum' = ${e.heute}`)).limit(1);
+      if (!tag) {
+        await db.insert(ereignisse).values({ nutzer: nutzer.id, sitzungId: null, richtung: 'beobachtung', art: 'tag', ziel: null, wert: null, kontext: { datum: e.heute } });
+        const letzte = await letzterFaden(nutzer);
+        return {
+          art: 'tagesbeginn', bereich, name, sitzungId: letzte?.sitzungId ?? null,
+          text: letzte ? `Guten Morgen! Zuletzt bei ${bereichName(letzte.bereich)}: „${letzte.frage}“. Dort weitermachen, oder soll ich zusammenfassen, was heute ansteht?` : 'Guten Morgen! Soll ich zusammenfassen, was heute ansteht?',
+          chips: [
+            ...(letzte ? [{ label: 'Weitermachen', wert: `weiter:${letzte.sitzungId}`, art: 'kontext' as const }] : []),
+            { label: 'Heute zusammenfassen', wert: 'morgen', art: 'kontext' },
+            { label: 'Neu beginnen', wert: 'neu', art: 'kontext' },
+          ],
+        };
+      }
+      const faden = await letzterFaden(nutzer, bereich);
+      if (!faden) return neu;
+      return {
+        art: 'fortsetzen', bereich, name, sitzungId: faden.sitzungId,
+        text: `Hier bei ${name} waren wir zuletzt bei: „${faden.frage}“. Weitermachen oder neu beginnen?`,
+        chips: [{ label: 'Weitermachen', wert: `weiter:${faden.sitzungId}`, art: 'kontext' }, { label: 'Neu beginnen', wert: 'neu', art: 'kontext' }],
+      };
     },
 
     async entscheidung(nutzer: Nutzer, e: Entscheidung): Promise<AgentAntwort> {

@@ -40,7 +40,8 @@ export const Chip = z.object({
   label: z.string().min(1),
   /** Was gesendet wird, wenn der Chip gewählt wird (Text an den Agenten oder Entscheidung) */
   wert: z.string().min(1),
-  art: z.enum(['entscheidung', 'vorschlag']).default('vorschlag'),
+  /** kontext: wertet die Oberfläche selbst aus (Faden fortsetzen, neu beginnen, Tagesübersicht) — geht nicht an das Modell */
+  art: z.enum(['entscheidung', 'vorschlag', 'kontext']).default('vorschlag'),
 });
 export type Chip = z.infer<typeof Chip>;
 

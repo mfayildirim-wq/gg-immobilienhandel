@@ -58,13 +58,14 @@ describe.skipIf(!url)('Hono-Routen', () => {
     expect(g.eintraege.length).toBeGreaterThan(0);
     expect(((await (await app.request('/api/agent/gedaechtnis', { method: 'DELETE', headers: { 'x-nutzer': 'hono@example' } })).json()) as { geloescht: number }).geloescht).toBeGreaterThan(0);
   });
-  it('POST /morgen prüft das Datum, antwortet einmal am Tag und danach mit null', async () => {
+  it('POST /morgen fasst auf Wunsch zusammen; POST /kontext prüft die Eingabe und fragt am Tagesbeginn', async () => {
     const app = bauen([ki('Guten Morgen, heute ist wenig los.')]);
-    const tag = einmaligerTag();
-    expect((await post(app, '/api/agent/morgen', { heute: 'gestern' })).status).toBe(400);
-    const erst = (await (await post(app, '/api/agent/morgen', { heute: tag })).json()) as { antwort: { text: string } | null };
-    expect(erst.antwort?.text).toBe('Guten Morgen, heute ist wenig los.');
-    expect(await (await post(app, '/api/agent/morgen', { heute: tag })).json()).toEqual({ antwort: null });
+    const erst = (await (await post(app, '/api/agent/morgen', {})).json()) as { antwort: { text: string } };
+    expect(erst.antwort.text).toBe('Guten Morgen, heute ist wenig los.');
+    expect((await post(app, '/api/agent/kontext', { ort: '/', heute: 'gestern' })).status).toBe(400);
+    const k = (await (await post(app, '/api/agent/kontext', { ort: '/deals', heute: einmaligerTag() })).json()) as { art: string; chips: { wert: string }[] };
+    expect(k.art).toBe('tagesbeginn');
+    expect(k.chips.map((c) => c.wert)).toContain('morgen');
   });
 
   it('Einstellungen: GET zeigt die Grundregeln, PUT prüft die Eingabe und speichert', async () => {

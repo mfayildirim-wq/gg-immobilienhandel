@@ -20,7 +20,8 @@ import { Chip, DNA, Steuerung } from './vertrag.ts';
 
 /** Ein Ziel der Oberfläche, wie der Host es beschreibt (aus den `data-agent`-Marken). */
 /** `schreibt`: das Ziel ändert Daten (Knopf, der speichert; Feld, das bei Änderung sofort speichert) — jede Aktion darauf wird bestätigt */
-export const ZielBeschreibung = z.object({ ziel: z.string(), beschreibung: z.string(), seite: z.string().optional(), schreibt: z.boolean().optional() });
+/** `vorschlaege` (an Seitenzielen `nav.*`): was der Agent auf dieser Seite anbietet — liefert die App */
+export const ZielBeschreibung = z.object({ ziel: z.string(), beschreibung: z.string(), seite: z.string().optional(), schreibt: z.boolean().optional(), vorschlaege: z.array(z.string()).optional() });
 export type ZielBeschreibung = z.infer<typeof ZielBeschreibung>;
 
 /** Ruft eine Operation der Host-App auf — in gg-immo in-process über `app.request` mit dem Token des Nutzers. */
