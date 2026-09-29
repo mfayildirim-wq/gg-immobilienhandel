@@ -178,6 +178,8 @@ export const ENDWORT_MS = 400;
  * (zum Testen 30 s, Wunsch des Auftraggebers 28.09.)
  */
 export const GESPRAECH_MS = 30_000;
+/** Nach dem Sprechen des Agenten so lange warten, bevor wieder zugehört wird (Nachhall aus dem Lautsprecher) */
+export const NACHHALL_MS = 600;
 /** Längste Aufnahme */
 const AUFNAHME_MAX_MS = 30_000;
 
@@ -365,7 +367,7 @@ export function useZuhoeren(aufText: (text: string, fertig: boolean) => void, op
       erkennung.current = null;
       if (dauerRef.current) {
         // Chrome beendet die Erkennung nach Stille von selbst — im Dauerbetrieb gleich wieder zuhören
-        window.setTimeout(() => { if (dauerRef.current) erkennenRef.current(); }, 100);
+        window.setTimeout(() => { if (dauerRef.current && !optionenRef.current.stumm) erkennenRef.current(); }, 100);
         return;
       }
       setHoert(false);
@@ -385,6 +387,21 @@ export function useZuhoeren(aufText: (text: string, fertig: boolean) => void, op
   }, [pegelStarten, pegelStoppen]);
   const erkennenRef = useRef(erkennen);
   erkennenRef.current = erkennen;
+
+  // Solange der Agent spricht oder arbeitet: gar nicht zuhören. Die Erkennung des Browsers sammelt sonst seine eigene
+  // Stimme und gibt sie mit dem nächsten Ergebnis heraus — dann stand der Text des Agenten im Feld und ging ab (Echo).
+  // Danach im Dauerbetrieb wieder an, mit etwas Abstand gegen Nachhall.
+  useEffect(() => {
+    if (stumm) {
+      const e = erkennung.current;
+      if (e) { erkennung.current = null; e.onresult = null; e.onend = null; e.onerror = null; e.abort(); }
+      if (!dauerRef.current) { setHoert(false); pegelStoppen(); }
+      return;
+    }
+    if (!dauerRef.current) return;
+    const t = window.setTimeout(() => { if (dauerRef.current && !erkennung.current && !optionenRef.current.stumm) erkennenRef.current(); }, NACHHALL_MS);
+    return () => window.clearTimeout(t);
+  }, [stumm, pegelStoppen]);
 
   const starte = useCallback(() => {
     if (!erkennungKlasse()) { void aufnahmeStarten(); return; }

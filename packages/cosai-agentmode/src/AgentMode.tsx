@@ -432,6 +432,8 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
   };
   /** 🎤 (und der Kreis): mit 👂 bleibt es an bis zum nächsten Druck, sonst einmal sprechen bis zur Pause oder zum Endwort */
   const mikrofon = () => {
+    // Spricht der Agent noch, verstummt er zuerst — sonst hört das Mikrofon seine Stimme
+    if (vorlesen.spricht) vorlesen.stoppe();
     if (ohrModus && zuhoeren.dauerMoeglich) { dauerSchalten(!zuhoeren.dauer); return; }
     if (zuhoeren.hoert) zuhoeren.stoppe(); else zuhoeren.starte();
   };

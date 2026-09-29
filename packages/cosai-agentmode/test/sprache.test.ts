@@ -215,6 +215,8 @@ describe('Gesprächsfenster', () => {
     act(() => { vi.advanceTimersByTime(40_000); });
     stumm = false; rerender();
     expect(result.current.wach).toBe(true);
+    // Nach der Antwort hört es erst nach kurzem Abstand wieder zu (Nachhall)
+    act(() => { vi.advanceTimersByTime(700); });
     sage('öffne den ersten');
     expect(texte.at(-1)?.[0]).toBe('öffne den ersten');
     // Ohne Antwort, nach Ablauf: Startwort wieder nötig
@@ -236,5 +238,34 @@ describe('erkennungsFehler', () => {
     expect(erkennungsFehler('network')).toMatch(/Online-Dienst/);
     expect(erkennungsFehler('not-allowed')).toMatch(/erlauben/);
     expect(erkennungsFehler('no-speech')).toMatch(/Nichts gehört/);
+  });
+});
+
+describe('Kein Echo', () => {
+  it('hört nicht zu, solange der Agent spricht — Gehörtes aus dieser Zeit geht verloren, danach wieder an', async () => {
+    const { act, renderHook } = await import('@testing-library/react');
+    const { useZuhoeren, STILLE_MS, NACHHALL_MS } = await import('../src/sprache.ts');
+    const { instanzen, weg } = fakeErkennung();
+    vi.useFakeTimers();
+    const texte: string[] = [];
+    let stumm = false;
+    const { result, rerender } = renderHook(() => useZuhoeren((t, f) => { if (f) texte.push(t); }, { rufname: 'Superagent', stumm }));
+    act(() => { result.current.dauerSchalten(true); });
+    const erste = instanzen.at(-1)!;
+    stumm = true; rerender();
+    expect(erste.laeuft).toBe(false);
+    // Was jetzt noch ankäme (die Stimme des Agenten), geht nirgendwohin
+    act(() => { erste.sage('Superagent das sagt der Agent selbst'); vi.advanceTimersByTime(STILLE_MS + 10); });
+    expect(texte).toEqual([]);
+    stumm = false; rerender();
+    act(() => { vi.advanceTimersByTime(NACHHALL_MS + 10); });
+    const zweite = instanzen.at(-1)!;
+    expect(zweite).not.toBe(erste);
+    expect(zweite.laeuft).toBe(true);
+    act(() => { zweite.sage('Superagent was ist fällig'); vi.advanceTimersByTime(STILLE_MS + 10); });
+    expect(texte).toEqual(['was ist fällig']);
+    act(() => { result.current.dauerSchalten(false); });
+    vi.useRealTimers();
+    weg();
   });
 });
