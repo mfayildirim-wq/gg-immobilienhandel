@@ -56,6 +56,8 @@ export function werkzeugeAusOpenapi(doc: OpenapiDokument, opt: { nurLesend?: boo
         if (text) feld = feld.describe(text);
         felder[p.name] = p.required || p.in === 'path' ? feld : feld.optional();
       }
+      // Lange Listen: der Kern filtert die Antwort auf passende Einträge, bevor sie gekürzt wird (geht in jeder App)
+      if (lesend) felder._suche = z.string().optional().describe('Nur Einträge, die diesen Text enthalten (z. B. Adresse oder Name) — für lange Listen, die sonst gekürzt würden');
       const rumpf = op.requestBody?.content?.['application/json']?.schema;
       werkzeuge.push({
         name: werkzeugName(methode, pfad),

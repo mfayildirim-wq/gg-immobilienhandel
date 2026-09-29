@@ -114,6 +114,8 @@ function systemtext(dna: DNA, ziele: ZielBeschreibung[], erinnerungen: string[],
     zielListe,
     'Reihenfolge einer Bedienung: navigiere (Seite) → oeffne (Eintrag/Reiter) → fuelle (Feld) → sende (Knopf). Vor jeder Aktion, die etwas speichert, wird der Nutzer gefragt; das übernimmt die Anwendung.',
     'Lesen (Listen, Details) machst du direkt über die GET-Werkzeuge. Antworte danach mit dem, was für den Nutzer wichtig ist, nicht mit Rohdaten.',
+    'Suchst du einen bestimmten Eintrag (z. B. einen Deal über seine Adresse), gib beim GET-Werkzeug `_suche` mit — lange Listen werden sonst gekürzt und der Eintrag fehlt.',
+    'Einen bestimmten Eintrag öffnest du mit `steuere` (art „oeffne“) auf einem Ziel, dessen Beschreibung „wert = …-ID“ nennt, und setzt `wert` auf die ID aus dem Lesewerkzeug.',
     'Für Recherche außerhalb der Anwendung (Lage, Umfeld, Marktpreise, vergleichbare Angebote) nutze die Websuche, falls vorhanden. Nenne dann die Quellen mit Adresse und trenne Gefundenes klar von deiner Einschätzung.',
     'Nach einer Recherche oder Analyse rufe `ergebnis_speichern` direkt auf, falls vorhanden — frage nicht selbst im Text, ob gespeichert werden soll; die Anwendung fragt den Nutzer und speichert nur nach seinem „Ja“.',
     'Rufe am Ende JEDER Antwort `chips` mit 2–4 passenden nächsten Schritten auf (kurze Beschriftungen) — auch nach einer einfachen Auskunft. Schreibe die nächsten Schritte nicht als Liste in den Text.',
@@ -191,6 +193,33 @@ export function chipsAusText(text: string): { text: string; chips: { label: stri
   return { text: rest || text, chips };
 }
 
+/** Vergleichbar machen: klein, ß → ss, „Straße/Strasse“ → „str“, Satzzeichen weg */
+function suchform(t: string): string {
+  return t.toLowerCase().replace(/ß/g, 'ss').replace(/strasse\b|str\./g, 'str').replace(/[^\p{L}\p{N} ]+/gu, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Filtert eine JSON-Antwort auf Einträge, die alle Wörter der Suche enthalten — Listen oben oder eine Ebene tiefer.
+ * So findet der Agent „Liststraße 74“ unter 383 Deals, auch wenn die App selbst keine Suche anbietet.
+ */
+export function listeFiltern(text: string, suche: string): string {
+  let daten: unknown;
+  try { daten = JSON.parse(text); } catch { return text; }
+  const woerter = suchform(suche).split(' ').filter(Boolean);
+  if (!woerter.length) return text;
+  const passt = (e: unknown) => { const f = suchform(JSON.stringify(e)); return woerter.every((w) => f.includes(w)); };
+  if (Array.isArray(daten)) {
+    const treffer = daten.filter(passt);
+    return JSON.stringify({ _suche: suche, _treffer: treffer.length, _von: daten.length, eintraege: treffer });
+  }
+  if (daten && typeof daten === 'object') {
+    const aus: Record<string, unknown> = { _suche: suche };
+    for (const [k, v] of Object.entries(daten)) aus[k] = Array.isArray(v) ? v.filter(passt) : v;
+    return JSON.stringify(aus);
+  }
+  return text;
+}
+
 /**
  * Kürzt eine Werkzeug-Antwort für das Modell. JSON bleibt gültig: Listen werden von hinten beschnitten (oben und eine
  * Ebene tiefer), mit Hinweis `_gekuerzt` — ein abgeschnittener Text wäre für das Modell wertlos.
@@ -259,8 +288,10 @@ export function werkzeugeBauen(opt: GraphOptionen): StructuredToolInterface[] {
 
   const hostWerkzeuge = lesend.map((w) =>
     tool(async (args) => {
-      const antwort = await opt.aufruf(w.methode, adresse(w, args as Record<string, string | undefined>));
-      return antwort.status >= 400 ? `Fehler ${antwort.status}: ${kuerzen(antwort.text, 500)}` : kuerzen(antwort.text, grenze);
+      const { _suche: suche, ...rest } = args as Record<string, string | undefined>;
+      const antwort = await opt.aufruf(w.methode, adresse(w, rest));
+      if (antwort.status >= 400) return `Fehler ${antwort.status}: ${kuerzen(antwort.text, 500)}`;
+      return kuerzen(suche?.trim() ? listeFiltern(antwort.text, suche) : antwort.text, grenze);
     }, { name: w.name, description: w.beschreibung, schema: w.parameter }),
   );
 

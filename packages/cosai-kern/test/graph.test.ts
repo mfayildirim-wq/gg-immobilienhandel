@@ -175,3 +175,13 @@ describe('ersatzVorschlaege', () => {
     expect(ersatzVorschlaege([], '/').map((c) => c.label)).toEqual(['Was ist heute fällig?', 'Was kann ich hier tun?']);
   });
 });
+
+describe('listeFiltern', () => {
+  it('findet einen Eintrag in einer langen Liste — auch „Str.“ statt „Straße“', async () => {
+    const { listeFiltern } = await import('../src/graph.ts');
+    const liste = JSON.stringify([{ id: 'a', adresse: 'Liststraße 74', stadt: 'Stuttgart' }, { id: 'b', adresse: 'Hauptstr. 2', stadt: 'Esslingen' }]);
+    expect(JSON.parse(listeFiltern(liste, 'Liststr. 74 Stuttgart'))).toEqual({ _suche: 'Liststr. 74 Stuttgart', _treffer: 1, _von: 2, eintraege: [{ id: 'a', adresse: 'Liststraße 74', stadt: 'Stuttgart' }] });
+    expect(JSON.parse(listeFiltern(JSON.stringify({ deals: JSON.parse(liste), anzahl: 2 }), 'hauptstraße')).deals).toEqual([{ id: 'b', adresse: 'Hauptstr. 2', stadt: 'Esslingen' }]);
+    expect(listeFiltern('kein json', 'x')).toBe('kein json');
+  });
+});

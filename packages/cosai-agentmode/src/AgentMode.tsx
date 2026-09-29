@@ -281,9 +281,10 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
     if (beschaeftigt || handelt) { unterwegsGewechselt.current = true; return; }
     if (wartetAuf) return;
     gezeigtFuer.current = bereich;
-    const behalten = unterwegsGewechselt.current;
-    unterwegsGewechselt.current = false;
-    void kontextZeigen({ behalten });
+    // Hat der Agent selbst die Seite gewechselt (Teil seiner Antwort), bleibt seine Antwort stehen — keine Begrüßung
+    // des neuen Bereichs darüber (sonst stand da „Du bist bei Deals“ statt „Ich habe den Deal geöffnet“)
+    if (unterwegsGewechselt.current) { unterwegsGewechselt.current = false; return; }
+    void kontextZeigen({});
   }, [bereich, beschaeftigt, handelt, kontextZeigen, wartetAuf]);
 
   useEffect(() => {
