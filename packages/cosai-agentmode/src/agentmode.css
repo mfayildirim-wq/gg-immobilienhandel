@@ -146,7 +146,7 @@
 .am-mikrofon .am-symbol { border-radius: 6px 0 0 6px; }
 .am-mikrofon .am-pfeil { width: 18px; font-size: 11px; border-radius: 0 6px 6px 0; border-left: 1px solid var(--am-linie); }
 .am-ohr-marke { position: absolute; right: -3px; bottom: -4px; font-size: 10px; }
-.am-menue { position: absolute; top: calc(100% + 6px); right: 0; z-index: 1004; width: 300px; display: grid; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--am-flaeche); color: var(--am-text); border: 1px solid var(--am-linie); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); font-size: 13px; }
+.am-menue { position: static; width: min(560px, 100%); display: grid; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--am-flaeche); color: var(--am-text); border: 1px solid var(--am-linie); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); font-size: 13px; }
 .am-menue-zeile { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
 .am-menue-feld { display: grid; gap: 3px; font-size: 12px; font-weight: 600; }
 .am-menue-feld input { font: inherit; font-weight: 400; font-size: 13px; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--am-linie); background: var(--am-flaeche-2); color: var(--am-text); }
@@ -155,3 +155,6 @@
 /* Während des Laufs: Text entsteht, der laufende Schritt steht klein darunter */
 .am-blase[data-live] .am-blase-text { white-space: pre-wrap; }
 .am-schritt { display: block; margin-top: 2px; font-size: 12px; color: var(--am-text-2, var(--am-text)); opacity: 0.7; font-style: italic; }
+
+/* Overlay und Einbettung: dezent durchscheinend — die App dahinter bleibt zu ahnen */
+.am-block.am-overlay-oben, .am-einbettung > .am-block { background: color-mix(in srgb, var(--am-flaeche-2) 80%, transparent); backdrop-filter: blur(8px) saturate(1.1); -webkit-backdrop-filter: blur(8px) saturate(1.1); }

@@ -75,7 +75,11 @@ function Sprachmenue({ ohr, ohrMoeglich, ohrSchalten, rufname, endwoerter, speic
   useEffect(() => () => stand.current.speichern(stand.current.start, stand.current.ende), []);
   useEffect(() => {
     const taste = (e: KeyboardEvent) => { if (e.key === 'Escape') zu.current(); };
-    const klick = (e: MouseEvent) => { if (feld.current && !feld.current.parentElement?.contains(e.target as Node)) zu.current(); };
+    // composedPath: im Shadow DOM (Einbettung) zeigt e.target nur den Host — sonst schlösse jeder Klick das Menü
+    const klick = (e: MouseEvent) => {
+      const pfad = e.composedPath();
+      if (feld.current && !pfad.includes(feld.current) && !pfad.some((n) => n instanceof Element && n.getAttribute('aria-label') === 'Sprachoptionen')) zu.current();
+    };
     window.addEventListener('keydown', taste);
     document.addEventListener('mousedown', klick);
     return () => { window.removeEventListener('keydown', taste); document.removeEventListener('mousedown', klick); };
@@ -514,16 +518,6 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
               data-tipp={zuhoeren.dauer ? `Hört auf „${rufname}“ — drücken zum Ausschalten` : mikrofonAn ? 'Zuhören beenden' : ohrModus ? `Immer zuhören (auf „${rufname}“)` : 'Drücken und sprechen'}
               onClick={mikrofon}>🎤{ohrModus && <span className="am-ohr-marke" aria-hidden>👂</span>}</button>
             <button type="button" className="am-symbol am-pfeil" aria-haspopup="dialog" aria-expanded={sprachMenue} aria-label="Sprachoptionen" data-tipp="Sprachoptionen" onClick={() => setSprachMenue((o) => !o)}>▾</button>
-            {sprachMenue && (
-              <Sprachmenue ohr={ohrModus} ohrMoeglich={zuhoeren.dauerMoeglich} ohrSchalten={ohrSchalten}
-                rufname={rufname} endwoerter={endwoerter} schliessen={() => setSprachMenue(false)}
-                speichern={(r, e) => {
-                  const n = r.trim() || RUFNAME;
-                  setRufname(n); schreiben(RUFNAME_SCHLUESSEL, n === RUFNAME ? null : n);
-                  const liste = e.split(',').map((w) => w.trim()).filter(Boolean);
-                  setEndwoerter(liste); schreiben(ENDWOERTER_SCHLUESSEL, liste.join(', ') === ENDWOERTER.join(', ') ? null : liste.join(', '));
-                }} />
-            )}
           </div>
         )}
         <button type="button" className="am-symbol" aria-pressed={transkriptOffen} aria-label="Transkript" data-tipp="Transkript" onClick={() => setTranskriptOffen((o) => !o)}>📜</button>
@@ -544,8 +538,19 @@ export function AgentMode({ api, anfrage, modus, navigiere, ort, kontext = {}, s
         {einstellungen && <button type="button" className="am-symbol" aria-label="Einstellungen des Agenten" data-tipp="Einstellungen (Immer/Nie, Modell)" onClick={einstellungen}>⚙</button>}
       </form>
       </>)}
-      {(fehler || transkriptOffen || gedaechtnisOffen) && (
+      {(fehler || transkriptOffen || gedaechtnisOffen || sprachMenue) && (
         <div className="am-unterteil">
+          {/* Sprachoptionen klappen im Block auf und zu — schwebend wurden sie abgeschnitten (Einbettung) */}
+        {sprachMenue && (
+          <Sprachmenue ohr={ohrModus} ohrMoeglich={zuhoeren.dauerMoeglich} ohrSchalten={ohrSchalten}
+            rufname={rufname} endwoerter={endwoerter} schliessen={() => setSprachMenue(false)}
+            speichern={(r, e) => {
+              const n = r.trim() || RUFNAME;
+              setRufname(n); schreiben(RUFNAME_SCHLUESSEL, n === RUFNAME ? null : n);
+              const liste = e.split(',').map((w) => w.trim()).filter(Boolean);
+              setEndwoerter(liste); schreiben(ENDWOERTER_SCHLUESSEL, liste.join(', ') === ENDWOERTER.join(', ') ? null : liste.join(', '));
+            }} />
+        )}
           {fehler && <span className="am-hinweis" role="alert">{fehler}</span>}
           {transkriptOffen && (
             <div className="am-transkript" aria-label="Transkript">
