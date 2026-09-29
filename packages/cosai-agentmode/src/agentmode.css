@@ -158,3 +158,6 @@
 
 /* Overlay und Einbettung: dezent durchscheinend — die App dahinter bleibt zu ahnen */
 .am-block.am-overlay-oben, .am-einbettung > .am-block { background: color-mix(in srgb, var(--am-flaeche-2) 80%, transparent); backdrop-filter: blur(8px) saturate(1.1); -webkit-backdrop-filter: blur(8px) saturate(1.1); }
+
+/* Sprachoptionen rechts, unter dem Mikrofon */
+.am-unterteil > .am-menue { margin-left: auto; justify-self: end; }
