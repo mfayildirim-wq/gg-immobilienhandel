@@ -129,6 +129,50 @@ function systemtext(dna: DNA, ziele: ZielBeschreibung[], erinnerungen: string[],
 }
 
 /**
+ * Chips aus dem Text retten: Schwächere Modelle (qwen3, mistral) schreiben die nächsten Schritte als Liste in die
+ * Antwort, statt `chips` aufzurufen. Erkannt werden am Ende der Antwort
+ *  - eine Überschrift wie „Nächste Schritte:“ mit kurzen Aufzählungspunkten,
+ *  - `<chips> {"label": …, "wert": …} …` und
+ *  - Markdown-Links auf Ziele (`[Deal öffnen](#nav.deals)`).
+ * Die Liste wird aus dem Text genommen und als Chips geliefert; ohne solchen Schluss bleibt alles, wie es ist.
+ */
+export function chipsAusText(text: string): { text: string; chips: { label: string; wert: string }[] } {
+  const leer = { text, chips: [] as { label: string; wert: string }[] };
+  const sauber = (t: string) => t.replace(/\*\*|__/g, '').replace(/\s+/g, ' ').trim();
+  // <chips> {…} {…}
+  const block = /<chips>([\s\S]*?)(<\/chips>|$)/i.exec(text);
+  if (block) {
+    const chips = [...block[1]!.matchAll(/\{[^{}]*\}/g)].flatMap((m) => {
+      try { const o = JSON.parse(m[0]) as { label?: string; wert?: string }; return o.label ? [{ label: sauber(o.label), wert: sauber(o.wert && !o.wert.includes('.') ? o.wert : o.label) }] : []; } catch { return []; }
+    });
+    if (chips.length) return { text: text.slice(0, block.index).trim(), chips: chips.slice(0, 6) };
+  }
+  const zeilen = text.replace(/\s+(?=(?:[-•*]|\d+\.)\s)/g, '\n').split('\n');
+  // Vom Ende her: Aufzählungspunkte sammeln, davor eine Überschrift „Nächste Schritte:“ o. ä.
+  const punkte: string[] = [];
+  let i = zeilen.length - 1;
+  while (i >= 0 && !zeilen[i]!.trim()) i -= 1;
+  for (; i >= 0; i -= 1) {
+    const m = /^\s*(?:[-•*]|\d+[.)])\s+(.+)$/.exec(zeilen[i]!);
+    if (!m) break;
+    punkte.unshift(m[1]!);
+  }
+  if (!punkte.length || punkte.length > 6) return leer;
+  const kopf = zeilen[i] ?? '';
+  const kopfPasst = /(nächste[n]? schritte?|möglichkeiten|vorschläge|optionen|was möchtest du|wie geht es weiter|weiter mit|du kannst)\W*$/i.test(sauber(kopf).replace(/[:*]+$/, '').trim() + ':') || /(nächste[n]? schritte?|möglichkeiten|vorschläge|optionen)/i.test(kopf);
+  const chips = punkte.map((p) => {
+    const link = /^\[([^\]]+)\]\(#?([^)]*)\)/.exec(p.trim());
+    const label = sauber(link ? link[1]! : p).replace(/[.!]$/, '');
+    return { label, wert: label };
+  });
+  if (!kopfPasst || chips.some((c) => !c.label || c.label.length > 60)) return leer;
+  // Die Überschrift kann in derselben Zeile wie der Satz davor stehen: nur sie abschneiden
+  const kopfOhne = kopf.replace(/[\s*_]*(nächste[n]? schritte?|möglichkeiten|vorschläge|optionen|was möchtest du[^:]*|wie geht es weiter|weiter mit|du kannst)[\s*_]*:?[\s*_]*$/i, '').trimEnd();
+  const rest = [...zeilen.slice(0, i), kopfOhne].join('\n').trim();
+  return { text: rest || text, chips };
+}
+
+/**
  * Kürzt eine Werkzeug-Antwort für das Modell. JSON bleibt gültig: Listen werden von hinten beschnitten (oben und eine
  * Ebene tiefer), mit Hinweis `_gekuerzt` — ein abgeschnittener Text wäre für das Modell wertlos.
  */

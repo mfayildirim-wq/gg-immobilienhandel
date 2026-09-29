@@ -131,3 +131,26 @@ describe('nurEinWerkzeug', () => {
     expect(nurEinWerkzeug(einzeln)).toBe(einzeln);
   });
 });
+
+describe('chipsAusText', () => {
+  it('macht aus „Nächste Schritte:“ mit Punkten Chips und nimmt sie aus dem Text', async () => {
+    const { chipsAusText } = await import('../src/graph.ts');
+    expect(chipsAusText('Der Deal wurde als erledigt markiert. **Nächste Schritte:** - Nächsten Deal öffnen - Makler anzeigen')).toEqual({
+      text: 'Der Deal wurde als erledigt markiert.', chips: [{ label: 'Nächsten Deal öffnen', wert: 'Nächsten Deal öffnen' }, { label: 'Makler anzeigen', wert: 'Makler anzeigen' }],
+    });
+    expect(chipsAusText('Erledigt.\n\nNächste Schritte:\n• Nächsten Deal öffnen\n• Makler anzeigen').chips.map((c) => c.label)).toEqual(['Nächsten Deal öffnen', 'Makler anzeigen']);
+  });
+  it('liest <chips>-Blöcke und Markdown-Links auf Ziele', async () => {
+    const { chipsAusText } = await import('../src/graph.ts');
+    expect(chipsAusText('Es sind 0 fällig. <chips> {"art": "vorschlag", "label": "Deal öffnen", "wert": "nav.deals"} {"label": "Makler zeigen", "wert": "Zeige die Makler"}')).toEqual({
+      text: 'Es sind 0 fällig.', chips: [{ label: 'Deal öffnen', wert: 'Deal öffnen' }, { label: 'Makler zeigen', wert: 'Zeige die Makler' }],
+    });
+    expect(chipsAusText('Kommentar gespeichert.\n\nMöglichkeiten:\n- [Deal erledigt](#deal.erledigt)\n- [Nächster Kontakt](#deal.naechster)').chips.map((c) => c.label)).toEqual(['Deal erledigt', 'Nächster Kontakt']);
+  });
+  it('lässt gewöhnliche Aufzählungen im Inhalt stehen', async () => {
+    const { chipsAusText } = await import('../src/graph.ts');
+    const t = 'Fällig sind:\n- Musterweg 1\n- Hauptstraße 2';
+    expect(chipsAusText(t)).toEqual({ text: t, chips: [] });
+    expect(chipsAusText('Alles erledigt.')).toEqual({ text: 'Alles erledigt.', chips: [] });
+  });
+});

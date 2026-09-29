@@ -10,7 +10,7 @@ import { Command } from '@langchain/langgraph';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { DrizzleSaver } from './checkpointer.ts';
 import { gedaechtnis as gedaechtnisBauen, type Db, type Gedaechtnis } from './gedaechtnis.ts';
-import { graphBauen, GRUNDREGELN, letzterText, type Aufruf, type WebWerkzeuge, type ZielBeschreibung } from './graph.ts';
+import { chipsAusText, graphBauen, GRUNDREGELN, letzterText, type Aufruf, type WebWerkzeuge, type ZielBeschreibung } from './graph.ts';
 export { GRUNDREGELN } from './graph.ts';
 import { katalogFingerabdruck, werkzeugeAusOpenapi, type KatalogWerkzeug, type OpenapiDokument } from './katalog.ts';
 import { ergebnisseVon } from './ergebnisse.ts';
@@ -308,10 +308,15 @@ export function agentKern(opt: KernOptionen) {
     const werte = stand.values as { messages: import('@langchain/core/messages').BaseMessage[]; steuerung: Steuerung[]; chips: Chip[] };
     const unterbrechung = stand.tasks.flatMap((t) => t.interrupts ?? [])[0]?.value as { frage: string; aktion: Steuerung; vorher: Steuerung[] } | undefined;
     const steuerung = [...werte.steuerung, ...(unterbrechung?.vorher ?? [])];
-    const text = letzterText(werte.messages.slice(vorher)) || (unterbrechung ? unterbrechung.frage : '');
-    const chips: Chip[] = unterbrechung
+    let text = letzterText(werte.messages.slice(vorher)) || (unterbrechung ? unterbrechung.frage : '');
+    let chips: Chip[] = unterbrechung
       ? [{ label: 'Ja, ausführen', wert: 'ja', art: 'entscheidung' }, { label: 'Nein', wert: 'nein', art: 'entscheidung' }]
       : werte.chips;
+    // Hat das Modell die nächsten Schritte als Liste geschrieben statt `chips` zu rufen: daraus Chips machen
+    if (!unterbrechung && !chips.length) {
+      const gerettet = chipsAusText(text);
+      if (gerettet.chips.length) { text = gerettet.text; chips = gerettet.chips.map((c) => ({ ...c, art: 'vorschlag' as const })); }
+    }
     const messung = messen(werte.messages.slice(vorher), start);
     messung.modell ||= modellNamen.get(graph) ?? '';
     const antwort: AgentAntwort = { sitzungId, text, steuerung, chips, ...(unterbrechung ? { wartetAuf: { frage: unterbrechung.frage, aktion: unterbrechung.aktion } } : {}), messung };
