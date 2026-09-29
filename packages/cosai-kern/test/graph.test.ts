@@ -148,6 +148,15 @@ describe('chipsAusText', () => {
     });
     expect(chipsAusText('Kommentar gespeichert.\n\nMöglichkeiten:\n- [Deal erledigt](#deal.erledigt)\n- [Nächster Kontakt](#deal.naechster)').chips.map((c) => c.label)).toEqual(['Deal erledigt', 'Nächster Kontakt']);
   });
+  it('kürzt lange Punkte auf dem Chip — gesendet wird der ganze Satz', async () => {
+    const { chipsAusText } = await import('../src/graph.ts');
+    const r = chipsAusText('Fertig. **Nächste Schritte:** - Prüfe **Sandra Seibold** (Furtäcker 14A: 111 Tage nicht kontaktiert) auf Stagnation und aktualisiere den Status. - Makler anrufen');
+    expect(r.text).toBe('Fertig.');
+    expect(r.chips[0]!.wert).toBe('Prüfe Sandra Seibold (Furtäcker 14A: 111 Tage nicht kontaktiert) auf Stagnation und aktualisiere den Status');
+    expect(r.chips[0]!.label.length).toBeLessThanOrEqual(50);
+    expect(r.chips[1]).toEqual({ label: 'Makler anrufen', wert: 'Makler anrufen' });
+  });
+
   it('lässt gewöhnliche Aufzählungen im Inhalt stehen', async () => {
     const { chipsAusText } = await import('../src/graph.ts');
     const t = 'Fällig sind:\n- Musterweg 1\n- Hauptstraße 2';

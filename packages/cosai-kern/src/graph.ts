@@ -160,12 +160,14 @@ export function chipsAusText(text: string): { text: string; chips: { label: stri
   if (!punkte.length || punkte.length > 6) return leer;
   const kopf = zeilen[i] ?? '';
   const kopfPasst = /(nächste[n]? schritte?|möglichkeiten|vorschläge|optionen|was möchtest du|wie geht es weiter|weiter mit|du kannst)\W*$/i.test(sauber(kopf).replace(/[:*]+$/, '').trim() + ':') || /(nächste[n]? schritte?|möglichkeiten|vorschläge|optionen)/i.test(kopf);
+  // Lange Punkte: kurze Beschriftung auf dem Chip, gesendet wird der ganze Satz
+  const kurz = (t: string) => (t.length <= 48 ? t : `${t.slice(0, 46).replace(/\s+\S*$/, '')} …`);
   const chips = punkte.map((p) => {
     const link = /^\[([^\]]+)\]\(#?([^)]*)\)/.exec(p.trim());
-    const label = sauber(link ? link[1]! : p).replace(/[.!]$/, '');
-    return { label, wert: label };
+    const wert = sauber(link ? link[1]! : p).replace(/[.!]$/, '');
+    return { label: kurz(wert), wert };
   });
-  if (!kopfPasst || chips.some((c) => !c.label || c.label.length > 100)) return leer;
+  if (!kopfPasst || chips.some((c) => !c.wert)) return leer;
   // Die Überschrift kann in derselben Zeile wie der Satz davor stehen: nur sie abschneiden
   const kopfOhne = kopf.replace(/[\s*_]*(nächste[n]? schritte?|möglichkeiten|vorschläge|optionen|was möchtest du[^:]*|wie geht es weiter|weiter mit|du kannst)[\s*_]*:?[\s*_]*$/i, '').trimEnd();
   const rest = [...zeilen.slice(0, i), kopfOhne].join('\n').trim();
