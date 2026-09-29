@@ -313,9 +313,13 @@ export function agentKern(opt: KernOptionen) {
       ? [{ label: 'Ja, ausführen', wert: 'ja', art: 'entscheidung' }, { label: 'Nein', wert: 'nein', art: 'entscheidung' }]
       : werte.chips;
     // Hat das Modell die nächsten Schritte als Liste geschrieben statt `chips` zu rufen: daraus Chips machen
-    if (!unterbrechung && !chips.length) {
+    // (Hat es beides getan, bleiben seine Chips — die Liste verschwindet trotzdem aus dem Text.)
+    if (!unterbrechung) {
       const gerettet = chipsAusText(text);
-      if (gerettet.chips.length) { text = gerettet.text; chips = gerettet.chips.map((c) => ({ ...c, art: 'vorschlag' as const })); }
+      if (gerettet.chips.length) {
+        text = gerettet.text;
+        if (!chips.length) chips = gerettet.chips.map((c) => ({ ...c, art: 'vorschlag' as const }));
+      }
     }
     const messung = messen(werte.messages.slice(vorher), start);
     messung.modell ||= modellNamen.get(graph) ?? '';

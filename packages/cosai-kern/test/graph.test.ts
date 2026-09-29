@@ -138,6 +138,7 @@ describe('chipsAusText', () => {
     expect(chipsAusText('Der Deal wurde als erledigt markiert. **Nächste Schritte:** - Nächsten Deal öffnen - Makler anzeigen')).toEqual({
       text: 'Der Deal wurde als erledigt markiert.', chips: [{ label: 'Nächsten Deal öffnen', wert: 'Nächsten Deal öffnen' }, { label: 'Makler anzeigen', wert: 'Makler anzeigen' }],
     });
+    expect(chipsAusText('Heute sind **0 Deals fällig**. **Nächste Schritte:** - Kommunikation mit Makler Michael Schultz-Kranich (Tübinger Str.) einleiten - Deal als erledigt markieren').text).toBe('Heute sind **0 Deals fällig**.');
     expect(chipsAusText('Erledigt.\n\nNächste Schritte:\n• Nächsten Deal öffnen\n• Makler anzeigen').chips.map((c) => c.label)).toEqual(['Nächsten Deal öffnen', 'Makler anzeigen']);
   });
   it('liest <chips>-Blöcke und Markdown-Links auf Ziele', async () => {

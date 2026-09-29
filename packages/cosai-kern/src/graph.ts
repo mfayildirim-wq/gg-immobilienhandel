@@ -165,7 +165,7 @@ export function chipsAusText(text: string): { text: string; chips: { label: stri
     const label = sauber(link ? link[1]! : p).replace(/[.!]$/, '');
     return { label, wert: label };
   });
-  if (!kopfPasst || chips.some((c) => !c.label || c.label.length > 60)) return leer;
+  if (!kopfPasst || chips.some((c) => !c.label || c.label.length > 100)) return leer;
   // Die Überschrift kann in derselben Zeile wie der Satz davor stehen: nur sie abschneiden
   const kopfOhne = kopf.replace(/[\s*_]*(nächste[n]? schritte?|möglichkeiten|vorschläge|optionen|was möchtest du[^:]*|wie geht es weiter|weiter mit|du kannst)[\s*_]*:?[\s*_]*$/i, '').trimEnd();
   const rest = [...zeilen.slice(0, i), kopfOhne].join('\n').trim();
