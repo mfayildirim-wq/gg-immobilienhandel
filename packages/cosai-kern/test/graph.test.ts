@@ -143,6 +143,8 @@ describe('chipsAusText', () => {
   });
   it('liest <chips>-Blöcke und Markdown-Links auf Ziele', async () => {
     const { chipsAusText } = await import('../src/graph.ts');
+    // Liste und Block zugleich: beides verschwindet, die Chips kommen aus dem Block
+    expect(chipsAusText('Es sind 0 fällig. **Nächste Schritte:** - Makler anrufen - Deal erledigen\n<chips>\n{"label":"Makler anrufen","wert":"Makler anrufen"}\n</chips>')).toEqual({ text: 'Es sind 0 fällig.', chips: [{ label: 'Makler anrufen', wert: 'Makler anrufen' }] });
     expect(chipsAusText('Es sind 0 fällig. <chips> {"art": "vorschlag", "label": "Deal öffnen", "wert": "nav.deals"} {"label": "Makler zeigen", "wert": "Zeige die Makler"}')).toEqual({
       text: 'Es sind 0 fällig.', chips: [{ label: 'Deal öffnen', wert: 'Deal öffnen' }, { label: 'Makler zeigen', wert: 'Zeige die Makler' }],
     });

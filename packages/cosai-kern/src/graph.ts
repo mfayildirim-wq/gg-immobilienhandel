@@ -145,7 +145,12 @@ export function chipsAusText(text: string): { text: string; chips: { label: stri
     const chips = [...block[1]!.matchAll(/\{[^{}]*\}/g)].flatMap((m) => {
       try { const o = JSON.parse(m[0]) as { label?: string; wert?: string }; return o.label ? [{ label: sauber(o.label), wert: sauber(o.wert && !o.wert.includes('.') ? o.wert : o.label) }] : []; } catch { return []; }
     });
-    if (chips.length) return { text: text.slice(0, block.index).trim(), chips: chips.slice(0, 6) };
+    if (chips.length) {
+      // Steht davor noch eine Liste „Nächste Schritte“, verschwindet sie auch (qwen3 schreibt beides)
+      const rest = text.slice(0, block.index).trim();
+      const liste = chipsAusText(rest);
+      return { text: liste.chips.length ? liste.text : rest, chips: chips.slice(0, 6) };
+    }
   }
   const zeilen = text.replace(/\s+(?=(?:[-•*]|\d+\.)\s)/g, '\n').split('\n');
   // Vom Ende her: Aufzählungspunkte sammeln, davor eine Überschrift „Nächste Schritte:“ o. ä.
