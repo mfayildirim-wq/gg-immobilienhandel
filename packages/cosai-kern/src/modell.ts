@@ -73,10 +73,11 @@ export const OLLAMA_URL = 'http://localhost:11434';
 
 /**
  * Ein Modell über Ollama. 32k Kontext: der Agent schickt je Schritt 11–25k Tokens (Werkzeuge, Karte, Regeln) — mit der
- * Vorgabe von Ollama schnitte er still ab. Ohne „Denken“ (qwen3 denkt sonst vor jeder Antwort lange).
+ * Vorgabe von Ollama schnitte er still ab. `think` bleibt offen: Denkende Modelle (qwen3) trennen ihr Denken dann
+ * selbst von der Antwort — mit `think: false` schrieb qwen3 es in die Antwort, mit `true` lehnen andere (Mistral) ab.
  */
 export function ollamaModell(model: string, baseUrl = OLLAMA_URL): Modell {
-  return new ChatOllama({ model, baseUrl, numCtx: 32_768, think: false, numPredict: 1500 });
+  return new ChatOllama({ model, baseUrl, numCtx: 32_768, numPredict: 1500 });
 }
 
 /** Ein Modell zur Auswahl in den Einstellungen */

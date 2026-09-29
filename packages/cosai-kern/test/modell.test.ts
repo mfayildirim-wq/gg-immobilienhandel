@@ -106,9 +106,9 @@ describe('Ollama', () => {
     expect(await ollamaModelle('http://x:11434', holen)).toEqual([{ id: 'qwen3:30b-a3b', name: 'qwen3:30b-a3b', frei: true, werkzeuge: true, kontext: 262144 }]);
   });
 
-  it('baut ein Modell mit 32k Kontext und ohne Denken', async () => {
+  it('baut ein Modell mit 32k Kontext und lässt das Denken dem Modell', async () => {
     const { ollamaModell } = await import('../src/modell.ts');
-    const m = ollamaModell('qwen3:30b-a3b') as unknown as { model: string; numCtx: number; think: boolean; _llmType: () => string };
-    expect([m.model, m.numCtx, m.think, m._llmType()]).toEqual(['qwen3:30b-a3b', 32768, false, 'ollama']);
+    const m = ollamaModell('qwen3:30b-a3b') as unknown as { model: string; numCtx: number; think?: boolean; _llmType: () => string };
+    expect([m.model, m.numCtx, m.think, m._llmType()]).toEqual(['qwen3:30b-a3b', 32768, undefined, 'ollama']);
   });
 });
