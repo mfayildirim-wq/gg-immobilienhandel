@@ -116,7 +116,7 @@ function systemtext(dna: DNA, ziele: ZielBeschreibung[], erinnerungen: string[],
     'Lesen (Listen, Details) machst du direkt über die GET-Werkzeuge. Antworte danach mit dem, was für den Nutzer wichtig ist, nicht mit Rohdaten.',
     'Für Recherche außerhalb der Anwendung (Lage, Umfeld, Marktpreise, vergleichbare Angebote) nutze die Websuche, falls vorhanden. Nenne dann die Quellen mit Adresse und trenne Gefundenes klar von deiner Einschätzung.',
     'Nach einer Recherche oder Analyse rufe `ergebnis_speichern` direkt auf, falls vorhanden — frage nicht selbst im Text, ob gespeichert werden soll; die Anwendung fragt den Nutzer und speichert nur nach seinem „Ja“.',
-    'Biete am Ende deiner Antwort mit `chips` passende nächste Schritte an (2–6 kurze Möglichkeiten).',
+    'Rufe am Ende JEDER Antwort `chips` mit 2–4 passenden nächsten Schritten auf (kurze Beschriftungen) — auch nach einer einfachen Auskunft. Schreibe die nächsten Schritte nicht als Liste in den Text.',
     'Merke dir mit `merke` Fakten, die der Nutzer dir sagt (art „fakt“) und Formulierungen, die er in Felder schreibt (art „formulierung“, schluessel = Ziel des Feldes).',
     'Grundregeln (gelten immer):', ...GRUNDREGELN.map((r) => `- ${r}`),
     ...(dna.regeln.length ? ['Immer:', ...dna.regeln.map((r) => `- ${r}`)] : []),
@@ -126,6 +126,18 @@ function systemtext(dna: DNA, ziele: ZielBeschreibung[], erinnerungen: string[],
     ...(erinnerungen.length ? ['Aus deinem Gedächtnis:', ...erinnerungen.map((e) => `- ${e}`)] : []),
     `Der Nutzer ist gerade auf Seite ${zustand.ort}${Object.keys(zustand.kontext).length ? ` mit Kontext ${JSON.stringify(zustand.kontext)}` : ''}.`,
   ].join('\n');
+}
+
+/**
+ * Vorschläge, wenn das Modell keine gemacht hat — der Agent bietet immer nächste Schritte an: die Vorschläge der
+ * aktuellen Seite aus der Oberflächenkarte (`vorschlaege` am `nav.*`-Ziel), sonst allgemeine.
+ */
+export function ersatzVorschlaege(ziele: ZielBeschreibung[], ort: string): { label: string; wert: string }[] {
+  const erster = (ort.split(/[?#]/)[0] ?? '/').split('/').filter(Boolean)[0];
+  const bereich = erster ? `/${erster}` : '/';
+  const seite = ziele.find((z) => z.ziel.startsWith('nav.') && z.seite === bereich)?.vorschlaege ?? [];
+  const liste = [...seite, 'Was ist heute fällig?', 'Was kann ich hier tun?'];
+  return [...new Set(liste)].slice(0, 3).map((v) => ({ label: v, wert: v }));
 }
 
 /**

@@ -10,7 +10,7 @@ import { Command } from '@langchain/langgraph';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { DrizzleSaver } from './checkpointer.ts';
 import { gedaechtnis as gedaechtnisBauen, type Db, type Gedaechtnis } from './gedaechtnis.ts';
-import { chipsAusText, graphBauen, GRUNDREGELN, letzterText, type Aufruf, type WebWerkzeuge, type ZielBeschreibung } from './graph.ts';
+import { chipsAusText, ersatzVorschlaege, graphBauen, GRUNDREGELN, letzterText, type Aufruf, type WebWerkzeuge, type ZielBeschreibung } from './graph.ts';
 export { GRUNDREGELN } from './graph.ts';
 import { katalogFingerabdruck, werkzeugeAusOpenapi, type KatalogWerkzeug, type OpenapiDokument } from './katalog.ts';
 import { ergebnisseVon } from './ergebnisse.ts';
@@ -321,6 +321,8 @@ export function agentKern(opt: KernOptionen) {
         if (!chips.length) chips = gerettet.chips.map((c) => ({ ...c, art: 'vorschlag' as const }));
       }
     }
+    // Immer Vorschläge: ohne Chips vom Modell die der Seite (Oberflächenkarte)
+    if (!unterbrechung && !chips.length) chips = ersatzVorschlaege(opt.ziele, (werte as { ort?: string }).ort ?? '/').map((c) => ({ ...c, art: 'vorschlag' as const }));
     const messung = messen(werte.messages.slice(vorher), start);
     messung.modell ||= modellNamen.get(graph) ?? '';
     const antwort: AgentAntwort = { sitzungId, text, steuerung, chips, ...(unterbrechung ? { wartetAuf: { frage: unterbrechung.frage, aktion: unterbrechung.aktion } } : {}), messung };

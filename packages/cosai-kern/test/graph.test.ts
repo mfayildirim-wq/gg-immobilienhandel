@@ -166,3 +166,12 @@ describe('chipsAusText', () => {
     expect(chipsAusText('Alles erledigt.')).toEqual({ text: 'Alles erledigt.', chips: [] });
   });
 });
+
+describe('ersatzVorschlaege', () => {
+  it('nimmt die Vorschläge der Seite, sonst allgemeine — immer etwas', async () => {
+    const { ersatzVorschlaege } = await import('../src/graph.ts');
+    const ziele = [{ ziel: 'nav.deals', beschreibung: 'Seite Deals', seite: '/deals', vorschlaege: ['Welche Deals sind überfällig?'] }];
+    expect(ersatzVorschlaege(ziele, '/deals/abc').map((c) => c.label)).toEqual(['Welche Deals sind überfällig?', 'Was ist heute fällig?', 'Was kann ich hier tun?']);
+    expect(ersatzVorschlaege([], '/').map((c) => c.label)).toEqual(['Was ist heute fällig?', 'Was kann ich hier tun?']);
+  });
+});
