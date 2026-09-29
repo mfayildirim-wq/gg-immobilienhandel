@@ -419,7 +419,9 @@ export function graphBauen(opt: GraphOptionen, checkpointer: BaseCheckpointSaver
       .then(([fakten, routinen]) => [...fakten, ...routinen].map((e) => `${e.art} ${e.schluessel}: ${e.inhalt}`));
     const erinnerungen = await erinnerungenVorrat;
     const teile = systemteile(opt.dna, opt.ziele, erinnerungen, zustand);
-    const antwort = (await modell.invoke(mitCache(teile, verlaufFenster(zustand.messages), cachen))) as AIMessage;
+    // Anderer Anbieter als Anthropic: Verlauf neutral (ein Gespräch kann mit Claude begonnen haben)
+    const verlauf = cachen ? verlaufFenster(zustand.messages) : neutralerVerlauf(verlaufFenster(zustand.messages));
+    const antwort = (await modell.invoke(mitCache(teile, verlauf, cachen))) as AIMessage;
     return { messages: [nurEinWerkzeug(antwort)] };
   };
 
@@ -447,6 +449,29 @@ export const VERLAUF_ZEICHEN = 60_000;
  * immer vor einer Nutzernachricht, damit kein Werkzeug-Ergebnis ohne seinen Aufruf beginnt. Der aktuelle Zug bleibt
  * immer ganz. Der gespeicherte Verlauf (Checkpoint) bleibt vollständig; nur das Modell sieht weniger.
  */
+/** Text aus Inhalt, der ein String oder eine Liste von Bausteinen sein kann */
+function nurText(inhalt: unknown): string {
+  if (typeof inhalt === 'string') return inhalt;
+  if (!Array.isArray(inhalt)) return '';
+  return inhalt.map((b: { type?: string; text?: string }) => (b && (b.type === 'text' || b.type === 'text_delta') && typeof b.text === 'string' ? b.text : '')).join('');
+}
+
+/**
+ * Den Verlauf für andere Anbieter neutral machen: Antworten von Claude tragen Bausteine, die nur Anthropic kennt
+ * (tool_use, input_json_delta, server_tool_use, web_search_tool_result, cache_control). OpenAI-kompatible Anbieter
+ * (DeepSeek, OpenRouter, Ollama) lehnen sie ab — dann ging nach einem Anbieterwechsel im Gespräch nichts mehr.
+ * Übrig bleiben Text und die Werkzeugaufrufe selbst.
+ */
+export function neutralerVerlauf(verlauf: BaseMessage[]): BaseMessage[] {
+  return verlauf.map((m) => {
+    if (typeof m.content === 'string') return m;
+    if (m instanceof AIMessage) return new AIMessage({ content: nurText(m.content), tool_calls: m.tool_calls ?? [], id: m.id, response_metadata: {}, usage_metadata: m.usage_metadata });
+    if (m instanceof ToolMessage) return new ToolMessage({ content: nurText(m.content) || JSON.stringify(m.content), tool_call_id: m.tool_call_id, id: m.id });
+    if (m instanceof HumanMessage) return new HumanMessage({ content: nurText(m.content), id: m.id });
+    return m;
+  });
+}
+
 /**
  * Werkzeuge nacheinander, auch wenn ein Anbieter das nicht abschalten kann (Ollama, manche OpenRouter-Modelle): mehrere
  * Aufrufe in einer Antwort — nur der erste gilt, das Modell ruft den nächsten danach selbst. Eine Rückfrage (`steuere`)

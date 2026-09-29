@@ -185,3 +185,16 @@ describe('listeFiltern', () => {
     expect(listeFiltern('kein json', 'x')).toBe('kein json');
   });
 });
+
+describe('neutralerVerlauf', () => {
+  it('entfernt Bausteine, die nur Anthropic kennt — Text und Werkzeugaufrufe bleiben', async () => {
+    const { neutralerVerlauf } = await import('../src/graph.ts');
+    const claude = new AIMessage({ content: [{ type: 'text', text: 'Ich schaue nach.' }, { type: 'tool_use', id: 't1', name: 'get_api_deals', input: {} }, { type: 'input_json_delta', partial_json: '{}' }] as never, tool_calls: [{ id: 't1', name: 'get_api_deals', args: {} }] });
+    const werkzeug = new ToolMessage({ content: [{ type: 'text', text: '[1,2]' }] as never, tool_call_id: 't1' });
+    const [a, w, h] = neutralerVerlauf([claude, werkzeug, new HumanMessage('Hallo')]);
+    expect(a!.content).toBe('Ich schaue nach.');
+    expect((a as AIMessage).tool_calls).toMatchObject([{ id: 't1', name: 'get_api_deals', args: {} }]);
+    expect(w!.content).toBe('[1,2]');
+    expect(h!.content).toBe('Hallo');
+  });
+});
