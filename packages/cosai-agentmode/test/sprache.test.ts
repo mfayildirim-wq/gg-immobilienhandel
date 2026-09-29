@@ -228,3 +228,13 @@ describe('Gesprächsfenster', () => {
     weg();
   });
 });
+
+describe('erkennungsFehler', () => {
+  it('sagt jeden Fehler in einem Satz — nur den eigenen Abbruch nicht', async () => {
+    const { erkennungsFehler } = await import('../src/sprache.ts');
+    expect(erkennungsFehler('aborted')).toBeNull();
+    expect(erkennungsFehler('network')).toMatch(/Online-Dienst/);
+    expect(erkennungsFehler('not-allowed')).toMatch(/erlauben/);
+    expect(erkennungsFehler('no-speech')).toMatch(/Nichts gehört/);
+  });
+});

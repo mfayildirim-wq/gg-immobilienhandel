@@ -124,6 +124,20 @@ export interface ZuhoerenOptionen {
   stumm?: boolean;
 }
 
+/** Was ein Fehler der Spracherkennung des Browsers bedeutet — `null`: nicht melden (Abbruch durch uns) */
+export function erkennungsFehler(code: string): string | null {
+  switch (code) {
+    case 'aborted': return null;
+    case 'not-allowed':
+    case 'service-not-allowed': return 'Kein Zugriff aufs Mikrofon — bitte im Browser erlauben (Schloss-Symbol in der Adresszeile).';
+    case 'network': return 'Die Spracherkennung des Browsers ist nicht erreichbar. Chrome, Edge und Safari nutzen dafür einen Online-Dienst — in Brave, Arc, Opera oder Chromium fehlt er.';
+    case 'audio-capture': return 'Kein Mikrofon gefunden — ist eines angeschlossen und in den Systemeinstellungen erlaubt?';
+    case 'no-speech': return 'Nichts gehört — bitte etwas lauter oder näher am Mikrofon sprechen.';
+    case 'language-not-supported': return 'Deutsch wird von der Spracherkennung dieses Browsers nicht unterstützt.';
+    default: return `Spracherkennung: ${code}`;
+  }
+}
+
 /** Standard-Endwörter */
 export const ENDWOERTER = ['fertig', 'mach'];
 
@@ -358,11 +372,11 @@ export function useZuhoeren(aufText: (text: string, fertig: boolean) => void, op
       pegelStoppen();
     };
     e.onerror = (f) => {
-      if (f.error === 'not-allowed' || f.error === 'service-not-allowed') {
-        dauerRef.current = false;
-        setDauer(false);
-        optionenRef.current.onFehler?.('Kein Zugriff aufs Mikrofon — bitte im Browser erlauben.');
-      }
+      // Jeden Fehler sagen — still zu verstummen verwirrt („ich spreche, aber nichts passiert“)
+      const meldung = erkennungsFehler(f.error);
+      if (!meldung) return;
+      if (f.error !== 'no-speech') { dauerRef.current = false; setDauer(false); }
+      optionenRef.current.onFehler?.(meldung);
     };
     erkennung.current = e;
     setHoert(true);
