@@ -89,6 +89,90 @@ test.describe('Ankauf-Cockpit', () => {
     expect(await breite(liste)).toBe(310);
   });
 
+  test('Deal-Karte bleibt nach „1M“ stehen und verschwindet erst mit „Erledigt“ (wie in der alten App)', async ({ page }) => {
+    const strasse = `Bleibtweg ${Date.now()}`;
+    const objekt = await (await page.request.post('/api/objekte', { data: { strasse, hausnr: '4', stadt: 'Ankaufstadt' } })).json();
+    const deal = await (await page.request.post('/api/deals', { data: { objektId: objekt.id } })).json();
+    expect((await page.request.put(`/api/deals/${deal.id}/termin`, { data: { version: 1, nextContact: plus(-3) } })).ok()).toBe(true);
+    await page.goto('/');
+    const karte = page.getByRole('region', { name: '🎯 Deals nachverfolgen' }).getByLabel(`Deal ${strasse} 4`);
+    await expect(karte.locator('[data-faellig-kurz]')).toHaveText('3T');
+
+    // Termin einen Monat weiter: gespeichert, aber die Karte bleibt an ihrem Platz unter „Überfällig“
+    await karte.getByRole('button', { name: 'Nächster Kontakt Deal in 1M' }).click();
+    await expect(karte.locator('[data-faellig-kurz]')).toHaveText('Termin geändert');
+    await expect(karte.getByLabel('Nächster Kontakt Deal', { exact: true })).toHaveValue(plus(30));
+    await expect(karte).toHaveAttribute('data-faellig-klasse', 'ueberfaellig');
+    expect((await (await page.request.get(`/api/deals/${deal.id}`)).json()).nextContact).toBe(plus(30));
+    // … auch ein zweiter Klick geht noch (die Karte kennt die neue Version)
+    await karte.getByRole('button', { name: 'Nächster Kontakt Deal in 3M' }).click();
+    await expect(karte.getByLabel('Nächster Kontakt Deal', { exact: true })).toHaveValue(plus(90));
+    await expect(karte).toBeVisible();
+
+    // Erst „Erledigt“ schließt die Karte ab; der weiter entfernte Termin bleibt bestehen
+    await karte.getByRole('button', { name: 'Erledigt' }).click();
+    await expect(karte).toBeHidden();
+    const danach = await (await page.request.get(`/api/deals/${deal.id}`)).json();
+    expect([danach.lastContact, danach.nextContact]).toEqual([heute(), plus(90)]);
+  });
+
+  test('Deal-Karte: Name vor Firma, WhatsApp neben Anrufen — Status, Kennzahlen und „Zuletzt“ stehen nicht mehr darauf', async ({ page }) => {
+    const name = `Karte ${Date.now()}`;
+    const maklerId = await makler(page, name, { firma: 'Kartenfirma GmbH' });
+    const objekt = await (await page.request.post('/api/objekte', { data: { strasse: name, hausnr: '9', stadt: 'Kartenstadt' } })).json();
+    const deal = await (await page.request.post('/api/deals', { data: { objektId: objekt.id, maklerId } })).json();
+    // Kaufpreis, letzter Kontakt (über „Erledigt“) und ein überfälliger Termin — alles, was die Karte früher zeigte
+    const kalk = await (await page.request.put(`/api/deals/${deal.id}/kalkulation`, { data: { version: 1, kalkulation: { kaufpreis: 998_000 }, einheiten: [], sanierungen: [] } })).json();
+    const erledigt = await (await page.request.post(`/api/deals/${deal.id}/erledigt`, { data: { version: kalk.version } })).json();
+    expect((await page.request.put(`/api/deals/${deal.id}/termin`, { data: { version: erledigt.version, nextContact: plus(-7) } })).ok()).toBe(true);
+
+    await page.goto('/');
+    const karte = page.getByRole('region', { name: '🎯 Deals nachverfolgen' }).getByLabel(`Deal ${name} 9`);
+    // Fälligkeit kurz („7T“) rechts neben der Adresse in der ersten Zeile; der volle Text steht im Tooltip
+    const faellig = karte.locator('[data-faellig-kurz]');
+    await expect(faellig).toHaveText('7T');
+    await expect(faellig).toHaveAttribute('title', '7T überfällig');
+    const mitte = async (l: typeof faellig) => { const b = (await l.boundingBox())!; return { x: b.x, y: b.y + b.height / 2 }; };
+    const adresse = await mitte(karte.getByText(`📍 ${name} 9`, { exact: false }));
+    expect(Math.abs((await mitte(faellig)).y - adresse.y)).toBeLessThan(10);
+    expect((await mitte(faellig)).x).toBeGreaterThan(adresse.x);
+    // Datum, die vier Schnellknöpfe und „Erledigt“ stehen in einer Zeile, „Erledigt“ ganz rechts
+    const datum = await mitte(karte.getByLabel('Nächster Kontakt Deal', { exact: true }));
+    const sechsMonate = await mitte(karte.getByRole('button', { name: 'Nächster Kontakt Deal in 6M' }));
+    const erledigtKnopf = await mitte(karte.getByRole('button', { name: 'Erledigt' }));
+    expect(Math.abs(sechsMonate.y - datum.y)).toBeLessThan(8);
+    expect(Math.abs(erledigtKnopf.y - datum.y)).toBeLessThan(8);
+    expect(erledigtKnopf.x).toBeGreaterThan(sechsMonate.x);
+
+    // Name zuerst, die Firma darunter
+    const oben = async (text: string) => (await karte.getByText(text, { exact: true }).boundingBox())!.y;
+    expect(await oben(name)).toBeLessThan(await oben('Kartenfirma GmbH'));
+    // WhatsApp links neben „Anrufen“, öffnet den Chat mit der Nummer des Maklers
+    const whatsapp = karte.getByRole('link', { name: 'WhatsApp-Chat öffnen' });
+    await expect(whatsapp).toHaveAttribute('href', 'https://wa.me/+4930555');
+    await expect(whatsapp).toHaveAttribute('target', '_blank');
+    expect((await whatsapp.boundingBox())!.x).toBeLessThan((await karte.getByRole('link', { name: 'Anrufen' }).boundingBox())!.x);
+
+    // Status, Kennzahlenzeile und „Zuletzt“ sind von der Karte verschwunden
+    await expect(karte.getByText('In Prüfung')).toHaveCount(0);
+    await expect(karte.getByText('998.000 €')).toHaveCount(0);
+    await expect(karte.getByText(/Zuletzt:/)).toBeHidden();
+  });
+
+  test('Makler-Karte bleibt nach „1M“ ebenfalls stehen, bis „Erledigt“ sie abschließt', async ({ page }) => {
+    const name = `Bleibt ${Date.now()}`;
+    const id = await makler(page, name, { nextContact: heute() });
+    await page.goto('/');
+    await page.getByRole('tab', { name: /Makler kontaktieren/ }).click();
+    const karte = page.getByRole('region', { name: '🤝 Makler kontaktieren' }).getByLabel(`Makler ${name}`);
+    await karte.getByRole('button', { name: 'Nächster Kontakt Makler in 1M' }).click();
+    await expect(karte.getByText('Termin geändert')).toBeVisible();
+    await expect(karte.getByLabel('Nächster Kontakt Makler', { exact: true })).toHaveValue(plus(30));
+    expect((await (await page.request.get(`/api/makler/${id}`)).json()).nextContact).toBe(plus(30));
+    await karte.getByRole('button', { name: 'Erledigt' }).click();
+    await expect(karte).toBeHidden();
+  });
+
   test('überfälliger Deal: Karte wählen zeigt das Deal-Detail rechts', async ({ page }) => {
     const strasse = `Cockpitweg ${Date.now()}`;
     const objekt = await (await page.request.post('/api/objekte', { data: { strasse, hausnr: '4', stadt: 'Ankaufstadt' } })).json();
@@ -96,7 +180,7 @@ test.describe('Ankauf-Cockpit', () => {
     expect((await page.request.put(`/api/deals/${deal.id}/termin`, { data: { version: 1, nextContact: plus(-3) } })).ok()).toBe(true);
     await page.goto('/');
     const karte = page.getByRole('region', { name: '🎯 Deals nachverfolgen' }).getByLabel(`Deal ${strasse} 4`);
-    await expect(karte.getByText('3T überfällig')).toBeVisible();
+    await expect(karte.locator('[data-faellig-kurz]')).toHaveText('3T');
     await karte.getByText(`📍 ${strasse} 4`, { exact: false }).click();
     const detail = page.getByRole('region', { name: 'Deal-Detail' });
     await expect(detail.getByRole('heading', { name: `${strasse} 4` })).toBeVisible();

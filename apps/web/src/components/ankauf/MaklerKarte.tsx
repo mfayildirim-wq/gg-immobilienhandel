@@ -1,5 +1,5 @@
 import type { CockpitMakler } from '@gg/api-contract';
-import { whatsappNummer } from '@gg/domain';
+import { TERMIN_GEAENDERT, TERMIN_GEAENDERT_HINWEIS, whatsappNummer } from '@gg/domain';
 import { Badge, Button, Card, Group, Stack, Text } from '@mantine/core';
 import { IconBrandWhatsapp, IconCheck, IconPhone, IconPlus } from '@tabler/icons-react';
 import { useNavigate } from '@tanstack/react-router';
@@ -12,7 +12,11 @@ import css from '../Listenzeile.module.css';
 
 export const PRIO_FARBE: Record<string, string> = { A: 'green', B: 'orange', C: 'gray' };
 
-export function MaklerKarte({ m, heute, anrufen, stilOeffnen, aktiv, waehlen }: { m: CockpitMakler; heute: string; anrufen: (m: CockpitMakler) => void; stilOeffnen: () => void; aktiv?: boolean; waehlen?: (id: string) => void }) {
+export function MaklerKarte({ m, heute, anrufen, stilOeffnen, aktiv, waehlen, halten, loslassen }: {
+  m: CockpitMakler & { gehalten?: true }; heute: string; anrufen: (m: CockpitMakler) => void; stilOeffnen: () => void; aktiv?: boolean; waehlen?: (id: string) => void;
+  /** Ein neuer Termin lässt die Karte stehen, erst „Erledigt“ schließt sie ab (wie in der alten App). */
+  halten?: (karte: CockpitMakler) => void; loslassen?: (id: string) => void;
+}) {
   const erledigt = useMaklerErledigt(m.id);
   const termin = useTerminSetzen('makler', m.id);
   const whatsapp = useWhatsappProtokoll(m.id);
@@ -93,14 +97,16 @@ export function MaklerKarte({ m, heute, anrufen, stilOeffnen, aktiv, waehlen }: 
 
         <Group justify="space-between" wrap="nowrap">
           <Group gap={6}>
-            <Badge variant="light" color={FAELLIG_FARBE[m.faellig.klasse]} data-faellig-label>{m.faellig.label}</Badge>
+            {m.gehalten
+              ? <Badge variant="light" color="gray" title={TERMIN_GEAENDERT_HINWEIS} data-faellig-label>{TERMIN_GEAENDERT}</Badge>
+              : <Badge variant="light" color={FAELLIG_FARBE[m.faellig.klasse]} data-faellig-label>{m.faellig.label}</Badge>}
             {m.lastContact && <Text size="xs" c="dimmed" data-zuletzt>Zuletzt: {datumDe(m.lastContact)}</Text>}
           </Group>
-          <Button size="xs" variant="light" color="green" leftSection={<IconCheck size={14} />} loading={erledigt.isPending} onClick={() => erledigt.mutate(m.version)}>
+          <Button size="xs" variant="light" color="green" leftSection={<IconCheck size={14} />} loading={erledigt.isPending} onClick={() => erledigt.mutate(m.version, { onSuccess: () => loslassen?.(m.id) })}>
             Erledigt
           </Button>
         </Group>
-        <TerminWahl label="Nächster Kontakt Makler" wert={m.nextContact} heute={heute} setzen={(iso) => termin.mutate({ version: m.version, nextContact: iso })} />
+        <TerminWahl label="Nächster Kontakt Makler" wert={m.nextContact} heute={heute} setzen={(iso) => termin.mutate({ version: m.version, nextContact: iso }, { onSuccess: (r) => halten?.({ ...m, nextContact: iso, version: r.version }) })} />
         {fehler && <Text size="xs" c="red">{fehler.message}</Text>}
       </Stack>
     </Card>

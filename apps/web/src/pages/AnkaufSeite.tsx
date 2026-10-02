@@ -1,10 +1,10 @@
 import type { AnkaufCockpit, CockpitDeal, CockpitMakler, ListenAltformat } from '@gg/api-contract';
-import { applyFilter, eingehendUnbekannt, maklerZuTelefon } from '@gg/domain';
+import { applyFilter, cockpitMitGehaltenen, eingehendUnbekannt, maklerZuTelefon } from '@gg/domain';
 import { Alert, Badge, Button, Group, Paper, Progress, SegmentedControl, Stack, Tabs, Text, Title } from '@mantine/core';
 import { GeteilteAnsicht } from '../components/GeteilteAnsicht.tsx';
 import { Reiterleiste } from '../components/Reiterleiste.tsx';
 import { IconLayoutColumns, IconLayoutRows, IconPhoneCall, IconTarget, IconUsers } from '@tabler/icons-react';
-import { useEffect, useRef, useState } from 'react';
+import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
 import { AnrufBriefing } from '../components/ankauf/AnrufBriefing.tsx';
 import { DealDetail } from '../components/deal/DealDetail.tsx';
 import { PersonaDialog } from '../components/ankauf/PersonaDialog.tsx';
@@ -82,13 +82,23 @@ export function AnkaufSeite() {
   const [wmQuelle, setWmQuelle] = useState<WaehlQuelle | null>(null);
   const [stilOffen, setStilOffen] = useState(false);
   const [reiter, setReiter] = useEinstellung<Reiter>('ankauf.reiter', REITER, 'deals');
+  // Karten, deren Termin hier gesetzt wurde, bleiben stehen, bis „Erledigt“ sie abschließt (wie in der alten App) —
+  // auch wenn sie laut Server nicht mehr fällig sind. Gilt, solange die Ankaufseite offen ist.
+  const [dealsGehalten, setDealsGehalten] = useState<Record<string, CockpitDeal>>({});
+  const [maklerGehalten, setMaklerGehalten] = useState<Record<string, CockpitMakler>>({});
+  const halten = <T extends { id: string; nextContact: string | null; version: number }>(setzen: Dispatch<SetStateAction<Record<string, T>>>) => (karte: T) =>
+    setzen((g) => ({ ...g, [karte.id]: g[karte.id] ? { ...g[karte.id]!, nextContact: karte.nextContact, version: karte.version } : karte }));
+  const loslassen = <T,>(setzen: Dispatch<SetStateAction<Record<string, T>>>) => (id: string) =>
+    setzen((g) => Object.fromEntries(Object.entries(g).filter(([k]) => k !== id)));
+  const dealKarten = useMemo(() => cockpitMitGehaltenen(data?.deals ?? [], dealsGehalten), [data, dealsGehalten]);
+  const maklerKarten = useMemo(() => cockpitMitGehaltenen(data?.makler ?? [], maklerGehalten), [data, maklerGehalten]);
   // Deals in der Reihenfolge der Abschnitte (heute, überfällig, diese Woche) — der erste ist vorgewählt
   const dealsGeordnet = ABSCHNITTE.flatMap(({ klasse }) => data?.deals.filter((d) => d.faellig.klasse === klasse) ?? []);
-  const [dealAuswahl, setDealAuswahl] = useAuswahl(dealsGeordnet.map((d) => d.id));
+  const [dealAuswahl, setDealAuswahl] = useAuswahl(ABSCHNITTE.flatMap(({ klasse }) => dealKarten.filter((d) => d.faellig.klasse === klasse)).map((d) => d.id));
   // Ein anderer Deal baut das Detail neu auf: bei ungespeicherter Kalkulation erst fragen
   const dealWaehlen = (id: string) => { if (id === dealAuswahl || darfVerlassen()) setDealAuswahl(id); };
   const maklerGeordnet = ABSCHNITTE.flatMap(({ klasse }) => data?.makler.filter((m) => m.faellig.klasse === klasse) ?? []);
-  const [maklerAuswahl, setMaklerAuswahl] = useAuswahl(maklerGeordnet.map((m) => m.id));
+  const [maklerAuswahl, setMaklerAuswahl] = useAuswahl(ABSCHNITTE.flatMap(({ klasse }) => maklerKarten.filter((m) => m.faellig.klasse === klasse)).map((m) => m.id));
   const [dealLayout, setDealLayout] = useEinstellung<Layout>('ankauf.layout', LAYOUTS, 'nebeneinander');
   const [maklerLayout, setMaklerLayout] = useEinstellung<Layout>('ankauf.makler.layout', LAYOUTS, 'nebeneinander');
   const dealsNebeneinander = dealLayout === 'nebeneinander';
@@ -145,8 +155,9 @@ export function AnkaufSeite() {
             liste={
               <Spalte titel="🎯 Deals nachverfolgen" anzahl={data.deals.length} leer="Keine Deals diese Woche">
                 {ABSCHNITTE.map(({ klasse, titel }) => (
-                  <Abschnitt key={klasse} klasse={klasse} titel={titel} eintraege={data.deals.filter((d) => d.faellig.klasse === klasse)}
-                    karte={(d: CockpitDeal) => <DealKarte key={d.id} d={d} heute={data.heute} aktiv={d.id === dealAuswahl} waehlen={dealWaehlen} />} />
+                  <Abschnitt key={klasse} klasse={klasse} titel={titel} eintraege={dealKarten.filter((d) => d.faellig.klasse === klasse)}
+                    karte={(d: CockpitDeal) => <DealKarte key={d.id} d={d} heute={data.heute} aktiv={d.id === dealAuswahl} waehlen={dealWaehlen}
+                      halten={halten(setDealsGehalten)} loslassen={loslassen(setDealsGehalten)} />} />
                 ))}
               </Spalte>
             }
@@ -162,8 +173,9 @@ export function AnkaufSeite() {
             liste={
               <Spalte titel="🤝 Makler kontaktieren" anzahl={data.makler.length} leer="Keine Makler diese Woche">
                 {ABSCHNITTE.map(({ klasse, titel }) => (
-                  <Abschnitt key={klasse} klasse={klasse} titel={titel} eintraege={data.makler.filter((m) => m.faellig.klasse === klasse)}
-                    karte={(m: CockpitMakler) => <MaklerKarte key={m.id} m={m} heute={data.heute} anrufen={setBriefing} stilOeffnen={() => setStilOffen(true)} aktiv={m.id === maklerAuswahl} waehlen={setMaklerAuswahl} />} />
+                  <Abschnitt key={klasse} klasse={klasse} titel={titel} eintraege={maklerKarten.filter((m) => m.faellig.klasse === klasse)}
+                    karte={(m: CockpitMakler) => <MaklerKarte key={m.id} m={m} heute={data.heute} anrufen={setBriefing} stilOeffnen={() => setStilOffen(true)} aktiv={m.id === maklerAuswahl} waehlen={setMaklerAuswahl}
+                      halten={halten(setMaklerGehalten)} loslassen={loslassen(setMaklerGehalten)} />} />
                 ))}
               </Spalte>
             }

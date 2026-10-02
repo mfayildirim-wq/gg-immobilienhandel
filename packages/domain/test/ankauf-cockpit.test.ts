@@ -3,6 +3,8 @@ import {
   anrufErgebnisAnwenden,
   cockpitDeals,
   cockpitMakler,
+  cockpitMitGehaltenen,
+  faelligKurz,
   dealWaehlliste,
   dealStagnation,
   deutschesDatum,
@@ -160,5 +162,44 @@ describe('Hinweise', () => {
     expect(whatsappNummer('0171 / 123 45')).toBe('+4917112345');
     expect(whatsappNummer('0049 30 1')).toBe('+49301');
     expect(whatsappNummer('+49 30 1')).toBe('+49301');
+  });
+});
+
+describe('cockpitMitGehaltenen (Karte bleibt nach „1W/1M/…“ stehen, bis „Erledigt“ sie abschließt)', () => {
+  const karte = (id: string, termin: string, klasse: 'heute' | 'ueberfaellig' | 'woche', nextContact = termin) =>
+    ({ id, termin, nextContact, version: 1, faellig: { klasse, tage: 0, label: klasse, sort: 0 as const } });
+  const a = karte('a', '2026-09-28', 'ueberfaellig');
+  const b = karte('b', '2026-10-02', 'heute');
+  const c = karte('c', '2026-10-05', 'woche');
+
+  it('ohne gehaltene Karten bleibt die Liste, wie der Server sie liefert', () => {
+    expect(cockpitMitGehaltenen([a, b, c], {})).toEqual([a, b, c]);
+  });
+
+  it('eine Karte, die laut Server nicht mehr fällig ist, bleibt an ihrem alten Platz — mit neuem Termin und neuer Version', () => {
+    // „1M“ auf Karte a: der Server listet sie nicht mehr; gehalten wird der Stand der Karte mit dem neuen Termin
+    const gehalten = { a: { ...a, nextContact: '2026-11-01', version: 2 } };
+    const liste = cockpitMitGehaltenen([b, c], gehalten);
+    expect(liste.map((k) => k.id)).toEqual(['a', 'b', 'c']);
+    expect(liste[0]).toMatchObject({ id: 'a', gehalten: true, nextContact: '2026-11-01', version: 2, termin: '2026-09-28', faellig: { klasse: 'ueberfaellig' } });
+    expect(liste[1]).not.toHaveProperty('gehalten');
+  });
+
+  it('liefert der Server die Karte weiter (Termin noch in dieser Woche), gelten seine Daten — Platz und Abschnitt bleiben die alten', () => {
+    const vomServer = { ...karte('a', '2026-10-06', 'woche'), version: 3 };
+    const liste = cockpitMitGehaltenen([b, c, vomServer], { a: { ...a, nextContact: '2026-10-06', version: 2 } });
+    expect(liste.map((k) => k.id)).toEqual(['a', 'b', 'c']);
+    expect(liste[0]).toMatchObject({ gehalten: true, version: 3, nextContact: '2026-10-06', termin: '2026-09-28', faellig: { klasse: 'ueberfaellig' } });
+  });
+});
+
+describe('faelligKurz (Fälligkeit auf der Deal-Karte, rechts neben der Adresse)', () => {
+  it('überfällig: nur die Tage', () => {
+    expect(faelligKurz({ klasse: 'ueberfaellig', tage: -32 })).toBe('32T');
+    expect(faelligKurz({ klasse: 'ueberfaellig', tage: -1 })).toBe('1T');
+  });
+  it('heute und diese Woche bleiben unterscheidbar', () => {
+    expect(faelligKurz({ klasse: 'heute', tage: 0 })).toBe('Heute');
+    expect(faelligKurz({ klasse: 'woche', tage: 3 })).toBe('in 3T');
   });
 });

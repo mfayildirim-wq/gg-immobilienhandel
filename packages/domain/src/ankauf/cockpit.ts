@@ -114,6 +114,40 @@ export function cockpitMakler<T extends MaklerNachfass>(makler: readonly T[], he
   return ergebnis.sort((a, b) => (a.termin !== b.termin ? (a.termin < b.termin ? -1 : 1) : maklerPrioRang(a.prio) - maklerPrioRang(b.prio)));
 }
 
+/**
+ * Fälligkeit in Kurzform für die Deal-Karte (Kundenwunsch 02.10.2026): „32T“ statt „32T überfällig“. Die Farbe trägt
+ * die Klasse; „Heute“ und „in 3T“ bleiben lesbar, damit überfällig und kommend nicht verwechselt werden.
+ */
+export function faelligKurz(f: { klasse: string; tage: number }): string {
+  if (f.klasse === 'ueberfaellig') return `${Math.abs(f.tage)}T`;
+  return f.klasse === 'heute' ? 'Heute' : `in ${f.tage}T`;
+}
+
+export const TERMIN_GEAENDERT = 'Termin geändert';
+export const TERMIN_GEAENDERT_HINWEIS = 'Der neue Termin ist gespeichert. Die Karte bleibt stehen, bis „Erledigt“ sie abschließt.';
+
+/**
+ * vtQuickDate/vtSetDealDate (und die Makler-Gegenstücke) der alten App schrieben nur den Termin und zeichneten die
+ * Liste nicht neu: die Karte blieb stehen, bis „Erledigt“ sie abschloss. Dasselbe hier — `gehalten` sind die Karten,
+ * deren Termin in dieser Ansicht gesetzt wurde (Stand der Karte beim ersten Setzen, mit neuem Termin und neuer Version).
+ * Sie bleiben in ihrem Abschnitt und an ihrem Platz (alte Fälligkeit, alter Termin für die Reihenfolge), auch wenn der
+ * Server sie nicht mehr als fällig liefert; liefert er sie weiter, gelten seine Daten.
+ */
+export function cockpitMitGehaltenen<T extends { id: string; termin: string; faellig: unknown }>(
+  liste: readonly T[],
+  gehalten: Readonly<Record<string, T>>,
+): (T & { gehalten?: true })[] {
+  const ids = Object.keys(gehalten);
+  if (ids.length === 0) return [...liste];
+  const vomServer = new Set(liste.map((k) => k.id));
+  const alle: (T & { gehalten?: true })[] = [
+    ...liste.map((k) => { const g = gehalten[k.id]; return g ? { ...k, termin: g.termin, faellig: g.faellig, gehalten: true as const } : k; }),
+    ...ids.filter((id) => !vomServer.has(id)).map((id) => ({ ...gehalten[id]!, gehalten: true as const })),
+  ];
+  // nach dem (alten) Termin, bei Gleichstand in der gelieferten Reihenfolge
+  return alle.map((k, i) => ({ k, i })).sort((x, y) => (x.k.termin < y.k.termin ? -1 : x.k.termin > y.k.termin ? 1 : x.i - y.i)).map((x) => x.k);
+}
+
 /** Reihenfolge der Abschnitte in „Nächste Kontakte“ und in der Wählmaschine: heute → überfällig → diese Woche. */
 export const ABSCHNITT_REIHENFOLGE: readonly FaelligkeitsKlasse[] = ['heute', 'ueberfaellig', 'woche'];
 
