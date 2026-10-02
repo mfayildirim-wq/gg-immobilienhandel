@@ -94,3 +94,35 @@ test('Kalkulation: ungespeicherte Änderungen — Reiterwechsel, anderer Deal un
   await expect(detail.getByText('ungespeichert')).toHaveCount(0);
   expect(dialoge).toHaveLength(4);
 });
+
+test('Kalkulation: Eingabefelder behalten beim Tippen den Fokus; Risikopuffer gilt als Prozent oder als fester Betrag', async ({ page }) => {
+  const o = await (await page.request.post('/api/objekte', { data: { strasse: `Tippweg ${Date.now()}`, hausnr: '1', stadt: 'Ulm' } })).json();
+  const d = await (await page.request.post('/api/deals', { data: { objektId: o.id } })).json();
+  await page.goto(`/deals?deal=${d.id}`);
+  const detail = page.getByLabel('Deal-Detail');
+  await detail.getByRole('tab', { name: 'Kalkulation', exact: true }).click();
+
+  // Zeichen für Zeichen tippen — ein Feld, das nach dem ersten Zeichen neu aufgebaut wird, verlöre hier den Rest
+  for (const [name, text, erwartet] of [
+    ['Kaufpreis', '1234567', '1.234.567'], ['Notar', '25', '25'], ['Fremdkapital', '75', '75'], ['Vertriebsprovision', '35', '35'], ['Marge Global', '18', '18'],
+  ] as const) {
+    const feld = detail.getByRole('textbox', { name, exact: true });
+    await feld.click();
+    await feld.pressSequentially(text, { delay: 20 });
+    await expect(feld, name).toHaveValue(erwartet);
+    await expect(feld, name).toBeFocused();
+  }
+  await expect(detail.getByRole('textbox', { name: 'Eigenkapital', exact: true })).toHaveValue('25');
+
+  // Risikopuffer wie dkRpSync: der feste Betrag setzt den Prozentsatz auf 0, der Prozentsatz löscht den festen Betrag
+  const sanierung = detail.getByLabel('Sanierung');
+  const prozent = sanierung.getByRole('textbox', { name: 'Risikopuffer Sanierung' });
+  const fest = sanierung.getByRole('textbox', { name: 'Risikopuffer fest (vorrangig)' });
+  await fest.click();
+  await fest.pressSequentially('5000', { delay: 20 });
+  await expect(fest).toHaveValue('5.000');
+  await expect(prozent).toHaveValue('0');
+  await prozent.click();
+  await prozent.fill('12');
+  await expect(fest).toHaveValue('');
+});
