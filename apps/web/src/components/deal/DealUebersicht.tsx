@@ -1,5 +1,5 @@
 import type { DealDetail } from '@gg/api-contract';
-import { DEAL_STATUS, DealStatus, dublettenObjekt, maklerMailBetreff } from '@gg/domain';
+import { DEAL_LOESCHEN_FRAGE, DEAL_STATUS, DealStatus, dublettenObjekt, maklerMailBetreff } from '@gg/domain';
 import { Alert, Anchor, Button, Group, Paper, Select, SimpleGrid, Stack, Text, TextInput, Timeline, Title } from '@mantine/core';
 import { IconArrowRight, IconMail, IconTrash } from '@tabler/icons-react';
 import { useNavigate } from '@tanstack/react-router';
@@ -123,7 +123,7 @@ export function DealUebersicht({ deal }: { deal: DealDetail }) {
       <Verlauf dealId={deal.id} />
       <Group justify="flex-end">
         <Button color="red" variant="light" leftSection={<IconTrash size={16} />} loading={loeschen.isPending}
-          onClick={() => window.confirm('Deal in den Papierkorb verschieben?') && loeschen.mutate(deal.id, { onSuccess: () => navigate({ to: '/deals', search: {} }) })}>Löschen</Button>
+          onClick={() => window.confirm(DEAL_LOESCHEN_FRAGE) && loeschen.mutate(deal.id, { onSuccess: () => navigate({ to: '/deals', search: {} }) })}>Löschen</Button>
       </Group>
     </Stack>
   );

@@ -1,5 +1,5 @@
 import type { ObjektAendern, ObjektAnlegen, ObjektDetail } from '@gg/api-contract';
-import { type DealStatus, START_STATUS } from '@gg/domain';
+import { type DealStatus, OBJEKT_HAT_DEAL_HINWEIS, START_STATUS } from '@gg/domain';
 import { type Db, schema } from '@gg/db';
 import { and, asc, eq, isNull, notInArray, sql } from 'drizzle-orm';
 import { FachFehler } from '../fehler.ts';
@@ -82,8 +82,15 @@ export async function objektAendern(db: Db, id: string, eingabe: ObjektAendern) 
   });
 }
 
-/** objDelete: in den Papierkorb (softDelete 'immo-objects'); zugehörige Deals bleiben. */
+/**
+ * objDelete: in den Papierkorb (softDelete 'immo-objects'). Anders als in der alten App nur, wenn kein Deal am Objekt
+ * hängt (Fachentscheidung 02.10.2026) — sonst läge ein Objekt im Papierkorb, das sich nie endgültig entfernen lässt.
+ */
 export async function objektLoeschen(db: Db, id: string) {
+  const [deal] = await db.select({ id: schema.deals.id }).from(schema.deals)
+    .innerJoin(schema.objekte, eq(schema.objekte.id, schema.deals.objektId))
+    .where(and(eq(schema.deals.objektId, id), isNull(schema.deals.deletedAt), isNull(schema.objekte.deletedAt))).limit(1);
+  if (deal) throw new FachFehler(409, OBJEKT_HAT_DEAL_HINWEIS, { dealId: deal.id });
   const [o] = await db.update(schema.objekte).set({ deletedAt: sql`now()` })
     .where(and(eq(schema.objekte.id, id), isNull(schema.objekte.deletedAt))).returning({ id: schema.objekte.id });
   if (!o) throw new FachFehler(404, 'Objekt nicht gefunden');

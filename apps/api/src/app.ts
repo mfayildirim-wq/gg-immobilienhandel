@@ -496,7 +496,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
     async (c) => c.json(await objektAendern(db, c.req.valid('param').id, c.req.valid('json')), 200),
   );
   app.openapi(
-    createRoute({ method: 'delete', path: '/api/objekte/{id}', request: { params: IdParam }, responses: { 200: json(z.object({ id: z.string() }), 'in den Papierkorb'), 404: fehler('nicht gefunden') } }),
+    createRoute({ method: 'delete', path: '/api/objekte/{id}', request: { params: IdParam }, responses: { 200: json(z.object({ id: z.string() }), 'in den Papierkorb'), 404: fehler('nicht gefunden'), 409: fehler('am Objekt hängt ein Deal') } }),
     async (c) => c.json(await objektLoeschen(db, c.req.valid('param').id), 200),
   );
 
@@ -976,11 +976,11 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
     async (c) => { const p = c.req.valid('param'); return c.json(await papierkorbWiederherstellen(db, p.bereich, p.id), 200); },
   );
   app.openapi(
-    createRoute({ method: 'delete', path: '/api/papierkorb/{bereich}/{id}', request: { params: PapierkorbParam }, responses: { 200: json(z.object({ bereich: z.string(), id: z.string() }), 'endgültig entfernt'), 400: fehler('unbekannter Bereich'), 404: fehler('nicht im Papierkorb') } }),
+    createRoute({ method: 'delete', path: '/api/papierkorb/{bereich}/{id}', request: { params: PapierkorbParam }, responses: { 200: json(z.object({ bereich: z.string(), id: z.string() }), 'endgültig entfernt'), 400: fehler('unbekannter Bereich'), 404: fehler('nicht im Papierkorb'), 409: fehler('es verweist noch etwas darauf') } }),
     async (c) => { const p = c.req.valid('param'); return c.json(await papierkorbEndgueltig(db, speicherOpt ?? expose?.speicher, p.bereich, p.id), 200); },
   );
   app.openapi(
-    createRoute({ method: 'delete', path: '/api/papierkorb', responses: { 200: json(z.object({ entfernt: z.number() }), 'geleert') } }),
+    createRoute({ method: 'delete', path: '/api/papierkorb', responses: { 200: json(z.object({ entfernt: z.number(), uebrig: z.number() }), 'geleert; uebrig: worauf noch etwas verweist') } }),
     async (c) => c.json(await papierkorbLeeren(db, speicherOpt ?? expose?.speicher), 200),
   );
 

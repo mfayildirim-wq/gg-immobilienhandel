@@ -10,6 +10,8 @@ export const EINHEIT_TYPEN = ['Wohnung', 'Gewerbe', 'Stellplatz', 'Sonstiges'] a
 /** Auswahl in der Einheitenliste; alles außer „Leerstand“ gilt als vermietet. */
 export const VERMIETUNG_OPTIONEN = [{ wert: 'Vermietet', label: '✅ Vermietet' }, { wert: 'Leerstand', label: '⬜ Leerstand' }] as const;
 export const OBJEKT_LOESCHEN_FRAGE = 'Objekt in den Papierkorb legen?';
+/** Fachentscheidung 02.10.2026 (anders als objDelete der alten App): ein Objekt mit Deal geht nicht in den Papierkorb. */
+export const OBJEKT_HAT_DEAL_HINWEIS = 'Das Objekt hängt an einem Deal und kann nicht gelöscht werden. Lösche zuerst den Deal.';
 
 export interface ObjektWerte {
   strasse?: string | null; hausnr?: string | null; plz?: string | null; stadt?: string | null;
