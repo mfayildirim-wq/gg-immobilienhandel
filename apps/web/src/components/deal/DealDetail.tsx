@@ -32,17 +32,20 @@ export function DealDetail({ id, start = 'uebersicht' }: { id: string; start?: R
 
   return (
     <Stack gap="sm">
-      <Group justify="space-between" wrap="nowrap">
-        <div style={{ minWidth: 0 }}>
-          <Title order={3}>{deal.objekt.titel}</Title>
-          <Text c="dimmed" size="sm">
-            {deal.objekt.stadt ?? ''} · Makler: {deal.makler?.name ?? '– (ohne Makler)'}
-          </Text>
-        </div>
-        <StatusBadge status={deal.status} />
-      </Group>
       <Tabs value={reiter} onChange={(v) => v && v !== reiter && darfVerlassen() && setReiter(v as Reiter)} keepMounted={false}>
         <div className={css.fest}>
+          {/* Adresse, Stadt und Makler in einer Zeile — bleibt mit den Reitern stehen, damit klar ist, in welchem Deal man arbeitet */}
+          <Group justify="space-between" wrap="nowrap" gap="sm" pb={4}>
+            <Group gap="sm" wrap="nowrap" align="baseline" style={{ minWidth: 0 }}>
+              <Title order={3} className={css.adresse}>{deal.objekt.titel}</Title>
+              <Text c="dimmed" size="sm" truncate style={{ flex: '1 1 0', minWidth: 0 }}>
+                {deal.objekt.stadt ?? ''} · Makler: {deal.makler?.name ?? '– (ohne Makler)'}
+              </Text>
+            </Group>
+            <div style={{ flexShrink: 0 }}>
+              <StatusBadge status={deal.status} />
+            </div>
+          </Group>
           <Reiterleiste>
             <Tabs.Tab value="uebersicht" leftSection={<IconInfoCircle size={16} />}>
               Übersicht

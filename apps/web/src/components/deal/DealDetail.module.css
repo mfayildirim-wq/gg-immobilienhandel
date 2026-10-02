@@ -1,6 +1,6 @@
 /*
- * Reiterleiste samt Knopfleiste des aktiven Reiters bleibt oben stehen, während der Inhalt darunter scrollt —
- * sonst verschwindet „Speichern“ aus dem Blick, sobald man in einer langen Kalkulation unten arbeitet.
+ * Adresszeile, Reiterleiste und die Knopfleiste des aktiven Reiters bleiben oben stehen, während der Inhalt darunter
+ * scrollt — sonst verschwindet „Speichern“ aus dem Blick, sobald man in einer langen Kalkulation unten arbeitet.
  */
 .fest {
   position: sticky;
@@ -11,4 +11,12 @@
 .leiste {
   padding: 6px 0;
   border-bottom: 1px solid var(--mantine-color-default-border);
+}
+/* Lange Adressen kürzen, statt Stadt und Makler in eine zweite Zeile zu drücken. */
+.adresse {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
