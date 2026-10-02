@@ -1,6 +1,7 @@
 import type { AnkaufCockpit, CockpitDeal, CockpitMakler, ListenAltformat } from '@gg/api-contract';
 import { applyFilter, eingehendUnbekannt, maklerZuTelefon } from '@gg/domain';
-import { Alert, Badge, Box, Button, Group, Paper, Progress, ScrollArea, SegmentedControl, Stack, Tabs, Text, Title } from '@mantine/core';
+import { Alert, Badge, Button, Group, Paper, Progress, SegmentedControl, Stack, Tabs, Text, Title } from '@mantine/core';
+import { GeteilteAnsicht } from '../components/GeteilteAnsicht.tsx';
 import { Reiterleiste } from '../components/Reiterleiste.tsx';
 import { IconLayoutColumns, IconLayoutRows, IconPhoneCall, IconTarget, IconUsers } from '@tabler/icons-react';
 import { useEffect, useRef, useState } from 'react';
@@ -139,43 +140,35 @@ export function AnkaufSeite() {
         </Reiterleiste>
 
         <Tabs.Panel value="deals" pt="sm" style={{ flex: 1, minHeight: 0 }}>
-          <Box
-            data-layout={dealLayout}
-            style={{ display: 'flex', flexDirection: dealsNebeneinander ? 'row' : 'column', gap: 12, height: '100%', minHeight: 0 }}
-          >
-            <ScrollArea type="auto" style={dealsNebeneinander ? { width: 430, flexShrink: 0 } : { height: '42%', flexShrink: 0 }} aria-label="Deal-Liste">
+          <GeteilteAnsicht
+            schluessel="ankauf.deals" layout={dealLayout} listeLabel="Deal-Liste" detailLabel="Deal-Detail"
+            liste={
               <Spalte titel="🎯 Deals nachverfolgen" anzahl={data.deals.length} leer="Keine Deals diese Woche">
                 {ABSCHNITTE.map(({ klasse, titel }) => (
                   <Abschnitt key={klasse} klasse={klasse} titel={titel} eintraege={data.deals.filter((d) => d.faellig.klasse === klasse)}
                     karte={(d: CockpitDeal) => <DealKarte key={d.id} d={d} heute={data.heute} aktiv={d.id === dealAuswahl} waehlen={dealWaehlen} />} />
                 ))}
               </Spalte>
-            </ScrollArea>
-            <Box component="section" style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }} aria-label="Deal-Detail">
-              {dealAuswahl
-                ? <DealDetail key={dealAuswahl} id={dealAuswahl} start="kommunikation" />
-                : <Text c="dimmed">Deal in der Liste wählen.</Text>}
-            </Box>
-          </Box>
+            }
+            detail={dealAuswahl
+              ? <DealDetail key={dealAuswahl} id={dealAuswahl} start="kommunikation" />
+              : <Text c="dimmed">Deal in der Liste wählen.</Text>}
+          />
         </Tabs.Panel>
 
         <Tabs.Panel value="makler" pt="sm" style={{ flex: 1, minHeight: 0 }}>
-          <Box
-            data-layout={maklerLayout}
-            style={{ display: 'flex', flexDirection: maklerNebeneinander ? 'row' : 'column', gap: 12, height: '100%', minHeight: 0 }}
-          >
-            <ScrollArea type="auto" style={maklerNebeneinander ? { width: 430, flexShrink: 0 } : { height: '42%', flexShrink: 0 }} aria-label="Makler-Liste">
+          <GeteilteAnsicht
+            schluessel="ankauf.makler" layout={maklerLayout} listeLabel="Makler-Liste" detailLabel="Makler-Detail"
+            liste={
               <Spalte titel="🤝 Makler kontaktieren" anzahl={data.makler.length} leer="Keine Makler diese Woche">
                 {ABSCHNITTE.map(({ klasse, titel }) => (
                   <Abschnitt key={klasse} klasse={klasse} titel={titel} eintraege={data.makler.filter((m) => m.faellig.klasse === klasse)}
                     karte={(m: CockpitMakler) => <MaklerKarte key={m.id} m={m} heute={data.heute} anrufen={setBriefing} stilOeffnen={() => setStilOffen(true)} aktiv={m.id === maklerAuswahl} waehlen={setMaklerAuswahl} />} />
                 ))}
               </Spalte>
-            </ScrollArea>
-            <Box component="section" style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }} aria-label="Makler-Detail">
-              {maklerAuswahl ? <MaklerDetail key={maklerAuswahl} id={maklerAuswahl} start="komm" /> : <Text c="dimmed">Makler in der Liste wählen.</Text>}
-            </Box>
-          </Box>
+            }
+            detail={maklerAuswahl ? <MaklerDetail key={maklerAuswahl} id={maklerAuswahl} start="komm" /> : <Text c="dimmed">Makler in der Liste wählen.</Text>}
+          />
         </Tabs.Panel>
       </Tabs>
 

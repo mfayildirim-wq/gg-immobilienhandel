@@ -1,0 +1,37 @@
+/* Teiler zwischen Liste und Detail: schmaler Streifen zum Ziehen, die Linie in der Mitte wird beim Überfahren sichtbar. */
+.teiler {
+  flex: 0 0 12px;
+  position: relative;
+  touch-action: none;
+  outline: none;
+}
+.teiler[aria-orientation='vertical'] {
+  cursor: col-resize;
+}
+.teiler[aria-orientation='horizontal'] {
+  cursor: row-resize;
+}
+.teiler::after {
+  content: '';
+  position: absolute;
+  border-radius: 2px;
+  background: var(--mantine-color-default-border);
+  transition: background 120ms ease;
+}
+.teiler[aria-orientation='vertical']::after {
+  top: 0;
+  bottom: 0;
+  left: 5px;
+  width: 2px;
+}
+.teiler[aria-orientation='horizontal']::after {
+  left: 0;
+  right: 0;
+  top: 5px;
+  height: 2px;
+}
+.teiler:hover::after,
+.teiler:focus-visible::after,
+.teiler[data-zieht]::after {
+  background: var(--mantine-primary-color-filled);
+}

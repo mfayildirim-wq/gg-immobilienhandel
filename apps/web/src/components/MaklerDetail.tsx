@@ -6,6 +6,7 @@ import {
 import {
   Alert, Anchor, Badge, Button, Group, Loader, Paper, SegmentedControl, Select, SimpleGrid, Stack, Tabs, Text, Textarea, TextInput, Title,
 } from '@mantine/core';
+import { ListeUmschalter } from './GeteilteAnsicht.tsx';
 import { Reiterleiste } from './Reiterleiste.tsx';
 import { IconCheck, IconDeviceFloppy, IconTrash } from '@tabler/icons-react';
 import { useNavigate } from '@tanstack/react-router';
@@ -32,12 +33,17 @@ export function MaklerDetail({ id, geloescht, start = 'profil' }: { id: string; 
   if (error || !m) return <Alert color="red">{error?.message ?? 'Makler nicht gefunden'}</Alert>;
   return (
     <Tabs value={reiter} onChange={(v) => v && setReiter(v as Reiter)} keepMounted={false}>
-      <Reiterleiste>
-        <Tabs.Tab value="profil">👤 Profil</Tabs.Tab>
-        <Tabs.Tab value="komm">💬 Kommunikation</Tabs.Tab>
-        <Tabs.Tab value="persoenlich">🎯 Persönlich</Tabs.Tab>
-        <Tabs.Tab value="deals">🤝 Deals</Tabs.Tab>
-      </Reiterleiste>
+      <Group gap={4} wrap="nowrap" align="center">
+        <ListeUmschalter />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <Reiterleiste>
+            <Tabs.Tab value="profil">👤 Profil</Tabs.Tab>
+            <Tabs.Tab value="komm">💬 Kommunikation</Tabs.Tab>
+            <Tabs.Tab value="persoenlich">🎯 Persönlich</Tabs.Tab>
+            <Tabs.Tab value="deals">🤝 Deals</Tabs.Tab>
+          </Reiterleiste>
+        </div>
+      </Group>
       <Tabs.Panel value="profil" pt="md"><Profil key={m.version} m={m} geloescht={geloescht} /></Tabs.Panel>
       <Tabs.Panel value="komm" pt="md"><Kommunikation m={m} /></Tabs.Panel>
       <Tabs.Panel value="persoenlich" pt="md"><Persoenlich key={m.version} m={m} /></Tabs.Panel>
