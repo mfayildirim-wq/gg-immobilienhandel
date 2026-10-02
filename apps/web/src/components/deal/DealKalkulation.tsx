@@ -81,8 +81,9 @@ export function DealKalkulation({ deal, leistenPlatz }: { deal: DealDetail; leis
       // FK und EK ergänzen sich zu 100 % (wie dkSyncEk/dkSyncFk)
       if (feld === 'fk_p' && n !== null) neu.ek_p = Math.max(0, 100 - n);
       if (feld === 'ek_p' && n !== null) neu.fk_p = Math.max(0, 100 - n);
-      // Risikopuffer: fester Betrag hat Vorrang; wird der Prozentsatz gesetzt, fällt der feste weg (dkRpSync)
+      // Risikopuffer wie dkRpSync: Prozent oder fester Betrag — wer das eine setzt, nimmt das andere zurück
       if (feld === 'rp_pct' && n !== null) delete neu.rp_fix;
+      if (feld === 'rp_fix') neu.rp_pct = 0;
       return neu;
     });
   };
@@ -137,21 +138,7 @@ export function DealKalkulation({ deal, leistenPlatz }: { deal: DealDetail; leis
     </div>
   );
 
-  /** Kompaktes Eingabefeld einer Kalkulationszeile; leer = Standardwert aus den Einstellungen. */
-  const Eingabe = ({ feld, einheit, w = 90, step, label }: { feld: string; einheit?: string; w?: number; step?: number; label: string }) => (
-    <NumberInput
-      size="xs"
-      w={w}
-      value={zahlAus(feld)}
-      placeholder={feld in standard ? String(standard[feld as keyof KalkStandard]).replace('.', ',') : feld === 'rp_pct' ? '10' : ''}
-      onChange={(v) => setzeFeld(feld, v)}
-      aria-label={label}
-      step={step}
-      rightSection={einheit ? <Text size="xs" c="dimmed" pr={4}>{einheit}</Text> : undefined}
-      rightSectionWidth={einheit ? (einheit.length > 2 ? 52 : 26) : undefined}
-      {...ZAHL}
-    />
-  );
+  const c: FeldKontext = { zahlAus, setzeFeld, standard };
   const r = ergebnis;
   const wf = r.einheiten.wohnflaeche;
 
@@ -165,20 +152,20 @@ export function DealKalkulation({ deal, leistenPlatz }: { deal: DealDetail; leis
       {/* Kaufpreis & Nebenkosten */}
       <Abschnitt titel="Kaufpreis & Nebenkosten" farbe={FARBE.ist}>
         <Zeile label="Kaufpreis IVT">
-          <Eingabe feld="kaufpreis" einheit="€" w={130} label="Kaufpreis" />
+          <Eingabe c={c} feld="kaufpreis" einheit="€" w={130} label="Kaufpreis" />
           <Neben label="KP/m²" wert={wf ? euroProQm(r.kaufpreis / wf) : '–'} k="kaufpreis-m2" />
           <Neben label="Rendite" wert={r.kaufpreis ? prozent((r.jahresmieteIst / r.kaufpreis) * 100, 2) : '–'} k="rendite-kp" />
         </Zeile>
         <Zeile label="Notar & Grundbuch">
-          <Eingabe feld="notar" einheit="%" w={80} step={0.01} label="Notar" />
+          <Eingabe c={c} feld="notar" einheit="%" w={80} step={0.01} label="Notar" />
           <Wert k="notar" wert={euro(r.notar)} />
         </Zeile>
         <Zeile label="Grunderwerbsteuer">
-          <Eingabe feld="gest" einheit="%" w={80} step={0.01} label="Grunderwerbsteuer" />
+          <Eingabe c={c} feld="gest" einheit="%" w={80} step={0.01} label="Grunderwerbsteuer" />
           <Wert k="grunderwerbsteuer" wert={euro(r.grunderwerbsteuer)} />
         </Zeile>
         <Zeile label="Maklerprovision">
-          <Eingabe feld="makler" einheit="%" w={80} step={0.01} label="Maklerprovision" />
+          <Eingabe c={c} feld="makler" einheit="%" w={80} step={0.01} label="Maklerprovision" />
           <Wert k="makler" wert={euro(r.maklerprovision)} />
         </Zeile>
         <Zeile label="Anschaffungskosten" stark>
@@ -194,13 +181,13 @@ export function DealKalkulation({ deal, leistenPlatz }: { deal: DealDetail; leis
         <Text size="xs" c="dimmed" mb={4}>
           Konfiguration der Kapitalstruktur. Konkrete €-Beträge erscheinen unten in den Aufteiler/Global-Boxen.
         </Text>
-        <Zeile label="FK %"><Eingabe feld="fk_p" einheit="%" w={80} label="Fremdkapital" /></Zeile>
-        <Zeile label="EK %"><Eingabe feld="ek_p" einheit="%" w={80} label="Eigenkapital" /></Zeile>
-        <Zeile label="Euribor"><Eingabe feld="euribor" einheit="%" w={80} step={0.01} label="Euribor" /></Zeile>
-        <Zeile label="Marge Bank"><Eingabe feld="margeB" einheit="%" w={80} step={0.01} label="Marge Bank" /></Zeile>
-        <Zeile label="Abschlussgebühr Bank"><Eingabe feld="bank_abgeb" einheit="% v. FK" w={110} step={0.01} label="Abschlussgebühr Bank" /></Zeile>
-        <Zeile label="EK Rendite p.a."><Eingabe feld="ek_r" einheit="%" w={80} step={0.1} label="EK-Rendite p. a." /></Zeile>
-        <Zeile label="Haltedauer"><Eingabe feld="halt" einheit="Mo." w={90} label="Haltedauer" /></Zeile>
+        <Zeile label="FK %"><Eingabe c={c} feld="fk_p" einheit="%" w={80} label="Fremdkapital" /></Zeile>
+        <Zeile label="EK %"><Eingabe c={c} feld="ek_p" einheit="%" w={80} label="Eigenkapital" /></Zeile>
+        <Zeile label="Euribor"><Eingabe c={c} feld="euribor" einheit="%" w={80} step={0.01} label="Euribor" /></Zeile>
+        <Zeile label="Marge Bank"><Eingabe c={c} feld="margeB" einheit="%" w={80} step={0.01} label="Marge Bank" /></Zeile>
+        <Zeile label="Abschlussgebühr Bank"><Eingabe c={c} feld="bank_abgeb" einheit="% v. FK" w={110} step={0.01} label="Abschlussgebühr Bank" /></Zeile>
+        <Zeile label="EK Rendite p.a."><Eingabe c={c} feld="ek_r" einheit="%" w={80} step={0.1} label="EK-Rendite p. a." /></Zeile>
+        <Zeile label="Haltedauer"><Eingabe c={c} feld="halt" einheit="Mo." w={90} label="Haltedauer" /></Zeile>
         <Zeile label="– Mieteinnahmen (Abzug IST)" farbe="green.7">
           <Wert k="mietabzug" wert={r.mietabzug ? `– ${euro(r.mietabzug)}` : '–'} farbe="green.7" />
         </Zeile>
@@ -222,10 +209,10 @@ export function DealKalkulation({ deal, leistenPlatz }: { deal: DealDetail; leis
             <Kb label="+ Sanierungskosten" wert={euro(r.aufteiler.sanierung)} />
             <Kb label="+ Puffer" wert={euro(r.aufteiler.sanierungPuffer)} k="aufteiler.sanierung" kWert={euro(r.aufteiler.sanierung + r.aufteiler.sanierungPuffer)} />
             <Kb label="+ Vertriebsprovision" wert={euro(r.vertriebsprovision)} k="aufteiler.vertriebsprovision">
-              <Eingabe feld="vprov" einheit="%" w={76} step={0.01} label="Vertriebsprovision" />
+              <Eingabe c={c} feld="vprov" einheit="%" w={76} step={0.01} label="Vertriebsprovision" />
             </Kb>
             <Kb label="+ Aufteilungskosten" wert={euro(r.teilungskosten)} k="aufteiler.teilungskosten">
-              <Eingabe feld="aufk" einheit="€" w={110} label="Aufteilungskosten" />
+              <Eingabe c={c} feld="aufk" einheit="€" w={110} label="Aufteilungskosten" />
             </Kb>
             <Group gap={6} wrap="wrap" px={8}>
               <Text size="xs" c="dimmed" title="Hilfsrechner — Wert oben gilt">Helfer:</Text>
@@ -257,7 +244,7 @@ export function DealKalkulation({ deal, leistenPlatz }: { deal: DealDetail; leis
             <Kb label="= GIK Global" wert={euro(r.global.gik)} neben={wf ? euroProQm(r.global.gik / wf) : undefined} stark farbe="orange.8" k="global.gik" />
             <Gruppe>EXIT GLOBAL</Gruppe>
             <Kb label="Ziel-Marge auf GIK" wert="">
-              <Eingabe feld="glo_m" einheit="%" w={76} step={0.1} label="Marge Global" />
+              <Eingabe c={c} feld="glo_m" einheit="%" w={76} step={0.1} label="Marge Global" />
             </Kb>
             <Kb label="Verkaufserlöse (GIK × 1+Marge)" wert={euro(r.global.verkaufspreis)} neben={wf ? euroProQm(r.global.verkaufspreis / wf) : undefined} farbe="orange.8" k="global.verkaufspreis" />
             <Kb label="JNKM SOLL" wert={euro(r.jahresnettokaltmieteSoll)} />
@@ -278,6 +265,31 @@ export function DealKalkulation({ deal, leistenPlatz }: { deal: DealDetail; leis
 }
 
 /* ───────────── Bausteine der Darstellung ───────────── */
+
+/** Was ein Eingabefeld der Kalkulation braucht: aktueller Wert, Setzen und die Standardwerte der Einstellungen. */
+interface FeldKontext { zahlAus: (feld: string) => number | ''; setzeFeld: (feld: string, v: number | string) => void; standard: KalkStandard }
+
+/**
+ * Kompaktes Eingabefeld einer Kalkulationszeile; leer = Standardwert aus den Einstellungen.
+ * Bewusst auf Modulebene: in DealKalkulation deklariert, wäre es bei jedem Tastendruck ein neuer Komponententyp —
+ * React baute das Feld neu auf, und es verlöre nach dem ersten Zeichen den Fokus.
+ */
+function Eingabe({ c, feld, einheit, w = 90, step, label }: { c: FeldKontext; feld: string; einheit?: string; w?: number; step?: number; label: string }) {
+  return (
+    <NumberInput
+      size="xs"
+      w={w}
+      value={c.zahlAus(feld)}
+      placeholder={feld in c.standard ? String(c.standard[feld as keyof KalkStandard]).replace('.', ',') : feld === 'rp_pct' ? '10' : ''}
+      onChange={(v) => c.setzeFeld(feld, v)}
+      aria-label={label}
+      step={step}
+      rightSection={einheit ? <Text size="xs" c="dimmed" pr={4}>{einheit}</Text> : undefined}
+      rightSectionWidth={einheit ? (einheit.length > 2 ? 52 : 26) : undefined}
+      {...ZAHL}
+    />
+  );
+}
 
 function Abschnitt({ titel, farbe, children }: { titel: string; farbe?: string; children: ReactNode }) {
   return (

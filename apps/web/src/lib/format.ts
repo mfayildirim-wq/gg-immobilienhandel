@@ -21,5 +21,12 @@ export const zeitpunktLog = (iso: string | null | undefined) => {
   return `${d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })} ${d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
 };
 
-/** Mantine-NumberInput liefert '' für leer. */
-export const alsZahl = (v: number | string): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+/**
+ * Wert eines Mantine-NumberInput als Zahl; '' (leer) wird `null`. Zwischenstände beim Tippen meldet das Feld als Text
+ * ("01", wenn im Feld „0“ steht und jemand „1“ tippt; "4." vor der Nachkommastelle) — auch das sind Zahlen. Früher
+ * galt jeder Text als leer: das Feld wurde geleert und das getippte Zeichen war weg.
+ */
+export const alsZahl = (v: number | string): number | null => {
+  const n = typeof v === 'number' ? v : v.trim() === '' ? Number.NaN : Number(v);
+  return Number.isFinite(n) ? n : null;
+};
