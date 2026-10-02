@@ -1,9 +1,9 @@
 import type { CockpitDeal } from '@gg/api-contract';
+import { TERMIN_GEAENDERT, TERMIN_GEAENDERT_HINWEIS, whatsappNummer } from '@gg/domain';
 import { ActionIcon, Badge, Button, Card, Group, Stack, Text } from '@mantine/core';
-import { IconCheck, IconPhone } from '@tabler/icons-react';
+import { IconBrandWhatsapp, IconCheck, IconPhone } from '@tabler/icons-react';
 import { useDealErledigt, useTerminSetzen } from '../../lib/api.ts';
-import { datumDe, euro } from '../../lib/format.ts';
-import { StatusBadge } from '../StatusBadge.tsx';
+import { datumDe } from '../../lib/format.ts';
 import { MailAuswahl } from './MailAuswahl.tsx';
 import { FAELLIG_FARBE, TerminWahl } from './Termin.tsx';
 import css from '../Listenzeile.module.css';
@@ -18,15 +18,20 @@ const ohneAuswahl = (kind: React.ReactNode) => (
 
 /**
  * Nachverfolgungs-Karte in drei Zeilen:
- *   1 Adresse und Stadt, rechts der Status
- *   2 Makler (Firma, Name), rechts Anrufen und E-Mail als Symbole
+ *   1 Adresse und Stadt
+ *   2 Makler (Name, darunter die Firma), rechts WhatsApp, Anrufen und E-Mail als Symbole
  *   3 links Termin (Datum + Schnellwahl), rechts Fälligkeit und „Erledigt“
- * Ein Klick auf die Karte zeigt den Deal rechts im Detailbereich; die Werte sind dieselben wie zuvor.
+ * Ein Klick auf die Karte zeigt den Deal rechts im Detailbereich. Status, Kennzahlen (Kaufpreis, Fläche, Miete) und
+ * „Zuletzt“ stehen seit dem 02.10.2026 nicht mehr auf der Karte (Kundenwunsch) — sie stehen im Detail.
+ * `halten`/`loslassen`: ein neuer Termin lässt die Karte stehen, erst „Erledigt“ schließt sie ab (wie in der alten App).
  */
-export function DealKarte({ d, heute, aktiv, waehlen }: { d: CockpitDeal; heute: string; aktiv?: boolean; waehlen?: (id: string) => void }) {
+export function DealKarte({ d, heute, aktiv, waehlen, halten, loslassen }: {
+  d: CockpitDeal & { gehalten?: true }; heute: string; aktiv?: boolean; waehlen?: (id: string) => void;
+  halten?: (karte: CockpitDeal) => void; loslassen?: (id: string) => void;
+}) {
   const erledigt = useDealErledigt(d.id);
   const termin = useTerminSetzen('deals', d.id);
-  const rendite = d.jahresmiete && d.kaufpreis ? `${((d.jahresmiete / d.kaufpreis) * 100).toFixed(1).replace('.', ',')} % · ` : '';
+  const wa = whatsappNummer(d.makler?.tel);
 
   return (
     <Card
@@ -46,30 +51,26 @@ export function DealKarte({ d, heute, aktiv, waehlen }: { d: CockpitDeal; heute:
       data-faellig-klasse={d.faellig.klasse}
     >
       <Stack gap={6}>
-        {/* 1 — Adresse und Stadt, rechts der Status */}
-        <Group justify="space-between" wrap="nowrap" align="flex-start" gap="xs">
-          <div style={{ minWidth: 0 }}>
-            <Text fw={700} truncate>
-              📍 {d.objekt.titel}
-              {d.objekt.stadt ? `, ${d.objekt.stadt}` : ''}
-            </Text>
-            <Group gap={6} mt={2}>
-              {d.kaufpreis && <Text size="xs" fw={600} c="teal">{euro(d.kaufpreis)}</Text>}
-              {d.wohnflaeche && <Text size="xs" c="dimmed">{d.wohnflaeche.toLocaleString('de-DE')} m²</Text>}
-              {d.jahresmiete && <Text size="xs" c="green">{rendite}{euro(d.jahresmiete)}/Jahr</Text>}
-            </Group>
-          </div>
-          <StatusBadge status={d.status} />
-        </Group>
+        {/* 1 — Adresse und Stadt */}
+        <Text fw={700} truncate>
+          📍 {d.objekt.titel}
+          {d.objekt.stadt ? `, ${d.objekt.stadt}` : ''}
+        </Text>
 
-        {/* 2 — Makler, rechts Anrufen und E-Mail ohne Beschriftung */}
+        {/* 2 — Makler: Name, darunter die Firma; rechts WhatsApp, Anrufen und E-Mail ohne Beschriftung */}
         <Group justify="space-between" wrap="nowrap" gap="xs" p={6} style={{ background: 'var(--mantine-color-default-hover)', borderRadius: 6 }}>
           <div style={{ minWidth: 0 }}>
-            <Text size="sm" fw={600} truncate>{d.makler?.firma ?? d.makler?.name ?? '– ohne Makler'}</Text>
-            {d.makler?.firma && d.makler.name && <Text size="xs" c="dimmed" truncate>{d.makler.name}</Text>}
+            <Text size="sm" fw={600} truncate>{d.makler?.name ?? d.makler?.firma ?? '– ohne Makler'}</Text>
+            {d.makler?.name && d.makler.firma && <Text size="xs" c="dimmed" truncate>{d.makler.firma}</Text>}
           </div>
           {ohneAuswahl(
             <Group gap={4} wrap="nowrap">
+              {wa && (
+                <ActionIcon component="a" href={`https://wa.me/${wa}`} target="_blank" rel="noopener noreferrer" variant="light" color="green" size="lg"
+                  aria-label="WhatsApp-Chat öffnen" title={`WhatsApp-Chat mit ${d.makler?.name ?? d.makler?.tel} öffnen`}>
+                  <IconBrandWhatsapp size={18} />
+                </ActionIcon>
+              )}
               {d.makler?.tel && (
                 <ActionIcon component="a" href={`tel:${d.makler.tel}`} variant="light" color="green" size="lg" aria-label="Anrufen" title={d.makler.tel}>
                   <IconPhone size={18} />
@@ -84,16 +85,19 @@ export function DealKarte({ d, heute, aktiv, waehlen }: { d: CockpitDeal; heute:
         <Group justify="space-between" wrap="wrap" gap="xs">
           {ohneAuswahl(
             <div style={{ flex: '1 1 210px', minWidth: 190 }}>
-              <TerminWahl label="Nächster Kontakt Deal" wert={d.nextContact} heute={heute} setzen={(iso) => termin.mutate({ version: d.version, nextContact: iso })} />
+              <TerminWahl label="Nächster Kontakt Deal" wert={d.nextContact} heute={heute} setzen={(iso) => termin.mutate({ version: d.version, nextContact: iso }, { onSuccess: (r) => halten?.({ ...d, nextContact: iso, version: r.version }) })} />
             </div>,
           )}
           <Group gap={6} wrap="nowrap">
             <Stack gap={0} align="flex-end">
-              <Badge variant="light" color={FAELLIG_FARBE[d.faellig.klasse]} data-faellig-label>{d.faellig.label}</Badge>
-              {d.lastContact && <Text size="xs" c="dimmed" data-zuletzt>Zuletzt: {datumDe(d.lastContact)}</Text>}
+              {/* nicht mehr sichtbar; der Anker bleibt für die Parallelprüfung gegen die alte App */}
+              {d.lastContact && <span hidden data-zuletzt>Zuletzt: {datumDe(d.lastContact)}</span>}
+              {d.gehalten
+                ? <Badge variant="light" color="gray" title={TERMIN_GEAENDERT_HINWEIS} data-faellig-label>{TERMIN_GEAENDERT}</Badge>
+                : <Badge variant="light" color={FAELLIG_FARBE[d.faellig.klasse]} data-faellig-label>{d.faellig.label}</Badge>}
             </Stack>
             {ohneAuswahl(
-              <Button size="xs" variant="light" color="green" leftSection={<IconCheck size={14} />} loading={erledigt.isPending} onClick={() => erledigt.mutate(d.version)}>
+              <Button size="xs" variant="light" color="green" leftSection={<IconCheck size={14} />} loading={erledigt.isPending} onClick={() => erledigt.mutate(d.version, { onSuccess: () => loslassen?.(d.id) })}>
                 Erledigt
               </Button>,
             )}
