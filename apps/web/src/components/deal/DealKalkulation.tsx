@@ -3,6 +3,7 @@ import {
   type AnkaufErgebnis,
   aufteilungskostenVorschlag,
   berechneAnkauf,
+  KALK_UNGESPEICHERT_FRAGE,
   einheitAlsEingabe,
   KALK_STANDARD,
   type KalkStandard,
@@ -28,10 +29,13 @@ import {
 } from '@mantine/core';
 import { IconDeviceFloppy, IconPlus, IconRestore, IconTrash } from '@tabler/icons-react';
 import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useKalkStandard, useKalkulationSpeichern } from '../../lib/api.ts';
 import { alsZahl, euro, euroProQm, prozent } from '../../lib/format.ts';
+import { useUngespeichert } from '../../lib/ungespeichert.ts';
 import { AlleSetzen, Variantenleiste } from './KalkWerkzeuge.tsx';
 import { PropstackDialog } from './PropstackDialog.tsx';
+import css from './DealDetail.module.css';
 
 type Einheit = Omit<DealEinheit, 'id'> & { id?: string };
 type Sanierung = Omit<DealSanierung, 'id'> & { id?: string };
@@ -60,7 +64,8 @@ const FELDER: { feld: keyof KalkStandard | 'kaufpreis' | 'aufk' | 'rp_pct' | 'rp
 
 const AMPEL_FARBE = { gruen: 'green', gelb: 'yellow', rot: 'red', verlust: 'red' } as const;
 
-export function DealKalkulation({ deal }: { deal: DealDetail }) {
+/** `leistenPlatz`: fester Platz unter der Reiterleiste des Deals — dorthin kommt die Knopfleiste, damit sie beim Scrollen stehen bleibt. */
+export function DealKalkulation({ deal, leistenPlatz }: { deal: DealDetail; leistenPlatz: HTMLElement | null }) {
   const { data: standard = KALK_STANDARD } = useKalkStandard();
   const speichern = useKalkulationSpeichern(deal.id);
   const [kalk, setKalk] = useState<KalkulationWerte>(deal.kalkulation);
@@ -73,6 +78,8 @@ export function DealKalkulation({ deal }: { deal: DealDetail }) {
   );
   const geaendert =
     JSON.stringify([kalk, einheiten, sanierungen]) !== JSON.stringify([deal.kalkulation, deal.einheiten, deal.sanierungen]);
+  // Reiterwechsel und ein anderer Deal bauen die Kalkulation neu auf — ohne Rückfrage wären die Eingaben still verloren
+  useUngespeichert(geaendert, KALK_UNGESPEICHERT_FRAGE);
 
   const setzeFeld = (feld: string, v: number | string) => {
     const n = alsZahl(v);
@@ -88,50 +95,58 @@ export function DealKalkulation({ deal }: { deal: DealDetail }) {
   };
   const zahlAus = (feld: string) => (typeof kalk[feld] === 'number' ? (kalk[feld] as number) : '');
 
+  // Links die Varianten, rechts Verwerfen und Speichern — in einer Leiste, die mit der Reiterleiste stehen bleibt
+  const leiste = (
+    <div className={css.leiste} role="group" aria-label="Kalkulation speichern und Varianten">
+      <Group justify="space-between" align="flex-start" gap="xs" wrap="nowrap">
+        <Variantenleiste
+          dealId={deal.id}
+          aktuell={{ kalkulation: kalk, einheiten, sanierungen }}
+          laden={(v) => {
+            setKalk(v.kalkulation);
+            setEinheiten(v.einheiten);
+            setSanierungen(v.sanierungen);
+          }}
+        />
+        <Stack gap={4} align="flex-end">
+          <Group gap="xs" wrap="nowrap">
+            <Button
+              size="xs"
+              variant="default"
+              leftSection={<IconRestore size={16} />}
+              disabled={!geaendert}
+              onClick={() => {
+                setKalk(deal.kalkulation);
+                setEinheiten(deal.einheiten);
+                setSanierungen(deal.sanierungen);
+              }}
+            >
+              Verwerfen
+            </Button>
+            <Button
+              size="xs"
+              leftSection={<IconDeviceFloppy size={16} />}
+              disabled={!geaendert}
+              loading={speichern.isPending}
+              onClick={() => speichern.mutate({ version: deal.version, kalkulation: kalk, einheiten, sanierungen })}
+            >
+              Speichern
+            </Button>
+          </Group>
+          {geaendert && <Badge color="orange">ungespeichert</Badge>}
+        </Stack>
+      </Group>
+      {speichern.error && (
+        <Alert color="red" py={4} mt={6}>
+          {speichern.error.message}
+        </Alert>
+      )}
+    </div>
+  );
+
   return (
     <Stack>
-      <Group justify="space-between">
-        <Group gap="xs">
-          {geaendert && <Badge color="orange">ungespeichert</Badge>}
-          {speichern.error && (
-            <Alert color="red" py={4}>
-              {speichern.error.message}
-            </Alert>
-          )}
-        </Group>
-        <Group gap="xs">
-          <Button
-            variant="default"
-            leftSection={<IconRestore size={16} />}
-            disabled={!geaendert}
-            onClick={() => {
-              setKalk(deal.kalkulation);
-              setEinheiten(deal.einheiten);
-              setSanierungen(deal.sanierungen);
-            }}
-          >
-            Verwerfen
-          </Button>
-          <Button
-            leftSection={<IconDeviceFloppy size={16} />}
-            disabled={!geaendert}
-            loading={speichern.isPending}
-            onClick={() => speichern.mutate({ version: deal.version, kalkulation: kalk, einheiten, sanierungen })}
-          >
-            Kalkulation speichern
-          </Button>
-        </Group>
-      </Group>
-
-      <Variantenleiste
-        dealId={deal.id}
-        aktuell={{ kalkulation: kalk, einheiten, sanierungen }}
-        laden={(v) => {
-          setKalk(v.kalkulation);
-          setEinheiten(v.einheiten);
-          setSanierungen(v.sanierungen);
-        }}
-      />
+      {leistenPlatz && createPortal(leiste, leistenPlatz)}
 
       <Ergebnis ergebnis={ergebnis} />
 

@@ -27,6 +27,7 @@ import { Chipleiste, Zaehlerleiste } from '../components/ListenKopf.tsx';
 import { useDealAnlegen, useListen, useMakler, useObjekte } from '../lib/api.ts';
 import { STATUS_CHIPS, STATUS_FARBE, Titelbild } from './ObjekteSeite.tsx';
 import { LAYOUTS, type Layout, useAuswahl, useEinstellung } from '../lib/ansicht.ts';
+import { darfVerlassen } from '../lib/ungespeichert.ts';
 
 /** Liste + Detail, umschaltbar nebeneinander (Liste links) oder untereinander (Liste oben, scrollbar). */
 export function DealsSeite() {
@@ -39,6 +40,8 @@ export function DealsSeite() {
   const suche = useSearch({ from: '/deals' });
   const navigate = useNavigate();
   const [auswahlId, setAuswahlId] = useAuswahl(liste.zeilen.map((d) => d.id), suche.deal);
+  // Ein anderer Deal baut das Detail neu auf: bei ungespeicherter Kalkulation erst fragen
+  const waehlen = (id: string) => { if (id === auswahlId || darfVerlassen()) setAuswahlId(id); };
   const [neuOffen, neu] = useDisclosure(!!suche.neu);
   const auswahl = liste.zeilen.find((d) => d.id === auswahlId) ?? (listen?.deals.some((d) => d.id === auswahlId) ? { id: auswahlId! } : null);
   const nebeneinander = layout === 'nebeneinander';
@@ -84,10 +87,10 @@ export function DealsSeite() {
           {nebeneinander ? (
             <Stack gap={4}>
               {liste.zeilen.map((d) => (
-                <DealZeile key={d.id} deal={d} exposeId={listen?.exposeIds?.[d.id]} aktiv={d.id === auswahlId} waehlen={() => setAuswahlId(d.id)} />
+                <DealZeile key={d.id} deal={d} exposeId={listen?.exposeIds?.[d.id]} aktiv={d.id === auswahlId} waehlen={() => waehlen(d.id)} />
               ))}
             </Stack>
-          ) : liste.zeilen.length > 0 && <DealTabelle zeilen={liste.zeilen} exposeIds={listen?.exposeIds ?? {}} auswahlId={auswahlId} waehlen={setAuswahlId} />}
+          ) : liste.zeilen.length > 0 && <DealTabelle zeilen={liste.zeilen} exposeIds={listen?.exposeIds ?? {}} auswahlId={auswahlId} waehlen={waehlen} />}
         </ScrollArea>
         <Box component="section" style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }} aria-label="Deal-Detail">
           {auswahl ? <DealDetail key={auswahl.id} id={auswahl.id} /> : <Text c="dimmed">Deal in der Liste wählen.</Text>}

@@ -3,7 +3,7 @@ import {
   einheitenAusErkennung, einheitenErsetzenFrage, MIETERHOEHUNG_KNOEPFE, sammelKpm2, sammelMietsteigerung, sammelRendite, type SammelErgebnis,
   VARIANTE_NAME_FRAGE, varianteGeladenHinweis, varianteGeloeschtHinweis, varianteGespeichertHinweis, varianteLadenFrage, varianteLoeschenFrage, varianteName, varianteOption,
 } from '@gg/domain';
-import { Alert, Button, Group, NativeSelect, Paper, Text, TextInput, UnstyledButton } from '@mantine/core';
+import { Alert, Button, Group, NativeSelect, Text, TextInput, UnstyledButton } from '@mantine/core';
 import { useEffect, useRef, useState } from 'react';
 import { useEinheitenAusPdf, useVarianteAnlegen, useVarianteLoeschen, useVarianten } from '../../lib/api.ts';
 
@@ -48,10 +48,10 @@ export function Variantenleiste({ dealId, aktuell, laden }: {
   };
 
   return (
-    <Paper withBorder p="xs" aria-label="Varianten">
+    <div role="group" aria-label="Varianten" style={{ flex: 1, minWidth: 0 }}>
       <Group gap="xs" wrap="wrap">
         <Text size="xs" fw={600} c="dimmed">📸 Varianten:</Text>
-        <Button size="compact-xs" variant="default" onClick={speichern} loading={anlegen.isPending}>💾 Aktuelle speichern als…</Button>
+        <Button size="compact-xs" variant="default" onClick={speichern} loading={anlegen.isPending}>💾 Speichern als…</Button>
         {varianten.length > 0 ? (
           <>
             <NativeSelect size="xs" aria-label="Variante laden" value="" onChange={(e) => waehlen(e.currentTarget.value)} style={{ maxWidth: 240 }}
@@ -71,7 +71,7 @@ export function Variantenleiste({ dealId, aktuell, laden }: {
         </Group>
       )}
       {meldung && <Alert color={meldung.farbe} variant="light" py={4} mt={6}>{meldung.text}</Alert>}
-    </Paper>
+    </div>
   );
 }
 
