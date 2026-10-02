@@ -1,10 +1,13 @@
 /* Formulare je Folientyp — Felder, Beschriftungen und Platzhalter wie in der alten App (finanzpraes.ts, render*Editor). */
-import { entferneBild, istSektionsZeile, MIETEN_SPALTEN, SLIDE_TYPES, teileTabellenzeilen, verschiebeBild } from '@gg/domain';
+import {
+  entferneBild, HELLIGKEIT_KNOPF, HELLIGKEIT_TITEL, istSektionsZeile, KI_DENKT, LAGE_KI_KNOPF, MIETEN_SPALTEN, OBJEKT_KI_KNOPF, SLIDE_TYPES, teileTabellenzeilen, verschiebeBild,
+} from '@gg/domain';
 import { bildFuerVorschau } from '@gg/documents';
 import { ActionIcon, Alert, Button, Checkbox, CloseButton, Group, Image, Modal, Paper, SimpleGrid, Stack, Table, Text, Textarea, TextInput, Title } from '@mantine/core';
 import { IconArrowLeft, IconArrowRight, IconBolt, IconMap, IconPhoto, IconTable, IconTrash } from '@tabler/icons-react';
 import { type ReactNode, useState } from 'react';
 import type { AuswahlAuftrag } from './BildAuswahl.tsx';
+import type { BildPlatz } from './bilder.ts';
 
 type Daten = Record<string, unknown>;
 export type Vorbelegung = 'deckblatt' | 'objektbeschreibung' | 'projektkalkulation-aufteiler' | 'projektkalkulation-global' | 'verkaufspreise' | 'mietenaufstellung' | 'finanzierung' | 'organigramm' | 'abschluss';
@@ -14,9 +17,17 @@ export interface FormularKontext {
   setzen: (neu: Daten) => void;
   bildWaehlen: (a: AuswahlAuftrag) => void;
   vorbelegen: (art: Vorbelegung, spalten?: string[]) => void;
+  /** KI-Text für die Folie erzeugen; was schon getippt ist, geht als Vorgabe mit. */
+  kiText: (art: 'lage' | 'objekt') => void;
+  /** Bild an diesem Platz durch eine aufgehellte Kopie ersetzen (Auto-Levels, keine KI). */
+  aufhellen: (platz: BildPlatz, ref: string) => void;
   adresse: string;
   laeuft: boolean;
 }
+
+const HelligkeitKnopf = ({ c, platz, bild, kompakt }: { c: FormularKontext; platz: BildPlatz; bild: string; kompakt?: boolean }) => (
+  <Button size="compact-xs" variant="default" title={HELLIGKEIT_TITEL} disabled={c.laeuft} fullWidth={kompakt} onClick={() => c.aufhellen(platz, bild)}>{HELLIGKEIT_KNOPF}</Button>
+);
 
 const t = (d: Daten, k: string) => (typeof d[k] === 'string' ? (d[k] as string) : '');
 
@@ -40,6 +51,7 @@ function Einzelbild({ k, label, hinweis, c }: { k: string; label: string; hinwei
           <Image src={bildFuerVorschau(wert)} alt={label} mah={180} maw={260} fit="contain" radius="sm" style={{ border: '1px solid var(--mantine-color-default-border)' }} />
           <Stack gap={4}>
             <Button size="compact-xs" variant="default" leftSection={<IconPhoto size={12} />} onClick={waehlen}>Bild wechseln</Button>
+            <HelligkeitKnopf c={c} platz={{ feld: k }} bild={wert} />
             <Button size="compact-xs" variant="subtle" color="red" onClick={() => c.setzen({ ...c.data, [k]: '' })}>Entfernen</Button>
           </Stack>
         </Group>
@@ -78,6 +90,7 @@ function Mehrbild({ label, max, hinweis, beschriftung, c }: { label: string; max
               <TextInput size="xs" style={{ flex: 1 }} aria-label={`Beschriftung ${i + 1}`} placeholder={beschriftung} value={captions[i] ?? ''}
                 onChange={(e) => { const v = e.currentTarget.value; const neu = [...captions]; while (neu.length < bilder.length) neu.push(''); neu[i] = v; c.setzen({ ...c.data, captions: neu }); }} />
             </Group>
+            <HelligkeitKnopf c={c} platz={{ index: i }} bild={b} kompakt />
           </Paper>
         ))}
       </SimpleGrid>
@@ -143,6 +156,9 @@ export function FolienFormular({ typ, c }: { typ: string; c: FormularKontext }) 
   const vorbelegenKnopf = (art: Vorbelegung, text: string, icon: ReactNode = <IconBolt size={14} />) => (
     <Button size="xs" variant="light" leftSection={icon} loading={c.laeuft} onClick={() => c.vorbelegen(art)}>{text}</Button>
   );
+  const kiKnopf = (art: 'lage' | 'objekt', text: string, titel: string) => (
+    <Button size="xs" variant="light" title={titel} disabled={c.laeuft} onClick={() => c.kiText(art)}>{c.laeuft ? KI_DENKT : text}</Button>
+  );
 
   const inhalt = (() => {
     switch (typ) {
@@ -169,13 +185,17 @@ export function FolienFormular({ typ, c }: { typ: string; c: FormularKontext }) 
           </SimpleGrid>
           <Feld k="beschreibung" label="Beschreibung" platzhalter="Mehrzeiliger Beschreibungstext…" zeilen={6} c={c} />
           <Einzelbild k="bildPath" label="Hauptbild" c={c} />
-          <Group>{vorbelegenKnopf('objektbeschreibung', 'Aus Deal/Objekt vorbelegen')}</Group>
+          <Group>
+            {vorbelegenKnopf('objektbeschreibung', 'Aus Deal/Objekt vorbelegen')}
+            {kiKnopf('objekt', OBJEKT_KI_KNOPF, 'Generiert 4-7-Sätze-Beschreibungstext im Stil der echten IVT-Pitches mit Claude Haiku 4.5')}
+          </Group>
         </>;
       case 'lagebeschreibung':
         return <>
           <Feld k="standortBullets" label="Standort" hinweis="Bullets — eine Zeile pro Punkt" platzhalter={'Eine Zeile pro Bullet, z.B.\nZentrale Lage in Stuttgart-West\nNähe zu Schulen und Einkaufsmöglichkeiten'} zeilen={4} c={c} />
           <Feld k="anbindungBullets" label="Anbindung" hinweis="Bullets — eine Zeile pro Punkt" platzhalter={'S-Bahn-Anschluss in 5 Min Fußweg\nAutobahnauffahrt A8 in 10 Min'} zeilen={4} c={c} />
           <Group>
+            {kiKnopf('lage', LAGE_KI_KNOPF, 'Generiert Standort + Anbindung mit Claude Haiku 4.5 basierend auf Adresse aus Deal/Objekt')}
             <Button size="xs" variant="default" leftSection={<IconMap size={14} />} disabled={!c.adresse} component="a" target="_blank" rel="noopener"
               href={`https://www.google.com/maps/search/${encodeURIComponent(c.adresse)}/@,17z/data=!3m1!1e3`}>In Google Maps öffnen</Button>
           </Group>

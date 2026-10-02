@@ -20,7 +20,7 @@ export async function dealUndObjektAlt(db: Db, dealId: string) {
     },
     objekt: o ? {
       id: o.id, strasse: o.strasse, hausnr: o.hausnr, plz: o.plz, stadt: o.stadt, baujahr: o.baujahr, einheitenAnz: o.einheitenAnzahl,
-      wohnflaeche: o.wohnflaeche, grundstueck: o.grundstueck, objektTyp: details.objektTyp,
+      wohnflaeche: o.wohnflaeche, grundstueck: o.grundstueck, objektTyp: details.objektTyp, energie: o.energieklasse, heizung: o.heizung,
     } : null,
   };
 }

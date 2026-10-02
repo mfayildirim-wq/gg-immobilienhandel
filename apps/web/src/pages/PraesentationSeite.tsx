@@ -1,7 +1,9 @@
 import type { Praesentation, PraesentationFolie } from '@gg/api-contract';
 import {
-  ausEinstellungen, type FinanzPraes, finanzierungScope, finanzpraesCheckConsistency, folieVerschieben, leereFolie, SLIDE_TYPES,
+  ausEinstellungen, type FinanzPraes, finanzierungScope, finanzpraesCheckConsistency, folieVerschieben, HELLIGKEIT_FERTIG, HELLIGKEIT_LAEUFT, HELLIGKEIT_OHNE_OBJEKT,
+  helligkeitFehlerHinweis, kiFehlerHinweis, leereFolie, SLIDE_TYPES,
 } from '@gg/domain';
+import { bildFuerVorschau } from '@gg/documents';
 import {
   ActionIcon, Alert, Badge, Button, Group, Loader, Menu, Modal, Paper, ScrollArea, Stack, Text, TextInput, Tooltip, UnstyledButton,
 } from '@mantine/core';
@@ -11,12 +13,15 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { type AuswahlAuftrag, BildAuswahl } from '../components/praesentation/BildAuswahl.tsx';
+import { bildErsetzen, type BildPlatz } from '../components/praesentation/bilder.ts';
 import { FolienFormular, type Vorbelegung } from '../components/praesentation/FolienFormular.tsx';
 import { FolienVorschau } from '../components/praesentation/FolienVorschau.tsx';
 import { useAutomatischSpeichern } from '../lib/automatischSpeichern.ts';
 import {
-  dateiLaden, herunterladen, praesentationSpeichern, praesentationVorbelegen, useDealDetail, usePraesentation, usePraesentationLoeschen, usePraesentationStandard,
+  dateiLaden, fotoHochladen, herunterladen, praesentationKi, praesentationSpeichern, praesentationVorbelegen, useDealDetail, usePraesentation, usePraesentationLoeschen,
+  usePraesentationStandard,
 } from '../lib/api.ts';
+import { bildAufhellen } from '../lib/bild.ts';
 
 type Stand = Pick<Praesentation, 'bankName' | 'internNotiz' | 'slides'>;
 
@@ -86,6 +91,45 @@ function Editor({ start }: { start: Praesentation }) {
       return;
     }
     return mitScope();
+  };
+
+  /** 🤖 KI-Text (Lage oder Objekt): der aktuelle Stand der Folie geht mit, das Ergebnis ersetzt ihn erst bei Erfolg. */
+  const kiText = async (art: 'lage' | 'objekt') => {
+    if (!folie) return;
+    const folieId = folie.id;
+    setHinweis(null);
+    setLaeuft(true);
+    try {
+      const r = await praesentationKi(start.id, { art, data: folie.data });
+      if (r.data) datenSetzen(folieId, r.data);
+      setHinweis({ farbe: r.data ? 'teal' : 'orange', text: r.hinweis ?? 'Nicht möglich' });
+    } catch (e) {
+      const text = (e as Error).message;
+      setHinweis({ farbe: 'red', text: text.startsWith('❌') ? text : kiFehlerHinweis(text) });
+    } finally {
+      setLaeuft(false);
+    }
+  };
+
+  /** ✨ Helligkeit: aufgehellte Kopie als neues Foto ans Objekt, die Folie zeigt danach die Kopie (das Original bleibt). */
+  const aufhellen = async (platz: BildPlatz, ref: string) => {
+    if (!folie) return;
+    const folieId = folie.id;
+    const objektId = deal?.objekt.id;
+    if (!objektId) { setHinweis({ farbe: 'red', text: HELLIGKEIT_OHNE_OBJEKT }); return; }
+    setHinweis({ farbe: 'gray', text: HELLIGKEIT_LAEUFT });
+    setLaeuft(true);
+    try {
+      const foto = await fotoHochladen(objektId, await bildAufhellen(bildFuerVorschau(ref)), `enhanced-${Date.now()}.jpg`);
+      await qc.invalidateQueries({ queryKey: ['objekte', objektId, 'fotos'] });
+      // Gegen den aktuellen Stand ersetzen: wer inzwischen das Bild gewechselt hat, behält seine Wahl
+      folienAendern((sl) => sl.map((x) => (x.id === folieId ? { ...x, data: bildErsetzen(x.data, platz, ref, foto.ref) } : x)));
+      setHinweis({ farbe: 'teal', text: HELLIGKEIT_FERTIG });
+    } catch (e) {
+      setHinweis({ farbe: 'red', text: helligkeitFehlerHinweis((e as Error).message) });
+    } finally {
+      setLaeuft(false);
+    }
   };
 
   const exportieren = async (art: 'pdf' | 'pptx') => {
@@ -194,7 +238,8 @@ function Editor({ start }: { start: Praesentation }) {
           <Paper withBorder p="md" component="section" aria-label="Folie bearbeiten">
             {folie ? (
               <FolienFormular key={folie.id} typ={folie.typ} c={{
-                data: folie.data, setzen: (d) => datenSetzen(folie.id, d), bildWaehlen: setAuswahl, vorbelegen: (a, sp) => void vorbelegen(a, sp), adresse, laeuft,
+                data: folie.data, setzen: (d) => datenSetzen(folie.id, d), bildWaehlen: setAuswahl, vorbelegen: (a, sp) => void vorbelegen(a, sp),
+                kiText: (art) => void kiText(art), aufhellen: (platz, ref) => void aufhellen(platz, ref), adresse, laeuft,
               }} />
             ) : <Text c="dimmed" ta="center" py="xl">{stand.slides.length ? 'Wähle links eine Slide aus.' : 'Füge links eine Slide hinzu, um sie hier zu bearbeiten.'}</Text>}
           </Paper>

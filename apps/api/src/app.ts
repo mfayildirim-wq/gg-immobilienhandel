@@ -65,6 +65,7 @@ import {
   Praesentation,
   PraesentationAnlegen,
   PraesentationSpeichern,
+  PraesentationKi,
   PraesentationVorbelegen,
   VorbelegungErgebnis,
   ObjektFoto,
@@ -108,7 +109,7 @@ import { renderTor } from './middleware/render-tor.ts';
 import { bankgespraechDaten, pdfExportProtokollieren } from './services/dokumente.ts';
 import {
   praesentationAnlegen, praesentationDetail, praesentationExportProtokollieren, praesentationFuerExport, praesentationLoeschen, praesentationSpeichern,
-  praesentationStandardLesen, praesentationStandardSpeichern, praesentationVorbelegen, praesentationZumDeal,
+  praesentationKiText, praesentationStandardLesen, praesentationStandardSpeichern, praesentationVorbelegen, praesentationZumDeal,
 } from './services/praesentationen.ts';
 import {
   begleitscheinAktion, begleitscheinAnlegen, begleitscheinDetail, begleitscheineListe, begleitscheinLoeschen, begleitscheinSpeichern, bsAktionenLesen,
@@ -1117,6 +1118,10 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   app.openapi(
     createRoute({ method: 'post', path: '/api/praesentationen/{id}/vorbelegen', request: { params: IdParam, ...body(PraesentationVorbelegen) }, responses: { 200: json(VorbelegungErgebnis, 'Vorbelegung (nicht gespeichert)'), 404: fehler('nicht gefunden') } }),
     async (c) => c.json(await praesentationVorbelegen(db, c.req.valid('param').id, c.req.valid('json')), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/praesentationen/{id}/ki', request: { params: IdParam, ...body(PraesentationKi) }, responses: { 200: json(VorbelegungErgebnis, 'KI-Text für die Folie (nicht gespeichert)'), 404: fehler('nicht gefunden'), 422: fehler('KI nicht eingerichtet'), 500: fehler('KI-Aufruf fehlgeschlagen') } }),
+    async (c) => c.json(await praesentationKiText(db, ki(), c.req.valid('param').id, c.req.valid('json')), 200),
   );
   const exportieren = (art: 'pdf' | 'pptx') => async (c: import('hono').Context) => {
     const praes = await praesentationFuerExport(db, c.req.param('id')!);

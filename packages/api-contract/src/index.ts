@@ -760,6 +760,9 @@ export const PraesentationVorbelegen = z.object({
 });
 export type PraesentationVorbelegen = z.infer<typeof PraesentationVorbelegen>;
 export const VorbelegungErgebnis = z.object({ data: z.record(z.string(), z.unknown()).nullable(), hinweis: z.string().nullable() });
+/** KI-Text für eine Folie: `lage` = Standort und Anbindung, `objekt` = Beschreibungstext. `data` ist der aktuelle Stand der Folie. */
+export const PraesentationKi = z.object({ art: z.enum(['lage', 'objekt']), data: z.record(z.string(), z.unknown()) });
+export type PraesentationKi = z.infer<typeof PraesentationKi>;
 
 export const FinanzpraesStandard = z.object({
   geschaeftsmodell: z.object({ zielgruppe: z.string(), angebot: z.string(), kundengewinnung: z.string(), vorteile: z.string(), vorteileIvt: z.string() }),

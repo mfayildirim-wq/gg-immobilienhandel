@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createDb, schema, verlangeLokaleDatenbank } from '@gg/db';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
 import { OBJEKT_HAT_DEAL_HINWEIS, papierkorbVerwiesenHinweis } from '@gg/domain';
 import { erzeugeSchleuse, SCHLEUSE_STANDARD } from '@gg/documents/pdf';
@@ -391,6 +391,38 @@ describe.skipIf(!url)('Deal-Ablauf gegen die lokale Datenbank', () => {
     expect((await app.request(`/api/praesentationen/${p.id}`, { method: 'DELETE' })).status).toBe(200);
     expect(await lies(app.request(`/api/deals/${dealId}/praesentation`))).toEqual({ praesentation: null });
     await db.delete(schema.finanzpraesentationen).where(eq(schema.finanzpraesentationen.dealId, dealId));
+  });
+
+  it('Bank-Präsentation: KI-Texte für Lage und Objekt — getippter Bestand bleibt, nichts wird gespeichert, Kosten werden gebucht', async () => {
+    const objekt = await lies(post('/api/objekte', { strasse: 'KI-Weg', hausnr: '3', plz: '70378', stadt: 'Stuttgart' }));
+    angelegt.objekte.push(objekt.id);
+    await post(`/api/objekte/${objekt.id}`, { version: objekt.version, baujahr: 1964, energieklasse: 'D', heizung: 'Gas-Etagenheizung' }, 'PATCH');
+    const { id: dealId } = await lies(post('/api/deals', { objektId: objekt.id }));
+    const p = await lies(post(`/api/deals/${dealId}/praesentation`, { vorlage: 'leer' }));
+    const ki = (body: unknown) => post(`/api/praesentationen/${p.id}/ki`, body);
+
+    // Lage: der getippte Punkt steht zuerst, andere Felder der Folie bleiben
+    expect(await lies(ki({ art: 'lage', data: { standortBullets: 'Ruhige Wohnlage', bildPath: 'photo:x/y' } }))).toEqual({
+      data: { standortBullets: 'Ruhige Wohnlage\nWohnlage in Stuttgart (Test-Modus)', anbindungBullets: 'ÖPNV in der Nähe (Test-Modus)', bildPath: 'photo:x/y' },
+      hinweis: '✅ Lagebeschreibung generiert (3 Bullets)',
+    });
+    // Objekt: Adresse, Baujahr, Energiekennwert und Heizung aus dem Objekt, Stellplätze aus der Folie = 5 Fakten
+    expect(await lies(ki({ art: 'objekt', data: { stellplaetze: '4' } }))).toEqual({
+      data: { stellplaetze: '4', beschreibung: 'Bei dem Objekt handelt es sich um ein Mehrfamilienhaus in solider Bausubstanz (Test-Modus, 5 Fakten).' },
+      hinweis: '✅ Objektbeschreibung generiert (15 Wörter)',
+    });
+
+    // Gespeichert wird nichts — der Editor übernimmt das Ergebnis und speichert selbst
+    expect((await lies(app.request(`/api/praesentationen/${p.id}`))).slides).toEqual([]);
+    const buchungen = await db.select({ quelle: schema.auditLog.source, modell: schema.auditLog.aiModel }).from(schema.auditLog)
+      .where(sql`${schema.auditLog.metadata} like ${`%${p.id}%`}`).orderBy(schema.auditLog.id);
+    expect(buchungen).toEqual([
+      { quelle: 'praesentation/lage', modell: 'claude-haiku-4-5-20251001' },
+      { quelle: 'praesentation/objekt', modell: 'claude-haiku-4-5-20251001' },
+    ]);
+
+    expect((await ki({ art: 'unbekannt', data: {} })).status).toBe(400);
+    expect((await post('/api/praesentationen/gibt-es-nicht/ki', { art: 'lage', data: {} })).status).toBe(404);
   });
 
   it('Begleitschein: aus der Vorlage anlegen, Status mit Archiv, Aktionen (Daten, Vordruck), Vorlage mit Aufräumen', async () => {

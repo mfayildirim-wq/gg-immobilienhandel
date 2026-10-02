@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { auswahlUebernehmen, bildQuellen } from './bilder.ts';
+import { auswahlUebernehmen, bildErsetzen, bildQuellen } from './bilder.ts';
 
 describe('bildQuellen', () => {
   it('zeigt Objektfotos zuerst und ergänzt Bilder aus Folien ohne Doppelte', () => {
@@ -19,5 +19,20 @@ describe('bildQuellen', () => {
 describe('auswahlUebernehmen', () => {
   it('nimmt Beschriftungen in die neue Reihenfolge mit, neue Bilder ohne', () => {
     expect(auswahlUebernehmen({ bilder: ['a', 'b'], captions: ['EG', 'OG'], x: 1 }, ['b', 'c', 'a'])).toEqual({ bilder: ['b', 'c', 'a'], captions: ['OG', '', 'EG'], x: 1 });
+  });
+});
+
+describe('bildErsetzen', () => {
+  it('tauscht ein Einzelbild und eine Stelle der Bildliste aus, Beschriftungen bleiben', () => {
+    expect(bildErsetzen({ titel: 'x', bildPath: 'photo:o/a' }, { feld: 'bildPath' }, 'photo:o/a', 'photo:o/hell')).toEqual({ titel: 'x', bildPath: 'photo:o/hell' });
+    expect(bildErsetzen({ bilder: ['photo:o/a', 'photo:o/b'], captions: ['EG', 'OG'] }, { index: 1 }, 'photo:o/b', 'photo:o/hell'))
+      .toEqual({ bilder: ['photo:o/a', 'photo:o/hell'], captions: ['EG', 'OG'] });
+  });
+
+  it('lässt die Daten stehen, wenn am Platz inzwischen ein anderes Bild liegt', () => {
+    const gewechselt = { bildPath: 'photo:o/c' };
+    expect(bildErsetzen(gewechselt, { feld: 'bildPath' }, 'photo:o/a', 'photo:o/hell')).toBe(gewechselt);
+    const umsortiert = { bilder: ['photo:o/b', 'photo:o/a'] };
+    expect(bildErsetzen(umsortiert, { index: 1 }, 'photo:o/b', 'photo:o/hell')).toBe(umsortiert);
   });
 });

@@ -48,7 +48,7 @@ import type {
   BsVorlage,
   Praesentation,
   PraesentationSpeichern,
-  PraesentationVorbelegen,
+  PraesentationKi, PraesentationVorbelegen,
   PropstackStatusListe,
   FinanzpraesStandard,
   AnkaufCockpit,
@@ -513,6 +513,9 @@ export function usePraesentationAnlegen(dealId: string) {
 export const praesentationSpeichern = (id: string, e: PraesentationSpeichern) => anfrage<Praesentation>(`/api/praesentationen/${id}`, senden('PUT', e));
 export const praesentationVorbelegen = (id: string, v: PraesentationVorbelegen) =>
   anfrage<{ data: Record<string, unknown> | null; hinweis: string | null }>(`/api/praesentationen/${id}/vorbelegen`, senden('POST', v));
+/** KI-Text für eine Folie (Lage oder Objekt); gespeichert wird erst, wenn der Editor das Ergebnis übernimmt. */
+export const praesentationKi = (id: string, v: PraesentationKi) =>
+  anfrage<{ data: Record<string, unknown> | null; hinweis: string | null }>(`/api/praesentationen/${id}/ki`, senden('POST', v));
 export function usePraesentationLoeschen() {
   const qc = useQueryClient();
   return useMutation({
