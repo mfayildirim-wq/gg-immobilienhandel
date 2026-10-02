@@ -75,7 +75,7 @@ export function GeteilteAnsicht({ schluessel, layout, listeLabel, liste, detailL
   return (
     <ListeKontext.Provider value={{ zu, umschalten: () => setZustand(zu ? 'auf' : 'zu') }}>
       <Box ref={rahmen} data-layout={layout} data-liste={zustand}
-        style={{ display: 'flex', flexDirection: neben ? 'row' : 'column', height: '100%', minHeight: 0, userSelect: beimZiehen !== null ? 'none' : undefined }}>
+        style={{ display: 'flex', flexDirection: neben ? 'row' : 'column', flex: 1, height: '100%', minHeight: 0, userSelect: beimZiehen !== null ? 'none' : undefined }}>
         {!zu && (
           <>
             <ScrollArea ref={listenfeld} type="auto" aria-label={listeLabel} style={neben ? { width: groesse, flexShrink: 0 } : { height: groesse, flexShrink: 0 }}>

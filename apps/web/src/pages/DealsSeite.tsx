@@ -2,11 +2,9 @@ import { dealAktuelleKriterien, dealListe, type DealStatus, LISTEN_STATUS } from
 import {
   Alert,
   Anchor,
-  Box,
   Button,
   Group,
   Modal,
-  ScrollArea,
   SegmentedControl,
   Select,
   Stack,
@@ -19,6 +17,7 @@ import { useDisclosure } from '@mantine/hooks';
 import { IconLayoutColumns, IconLayoutRows, IconPlus } from '@tabler/icons-react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useState } from 'react';
+import { GeteilteAnsicht } from '../components/GeteilteAnsicht.tsx';
 import { DealDetail } from '../components/deal/DealDetail.tsx';
 import { Listenzeile } from '../components/Listenzeile.tsx';
 import { StatusBadge } from '../components/StatusBadge.tsx';
@@ -73,29 +72,23 @@ export function DealsSeite() {
 
       <Chipleiste chips={STATUS_CHIPS} aktiv={status} waehlen={setStatus} suche={text} setSuche={setText} platzhalter="Suchen…" />
 
-      <Box
-        data-layout={layout}
-        style={{ display: 'flex', flexDirection: nebeneinander ? 'row' : 'column', gap: 12, flex: 1, minHeight: 0 }}
-      >
-        <ScrollArea
-          type="auto"
-          style={nebeneinander ? { width: 360, flexShrink: 0 } : { height: '38%', flexShrink: 0 }}
-          aria-label="Deal-Liste"
-        >
-          {isLoading && <Text c="dimmed">Lädt …</Text>}
-          {!isLoading && liste.zeilen.length === 0 && <Text c="dimmed">📋 Keine Deals</Text>}
-          {nebeneinander ? (
-            <Stack gap={4}>
-              {liste.zeilen.map((d) => (
-                <DealZeile key={d.id} deal={d} exposeId={listen?.exposeIds?.[d.id]} aktiv={d.id === auswahlId} waehlen={() => waehlen(d.id)} />
-              ))}
-            </Stack>
-          ) : liste.zeilen.length > 0 && <DealTabelle zeilen={liste.zeilen} exposeIds={listen?.exposeIds ?? {}} auswahlId={auswahlId} waehlen={waehlen} />}
-        </ScrollArea>
-        <Box component="section" style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }} aria-label="Deal-Detail">
-          {auswahl ? <DealDetail key={auswahl.id} id={auswahl.id} /> : <Text c="dimmed">Deal in der Liste wählen.</Text>}
-        </Box>
-      </Box>
+      <GeteilteAnsicht
+        schluessel="deals" layout={layout} listeLabel="Deal-Liste" detailLabel="Deal-Detail" standardBreite={360} standardHoehe="38%"
+        liste={
+          <>
+            {isLoading && <Text c="dimmed">Lädt …</Text>}
+            {!isLoading && liste.zeilen.length === 0 && <Text c="dimmed">📋 Keine Deals</Text>}
+            {nebeneinander ? (
+              <Stack gap={4}>
+                {liste.zeilen.map((d) => (
+                  <DealZeile key={d.id} deal={d} exposeId={listen?.exposeIds?.[d.id]} aktiv={d.id === auswahlId} waehlen={() => waehlen(d.id)} />
+                ))}
+              </Stack>
+            ) : liste.zeilen.length > 0 && <DealTabelle zeilen={liste.zeilen} exposeIds={listen?.exposeIds ?? {}} auswahlId={auswahlId} waehlen={waehlen} />}
+          </>
+        }
+        detail={auswahl ? <DealDetail key={auswahl.id} id={auswahl.id} /> : <Text c="dimmed">Deal in der Liste wählen.</Text>}
+      />
 
       <NeuerDealDialog
         offen={neuOffen}

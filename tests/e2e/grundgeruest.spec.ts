@@ -127,3 +127,34 @@ test('Einstellungen: Untermenü mit einer Seite je Bereich', async ({ page }) =>
     await expect(page.getByRole('region', { name: 'Kalkulation Einstellungen' })).toHaveCount(0);
   }
 });
+
+for (const [pfad, liste, detail] of [['/deals', 'Deal-Liste', 'Deal-Detail'], ['/objekte', 'Objekt-Liste', 'Objekt-Detail'], ['/makler', 'Makler-Liste', 'Makler-Detail']] as const) {
+  test(`${pfad}: Teiler ziehen und Liste einklappen wie auf der Ankauf-Seite`, async ({ page }) => {
+    await page.goto(pfad);
+    const listenfeld = page.getByLabel(liste, { exact: true });
+    const detailfeld = page.getByRole('region', { name: detail });
+    const breite = async (l: typeof listenfeld) => Math.round((await l.boundingBox())!.width);
+    await expect(detailfeld.getByRole('button', { name: 'Liste ausblenden' })).toBeVisible();
+    expect(await breite(listenfeld)).toBe(360);
+    const detailVorher = await breite(detailfeld);
+
+    // Teiler 100 px nach rechts: die Liste wird breiter, das Detail um denselben Betrag schmaler
+    const teiler = page.getByRole('separator', { name: 'Breite der Liste ändern' });
+    const t = (await teiler.boundingBox())!;
+    await page.mouse.move(t.x + t.width / 2, t.y + 80);
+    await page.mouse.down();
+    await page.mouse.move(t.x + t.width / 2 + 100, t.y + 80, { steps: 6 });
+    await page.mouse.up();
+    expect(await breite(listenfeld)).toBe(460);
+    expect(await breite(detailfeld)).toBe(detailVorher - 100);
+
+    // Liste zu: das Detail hat die ganze Breite; wieder auf: die gezogene Breite ist geblieben
+    await detailfeld.getByRole('button', { name: 'Liste ausblenden' }).click();
+    await expect(listenfeld).toBeHidden();
+    expect(await breite(detailfeld)).toBeGreaterThan(detailVorher + 300);
+    await page.reload();
+    await detailfeld.getByRole('button', { name: 'Liste einblenden' }).click();
+    await expect(listenfeld).toBeVisible();
+    expect(await breite(listenfeld)).toBe(460);
+  });
+}
