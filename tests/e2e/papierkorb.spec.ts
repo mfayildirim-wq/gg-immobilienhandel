@@ -25,3 +25,40 @@ test('Papierkorb: gelöschtes Objekt erscheint, Wiederherstellen bringt es zurü
   await expect(page.locator(`[data-papierkorb="${o.id}"]`)).toHaveCount(0);
   expect((await page.request.get(`/api/objekte/${o.id}`)).status()).toBe(404);
 });
+
+test('Objekt mit Deal: Löschen ist gesperrt und sagt warum; mit dem Deal geht das Objekt in den Papierkorb und kommt mit ihm zurück', async ({ page }) => {
+  page.on('dialog', (d) => void d.accept());
+  const strasse = `Hängtweg ${Date.now()}`;
+  const o = await (await page.request.post('/api/objekte', { data: { strasse, hausnr: '3' } })).json();
+  const d = await (await page.request.post('/api/deals', { data: { objektId: o.id } })).json();
+
+  await page.goto(`/objekte?objekt=${o.id}`);
+  const objekt = page.getByRole('region', { name: 'Objekt-Detail' });
+  await expect(objekt.getByRole('button', { name: '🗑 Löschen' })).toBeDisabled();
+  await expect(objekt.locator('[data-hinweis="objekt-hat-deal"]')).toHaveText('Das Objekt hängt an einem Deal und kann nicht gelöscht werden. Lösche zuerst den Deal.');
+
+  // Deal löschen: sein Objekt geht mit, weil kein anderer Deal daran hängt
+  await page.goto(`/deals?deal=${d.id}`);
+  const deal = page.getByLabel('Deal-Detail');
+  await deal.getByRole('tab', { name: 'Übersicht' }).click();
+  await deal.getByRole('button', { name: 'Löschen' }).click();
+  await expect.poll(async () => (await page.request.get(`/api/deals/${d.id}`)).status()).toBe(404);
+  expect((await page.request.get(`/api/objekte/${o.id}`)).status()).toBe(404);
+
+  await page.goto('/einstellungen/papierkorb');
+  const hinweis = page.locator('[data-hinweis="papierkorb"]');
+  const zeileDeal = page.locator(`[data-papierkorb="${d.id}"]`);
+  const zeileObjekt = page.locator(`[data-papierkorb="${o.id}"]`);
+  await expect(zeileDeal).toHaveCount(1);
+  await zeileObjekt.getByRole('button', { name: '✖ Endgültig' }).click();
+  await expect(hinweis).toContainText('Unter „Deals“ gibt es Einträge, die hierauf verweisen');
+  await expect(zeileObjekt).toHaveCount(1);
+
+  // Der Deal bringt sein Objekt mit zurück
+  await zeileDeal.getByRole('button', { name: '↩ Wiederherstellen' }).click();
+  await expect(zeileDeal).toHaveCount(0);
+  await expect(zeileObjekt).toHaveCount(0);
+  await expect(hinweis).toHaveCount(0);
+  expect((await page.request.get(`/api/deals/${d.id}`)).status()).toBe(200);
+  expect((await page.request.get(`/api/objekte/${o.id}`)).status()).toBe(200);
+});

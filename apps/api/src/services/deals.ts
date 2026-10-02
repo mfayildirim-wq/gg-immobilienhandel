@@ -261,9 +261,20 @@ export async function dealObjektWechseln(db: Db, id: string, objektId: string, v
   });
 }
 
-/** dealDelete → softDelete: in den Papierkorb. */
+/**
+ * dealDelete → softDelete: in den Papierkorb. Anders als in der alten App geht das Objekt mit, sobald kein anderer
+ * Deal mehr daran hängt (Fachentscheidung 02.10.2026) — mit derselben Löschzeit, damit beide gemeinsam ablaufen.
+ */
 export async function dealLoeschen(db: Db, id: string) {
-  const [d] = await db.update(schema.deals).set({ deletedAt: sql`now()` }).where(and(eq(schema.deals.id, id), isNull(schema.deals.deletedAt))).returning({ id: schema.deals.id });
-  if (!d) throw new FachFehler(404, 'Deal nicht gefunden');
-  return { id };
+  return db.transaction(async (tx) => {
+    const [d] = await tx.update(schema.deals).set({ deletedAt: sql`now()` }).where(and(eq(schema.deals.id, id), isNull(schema.deals.deletedAt)))
+      .returning({ objektId: schema.deals.objektId });
+    if (!d) throw new FachFehler(404, 'Deal nicht gefunden');
+    const [anderer] = await tx.select({ id: schema.deals.id }).from(schema.deals)
+      .where(and(eq(schema.deals.objektId, d.objektId), isNull(schema.deals.deletedAt))).limit(1);
+    if (!anderer) {
+      await tx.update(schema.objekte).set({ deletedAt: sql`now()` }).where(and(eq(schema.objekte.id, d.objektId), isNull(schema.objekte.deletedAt)));
+    }
+    return { id };
+  });
 }

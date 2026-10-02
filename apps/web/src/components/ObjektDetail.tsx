@@ -1,6 +1,6 @@
 import type { ObjektDetail as Detail, ObjektEinheit } from '@gg/api-contract';
 import {
-  EINHEIT_TYPEN, ENERGIE_KLASSEN, OBJEKT_LOESCHEN_FRAGE, OBJEKT_STATUS, objektAnzeige, objektEinheitAendern, objektEinheitenAnzeige, objektEinheitNeu, objektRecherche,
+  EINHEIT_TYPEN, ENERGIE_KLASSEN, OBJEKT_HAT_DEAL_HINWEIS, OBJEKT_LOESCHEN_FRAGE, OBJEKT_STATUS, objektAnzeige, objektEinheitAendern, objektEinheitenAnzeige, objektEinheitNeu, objektRecherche,
   VERMIETUNG_OPTIONEN,
 } from '@gg/domain';
 import { ActionIcon, Alert, Anchor, Button, Group, Loader, NativeSelect, NumberInput, Paper, SimpleGrid, Stack, Table, Tabs, Text, Textarea, TextInput, Title } from '@mantine/core';
@@ -65,8 +65,10 @@ function ObjektInhalt({ o, geloescht }: { o: Detail; geloescht?: () => void }) {
         ))}
       </section>
 
+      {loeschen.error && <Alert color="red">{loeschen.error.message}</Alert>}
       <Group justify="flex-end">
-        <Button color="red" variant="light" leftSection={<IconTrash size={16} />} loading={loeschen.isPending}
+        {o.deals.length > 0 && <Text size="xs" c="dimmed" data-hinweis="objekt-hat-deal">{OBJEKT_HAT_DEAL_HINWEIS}</Text>}
+        <Button color="red" variant="light" leftSection={<IconTrash size={16} />} loading={loeschen.isPending} disabled={o.deals.length > 0}
           onClick={() => window.confirm(OBJEKT_LOESCHEN_FRAGE) && loeschen.mutate(o.id, { onSuccess: () => geloescht?.() })}>
           🗑 Löschen
         </Button>

@@ -1,5 +1,6 @@
-import { ENDGUELTIG_FRAGE, leerenFrage, papierkorbGruppen, PAPIERKORB_HINWEIS, PAPIERKORB_LEER, PAPIERKORB_TAGE } from '@gg/domain';
+import { ENDGUELTIG_FRAGE, leerenFrage, papierkorbGruppen, papierkorbUebrigHinweis, PAPIERKORB_HINWEIS, PAPIERKORB_LEER, PAPIERKORB_TAGE } from '@gg/domain';
 import { Alert, Button, Group, Loader, Paper, Stack, Text, Title } from '@mantine/core';
+import { useState } from 'react';
 import { usePapierkorb, usePapierkorbEndgueltig, usePapierkorbLeeren, usePapierkorbWiederherstellen } from '../lib/api.ts';
 
 /** 🗑 Papierkorb (Einstellungen): Gelöschtes je Bereich, wiederherstellen, endgültig entfernen, leeren. */
@@ -9,6 +10,9 @@ export function PapierkorbEinstellungen() {
   const endgueltig = usePapierkorbEndgueltig();
   const leeren = usePapierkorbLeeren();
   const gruppen = papierkorbGruppen(eintraege);
+  // Abgelehntes (es verweist noch etwas darauf, das Objekt eines Deals liegt selbst im Papierkorb) kommt als Hinweis vom Server
+  const [hinweis, setHinweis] = useState<string | null>(null);
+  const melden = { onError: (e: Error) => setHinweis(e.message), onSuccess: () => setHinweis(null) };
 
   return (
     <Stack gap="sm">
@@ -17,6 +21,7 @@ export function PapierkorbEinstellungen() {
         <Text size="xs" c="dimmed">{PAPIERKORB_HINWEIS}</Text>
       </div>
       {error && <Alert color="red">{error.message}</Alert>}
+      {hinweis && <Alert color="yellow" data-hinweis="papierkorb">{hinweis}</Alert>}
       {isLoading && <Loader size="sm" />}
       {!isLoading && gruppen.length === 0 && <Text size="sm" c="dimmed">{PAPIERKORB_LEER}</Text>}
       {gruppen.map((g) => (
@@ -31,8 +36,8 @@ export function PapierkorbEinstellungen() {
                     <Text size="xs" c={e.dringend ? 'red' : 'dimmed'}>{e.text}</Text>
                   </div>
                   <Group gap={6} wrap="nowrap">
-                    <Button size="compact-xs" onClick={() => wiederherstellen.mutate({ bereich: e.bereich, id: e.id })}>↩ Wiederherstellen</Button>
-                    <Button size="compact-xs" variant="default" onClick={() => window.confirm(ENDGUELTIG_FRAGE) && endgueltig.mutate({ bereich: e.bereich, id: e.id })}>✖ Endgültig</Button>
+                    <Button size="compact-xs" onClick={() => wiederherstellen.mutate({ bereich: e.bereich, id: e.id }, melden)}>↩ Wiederherstellen</Button>
+                    <Button size="compact-xs" variant="default" onClick={() => window.confirm(ENDGUELTIG_FRAGE) && endgueltig.mutate({ bereich: e.bereich, id: e.id }, melden)}>✖ Endgültig</Button>
                   </Group>
                 </Group>
               </Paper>
@@ -43,7 +48,8 @@ export function PapierkorbEinstellungen() {
       {eintraege.length > 0 && (
         <Group justify="flex-end">
           <Button variant="default" size="xs" loading={leeren.isPending}
-            onClick={() => window.confirm(leerenFrage(eintraege.length)) && leeren.mutate()}>
+            onClick={() => window.confirm(leerenFrage(eintraege.length))
+              && leeren.mutate(undefined, { ...melden, onSuccess: (r) => setHinweis(r.uebrig ? papierkorbUebrigHinweis(r.uebrig) : null) })}>
             Papierkorb leeren ({eintraege.length})
           </Button>
         </Group>
