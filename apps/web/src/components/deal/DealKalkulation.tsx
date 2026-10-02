@@ -13,12 +13,13 @@ import {
   ActionIcon,
   Alert,
   Badge,
+  Box,
   Button,
   Checkbox,
-  Divider,
   Group,
   NumberInput,
   Paper,
+  SegmentedControl,
   Select,
   SimpleGrid,
   Stack,
@@ -28,7 +29,7 @@ import {
   Title,
 } from '@mantine/core';
 import { IconDeviceFloppy, IconPlus, IconRestore, IconTrash } from '@tabler/icons-react';
-import { useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useKalkStandard, useKalkulationSpeichern } from '../../lib/api.ts';
 import { alsZahl, euro, euroProQm, prozent } from '../../lib/format.ts';
@@ -42,27 +43,17 @@ type Sanierung = Omit<DealSanierung, 'id'> & { id?: string };
 
 const ZAHL = { decimalSeparator: ',', thousandSeparator: '.', hideControls: true } as const;
 
-/** Eingabefelder der Ankaufskalkulation; leer = Standardwert aus den Einstellungen. */
-const FELDER: { feld: keyof KalkStandard | 'kaufpreis' | 'aufk' | 'rp_pct' | 'rp_fix'; label: string; einheit: string }[] = [
-  { feld: 'kaufpreis', label: 'Kaufpreis', einheit: '€' },
-  { feld: 'notar', label: 'Notar', einheit: '%' },
-  { feld: 'gest', label: 'Grunderwerbsteuer', einheit: '%' },
-  { feld: 'makler', label: 'Maklerprovision', einheit: '%' },
-  { feld: 'fk_p', label: 'Fremdkapital', einheit: '%' },
-  { feld: 'ek_p', label: 'Eigenkapital', einheit: '%' },
-  { feld: 'euribor', label: 'Euribor', einheit: '%' },
-  { feld: 'margeB', label: 'Marge Bank', einheit: '%' },
-  { feld: 'bank_abgeb', label: 'Abschlussgebühr Bank', einheit: '%' },
-  { feld: 'ek_r', label: 'EK-Rendite p. a.', einheit: '%' },
-  { feld: 'halt', label: 'Haltedauer', einheit: 'Monate' },
-  { feld: 'vprov', label: 'Vertriebsprovision', einheit: '%' },
-  { feld: 'glo_m', label: 'Marge Global', einheit: '%' },
-  { feld: 'rp_pct', label: 'Risikopuffer Sanierung', einheit: '%' },
-  { feld: 'rp_fix', label: 'Risikopuffer fest (vorrangig)', einheit: '€' },
-  { feld: 'aufk', label: 'Aufteilungskosten', einheit: '€' },
-];
-
 const AMPEL_FARBE = { gruen: 'green', gelb: 'yellow', rot: 'red', verlust: 'red' } as const;
+const AMPEL_TEXT = { gruen: '✅ Attraktiv', gelb: '⚠️ Akzeptabel', rot: '🔴 Schwach', verlust: '❌ Verlust' } as const;
+const FARBE = { ist: 'blue.7', soll: 'green.7', vkp: 'orange.7' } as const;
+const de2 = (n: number) => n.toFixed(2).replace('.', ',');
+const de1 = (n: number) => n.toFixed(1).replace('.', ',');
+
+/**
+ * Aufbau und Reihenfolge wie in der alten App (dealKalkHTML): Einheitenliste IST / SOLL →
+ * Kaufpreis & Nebenkosten → Finanzierung → Sanierungskosten → GIK & Ergebnis mit den Boxen
+ * Aufteiler und Global (Projektkosten → Herstellungskosten → Exit). Gerechnet wird nur in @gg/domain.
+ */
 
 /** `leistenPlatz`: fester Platz unter der Reiterleiste des Deals — dorthin kommt die Knopfleiste, damit sie beim Scrollen stehen bleibt. */
 export function DealKalkulation({ deal, leistenPlatz }: { deal: DealDetail; leistenPlatz: HTMLElement | null }) {
@@ -90,6 +81,9 @@ export function DealKalkulation({ deal, leistenPlatz }: { deal: DealDetail; leis
       // FK und EK ergänzen sich zu 100 % (wie dkSyncEk/dkSyncFk)
       if (feld === 'fk_p' && n !== null) neu.ek_p = Math.max(0, 100 - n);
       if (feld === 'ek_p' && n !== null) neu.fk_p = Math.max(0, 100 - n);
+      // Risikopuffer wie dkRpSync: Prozent oder fester Betrag — wer das eine setzt, nimmt das andere zurück
+      if (feld === 'rp_pct' && n !== null) delete neu.rp_fix;
+      if (feld === 'rp_fix') neu.rp_pct = 0;
       return neu;
     });
   };
@@ -144,116 +138,288 @@ export function DealKalkulation({ deal, leistenPlatz }: { deal: DealDetail; leis
     </div>
   );
 
+  const c: FeldKontext = { zahlAus, setzeFeld, standard };
+  const r = ergebnis;
+  const wf = r.einheiten.wohnflaeche;
+
   return (
     <Stack>
       {leistenPlatz && createPortal(leiste, leistenPlatz)}
 
-      <Ergebnis ergebnis={ergebnis} />
-
-      <Paper withBorder p="sm">
-        <Title order={5} mb="xs">
-          Annahmen
-        </Title>
-        <SimpleGrid cols={{ base: 2, sm: 3, lg: 4 }} spacing="xs">
-          {FELDER.map(({ feld, label, einheit }) => (
-            <NumberInput
-              key={feld}
-              label={label}
-              rightSection={<Text size="xs" c="dimmed" pr={6}>{einheit}</Text>}
-              rightSectionWidth={einheit === 'Monate' ? 56 : 28}
-              placeholder={feld in standard ? String(standard[feld as keyof KalkStandard]).replace('.', ',') : feld === 'rp_pct' ? '10' : ''}
-              value={zahlAus(feld)}
-              onChange={(v) => setzeFeld(feld, v)}
-              {...ZAHL}
-            />
-          ))}
-        </SimpleGrid>
-        <Group mt="xs" gap="xs" align="flex-end">
-          <NumberInput label="Anzahl Häuser" w={110} value={zahlAus('auf_h')} placeholder={String(standard.auf_h)} onChange={(v) => setzeFeld('auf_h', v)} {...ZAHL} />
-          <NumberInput label="Anzahl Einheiten" w={130} value={zahlAus('auf_e')} placeholder={String(standard.auf_e)} onChange={(v) => setzeFeld('auf_e', v)} {...ZAHL} />
-          <Button
-            variant="light"
-            onClick={() => setzeFeld('aufk', aufteilungskostenVorschlag(Number(kalk.auf_h ?? 0), Number(kalk.auf_e ?? 0)))}
-          >
-            = {euro(aufteilungskostenVorschlag(Number(kalk.auf_h ?? 0), Number(kalk.auf_e ?? 0)), '0 €')} als Aufteilungskosten übernehmen
-          </Button>
-        </Group>
-      </Paper>
-
+      {/* Einheitenliste IST / SOLL */}
       <EinheitenTabelle dealId={deal.id} einheiten={einheiten} setEinheiten={setEinheiten} ergebnis={ergebnis} standardRendite={standard.rend_k} />
-      <SanierungenTabelle sanierungen={sanierungen} setSanierungen={setSanierungen} ergebnis={ergebnis} />
+
+      {/* Kaufpreis & Nebenkosten */}
+      <Abschnitt titel="Kaufpreis & Nebenkosten" farbe={FARBE.ist}>
+        <Zeile label="Kaufpreis IVT">
+          <Eingabe c={c} feld="kaufpreis" einheit="€" w={130} label="Kaufpreis" />
+          <Neben label="KP/m²" wert={wf ? euroProQm(r.kaufpreis / wf) : '–'} k="kaufpreis-m2" />
+          <Neben label="Rendite" wert={r.kaufpreis ? prozent((r.jahresmieteIst / r.kaufpreis) * 100, 2) : '–'} k="rendite-kp" />
+        </Zeile>
+        <Zeile label="Notar & Grundbuch">
+          <Eingabe c={c} feld="notar" einheit="%" w={80} step={0.01} label="Notar" />
+          <Wert k="notar" wert={euro(r.notar)} />
+        </Zeile>
+        <Zeile label="Grunderwerbsteuer">
+          <Eingabe c={c} feld="gest" einheit="%" w={80} step={0.01} label="Grunderwerbsteuer" />
+          <Wert k="grunderwerbsteuer" wert={euro(r.grunderwerbsteuer)} />
+        </Zeile>
+        <Zeile label="Maklerprovision">
+          <Eingabe c={c} feld="makler" einheit="%" w={80} step={0.01} label="Maklerprovision" />
+          <Wert k="makler" wert={euro(r.maklerprovision)} />
+        </Zeile>
+        <Zeile label="Anschaffungskosten" stark>
+          <Wert k="anschaffungskosten" wert={euro(r.anschaffungskosten)} stark />
+          <Neben label="AK/m²" wert={wf ? euroProQm(r.anschaffungskosten / wf) : '–'} />
+          <Neben label="Rendite" wert={r.anschaffungskosten ? prozent((r.jahresmieteIst / r.anschaffungskosten) * 100, 2) : '–'} />
+        </Zeile>
+        <span hidden data-kennzahl="kaufpreis" data-wert={euro(r.kaufpreis)} />
+      </Abschnitt>
+
+      {/* Finanzierung */}
+      <Abschnitt titel="Finanzierung">
+        <Text size="xs" c="dimmed" mb={4}>
+          Konfiguration der Kapitalstruktur. Konkrete €-Beträge erscheinen unten in den Aufteiler/Global-Boxen.
+        </Text>
+        <Zeile label="FK %"><Eingabe c={c} feld="fk_p" einheit="%" w={80} label="Fremdkapital" /></Zeile>
+        <Zeile label="EK %"><Eingabe c={c} feld="ek_p" einheit="%" w={80} label="Eigenkapital" /></Zeile>
+        <Zeile label="Euribor"><Eingabe c={c} feld="euribor" einheit="%" w={80} step={0.01} label="Euribor" /></Zeile>
+        <Zeile label="Marge Bank"><Eingabe c={c} feld="margeB" einheit="%" w={80} step={0.01} label="Marge Bank" /></Zeile>
+        <Zeile label="Abschlussgebühr Bank"><Eingabe c={c} feld="bank_abgeb" einheit="% v. FK" w={110} step={0.01} label="Abschlussgebühr Bank" /></Zeile>
+        <Zeile label="EK Rendite p.a."><Eingabe c={c} feld="ek_r" einheit="%" w={80} step={0.1} label="EK-Rendite p. a." /></Zeile>
+        <Zeile label="Haltedauer"><Eingabe c={c} feld="halt" einheit="Mo." w={90} label="Haltedauer" /></Zeile>
+        <Zeile label="– Mieteinnahmen (Abzug IST)" farbe="green.7">
+          <Wert k="mietabzug" wert={r.mietabzug ? `– ${euro(r.mietabzug)}` : '–'} farbe="green.7" />
+        </Zeile>
+      </Abschnitt>
+
+      {/* 🔨 Sanierungskosten */}
+      <SanierungenTabelle sanierungen={sanierungen} setSanierungen={setSanierungen} ergebnis={ergebnis} kalk={kalk} setzeFeld={setzeFeld} zahlAus={zahlAus} />
+
+      {/* GIK & Ergebnis */}
+      <Abschnitt titel="GIK & Ergebnis" farbe="orange.8">
+        <Zeile label="GIK Total" stark><Wert wert={euro(r.aufteiler.gik)} stark /></Zeile>
+        <Zeile label="GIK pro m²"><Wert wert={wf ? euroProQm(r.aufteiler.gik / wf) : '–'} /></Zeile>
+        <Zeile label="Mietrendite auf GIK (SOLL)"><Wert wert={r.aufteiler.gik ? prozent((r.jahresnettokaltmieteSoll / r.aufteiler.gik) * 100, 2) : '–'} /></Zeile>
+        <SimpleGrid cols={{ base: 1, md: 2 }} spacing="sm" mt="xs">
+          <ExitBox titel="🏠 Aufteiler" label="Aufteiler" marge={r.aufteiler.marge} k="aufteiler.marge">
+            <Projektkosten r={r} weg={r.aufteiler} k="aufteiler" />
+            <Gruppe>HERSTELLUNGSKOSTEN</Gruppe>
+            <SanierungsListe sanierungen={sanierungen} bereich="auf" />
+            <Kb label="+ Sanierungskosten" wert={euro(r.aufteiler.sanierung)} />
+            <Kb label="+ Puffer" wert={euro(r.aufteiler.sanierungPuffer)} k="aufteiler.sanierung" kWert={euro(r.aufteiler.sanierung + r.aufteiler.sanierungPuffer)} />
+            <Kb label="+ Vertriebsprovision" wert={euro(r.vertriebsprovision)} k="aufteiler.vertriebsprovision">
+              <Eingabe c={c} feld="vprov" einheit="%" w={76} step={0.01} label="Vertriebsprovision" />
+            </Kb>
+            <Kb label="+ Aufteilungskosten" wert={euro(r.teilungskosten)} k="aufteiler.teilungskosten">
+              <Eingabe c={c} feld="aufk" einheit="€" w={110} label="Aufteilungskosten" />
+            </Kb>
+            <Group gap={6} wrap="wrap" px={8}>
+              <Text size="xs" c="dimmed" title="Hilfsrechner — Wert oben gilt">Helfer:</Text>
+              <Text size="xs" c="dimmed">H</Text>
+              <NumberInput size="xs" w={56} value={zahlAus('auf_h')} placeholder={String(standard.auf_h)} onChange={(v) => setzeFeld('auf_h', v)} aria-label="Anzahl Häuser" {...ZAHL} />
+              <Text size="xs" c="dimmed">×6.000 E</Text>
+              <NumberInput size="xs" w={56} value={zahlAus('auf_e')} placeholder={String(standard.auf_e)} onChange={(v) => setzeFeld('auf_e', v)} aria-label="Anzahl Einheiten" {...ZAHL} />
+              <Text size="xs" c="dimmed">×600</Text>
+              <Text size="xs">= {euro(aufteilungskostenVorschlag(Number(kalk.auf_h ?? 0), Number(kalk.auf_e ?? 0)), '0 €')}</Text>
+              <Button size="compact-xs" variant="light" onClick={() => setzeFeld('aufk', aufteilungskostenVorschlag(Number(kalk.auf_h ?? 0), Number(kalk.auf_e ?? 0)))}>
+                → Übernehmen
+              </Button>
+            </Group>
+            <Kb label="= Herstellungskosten ∑" wert={euro(r.aufteiler.herstellkosten)} stark />
+            <Kb label="= GIK Aufteiler" wert={euro(r.aufteiler.gik)} neben={wf ? euroProQm(r.aufteiler.gik / wf) : undefined} stark farbe="orange.8" k="aufteiler.gik" />
+            <Gruppe>EXIT AUFTEILER</Gruppe>
+            <Kb label="Verkaufserlöse (Σ KP Kunden)" wert={euro(r.aufteiler.verkaufspreis)} neben={wf ? euroProQm(r.aufteiler.verkaufspreis / wf) : undefined} k="aufteiler.verkaufspreis" />
+            <Kb label="Gewinn Aufteiler" wert={euro(r.aufteiler.gewinn)} stark farbe="green.7" k="aufteiler.gewinn" />
+            <Kb label="Marge auf Verkaufserlöse" wert={prozent(r.aufteiler.marge, 2)} />
+          </ExitBox>
+
+          <ExitBox titel="🏢 Global" label="Global" marge={r.global.marge} k="global.marge">
+            <Projektkosten r={r} weg={r.global} k="global" />
+            <Gruppe>HERSTELLUNGSKOSTEN</Gruppe>
+            <SanierungsListe sanierungen={sanierungen} bereich="glo" />
+            <Kb label="+ Sanierungskosten" wert={euro(r.global.sanierung)} />
+            <Kb label="+ Puffer" wert={euro(r.global.sanierungPuffer)} k="global.sanierung" kWert={euro(r.global.sanierung + r.global.sanierungPuffer)} />
+            <Kb label="= Herstellungskosten ∑" wert={euro(r.global.herstellkosten)} stark />
+            <Kb label="= GIK Global" wert={euro(r.global.gik)} neben={wf ? euroProQm(r.global.gik / wf) : undefined} stark farbe="orange.8" k="global.gik" />
+            <Gruppe>EXIT GLOBAL</Gruppe>
+            <Kb label="Ziel-Marge auf GIK" wert="">
+              <Eingabe c={c} feld="glo_m" einheit="%" w={76} step={0.1} label="Marge Global" />
+            </Kb>
+            <Kb label="Verkaufserlöse (GIK × 1+Marge)" wert={euro(r.global.verkaufspreis)} neben={wf ? euroProQm(r.global.verkaufspreis / wf) : undefined} farbe="orange.8" k="global.verkaufspreis" />
+            <Kb label="JNKM SOLL" wert={euro(r.jahresnettokaltmieteSoll)} />
+            <Kb
+              label="KP-Faktor Kunde"
+              wert={r.global.faktor ? `${de1(r.global.faktor)}x` : '–'}
+              k="global.faktor"
+              kWert={r.global.faktor ? `${de1(r.global.faktor)}x · ${prozent(r.global.kaufpreisrendite, 2)}` : '–'}
+            />
+            <Kb label="Bruttorendite Kunde" wert={prozent(r.global.kaufpreisrendite, 2)} farbe="orange.8" />
+            <Kb label="Gewinn Global" wert={euro(r.global.gewinn)} stark farbe="green.7" k="global.gewinn" />
+            <Kb label="Marge auf Verkaufserlöse" wert={prozent(r.global.marge, 2)} />
+          </ExitBox>
+        </SimpleGrid>
+      </Abschnitt>
     </Stack>
   );
 }
 
-function Zeile({ label, wert, stark, k }: { label: string; wert: string; stark?: boolean; k?: string }) {
+/* ───────────── Bausteine der Darstellung ───────────── */
+
+/** Was ein Eingabefeld der Kalkulation braucht: aktueller Wert, Setzen und die Standardwerte der Einstellungen. */
+interface FeldKontext { zahlAus: (feld: string) => number | ''; setzeFeld: (feld: string, v: number | string) => void; standard: KalkStandard }
+
+/**
+ * Kompaktes Eingabefeld einer Kalkulationszeile; leer = Standardwert aus den Einstellungen.
+ * Bewusst auf Modulebene: in DealKalkulation deklariert, wäre es bei jedem Tastendruck ein neuer Komponententyp —
+ * React baute das Feld neu auf, und es verlöre nach dem ersten Zeichen den Fokus.
+ */
+function Eingabe({ c, feld, einheit, w = 90, step, label }: { c: FeldKontext; feld: string; einheit?: string; w?: number; step?: number; label: string }) {
   return (
-    <Group justify="space-between" gap="xs" wrap="nowrap" data-kennzahl={k} data-wert={wert}>
-      <Text size="sm" c={stark ? undefined : 'dimmed'} fw={stark ? 600 : 400}>
+    <NumberInput
+      size="xs"
+      w={w}
+      value={c.zahlAus(feld)}
+      placeholder={feld in c.standard ? String(c.standard[feld as keyof KalkStandard]).replace('.', ',') : feld === 'rp_pct' ? '10' : ''}
+      onChange={(v) => c.setzeFeld(feld, v)}
+      aria-label={label}
+      step={step}
+      rightSection={einheit ? <Text size="xs" c="dimmed" pr={4}>{einheit}</Text> : undefined}
+      rightSectionWidth={einheit ? (einheit.length > 2 ? 52 : 26) : undefined}
+      {...ZAHL}
+    />
+  );
+}
+
+function Abschnitt({ titel, farbe, children }: { titel: string; farbe?: string; children: ReactNode }) {
+  return (
+    <Paper withBorder p="sm">
+      <Title order={6} mb={6} c={farbe} tt="uppercase" fz="xs" style={{ letterSpacing: 0.6 }}>
+        {titel}
+      </Title>
+      <Stack gap={4}>{children}</Stack>
+    </Paper>
+  );
+}
+
+/** Eine Zeile: Beschriftung links, Eingabe und Werte rechts daneben (wie .krow in der alten App). */
+function Zeile({ label, children, stark, farbe }: { label: string; children: ReactNode; stark?: boolean; farbe?: string }) {
+  return (
+    <Group gap="sm" wrap="wrap" align="center" py={stark ? 4 : 0} style={stark ? { borderTop: '1px solid var(--mantine-color-default-border)' } : undefined}>
+      <Text size="sm" w={230} c={farbe ?? (stark ? 'orange.8' : 'dimmed')} fw={stark ? 600 : 400}>
         {label}
       </Text>
-      <Text size="sm" fw={stark ? 700 : 400} ta="right">
-        {wert}
-      </Text>
+      {children}
     </Group>
   );
 }
 
-function Ampel({ marge, k }: { marge: number; k?: string }) {
-  const a = margenAmpel(marge);
-  return <Badge color={AMPEL_FARBE[a]} data-kennzahl={k} data-wert={Number.isFinite(marge) ? marge.toFixed(1) : ''}>{a === 'verlust' ? 'Verlust' : prozent(marge)}</Badge>;
-}
-
-function Ergebnis({ ergebnis: r }: { ergebnis: AnkaufErgebnis }) {
-  const a = r.aufteiler, g = r.global, wf = r.einheiten.wohnflaeche;
+/** Berechneter Wert (schreibgeschützt) mit Kennzahl-Anker für die Paritätsprüfung. */
+function Wert({ wert, k, stark, farbe }: { wert: string; k?: string; stark?: boolean; farbe?: string }) {
   return (
-    <SimpleGrid cols={{ base: 1, lg: 3 }} spacing="sm" aria-label="Ergebnis">
-      <Paper withBorder p="sm">
-        <Title order={5} mb={6}>Anschaffung</Title>
-        <Zeile k="kaufpreis" label="Kaufpreis" wert={euro(r.kaufpreis)} />
-        <Zeile k="notar" label="Notar" wert={euro(r.notar)} />
-        <Zeile k="grunderwerbsteuer" label="Grunderwerbsteuer" wert={euro(r.grunderwerbsteuer)} />
-        <Zeile k="makler" label="Makler" wert={euro(r.maklerprovision)} />
-        <Divider my={4} />
-        <Zeile k="anschaffungskosten" label="Anschaffungskosten" wert={euro(r.anschaffungskosten)} stark />
-        <Zeile k="kaufpreis-m2" label="Kaufpreis je m²" wert={wf ? euroProQm(r.kaufpreis / wf) : '–'} />
-        <Zeile k="rendite-kp" label="Mietrendite auf Kaufpreis" wert={r.kaufpreis ? prozent((r.jahresmieteIst / r.kaufpreis) * 100, 2) : '–'} />
-        <Zeile k="mietabzug" label={`Mieten ${r.haltedauerMonate} Monate`} wert={r.mietabzug ? `– ${euro(r.mietabzug)}` : '–'} />
-      </Paper>
-      <Paper withBorder p="sm" aria-label="Aufteiler">
-        <Group justify="space-between" mb={6}>
-          <Title order={5}>Aufteiler</Title>
-          <Ampel k="aufteiler.marge" marge={a.marge} />
-        </Group>
-        <Zeile k="aufteiler.sanierung" label="Sanierung + Puffer" wert={euro(a.sanierung + a.sanierungPuffer)} />
-        <Zeile k="aufteiler.vertriebsprovision" label="Vertriebsprovision" wert={euro(r.vertriebsprovision)} />
-        <Zeile k="aufteiler.teilungskosten" label="Aufteilungskosten" wert={euro(r.teilungskosten)} />
-        <Zeile k="aufteiler.fkz" label="FK-Zinsen" wert={euro(a.fkZinsen)} />
-        <Zeile k="aufteiler.bankabgeb" label="Abschlussgebühr Bank" wert={euro(a.bankAbschluss)} />
-        <Zeile k="aufteiler.ekk" label="EK-Kosten" wert={euro(a.ekKosten)} />
-        <Divider my={4} />
-        <Zeile k="aufteiler.gik" label="Gesamtinvestition (GIK)" wert={euro(a.gik)} stark />
-        <Zeile k="aufteiler.verkaufspreis" label="Verkaufspreise Einheiten" wert={euro(a.verkaufspreis)} />
-        <Zeile k="aufteiler.gewinn" label="Gewinn" wert={euro(a.gewinn)} stark />
-      </Paper>
-      <Paper withBorder p="sm" aria-label="Global">
-        <Group justify="space-between" mb={6}>
-          <Title order={5}>Global</Title>
-          <Ampel k="global.marge" marge={g.marge} />
-        </Group>
-        <Zeile k="global.sanierung" label="Sanierung + Puffer" wert={euro(g.sanierung + g.sanierungPuffer)} />
-        <Zeile k="global.fkz" label="FK-Zinsen" wert={euro(g.fkZinsen)} />
-        <Zeile k="global.bankabgeb" label="Abschlussgebühr Bank" wert={euro(g.bankAbschluss)} />
-        <Zeile k="global.ekk" label="EK-Kosten" wert={euro(g.ekKosten)} />
-        <Divider my={4} />
-        <Zeile k="global.gik" label="Gesamtinvestition (GIK)" wert={euro(g.gik)} stark />
-        <Zeile k="global.verkaufspreis" label="Verkaufspreis" wert={euro(g.verkaufspreis)} />
-        <Zeile k="global.faktor" label="Faktor / Rendite" wert={g.faktor ? `${g.faktor.toFixed(1).replace('.', ',')}x · ${prozent(g.kaufpreisrendite, 2)}` : '–'} />
-        <Zeile k="global.gewinn" label="Gewinn" wert={euro(g.gewinn)} stark />
-      </Paper>
-    </SimpleGrid>
+    <Text size="sm" fw={stark ? 700 : 500} c={farbe} ta="right" miw={96} data-kennzahl={k} data-wert={k ? wert : undefined} style={{ fontVariantNumeric: 'tabular-nums' }}>
+      {wert}
+    </Text>
   );
 }
+
+/** Nebenwert in einer Zeile: „KP/m² 3.200 €/m²". */
+function Neben({ label, wert, k }: { label: string; wert: string; k?: string }) {
+  return (
+    <Group gap={4} wrap="nowrap">
+      <Text size="xs" c="dimmed">{label}</Text>
+      <Text size="xs" fw={500} data-kennzahl={k} data-wert={k ? wert : undefined} style={{ fontVariantNumeric: 'tabular-nums' }}>{wert}</Text>
+    </Group>
+  );
+}
+
+function Gruppe({ children }: { children: ReactNode }) {
+  return (
+    <Text size="xs" fw={700} c="dimmed" px={8} py={3} mt={4} bg="var(--mantine-color-default-hover)" style={{ letterSpacing: 1 }}>
+      {children}
+    </Text>
+  );
+}
+
+/** Zeile in den Ergebnis-Boxen (wie .kbrow): Beschriftung, optional Eingabe, Wert, Nebenwert. */
+function Kb({ label, wert, neben, k, kWert, stark, farbe, children }: { label: string; wert: string; neben?: string; k?: string; kWert?: string; stark?: boolean; farbe?: string; children?: ReactNode }) {
+  return (
+    <Group justify="space-between" gap="xs" wrap="nowrap" px={8} py={1} style={stark ? { borderTop: '1px solid var(--mantine-color-default-border)' } : undefined}>
+      <Text size="xs" c={stark ? undefined : 'dimmed'} fw={stark ? 700 : 400}>{label}</Text>
+      <Group gap={6} wrap="nowrap">
+        {children}
+        <Text size="xs" fw={stark ? 700 : 500} c={farbe} data-kennzahl={k} data-wert={k ? (kWert ?? wert) : undefined} style={{ fontVariantNumeric: 'tabular-nums' }}>
+          {wert}
+        </Text>
+        {neben ? <Text size="xs" c="dimmed">{neben}</Text> : null}
+      </Group>
+    </Group>
+  );
+}
+
+function Sub({ text }: { text: string }) {
+  return (
+    <Text size="xs" c="dimmed" fs="italic" ta="right" px={8} mt={-2}>
+      {text}
+    </Text>
+  );
+}
+
+/** PROJEKTKOSTEN-Block – in beiden Boxen gleich aufgebaut. */
+function Projektkosten({ r, weg, k }: { r: AnkaufErgebnis; weg: AnkaufErgebnis['aufteiler']; k: 'aufteiler' | 'global' }) {
+  return (
+    <>
+      <Gruppe>PROJEKTKOSTEN</Gruppe>
+      <Kb label="Kaufpreis" wert={euro(r.kaufpreis)} />
+      <Kb label="+ Notar & Grundbuch" wert={euro(r.notar)} />
+      <Kb label="+ Grunderwerbsteuer" wert={euro(r.grunderwerbsteuer)} />
+      <Kb label="+ Maklerprovision" wert={euro(r.maklerprovision)} />
+      <Kb label="= Anschaffungskosten" wert={euro(r.anschaffungskosten)} stark />
+      <Kb label="+ FK-Zinskosten" wert={weg.fkZinsen ? euro(weg.fkZinsen) : '–'} k={`${k}.fkz`} kWert={euro(weg.fkZinsen)} />
+      <Sub text={weg.fremdkapital ? `auf ${euro(weg.fremdkapital)} Fremdkapital` : 'kein FK aktiv'} />
+      <Kb label="+ Abschlussgebühr Bank" wert={weg.bankAbschluss ? euro(weg.bankAbschluss) : '–'} k={`${k}.bankabgeb`} kWert={euro(weg.bankAbschluss)} />
+      <Sub text={`${de2(r.bankAbschlussPct)} % auf FK`} />
+      <Kb label="+ EK-Opportunitätskosten" wert={weg.ekKosten ? euro(weg.ekKosten) : '–'} k={`${k}.ekk`} kWert={euro(weg.ekKosten)} />
+      <Sub text={weg.eigenkapital ? `auf ${euro(weg.eigenkapital)} Eigenkapital` : 'kein EK aktiv'} />
+      <Kb label="– Mieteinnahmen IST" wert={r.mietabzug ? `– ${euro(r.mietabzug)}` : '–'} farbe="green.7" />
+    </>
+  );
+}
+
+function SanierungsListe({ sanierungen, bereich }: { sanierungen: Sanierung[]; bereich: 'auf' | 'glo' }) {
+  const rows = sanierungen.filter((s) => (!s.bereich || s.bereich === 'both' || s.bereich === bereich) && s.betrag);
+  if (rows.length === 0) return null;
+  return (
+    <>
+      {rows.map((s, i) => (
+        <Group key={s.id ?? i} justify="space-between" px={8} wrap="nowrap">
+          <Text size="xs" c="dimmed" fs="italic" truncate>· {s.beschreibung || 'Position'}</Text>
+          <Text size="xs" c="dimmed">{euro(s.betrag)}</Text>
+        </Group>
+      ))}
+    </>
+  );
+}
+
+function ExitBox({ titel, label, marge, k, children }: { titel: string; label: string; marge: number; k: string; children: ReactNode }) {
+  const a = margenAmpel(marge);
+  return (
+    <Paper withBorder p={0} aria-label={label} style={{ overflow: 'hidden' }}>
+      <Group justify="space-between" px="sm" py={6} bg="var(--mantine-color-default-hover)">
+        <Title order={6}>{titel}</Title>
+      </Group>
+      <Stack gap={2} py={6}>{children}</Stack>
+      <Group justify="space-between" px="sm" py={6} style={{ borderTop: '1px solid var(--mantine-color-default-border)' }}>
+        <Badge color={AMPEL_FARBE[a]} variant="light">{AMPEL_TEXT[a]}</Badge>
+        <Text size="sm" fw={700} c={AMPEL_FARBE[a]} data-kennzahl={k} data-wert={Number.isFinite(marge) ? marge.toFixed(1) : ''}>
+          {a === 'verlust' ? 'Verlust' : prozent(marge)}
+        </Text>
+      </Group>
+    </Paper>
+  );
+}
+
+/* ───────────── Einheitenliste IST / SOLL ───────────── */
 
 const TYPEN = ['Wohnung', 'Gewerbe', 'Stellplatz', 'Sonstiges'];
 
@@ -272,35 +438,37 @@ function EinheitenTabelle({
 }) {
   const aendere = (i: number, teil: Partial<Einheit>) => setEinheiten((es) => es.map((e, j) => (j === i ? { ...e, ...teil } : e)));
   const s = ergebnis.einheiten;
+  const zeilen = s.zeilen;
   const [propstack, setPropstack] = useState<string | null>(null);
+  // Durchschnitte der Fußzeile (reine Anzeige wie dk-avg-*)
+  const avg = (xs: (number | null | undefined)[]) => {
+    const v = xs.filter((x): x is number => typeof x === 'number' && x > 0);
+    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0;
+  };
+  const avgKqmIst = avg(zeilen.map((z) => z.kaltmieteProQmIst));
+  const avgKqmSoll = avg(zeilen.map((z) => z.kaltmieteProQmSoll));
+  const avgRendite = avg(einheiten.map((e) => e.renditeK));
+  const avgKpm2 = avg(zeilen.map((z) => z.verkaufspreisProQm));
+
   return (
     <Paper withBorder p="sm" aria-label="Einheiten">
-      <Group justify="space-between" mb="xs">
-        <Title order={5}>Einheiten</Title>
-        <Button
-          size="xs"
-          variant="light"
-          leftSection={<IconPlus size={14} />}
-          onClick={() =>
-            setEinheiten((es) => [...es, { typ: 'Wohnung', lage: null, zimmer: null, flaeche: null, mieteIst: null, mieteNeu: null, mieteNeuManuell: false, renditeK: null, verkaufspreis: null, stueck: null }])
-          }
-        >
-          Einheit
-        </Button>
-      </Group>
+      <Title order={6} mb={6} c={FARBE.ist} tt="uppercase" fz="xs" style={{ letterSpacing: 0.6 }}>
+        Einheitenliste IST / SOLL
+      </Title>
       <AlleSetzen dealId={dealId} einheiten={einheiten} setEinheiten={(neu) => setEinheiten(() => neu)} standardRendite={standardRendite} />
-      <Table.ScrollContainer minWidth={1100}>
-        <Table verticalSpacing={4} horizontalSpacing={6}>
+      <Table.ScrollContainer minWidth={980}>
+        <Table verticalSpacing={3} horizontalSpacing={6}>
           <Table.Thead>
             <Table.Tr>
-              <Table.Th>Typ</Table.Th><Table.Th>Lage</Table.Th><Table.Th>Zi./Stk.</Table.Th><Table.Th>Fläche</Table.Th>
-              <Table.Th>Miete ist</Table.Th><Table.Th>€/m² ist</Table.Th><Table.Th>Miete neu</Table.Th><Table.Th>€/m² neu</Table.Th>
-              <Table.Th>Rendite %</Table.Th><Table.Th>Verkaufspreis</Table.Th><Table.Th>€/m²</Table.Th><Table.Th />
+              <Table.Th>Typ</Table.Th><Table.Th>Lage</Table.Th><Table.Th>Zi/Stk</Table.Th>
+              <Table.Th c={FARBE.ist}>m²/Stk IST</Table.Th><Table.Th c={FARBE.ist}>KM IST €</Table.Th><Table.Th c={FARBE.ist}>€/m² IST</Table.Th>
+              <Table.Th c={FARBE.soll}>KM SOLL €</Table.Th><Table.Th c={FARBE.soll}>€/m² SOLL</Table.Th><Table.Th c={FARBE.soll}>Rendite %</Table.Th>
+              <Table.Th c={FARBE.vkp}>VKP €</Table.Th><Table.Th c={FARBE.vkp}>KP/m² €</Table.Th><Table.Th />
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
             {einheiten.map((e, i) => {
-              const z = ergebnis.einheiten.zeilen[i];
+              const z = zeilen[i];
               const stpl = e.typ === 'Stellplatz';
               return (
                 <Table.Tr key={e.id ?? `neu-${i}`}>
@@ -313,9 +481,9 @@ function EinheitenTabelle({
                       <NumberInput size="xs" w={60} value={e.zimmer ?? ''} onChange={(v) => aendere(i, { zimmer: alsZahl(v) })} aria-label="Zimmer" {...ZAHL} />
                     )}
                   </Table.Td>
-                  <Table.Td>{stpl ? '–' : <NumberInput size="xs" w={80} value={e.flaeche ?? ''} onChange={(v) => aendere(i, { flaeche: alsZahl(v) })} aria-label="Fläche" {...ZAHL} />}</Table.Td>
+                  <Table.Td>{stpl ? <Text size="xs" c="dimmed">–</Text> : <NumberInput size="xs" w={80} value={e.flaeche ?? ''} onChange={(v) => aendere(i, { flaeche: alsZahl(v) })} aria-label="Fläche" {...ZAHL} />}</Table.Td>
                   <Table.Td><NumberInput size="xs" w={90} value={e.mieteIst ?? ''} onChange={(v) => aendere(i, { mieteIst: alsZahl(v) })} aria-label="Miete ist" {...ZAHL} /></Table.Td>
-                  <Table.Td><Text size="xs" c="dimmed">{z?.kaltmieteProQmIst ? z.kaltmieteProQmIst.toFixed(2).replace('.', ',') : ''}</Text></Table.Td>
+                  <Table.Td><Text size="xs" c="dimmed">{z?.kaltmieteProQmIst ? de2(z.kaltmieteProQmIst) : ''}</Text></Table.Td>
                   <Table.Td>
                     <Group gap={2} wrap="nowrap">
                       <NumberInput
@@ -330,7 +498,7 @@ function EinheitenTabelle({
                       <Checkbox size="xs" checked={e.mieteNeuManuell} onChange={(ev) => aendere(i, { mieteNeuManuell: ev.currentTarget.checked })} aria-label="Miete neu manuell" title="manuell" />
                     </Group>
                   </Table.Td>
-                  <Table.Td><Text size="xs" c="dimmed">{z?.kaltmieteProQmSoll ? z.kaltmieteProQmSoll.toFixed(2).replace('.', ',') : ''}</Text></Table.Td>
+                  <Table.Td><Text size="xs" c="dimmed">{z?.kaltmieteProQmSoll ? de2(z.kaltmieteProQmSoll) : ''}</Text></Table.Td>
                   <Table.Td><NumberInput size="xs" w={70} value={e.renditeK ?? ''} onChange={(v) => aendere(i, { renditeK: alsZahl(v) })} aria-label="Rendite" {...ZAHL} /></Table.Td>
                   <Table.Td>
                     <NumberInput
@@ -362,64 +530,110 @@ function EinheitenTabelle({
           </Table.Tbody>
           <Table.Tfoot>
             <Table.Tr>
-              <Table.Th colSpan={3}>{s.anzahlEinheiten} Einh. · {s.anzahlStellplaetze} Stpl.</Table.Th>
+              <Table.Th>{s.anzahlEinheiten} Einh.</Table.Th>
+              <Table.Th>{s.anzahlStellplaetze ? `${s.anzahlStellplaetze} Stpl.` : '–'}</Table.Th>
+              <Table.Th>–</Table.Th>
               <Table.Th>{s.wohnflaeche ? `${s.wohnflaeche.toLocaleString('de-DE')} m²` : '–'}</Table.Th>
               <Table.Th>{euro(s.mieteIst)}</Table.Th>
-              <Table.Th />
+              <Table.Th fz="xs">{avgKqmIst ? `Ø ${de2(avgKqmIst)}` : '–'}</Table.Th>
               <Table.Th>{euro(s.mieteSoll)}</Table.Th>
-              <Table.Th />
-              <Table.Th>{s.verkaufspreise && s.mieteSoll ? prozent(((s.mieteSoll * 12) / s.verkaufspreise) * 100) : '–'}</Table.Th>
+              <Table.Th fz="xs">{avgKqmSoll ? `Ø ${de2(avgKqmSoll)}` : '–'}</Table.Th>
+              <Table.Th fz="xs">{avgRendite ? `Ø ${de1(avgRendite)} %` : '–'}</Table.Th>
               <Table.Th>{euro(s.verkaufspreise)}</Table.Th>
-              <Table.Th colSpan={2}>{s.wohnflaeche && s.verkaufspreise ? euroProQm(s.verkaufspreise / s.wohnflaeche) : ''}</Table.Th>
+              <Table.Th fz="xs">{avgKpm2 ? `Ø ${Math.round(avgKpm2).toLocaleString('de-DE')}` : '–'}</Table.Th>
+              <Table.Th />
             </Table.Tr>
           </Table.Tfoot>
         </Table>
       </Table.ScrollContainer>
+      <Button
+        mt={6}
+        size="xs"
+        variant="light"
+        leftSection={<IconPlus size={14} />}
+        onClick={() =>
+          setEinheiten((es) => [...es, { typ: 'Wohnung', lage: null, zimmer: null, flaeche: null, mieteIst: null, mieteNeu: null, mieteNeuManuell: false, renditeK: null, verkaufspreis: null, stueck: null }])
+        }
+      >
+        Einheit
+      </Button>
       <PropstackDialog dealId={dealId} einheitId={propstack} schliessen={() => setPropstack(null)} />
     </Paper>
   );
 }
 
+/* ───────────── 🔨 Sanierungskosten ───────────── */
+
 const BEREICHE = [
-  { value: 'both', label: 'beide' },
-  { value: 'auf', label: 'nur Aufteiler' },
-  { value: 'glo', label: 'nur Global' },
+  { value: 'auf', label: 'Auf' },
+  { value: 'both', label: 'Beide' },
+  { value: 'glo', label: 'Glo' },
 ];
 
 function SanierungenTabelle({
   sanierungen,
   setSanierungen,
   ergebnis,
+  kalk,
+  setzeFeld,
+  zahlAus,
 }: {
   sanierungen: Sanierung[];
   setSanierungen: (f: (s: Sanierung[]) => Sanierung[]) => void;
   ergebnis: AnkaufErgebnis;
+  kalk: KalkulationWerte;
+  setzeFeld: (feld: string, v: number | string) => void;
+  zahlAus: (feld: string) => number | '';
 }) {
   const aendere = (i: number, teil: Partial<Sanierung>) => setSanierungen((ss) => ss.map((s, j) => (j === i ? { ...s, ...teil } : s)));
+  const gesamt = ergebnis.sanierungNetto + ergebnis.sanierungPuffer;
   return (
     <Paper withBorder p="sm" aria-label="Sanierung">
-      <Group justify="space-between" mb="xs">
-        <Title order={5}>Sanierung</Title>
-        <Button size="xs" variant="light" leftSection={<IconPlus size={14} />} onClick={() => setSanierungen((ss) => [...ss, { beschreibung: null, betrag: null, bereich: 'both' }])}>
-          Posten
-        </Button>
-      </Group>
+      <Title order={6} mb={6} tt="uppercase" fz="xs" style={{ letterSpacing: 0.6 }}>
+        🔨 Sanierungskosten
+      </Title>
       <Stack gap={6}>
         {sanierungen.map((s, i) => (
           <Group key={s.id ?? `neu-${i}`} gap="xs" wrap="nowrap">
-            <TextInput size="xs" style={{ flex: 1 }} placeholder="Beschreibung" value={s.beschreibung ?? ''} onChange={(e) => aendere(i, { beschreibung: e.currentTarget.value || null })} aria-label="Beschreibung" />
-            <NumberInput size="xs" w={120} placeholder="Betrag €" value={s.betrag ?? ''} onChange={(v) => aendere(i, { betrag: alsZahl(v) })} aria-label="Betrag" {...ZAHL} />
-            <Select size="xs" w={140} data={BEREICHE} value={s.bereich ?? 'both'} allowDeselect={false} onChange={(v) => aendere(i, { bereich: v as Sanierung['bereich'] })} aria-label="Bereich" />
+            <TextInput size="xs" style={{ flex: 1 }} placeholder="Beschreibung…" value={s.beschreibung ?? ''} onChange={(e) => aendere(i, { beschreibung: e.currentTarget.value || null })} aria-label="Beschreibung" />
+            <NumberInput size="xs" w={120} placeholder="€" value={s.betrag ?? ''} onChange={(v) => aendere(i, { betrag: alsZahl(v) })} aria-label="Betrag" {...ZAHL} />
+            <SegmentedControl size="xs" data={BEREICHE} value={s.bereich ?? 'both'} onChange={(v) => aendere(i, { bereich: v as Sanierung['bereich'] })} aria-label="Bereich" />
             <ActionIcon variant="subtle" color="red" onClick={() => setSanierungen((ss) => ss.filter((_, j) => j !== i))} aria-label="Posten entfernen">
               <IconTrash size={14} />
             </ActionIcon>
           </Group>
         ))}
-        <Group justify="flex-end" gap="lg">
-          <Text size="sm">Netto {euro(ergebnis.sanierungNetto)}</Text>
-          <Text size="sm">Puffer {euro(ergebnis.sanierungPuffer)}</Text>
-          <Text size="sm" fw={700}>Gesamt {euro(ergebnis.sanierungNetto + ergebnis.sanierungPuffer)}</Text>
+        <Group>
+          <Button size="xs" variant="light" leftSection={<IconPlus size={14} />} aria-label="Posten" onClick={() => setSanierungen((ss) => [...ss, { beschreibung: null, betrag: null, bereich: 'both' }])}>
+            Sanierungsposition
+          </Button>
         </Group>
+
+        {/* Risikopuffer: Prozent oder fester Betrag (fest hat Vorrang) */}
+        <Group gap={8} wrap="wrap" p={6} style={{ border: '1px solid var(--mantine-color-default-border)', borderRadius: 6 }}>
+          <Text size="xs" style={{ flex: 1 }}>Risikopuffer</Text>
+          <NumberInput size="xs" w={70} value={zahlAus('rp_pct')} placeholder="10" step={0.5} onChange={(v) => setzeFeld('rp_pct', v)} aria-label="Risikopuffer Sanierung" rightSection={<Text size="xs" c="dimmed" pr={4}>%</Text>} rightSectionWidth={24} {...ZAHL} />
+          <Text size="xs" c="dimmed">oder</Text>
+          <NumberInput size="xs" w={130} value={zahlAus('rp_fix')} placeholder="fester €-Betrag" onChange={(v) => setzeFeld('rp_fix', v)} aria-label="Risikopuffer fest (vorrangig)" rightSection={<Text size="xs" c="dimmed" pr={4}>€</Text>} rightSectionWidth={24} {...ZAHL} />
+          {kalk.rp_fix ? <Text size="xs" c="orange.7">fester Betrag gilt</Text> : null}
+        </Group>
+
+        {sanierungen.length > 0 ? (
+          <Box>
+            <Group justify="space-between" px={8} py={3} style={{ background: 'rgba(224,144,64,.08)', borderRadius: 6 }}>
+              <Text size="xs" c="dimmed">Sanierungskosten</Text>
+              <Text size="xs" fw={600}>{euro(ergebnis.sanierungNetto)}</Text>
+            </Group>
+            <Group justify="space-between" px={8} py={3} mt={2} style={{ background: 'rgba(224,144,64,.08)', borderRadius: 6 }}>
+              <Text size="xs" c="orange.7">+ Puffer</Text>
+              <Text size="xs" fw={600} c="orange.7">{euro(ergebnis.sanierungPuffer)}</Text>
+            </Group>
+            <Group justify="space-between" px={8} py={4} mt={2} style={{ border: '1px solid var(--mantine-color-orange-6)', borderRadius: 6 }}>
+              <Text size="xs" fw={700} c="orange.7">Sanierung inkl. Puffer</Text>
+              <Text size="sm" fw={700} c="orange.7">{euro(gesamt)}</Text>
+            </Group>
+          </Box>
+        ) : null}
       </Stack>
     </Paper>
   );
