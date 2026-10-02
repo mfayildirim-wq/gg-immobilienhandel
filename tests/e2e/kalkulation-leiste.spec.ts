@@ -1,6 +1,6 @@
 import { expect, type Locator, test } from '@playwright/test';
 
-test('Kalkulation: Reiter und Knopfleiste bleiben beim Scrollen stehen — links Varianten mit „Speichern als…“, rechts Verwerfen und Speichern', async ({ page }) => {
+test('Kalkulation: Adresse, Reiter und Knopfleiste bleiben beim Scrollen stehen — links Varianten mit „Speichern als…“, rechts Verwerfen und Speichern', async ({ page }) => {
   page.on('dialog', (d) => void d.accept());
   const kennung = `Leiste ${Date.now()}`;
   const o = await (await page.request.post('/api/objekte', { data: { strasse: kennung, hausnr: '7', stadt: 'Ulm', angebotspreis: 900_000 } })).json();
@@ -26,7 +26,13 @@ test('Kalkulation: Reiter und Knopfleiste bleiben beim Scrollen stehen — links
   const speichern = leiste.getByRole('button', { name: 'Speichern', exact: true });
   const verwerfen = leiste.getByRole('button', { name: 'Verwerfen', exact: true });
   const speichernAls = leiste.getByRole('button', { name: '💾 Speichern als…' });
-  for (const sichtbar of [reiter, speichern, verwerfen, speichernAls, leiste.getByText('ungespeichert')]) await expect(sichtbar).toBeInViewport();
+  // Auch die Adresse bleibt stehen — Stadt und Makler stehen in derselben Zeile dahinter
+  const adresse = detail.getByRole('heading', { name: `${kennung} 7` });
+  const stadtUndMakler = detail.getByText('Ulm · Makler: – (ohne Makler)');
+  for (const sichtbar of [adresse, stadtUndMakler, reiter, speichern, verwerfen, speichernAls, leiste.getByText('ungespeichert')]) await expect(sichtbar).toBeInViewport();
+  const mitte = async (l: Locator) => { const b = (await l.boundingBox())!; return b.y + b.height / 2; };
+  expect(Math.abs(await mitte(adresse) - await mitte(stadtUndMakler))).toBeLessThan(12);
+  expect((await stadtUndMakler.boundingBox())!.x).toBeGreaterThan((await adresse.boundingBox())!.x);
   await expect(speichern).toBeEnabled();
 
   // Anordnung: Varianten links, dann Verwerfen, ganz rechts Speichern
