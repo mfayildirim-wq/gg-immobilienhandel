@@ -1,9 +1,10 @@
-import { Alert, Anchor, Badge, Box, Button, Group, Modal, ScrollArea, SegmentedControl, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core';
+import { Alert, Anchor, Badge, Button, Group, Modal, SegmentedControl, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { FREQUENZEN, MAKLER_PRIO_CHIPS, maklerAktuelleKriterien, maklerListe } from '@gg/domain';
 import { IconLayoutColumns, IconLayoutRows, IconPlus } from '@tabler/icons-react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useState } from 'react';
+import { GeteilteAnsicht } from '../components/GeteilteAnsicht.tsx';
 import { MaklerDetail, maklerDublettenFrage } from '../components/MaklerDetail.tsx';
 import { Listenzeile } from '../components/Listenzeile.tsx';
 import { GespeicherteFilterLeiste, useAktiverFilter } from '../components/GespeicherteFilterLeiste.tsx';
@@ -58,29 +59,23 @@ export function MaklerSeite() {
       </Group>
       <Chipleiste chips={MAKLER_PRIO_CHIPS.map((w) => ({ wert: w, label: w === 'alle' ? 'Alle' : `${w}-Makler` }))} aktiv={prio} waehlen={setPrio}
         suche={text} setSuche={setText} platzhalter="Name, Firma, Region…" />
-      <Box
-        data-layout={layout}
-        style={{ display: 'flex', flexDirection: nebeneinander ? 'row' : 'column', gap: 12, flex: 1, minHeight: 0 }}
-      >
-        <ScrollArea
-          type="auto"
-          style={nebeneinander ? { width: 360, flexShrink: 0 } : { height: '38%', flexShrink: 0 }}
-          aria-label="Makler-Liste"
-        >
-          {isLoading && <Text c="dimmed">Lädt …</Text>}
-          {!isLoading && liste.zeilen.length === 0 && <Text c="dimmed" ta="center" p="lg">🤝 Keine Makler</Text>}
-          {nebeneinander ? (
-            <Stack gap={4}>
-              {liste.zeilen.map((m) => (
-                <MaklerZeile key={m.id} makler={m} aktiv={m.id === auswahl} waehlen={() => setAuswahl(m.id)} />
-              ))}
-            </Stack>
-          ) : liste.zeilen.length > 0 && <MaklerTabelle zeilen={liste.zeilen} auswahlId={auswahl} waehlen={setAuswahl} />}
-        </ScrollArea>
-        <Box component="section" style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }} aria-label="Makler-Detail">
-          {auswahl ? <MaklerDetail key={auswahl} id={auswahl} geloescht={geloescht} /> : <Text c="dimmed">Makler in der Liste wählen.</Text>}
-        </Box>
-      </Box>
+      <GeteilteAnsicht
+        schluessel="makler" layout={layout} listeLabel="Makler-Liste" detailLabel="Makler-Detail" standardBreite={360} standardHoehe="38%"
+        liste={
+          <>
+            {isLoading && <Text c="dimmed">Lädt …</Text>}
+            {!isLoading && liste.zeilen.length === 0 && <Text c="dimmed" ta="center" p="lg">🤝 Keine Makler</Text>}
+            {nebeneinander ? (
+              <Stack gap={4}>
+                {liste.zeilen.map((m) => (
+                  <MaklerZeile key={m.id} makler={m} aktiv={m.id === auswahl} waehlen={() => setAuswahl(m.id)} />
+                ))}
+              </Stack>
+            ) : liste.zeilen.length > 0 && <MaklerTabelle zeilen={liste.zeilen} auswahlId={auswahl} waehlen={setAuswahl} />}
+          </>
+        }
+        detail={auswahl ? <MaklerDetail key={auswahl} id={auswahl} geloescht={geloescht} /> : <Text c="dimmed">Makler in der Liste wählen.</Text>}
+      />
 
       <MaklerDialog offen={offen} schliessen={dialog.close} bestand={listen?.makler ?? []} />
     </Stack>

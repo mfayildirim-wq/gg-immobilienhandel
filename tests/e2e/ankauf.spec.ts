@@ -48,6 +48,47 @@ test.describe('Ankauf-Cockpit', () => {
     await expect(spalte.getByLabel(`Makler ${name}`)).toBeHidden();
   });
 
+  test('Deals: Teiler ziehen und Liste einklappen geben dem Detail mehr Platz — beides bleibt nach dem Neuladen', async ({ page }) => {
+    const strasse = `Teilerweg ${Date.now()}`;
+    const objekt = await (await page.request.post('/api/objekte', { data: { strasse, hausnr: '4', stadt: 'Ankaufstadt' } })).json();
+    const deal = await (await page.request.post('/api/deals', { data: { objektId: objekt.id } })).json();
+    expect((await page.request.put(`/api/deals/${deal.id}/termin`, { data: { version: 1, nextContact: plus(-3) } })).ok()).toBe(true);
+    await page.goto('/');
+    await page.getByRole('region', { name: '🎯 Deals nachverfolgen' }).getByLabel(`Deal ${strasse} 4`).getByText(`📍 ${strasse} 4`, { exact: false }).click();
+    const liste = page.getByLabel('Deal-Liste');
+    const detail = page.getByRole('region', { name: 'Deal-Detail' });
+    await expect(detail.getByRole('heading', { name: `${strasse} 4` })).toBeVisible();
+    const breite = async (l: typeof liste) => Math.round((await l.boundingBox())!.width);
+    expect(await breite(liste)).toBe(430);
+    const detailVorher = await breite(detail);
+
+    // Teiler 120 px nach links: die Liste wird schmaler, das Detail um denselben Betrag breiter
+    const teiler = page.getByRole('separator', { name: 'Breite der Liste ändern' });
+    const t = (await teiler.boundingBox())!;
+    await page.mouse.move(t.x + t.width / 2, t.y + 120);
+    await page.mouse.down();
+    await page.mouse.move(t.x + t.width / 2 - 120, t.y + 120, { steps: 6 });
+    await page.mouse.up();
+    expect(await breite(liste)).toBe(310);
+    expect(await breite(detail)).toBe(detailVorher + 120);
+
+    // Nach dem Neuladen steht wieder der erste Deal der Liste rechts — die Breite ist geblieben
+    await page.reload();
+    await expect(liste).toBeVisible();
+    expect(await breite(liste)).toBe(310);
+
+    // Knopf neben der Adresse: Liste zu — das Detail hat die ganze Breite, der Teiler ist weg
+    await detail.getByRole('button', { name: 'Liste ausblenden' }).click();
+    await expect(liste).toBeHidden();
+    await expect(teiler).toBeHidden();
+    expect(await breite(detail)).toBeGreaterThan(detailVorher + 400);
+
+    await page.reload();
+    await detail.getByRole('button', { name: 'Liste einblenden' }).click();
+    await expect(liste).toBeVisible();
+    expect(await breite(liste)).toBe(310);
+  });
+
   test('überfälliger Deal: Karte wählen zeigt das Deal-Detail rechts', async ({ page }) => {
     const strasse = `Cockpitweg ${Date.now()}`;
     const objekt = await (await page.request.post('/api/objekte', { data: { strasse, hausnr: '4', stadt: 'Ankaufstadt' } })).json();

@@ -1,4 +1,5 @@
 import { Alert, Group, Loader, Stack, Tabs, Text, Title } from '@mantine/core';
+import { ListeUmschalter } from '../GeteilteAnsicht.tsx';
 import { Reiterleiste } from '../Reiterleiste.tsx';
 import { IconBriefcase, IconBuildingBank, IconCalculator, IconFolder, IconInfoCircle, IconMessages } from '@tabler/icons-react';
 import { useState } from 'react';
@@ -36,7 +37,8 @@ export function DealDetail({ id, start = 'uebersicht' }: { id: string; start?: R
         <div className={css.fest}>
           {/* Adresse, Stadt und Makler in einer Zeile — bleibt mit den Reitern stehen, damit klar ist, in welchem Deal man arbeitet */}
           <Group justify="space-between" wrap="nowrap" gap="sm" pb={4}>
-            <Group gap="sm" wrap="nowrap" align="baseline" style={{ minWidth: 0 }}>
+            <Group gap="sm" wrap="nowrap" align="center" style={{ minWidth: 0 }}>
+              <ListeUmschalter />
               <Title order={3} className={css.adresse}>{deal.objekt.titel}</Title>
               <Text c="dimmed" size="sm" truncate style={{ flex: '1 1 0', minWidth: 0 }}>
                 {deal.objekt.stadt ?? ''} · Makler: {deal.makler?.name ?? '– (ohne Makler)'}
