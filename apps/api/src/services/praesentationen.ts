@@ -1,10 +1,12 @@
-import type { Praesentation, PraesentationSpeichern, PraesentationVorbelegen } from '@gg/api-contract';
+import type { Praesentation, PraesentationKi, PraesentationSpeichern, PraesentationVorbelegen } from '@gg/api-contract';
 import { type Db, schema } from '@gg/db';
 import {
-  deckblattVorbelegen, type FinanzPraes, type FinanzpraesDefaults, finanzierungVorbelegen, finanzpraesDefaultsZusammenfuehren, leereFolie,
-  mietenaufstellungVorbelegen, mitStandards, objektbeschreibungVorbelegen, projektkalkulationVorbelegen, type Slide, type SlideTyp,
+  deckblattVorbelegen, type FinanzPraes, type FinanzpraesDefaults, finanzierungVorbelegen, finanzpraesDefaultsZusammenfuehren, kiFehlerHinweis,
+  LAGE_KI_OHNE_ADRESSE, lageKiEingabe, lageKiHinweis, lageKiUebernehmen, leereFolie, mietenaufstellungVorbelegen, mitStandards, OBJEKT_KI_OHNE_DATEN,
+  objektbeschreibungVorbelegen, objektKiEingabe, objektKiHinweis, objektKiUebernehmen, projektkalkulationVorbelegen, type Slide, type SlideTyp,
   STANDARD_PRESET_ORDER, verkaufspreiseVorbelegen,
 } from '@gg/domain';
+import { type KiAntwort, type KiClient, kostenBuchung, lagebeschreibungGenerieren, objektbeschreibungGenerieren } from '@gg/integrations';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { auditSchreiben } from './audit.ts';
 import { FachFehler } from '../fehler.ts';
@@ -115,6 +117,45 @@ export async function praesentationVorbelegen(db: Db, id: string, v: Praesentati
             : v.art === 'mietenaufstellung' ? mietenaufstellungVorbelegen(v.data, deal, v.spalten ?? [])
               : finanzierungVorbelegen(v.data, deal, scope);
   return { data, hinweis: data ? null : HINWEIS[v.art] };
+}
+
+/**
+ * Die beiden KI-Texte (finanzpraesGenerateLageKI, finanzpraesGenerateObjektKI). Wie die Vorbelegung speichert der
+ * Aufruf nicht: der Editor übernimmt das Ergebnis und speichert selbst. Fehlt die Grundlage (keine Adresse, keine
+ * Fakten), kommt nur ein Hinweis zurück und die KI wird gar nicht gefragt.
+ */
+export async function praesentationKiText(db: Db, ki: KiClient | null | undefined, id: string, v: PraesentationKi) {
+  const p = await laden(db, id);
+  const { deal, objekt } = await dealUndObjektAlt(db, p.dealId);
+  const lage = v.art === 'lage' ? lageKiEingabe(v.data, deal, objekt) : null;
+  const objektEingabe = v.art === 'objekt' ? objektKiEingabe(v.data, deal, objekt) : null;
+  if (!lage && !objektEingabe) return { data: null, hinweis: v.art === 'lage' ? LAGE_KI_OHNE_ADRESSE : OBJEKT_KI_OHNE_DATEN };
+  if (!ki) throw new FachFehler(422, 'KI ist nicht eingerichtet (ANTHROPIC_API_KEY).');
+  const quelle = `praesentation/${v.art}`;
+  // Gebucht wird, sobald das Modell geantwortet hat — auch wenn die Antwort danach nicht taugt
+  const buchen = async (a: KiAntwort<unknown>) => {
+    try {
+      const b = kostenBuchung(a.model, a.usage, quelle, { praesentation_id: id, deal_id: p.dealId });
+      await auditSchreiben(db, { type: b.type, aiModel: b.ai_model, aiFunction: quelle, source: quelle, inputTokens: b.input_tokens, outputTokens: b.output_tokens, costEur: b.cost_eur, metadata: b.metadata });
+    } catch (e) {
+      console.error('[ki] Kostenbuchung fehlgeschlagen:', e);
+    }
+  };
+  try {
+    if (lage) {
+      const a = await lagebeschreibungGenerieren(ki, lage);
+      await buchen(a);
+      const r = lageKiUebernehmen(v.data, a.wert);
+      return { data: r.data, hinweis: lageKiHinweis(r.bullets) };
+    }
+    const a = await objektbeschreibungGenerieren(ki, objektEingabe!);
+    await buchen(a);
+    const r = objektKiUebernehmen(v.data, a.wert);
+    return { data: r.data, hinweis: objektKiHinweis(r.woerter) };
+  } catch (e) {
+    console.error(`[${quelle}] KI-Text fehlgeschlagen:`, e);
+    throw new FachFehler(500, kiFehlerHinweis(e instanceof Error ? e.message : 'Unbekannter Fehler'));
+  }
 }
 
 /** Für den Export: gespeicherte Präsentation mit Einstellungs-Standards (expandWithDefaults). */

@@ -13,6 +13,7 @@ export * from './speicher/dateipruefung.ts';
 export * from './ki/persona.ts';
 export * from './ki/anreicherung.ts';
 export * from './ki/einheiten.ts';
+export * from './ki/praesentation.ts';
 export * from './geheimnis.ts';
 export * from './tabelle.ts';
 export * from './propstack.ts';

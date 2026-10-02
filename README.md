@@ -96,7 +96,9 @@ Knopf „Exposé importieren“ in der Kopfzeile → Upload (Stapel, Kostenschä
 - **Editor:** Folienliste (Reihenfolge, ein-/ausblenden, löschen, 16 Folientypen hinzufügen), Formular je Typ mit denselben Feldern wie alt, Bildauswahl aus den Objektfotos (Mehrfachauswahl mit Reihenfolge, Hochladen, Zwischenablage), Live-Vorschau der Folie, automatisches Speichern mit Version.
 - **Vorbelegung aus dem Deal** (Deckblatt, Objektbeschreibung, Aufteiler-/Global-Kalkulation, Verkaufspreise, Mietenaufstellung mit Spaltenwahl, Finanzierung + IVT-Standard) und **Konsistenz-Check** (GIK/EM/FM/Scope/Verkaufserlöse) rechnen wie alt (Golden Master, 120 Fälle).
 - **Export:** `GET /api/praesentationen/{id}/pdf` (A4 quer, hinter der Render-Schleuse) und `/pptx`; Standardbilder (Organigramm, Abschlussfoto) und Geschäftsmodell-Texte kommen aus **Einstellungen → Bank-Präsentation**.
-- **Noch nicht übernommen:** KI-Texte für Lage und Objekt, Helligkeitskorrektur, PDF-Seiten als Grundrisse hochladen.
+- **KI-Texte (02.10.2026, wie alt):** „🤖 KI: Beschreibung generieren“ auf der Objektbeschreibung (4–7 Sätze, nur aus den bekannten Fakten zu Deal, Objekt und Folie) und „🤖 KI: Lagebeschreibung generieren“ auf der Lagebeschreibung (je 3–5 Punkte für Standort und Anbindung aus der Adresse). Beide laufen mit Claude Haiku 4.5 über `POST /api/praesentationen/{id}/ki`; was schon getippt ist, geht als Vorgabe mit und bleibt erhalten, gespeichert wird erst durch den Editor. Prompts wörtlich aus `finanzpraes-ki.ts` (`packages/integrations/src/ki/praesentation.ts`), Regeln in `packages/domain/src/finanzpraesentation/ki.ts`, Kosten im Audit unter `praesentation/lage` und `praesentation/objekt`.
+- **„✨ Helligkeit“ (02.10.2026, wie alt):** automatische Tonwertkorrektur an jedem Bild der Präsentation, im Browser gerechnet und keine KI (`helligkeitKorrigieren` in `@gg/domain`, wörtlich nach `autoEnhanceBrightness`). Die aufgehellte Kopie wird als neues Foto `enhanced-….jpg` ans Objekt gehängt (höchstens 1280 px breit, JPEG 0,85) und ersetzt das Bild in der Folie; das Original bleibt am Objekt.
+- **Noch nicht übernommen:** PDF-Seiten als Grundrisse hochladen.
 
 ## Parallelprüfung gegen die alte App (`pnpm paritaet`)
 
@@ -250,7 +252,7 @@ pnpm umzug          # speichern
 ## Nächste Schritte (aus Protokoll 10)
 
 - **N2 Rest:** Projektmanagement (`immo-projekte`), gespeicherte Filter
-- **Dokumente, noch offen:** Chromium für Vercel (`@sparticuz/chromium` mit playwright-core), KI-Texte der Präsentation, Helligkeitskorrektur, PDF-Seiten als Grundrisse
+- **Dokumente, noch offen:** Chromium für Vercel (`@sparticuz/chromium` mit playwright-core), PDF-Seiten als Grundrisse
 - **N3 Rest:** Suche, Papierkorb, Audit (Hash-Kette), Deal-Dokumente, Objektfoto auf der Cockpit-Karte, Kalkulationsvarianten
 - **Ankauf-Cockpit, noch offen:** gespeicherte Filter, E-Mail-Vorlagen (mailto mit Platzhaltern), KI-Hinweise/-Entwürfe (Persona, Enrichment), KI-Gesprächsöffner und Anruf-Aufnahme im Briefing
 - **N3:** Objekte, Makler (+ Kommunikation), Deals (Info, Kalkulation, Dateien), Cockpit, Wählmaschine, Suche, Papierkorb, Audit
