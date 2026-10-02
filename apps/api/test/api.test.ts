@@ -2,9 +2,11 @@ import { createHash } from 'node:crypto';
 import { createDb, schema, verlangeLokaleDatenbank } from '@gg/db';
 import { eq, inArray } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
+import { OBJEKT_HAT_DEAL_HINWEIS, papierkorbVerwiesenHinweis } from '@gg/domain';
 import { erzeugeSchleuse, SCHLEUSE_STANDARD } from '@gg/documents/pdf';
 import { graphAttrappe, kiAttrappe, propstackAttrappe, speicherImSpeicher } from '@gg/integrations';
 import { createApp } from '../src/app.ts';
+import { papierkorbLeeren } from '../src/services/papierkorb.ts';
 import { mitAusgeliefertenStandards } from './standardwerte.ts';
 
 /**
@@ -69,6 +71,13 @@ describe.skipIf(!url)('Deal-Ablauf gegen die lokale Datenbank', () => {
   mitAusgeliefertenStandards(url!);
 
   afterAll(async () => {
+    if (angelegt.objekte.length) {
+      const deals = db.select({ id: schema.deals.id }).from(schema.deals).where(inArray(schema.deals.objektId, angelegt.objekte));
+      await db.delete(schema.kundenkalkulationen).where(inArray(schema.kundenkalkulationen.dealId, deals));
+      await db.delete(schema.finanzpraesentationen).where(inArray(schema.finanzpraesentationen.dealId, deals));
+      await db.delete(schema.vertriebslisten).where(inArray(schema.vertriebslisten.dealId, deals));
+      await db.delete(schema.begleitscheine).where(inArray(schema.begleitscheine.objektId, angelegt.objekte));
+    }
     if (angelegt.objekte.length) await db.delete(schema.deals).where(inArray(schema.deals.objektId, angelegt.objekte));
     if (angelegt.objekte.length) await db.delete(schema.objekte).where(inArray(schema.objekte.id, angelegt.objekte));
     if (angelegt.makler.length) await db.delete(schema.makler).where(inArray(schema.makler.id, angelegt.makler));
@@ -721,6 +730,155 @@ describe.skipIf(!url)('Deal-Ablauf gegen die lokale Datenbank', () => {
     await db.update(schema.makler).set({ deletedAt: new Date(Date.now() - 31 * 86_400_000).toISOString() }).where(eq(schema.makler.id, m.id));
     expect((await lies(app.request('/api/papierkorb'))).some((e: { id: string }) => e.id === m.id)).toBe(false);
     expect((await db.select().from(schema.makler).where(eq(schema.makler.id, m.id))).length).toBe(0);
+  });
+
+  /** Objekt, Deal und Kundenkalkulation — alle drei im Papierkorb (das Objekt geht mit seinem letzten Deal). */
+  const ketteImPapierkorb = async (strasse: string) => {
+    const o = await lies(post('/api/objekte', { strasse, hausnr: '1' }));
+    angelegt.objekte.push(o.id);
+    const d = await lies(post('/api/deals', { objektId: o.id }));
+    const kk = await lies(post(`/api/deals/${d.id}/kundenkalkulationen`, { scope: 'global' }));
+    for (const pfad of [`/api/kundenkalkulationen/${kk.id}`, `/api/deals/${d.id}`]) {
+      expect((await app.request(pfad, { method: 'DELETE' })).status, pfad).toBe(200);
+    }
+    expect((await app.request(`/api/objekte/${o.id}`)).status, 'Objekt liegt mit im Papierkorb').toBe(404);
+    return { o, d, kk };
+  };
+  const vorhanden = async (lesen: Pick<typeof db, 'select'>, k: { o: { id: string }; d: { id: string }; kk: { id: string } }) => ({
+    objekt: (await lesen.select({ id: schema.objekte.id }).from(schema.objekte).where(eq(schema.objekte.id, k.o.id))).length,
+    deal: (await lesen.select({ id: schema.deals.id }).from(schema.deals).where(eq(schema.deals.id, k.d.id))).length,
+    kk: (await lesen.select({ id: schema.kundenkalkulationen.id }).from(schema.kundenkalkulationen).where(eq(schema.kundenkalkulationen.id, k.kk.id))).length,
+  });
+  const vor31Tagen = () => new Date(Date.now() - 31 * 86_400_000).toISOString();
+  /** Wie es vor der Regel entstehen konnte (und im Altbestand vorkommt): Objekt im Papierkorb, sein Deal lebt. */
+  const altbestandObjektMitDeal = async (strasse: string, geloeschtAm = new Date().toISOString()) => {
+    const o = await lies(post('/api/objekte', { strasse, hausnr: '1' }));
+    angelegt.objekte.push(o.id);
+    const d = await lies(post('/api/deals', { objektId: o.id }));
+    await db.update(schema.objekte).set({ deletedAt: geloeschtAm }).where(eq(schema.objekte.id, o.id));
+    return { o, d };
+  };
+
+  it('Papierkorb leeren: Objekt, Deal und Kundenkalkulation liegen gemeinsam darin — alles wird entfernt (Fremdschlüssel: Kinder vor Eltern)', async () => {
+    const kette = await ketteImPapierkorb('Leerenweg');
+    const alt = await altbestandObjektMitDeal('Leeren-Altweg');
+    // In einer Transaktion, die zurückgerollt wird: der Rest des lokalen Papierkorbs bleibt unberührt
+    class Zurueck extends Error {}
+    const lauf = db.transaction(async (tx) => {
+      const ergebnis = await papierkorbLeeren(tx);
+      expect(ergebnis.entfernt).toBeGreaterThanOrEqual(3);
+      expect(await vorhanden(tx, kette)).toEqual({ objekt: 0, deal: 0, kk: 0 });
+      // Worauf noch etwas verweist, bleibt liegen und wird gezählt
+      expect(ergebnis.uebrig).toBeGreaterThanOrEqual(1);
+      expect((await tx.select({ id: schema.objekte.id }).from(schema.objekte).where(eq(schema.objekte.id, alt.o.id))).length).toBe(1);
+      throw new Zurueck();
+    });
+    await expect(lauf).rejects.toBeInstanceOf(Zurueck);
+    expect(await vorhanden(db, kette)).toEqual({ objekt: 1, deal: 1, kk: 1 });
+  }, 60_000);
+
+  it('Papierkorb öffnen: abgelaufenes Objekt samt Deal und Kundenkalkulation wird aufgeräumt, statt mit 500 zu scheitern', async () => {
+    const kette = await ketteImPapierkorb('Fristweg');
+    await db.update(schema.kundenkalkulationen).set({ deletedAt: vor31Tagen() }).where(eq(schema.kundenkalkulationen.id, kette.kk.id));
+    await db.update(schema.deals).set({ deletedAt: vor31Tagen() }).where(eq(schema.deals.id, kette.d.id));
+    await db.update(schema.objekte).set({ deletedAt: vor31Tagen() }).where(eq(schema.objekte.id, kette.o.id));
+
+    const antwort = await app.request('/api/papierkorb');
+    expect(antwort.status).toBe(200);
+    expect(await vorhanden(db, kette)).toEqual({ objekt: 0, deal: 0, kk: 0 });
+  });
+
+  it('Papierkorb öffnen: abgelaufenes Objekt, an dem noch ein Deal hängt (Altbestand), bleibt liegen', async () => {
+    const { o } = await altbestandObjektMitDeal('Frist-Altweg', vor31Tagen());
+    const antwort = await app.request('/api/papierkorb');
+    expect(antwort.status).toBe(200);
+    expect((await lies(antwort)).some((e: { id: string }) => e.id === o.id)).toBe(true);
+    expect((await db.select({ id: schema.objekte.id }).from(schema.objekte).where(eq(schema.objekte.id, o.id))).length).toBe(1);
+  });
+
+  it('Objekt löschen: abgelehnt, solange ein Deal daran hängt', async () => {
+    const o = await lies(post('/api/objekte', { strasse: 'Hängtweg', hausnr: '1' }));
+    angelegt.objekte.push(o.id);
+    const d = await lies(post('/api/deals', { objektId: o.id }));
+
+    const abgelehnt = await app.request(`/api/objekte/${o.id}`, { method: 'DELETE' });
+    expect(abgelehnt.status).toBe(409);
+    expect(await abgelehnt.json()).toMatchObject({ fehler: OBJEKT_HAT_DEAL_HINWEIS, details: { dealId: d.id } });
+    expect((await app.request(`/api/objekte/${o.id}`)).status).toBe(200);
+
+  });
+
+  it('Deal löschen: das Objekt geht mit in den Papierkorb, sobald kein anderer Deal mehr daran hängt', async () => {
+    const o = await lies(post('/api/objekte', { strasse: 'Mitweg', hausnr: '1' }));
+    const m = await lies(post('/api/makler', { name: 'Mitweg Makler' }));
+    angelegt.objekte.push(o.id); angelegt.makler.push(m.id);
+    const d1 = await lies(post('/api/deals', { objektId: o.id }));
+    const d2 = await lies(post('/api/deals', { objektId: o.id, maklerId: m.id }));
+    const imPapierkorb = async () => (await lies(app.request('/api/papierkorb'))).filter((e: { id: string }) => [o.id, d1.id, d2.id].includes(e.id)).map((e: { id: string }) => e.id).sort();
+
+    // Erster Deal weg: am Objekt hängt noch der zweite, es bleibt
+    expect((await app.request(`/api/deals/${d1.id}`, { method: 'DELETE' })).status).toBe(200);
+    expect((await app.request(`/api/objekte/${o.id}`)).status).toBe(200);
+    expect(await imPapierkorb()).toEqual([d1.id]);
+
+    // Letzter Deal weg: das Objekt geht mit, beide mit derselben Löschzeit (laufen gemeinsam ab)
+    expect((await app.request(`/api/deals/${d2.id}`, { method: 'DELETE' })).status).toBe(200);
+    expect((await app.request(`/api/objekte/${o.id}`)).status).toBe(404);
+    expect(await imPapierkorb()).toEqual([o.id, d1.id, d2.id].sort());
+    const [objekt] = await db.select({ am: schema.objekte.deletedAt }).from(schema.objekte).where(eq(schema.objekte.id, o.id));
+    const [deal] = await db.select({ am: schema.deals.deletedAt }).from(schema.deals).where(eq(schema.deals.id, d2.id));
+    expect(objekt!.am).toBe(deal!.am);
+  });
+
+  it('Papierkorb: ein Deal bringt sein Objekt mit zurück; endgültig geht das Objekt nicht vor seinem Deal', async () => {
+    const { o, d, kk } = await ketteImPapierkorb('Folgeweg');
+    const fehler = async (r: Response | Promise<Response>) => { const a = await r; return { status: a.status, fehler: (await lies(a)).fehler }; };
+
+    expect(await fehler(app.request(`/api/papierkorb/objekte/${o.id}`, { method: 'DELETE' })))
+      .toEqual({ status: 409, fehler: papierkorbVerwiesenHinweis('deals') });
+    expect(await vorhanden(db, { o, d, kk })).toEqual({ objekt: 1, deal: 1, kk: 1 });
+
+    // Der Deal kommt zurück und sein Objekt mit ihm
+    expect((await app.request(`/api/papierkorb/deals/${d.id}/wiederherstellen`, { method: 'POST' })).status).toBe(200);
+    expect((await app.request(`/api/deals/${d.id}`)).status).toBe(200);
+    expect((await app.request(`/api/objekte/${o.id}`)).status).toBe(200);
+    expect((await lies(app.request('/api/papierkorb'))).some((e: { id: string }) => e.id === o.id)).toBe(false);
+
+    // Wieder löschen (Objekt geht mit) und endgültig: erst der Deal — seine Kundenkalkulation geht mit —, dann das Objekt
+    expect((await app.request(`/api/deals/${d.id}`, { method: 'DELETE' })).status).toBe(200);
+    for (const pfad of [`deals/${d.id}`, `objekte/${o.id}`]) {
+      expect((await app.request(`/api/papierkorb/${pfad}`, { method: 'DELETE' })).status, pfad).toBe(200);
+    }
+    expect(await vorhanden(db, { o, d, kk })).toEqual({ objekt: 0, deal: 0, kk: 0 });
+  });
+
+  it('Endgültig entfernen nimmt Abhängiges mit: Kundenkalkulation, Präsentation und Vertriebsliste des Deals, Begleitschein des Objekts', async () => {
+    const o = await lies(post('/api/objekte', { strasse: 'Abhängweg', hausnr: '1' }));
+    angelegt.objekte.push(o.id);
+    const d = await lies(post('/api/deals', { objektId: o.id }));
+    await post(`/api/deals/${d.id}/status`, { status: 'Angekauft', version: 1 }, 'PATCH');
+    const kk = await lies(post(`/api/deals/${d.id}/kundenkalkulationen`, { scope: 'global' }));
+    const praes = await lies(post(`/api/deals/${d.id}/praesentation`, { vorlage: 'leer' }));
+    const vl = await lies(post(`/api/deals/${d.id}/vertriebsliste`, {}));
+    const bs = await lies(post('/api/begleitscheine', { typ: 'ankauf', objektId: o.id, name: 'Abhäng' }));
+    const zaehlen = async () => ({
+      objekt: (await db.select({ id: schema.objekte.id }).from(schema.objekte).where(eq(schema.objekte.id, o.id))).length,
+      deal: (await db.select({ id: schema.deals.id }).from(schema.deals).where(eq(schema.deals.id, d.id))).length,
+      kk: (await db.select({ id: schema.kundenkalkulationen.id }).from(schema.kundenkalkulationen).where(eq(schema.kundenkalkulationen.id, kk.id))).length,
+      praes: (await db.select({ id: schema.finanzpraesentationen.id }).from(schema.finanzpraesentationen).where(eq(schema.finanzpraesentationen.id, praes.id))).length,
+      vl: (await db.select({ id: schema.vertriebslisten.id }).from(schema.vertriebslisten).where(eq(schema.vertriebslisten.id, vl.id))).length,
+      bs: (await db.select({ id: schema.begleitscheine.id }).from(schema.begleitscheine).where(eq(schema.begleitscheine.id, bs.id))).length,
+    });
+
+    // Nur der Deal wird gelöscht (sein Objekt geht mit); das Abhängige liegt nicht im Papierkorb und steht noch
+    expect((await app.request(`/api/deals/${d.id}`, { method: 'DELETE' })).status).toBe(200);
+    expect(await zaehlen()).toEqual({ objekt: 1, deal: 1, kk: 1, praes: 1, vl: 1, bs: 1 });
+
+    // Nach der Frist räumt das Öffnen des Papierkorbs alles zusammen ab
+    await db.update(schema.deals).set({ deletedAt: vor31Tagen() }).where(eq(schema.deals.id, d.id));
+    await db.update(schema.objekte).set({ deletedAt: vor31Tagen() }).where(eq(schema.objekte.id, o.id));
+    expect((await app.request('/api/papierkorb')).status).toBe(200);
+    expect(await zaehlen()).toEqual({ objekt: 0, deal: 0, kk: 0, praes: 0, vl: 0, bs: 0 });
   });
 
   it('Dubletten: Scan findet Paare, Ignorieren blendet aus, Zusammenführen hängt Deals und Kommunikation um, Rückgängig stellt her', async () => {

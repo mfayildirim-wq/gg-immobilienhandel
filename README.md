@@ -124,7 +124,7 @@ Prüft **gegen die laufende alte App**, ob der Neubau fachlich dasselbe zeigt �
 
 ## Objekt-Detail
 
-Zwei Reiter wie alt: **📋 Details** (Lage, Recherche-Links Google Maps/Street View/ImmoScout/Bodenrichtwert, Gebäude, Kennzahlen mit Bruttorendite und KP-Faktor, Einheitenaufstellung, Notizen) und **✏️ Bearbeiten** (alle Felder, Einheiten mit €/m² je Zeile und Summen). Status-Schnellwahl über dem Reiter, „🗑 Löschen“ legt das Objekt in den Papierkorb (`DELETE /api/objekte/{id}`). Einheiten werden mit dem Objekt gespeichert (`PATCH /api/objekte/{id}` mit `einheiten`) und behalten ihre IDs. Regeln in `packages/domain/src/objekte/detail.ts` (Golden Master aus `objDetailHTML`/`objRenderEinheiten`).
+Zwei Reiter wie alt: **📋 Details** (Lage, Recherche-Links Google Maps/Street View/ImmoScout/Bodenrichtwert, Gebäude, Kennzahlen mit Bruttorendite und KP-Faktor, Einheitenaufstellung, Notizen) und **✏️ Bearbeiten** (alle Felder, Einheiten mit €/m² je Zeile und Summen). Status-Schnellwahl über dem Reiter, „🗑 Löschen“ legt das Objekt in den Papierkorb (`DELETE /api/objekte/{id}`). **Bewusste Abweichung (Fachentscheidung 02.10.2026):** Hängt ein Deal am Objekt, ist „Löschen“ gesperrt und ein Hinweis nennt den Grund (API: 409). Umgekehrt geht das Objekt von selbst mit in den Papierkorb, wenn sein letzter Deal gelöscht wird (`DELETE /api/deals/{id}`); hängt noch ein anderer Deal daran, bleibt es. Die alte App ließ das Objekt löschen und den Deal stehen und ließ beim Löschen eines Deals das Objekt zurück. Einheiten werden mit dem Objekt gespeichert (`PATCH /api/objekte/{id}` mit `einheiten`) und behalten ihre IDs. Regeln in `packages/domain/src/objekte/detail.ts` (Golden Master aus `objDetailHTML`/`objRenderEinheiten`).
 
 ## Sicherung, Zugänge und Werkzeuge
 
@@ -168,6 +168,8 @@ Zwei Aktionen verändern etwas außerhalb der App: die AGB-/Provisionsbestätigu
 ## Papierkorb
 
 **Einstellungen → Papierkorb**: Gelöschtes aus Objekten, Maklern, Deals, Projekten, Vertriebslisten, Bank-Präsentationen, Kundenkalkulationen und Begleitscheinen — gruppiert wie alt (neueste Löschung zuerst), mit Restlaufzeit (rot ab drei Tagen), „↩ Wiederherstellen“, „✖ Endgültig“ und „Papierkorb leeren“. Die 30-Tage-Frist räumt beim Öffnen der Seite auf (alt: beim Start der App) und entfernt bei Deals auch die Dateien aus dem Bucket. Regeln in `packages/domain/src/papierkorb.ts`, Dienst in `apps/api/src/services/papierkorb.ts` (`/api/papierkorb`).
+
+**Fremdschlüssel:** Fünf Verweise löschen in der Datenbank nicht mit — Deals und Begleitscheine zeigen auf Objekte; Kundenkalkulationen, Bank-Präsentationen und Vertriebslisten auf Deals. Der Dienst liest sie aus dem Schema ab und entfernt endgültig **Kinder vor Eltern** (Leeren und 30-Tage-Frist). **Abhängiges geht mit (Fachentscheidung 02.10.2026, `PAPIERKORB_ABHAENGIG`):** Mit einem Deal verschwinden seine Kundenkalkulationen, Bank-Präsentation und Vertriebsliste, mit einem Objekt seine Begleitscheine — auch wenn sie selbst nicht im Papierkorb liegen. Bis dahin bleiben sie stehen, ein wiederhergestellter Deal kommt also vollständig zurück. Nur ein Deal hält sein Objekt fest: Hängt an einem Objekt im Papierkorb noch ein Deal (Altbestand), bleibt es liegen — „Papierkorb leeren“ nennt die Anzahl, „✖ Endgültig“ antwortet mit einem Hinweis (409), die Frist überspringt es. Deal und Objekt gehen mit derselben Löschzeit in den Papierkorb und laufen nach 30 Tagen gemeinsam ab. „↩ Wiederherstellen“ eines Deals holt sein Objekt mit zurück.
 
 ## Globale Suche
 

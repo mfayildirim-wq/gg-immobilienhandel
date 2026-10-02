@@ -376,7 +376,7 @@ function usePapierkorbAendern<E, R>(aufruf: (e: E) => Promise<R>) {
 }
 export const usePapierkorbWiederherstellen = () => usePapierkorbAendern((e: { bereich: string; id: string }) => anfrage(`/api/papierkorb/${e.bereich}/${e.id}/wiederherstellen`, senden('POST', {})));
 export const usePapierkorbEndgueltig = () => usePapierkorbAendern((e: { bereich: string; id: string }) => anfrage(`/api/papierkorb/${e.bereich}/${e.id}`, { method: 'DELETE' }));
-export const usePapierkorbLeeren = () => usePapierkorbAendern(() => anfrage<{ entfernt: number }>('/api/papierkorb', { method: 'DELETE' }));
+export const usePapierkorbLeeren = () => usePapierkorbAendern(() => anfrage<{ entfernt: number; uebrig: number }>('/api/papierkorb', { method: 'DELETE' }));
 
 export const useKalkStandardSpeichern = () =>
   useAendern('einstellungen', (e: KalkStandard) => anfrage<KalkStandard>('/api/einstellungen/kalk-standard', senden('PUT', e)));
@@ -651,7 +651,14 @@ export function useEinheitenAusPdf(dealId: string) {
 
 export const useDealObjektWechseln = (id: string) =>
   useAendern('deals', (e: { objektId: string; version: number }) => anfrage<Geaendert>(`/api/deals/${id}/objekt`, senden('PATCH', e)));
-export const useDealLoeschen = () => useAendern('deals', (id: string) => anfrage<{ id: string }>(`/api/deals/${id}`, { method: 'DELETE' }));
+export function useDealLoeschen() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => anfrage<{ id: string }>(`/api/deals/${id}`, { method: 'DELETE' }),
+    // Das Objekt geht mit seinem letzten Deal in den Papierkorb: Objekte mit neu laden
+    onSettled: () => Promise.all(['deals', 'objekte', 'ankauf'].map((bereich) => qc.invalidateQueries({ queryKey: [bereich] }))),
+  });
+}
 
 export const useVorlagen = () => useQuery({ queryKey: ['einstellungen', 'vorlagen'], queryFn: () => anfrage<VorlagenEinstellungen>('/api/einstellungen/vorlagen') });
 export const useVorlagenSpeichern = () => useAendern('einstellungen', (e: VorlagenEinstellungen) => anfrage<VorlagenEinstellungen>('/api/einstellungen/vorlagen', senden('PUT', e)));

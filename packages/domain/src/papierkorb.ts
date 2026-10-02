@@ -25,6 +25,43 @@ export const PAPIERKORB_LEER = 'Der Papierkorb ist leer.';
 export const ENDGUELTIG_FRAGE = 'Diesen Eintrag endgültig entfernen?\n\nDas lässt sich nicht rückgängig machen.';
 export const leerenFrage = (anzahl: number) => `${anzahl} Eintrag/Einträge endgültig entfernen?\n\nDas lässt sich nicht rückgängig machen.`;
 
+/**
+ * Reihenfolge fürs endgültige Entfernen: Kinder vor Eltern. Ein Verweis heißt, Zeilen in `kind` zeigen mit einem
+ * Fremdschlüssel auf `eltern`, der nicht mitlöscht — Postgres lehnt das Löschen der Eltern-Zeile sonst ab (23503).
+ * Bereiche ohne Verweis behalten ihren Platz.
+ */
+export function papierkorbLoeschfolge<B extends string>(bereiche: readonly B[], verweise: readonly { kind: string; eltern: string }[]): B[] {
+  const offen = [...bereiche];
+  const folge: B[] = [];
+  while (offen.length) {
+    const i = offen.findIndex((b) => !verweise.some((v) => v.eltern === b && v.kind !== b && offen.includes(v.kind as B)));
+    if (i < 0) throw new Error(`Papierkorb: Verweise bilden einen Kreis (${offen.join(', ')})`);
+    folge.push(...offen.splice(i, 1));
+  }
+  return folge;
+}
+
+/**
+ * Abhängiges geht beim endgültigen Entfernen mit seinen Eltern (Fachentscheidung 02.10.2026) — ob es selbst im
+ * Papierkorb liegt oder nicht. Bis dahin bleibt es stehen, damit ein wiederhergestellter Deal vollständig zurückkommt.
+ * Bewusst nicht dabei: Deals → Objekte. Ein Deal verschwindet nie stillschweigend mit seinem Objekt.
+ */
+export const PAPIERKORB_ABHAENGIG = [
+  { kind: 'kundenkalkulationen', eltern: 'deals' },
+  { kind: 'praesentationen', eltern: 'deals' },
+  { kind: 'vertriebslisten', eltern: 'deals' },
+  { kind: 'begleitscheine', eltern: 'objekte' },
+] as const satisfies readonly { kind: PapierkorbBereich; eltern: PapierkorbBereich }[];
+
+/** Endgültig entfernen abgelehnt: aus `kindBereich` verweist noch etwas auf den Eintrag. */
+export const papierkorbVerwiesenHinweis = (kindBereich: string) =>
+  `Endgültig entfernen geht noch nicht: Unter „${PAPIERKORB_LABEL[kindBereich] ?? kindBereich}“ gibt es Einträge, die hierauf verweisen. Entferne zuerst diese.`;
+/** Nach „Papierkorb leeren“: so viele Einträge ließen sich nicht entfernen. */
+export const papierkorbUebrigHinweis = (anzahl: number) =>
+  `${anzahl} ${anzahl === 1 ? 'Eintrag bleibt' : 'Einträge bleiben'} im Papierkorb, weil noch andere Einträge darauf verweisen.`;
+/** Fachentscheidung 02.10.2026 (anders als dealDelete der alten App): das Objekt geht mit seinem letzten Deal in den Papierkorb. */
+export const DEAL_LOESCHEN_FRAGE = 'Deal in den Papierkorb verschieben?\n\nSein Objekt geht mit, wenn kein anderer Deal daran hängt.';
+
 export interface PapierkorbEintrag { bereich: string; id: string; bezeichnung: string; geloeschtAm: string }
 
 /** bezeichnung() der alten Ansicht: erstes gefülltes Feld, sonst „ohne Namen (id)“. */
