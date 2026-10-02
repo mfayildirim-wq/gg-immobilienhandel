@@ -96,11 +96,11 @@ test.describe('Ankauf-Cockpit', () => {
     expect((await page.request.put(`/api/deals/${deal.id}/termin`, { data: { version: 1, nextContact: plus(-3) } })).ok()).toBe(true);
     await page.goto('/');
     const karte = page.getByRole('region', { name: '🎯 Deals nachverfolgen' }).getByLabel(`Deal ${strasse} 4`);
-    await expect(karte.getByText('3T überfällig')).toBeVisible();
+    await expect(karte.locator('[data-faellig-kurz]')).toHaveText('3T');
 
     // Termin einen Monat weiter: gespeichert, aber die Karte bleibt an ihrem Platz unter „Überfällig“
     await karte.getByRole('button', { name: 'Nächster Kontakt Deal in 1M' }).click();
-    await expect(karte.getByText('Termin geändert')).toBeVisible();
+    await expect(karte.locator('[data-faellig-kurz]')).toHaveText('Termin geändert');
     await expect(karte.getByLabel('Nächster Kontakt Deal', { exact: true })).toHaveValue(plus(30));
     await expect(karte).toHaveAttribute('data-faellig-klasse', 'ueberfaellig');
     expect((await (await page.request.get(`/api/deals/${deal.id}`)).json()).nextContact).toBe(plus(30));
@@ -128,7 +128,21 @@ test.describe('Ankauf-Cockpit', () => {
 
     await page.goto('/');
     const karte = page.getByRole('region', { name: '🎯 Deals nachverfolgen' }).getByLabel(`Deal ${name} 9`);
-    await expect(karte.getByText('7T überfällig')).toBeVisible();
+    // Fälligkeit kurz („7T“) rechts neben der Adresse in der ersten Zeile; der volle Text steht im Tooltip
+    const faellig = karte.locator('[data-faellig-kurz]');
+    await expect(faellig).toHaveText('7T');
+    await expect(faellig).toHaveAttribute('title', '7T überfällig');
+    const mitte = async (l: typeof faellig) => { const b = (await l.boundingBox())!; return { x: b.x, y: b.y + b.height / 2 }; };
+    const adresse = await mitte(karte.getByText(`📍 ${name} 9`, { exact: false }));
+    expect(Math.abs((await mitte(faellig)).y - adresse.y)).toBeLessThan(10);
+    expect((await mitte(faellig)).x).toBeGreaterThan(adresse.x);
+    // Datum, die vier Schnellknöpfe und „Erledigt“ stehen in einer Zeile, „Erledigt“ ganz rechts
+    const datum = await mitte(karte.getByLabel('Nächster Kontakt Deal', { exact: true }));
+    const sechsMonate = await mitte(karte.getByRole('button', { name: 'Nächster Kontakt Deal in 6M' }));
+    const erledigtKnopf = await mitte(karte.getByRole('button', { name: 'Erledigt' }));
+    expect(Math.abs(sechsMonate.y - datum.y)).toBeLessThan(8);
+    expect(Math.abs(erledigtKnopf.y - datum.y)).toBeLessThan(8);
+    expect(erledigtKnopf.x).toBeGreaterThan(sechsMonate.x);
 
     // Name zuerst, die Firma darunter
     const oben = async (text: string) => (await karte.getByText(text, { exact: true }).boundingBox())!.y;
@@ -166,7 +180,7 @@ test.describe('Ankauf-Cockpit', () => {
     expect((await page.request.put(`/api/deals/${deal.id}/termin`, { data: { version: 1, nextContact: plus(-3) } })).ok()).toBe(true);
     await page.goto('/');
     const karte = page.getByRole('region', { name: '🎯 Deals nachverfolgen' }).getByLabel(`Deal ${strasse} 4`);
-    await expect(karte.getByText('3T überfällig')).toBeVisible();
+    await expect(karte.locator('[data-faellig-kurz]')).toHaveText('3T');
     await karte.getByText(`📍 ${strasse} 4`, { exact: false }).click();
     const detail = page.getByRole('region', { name: 'Deal-Detail' });
     await expect(detail.getByRole('heading', { name: `${strasse} 4` })).toBeVisible();

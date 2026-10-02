@@ -114,6 +114,15 @@ export function cockpitMakler<T extends MaklerNachfass>(makler: readonly T[], he
   return ergebnis.sort((a, b) => (a.termin !== b.termin ? (a.termin < b.termin ? -1 : 1) : maklerPrioRang(a.prio) - maklerPrioRang(b.prio)));
 }
 
+/**
+ * Fälligkeit in Kurzform für die Deal-Karte (Kundenwunsch 02.10.2026): „32T“ statt „32T überfällig“. Die Farbe trägt
+ * die Klasse; „Heute“ und „in 3T“ bleiben lesbar, damit überfällig und kommend nicht verwechselt werden.
+ */
+export function faelligKurz(f: { klasse: string; tage: number }): string {
+  if (f.klasse === 'ueberfaellig') return `${Math.abs(f.tage)}T`;
+  return f.klasse === 'heute' ? 'Heute' : `in ${f.tage}T`;
+}
+
 export const TERMIN_GEAENDERT = 'Termin geändert';
 export const TERMIN_GEAENDERT_HINWEIS = 'Der neue Termin ist gespeichert. Die Karte bleibt stehen, bis „Erledigt“ sie abschließt.';
 
