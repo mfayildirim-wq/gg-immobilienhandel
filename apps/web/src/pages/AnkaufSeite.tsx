@@ -15,6 +15,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import { GespeicherteFilterLeiste, useAktiverFilter } from '../components/GespeicherteFilterLeiste.tsx';
 import { useAnkauf, useEinplanen, useListen } from '../lib/api.ts';
 import { LAYOUTS, type Layout, useAuswahl, useEinstellung } from '../lib/ansicht.ts';
+import { darfVerlassen } from '../lib/ungespeichert.ts';
 import { MaklerDetail } from '../components/MaklerDetail.tsx';
 import { alsDatum } from '../lib/format.ts';
 
@@ -83,6 +84,8 @@ export function AnkaufSeite() {
   // Deals in der Reihenfolge der Abschnitte (heute, überfällig, diese Woche) — der erste ist vorgewählt
   const dealsGeordnet = ABSCHNITTE.flatMap(({ klasse }) => data?.deals.filter((d) => d.faellig.klasse === klasse) ?? []);
   const [dealAuswahl, setDealAuswahl] = useAuswahl(dealsGeordnet.map((d) => d.id));
+  // Ein anderer Deal baut das Detail neu auf: bei ungespeicherter Kalkulation erst fragen
+  const dealWaehlen = (id: string) => { if (id === dealAuswahl || darfVerlassen()) setDealAuswahl(id); };
   const maklerGeordnet = ABSCHNITTE.flatMap(({ klasse }) => data?.makler.filter((m) => m.faellig.klasse === klasse) ?? []);
   const [maklerAuswahl, setMaklerAuswahl] = useAuswahl(maklerGeordnet.map((m) => m.id));
   const [dealLayout, setDealLayout] = useEinstellung<Layout>('ankauf.layout', LAYOUTS, 'nebeneinander');
@@ -129,7 +132,7 @@ export function AnkaufSeite() {
         </Group>
       )}
 
-      <Tabs value={reiter} onChange={(v) => v && setReiter(v as Reiter)} keepMounted={false} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <Tabs value={reiter} onChange={(v) => v && v !== reiter && darfVerlassen() && setReiter(v as Reiter)} keepMounted={false} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <Reiterleiste>
           <Tabs.Tab value="deals" leftSection={<IconTarget size={16} />} rightSection={<Badge size="sm" color={data.deals.length ? 'red' : 'gray'}>{data.deals.length}</Badge>}>Deals kontaktieren</Tabs.Tab>
           <Tabs.Tab value="makler" leftSection={<IconUsers size={16} />} rightSection={<Badge size="sm" color={data.makler.length ? 'red' : 'gray'}>{data.makler.length}</Badge>}>Makler kontaktieren</Tabs.Tab>
@@ -144,7 +147,7 @@ export function AnkaufSeite() {
               <Spalte titel="🎯 Deals nachverfolgen" anzahl={data.deals.length} leer="Keine Deals diese Woche">
                 {ABSCHNITTE.map(({ klasse, titel }) => (
                   <Abschnitt key={klasse} klasse={klasse} titel={titel} eintraege={data.deals.filter((d) => d.faellig.klasse === klasse)}
-                    karte={(d: CockpitDeal) => <DealKarte key={d.id} d={d} heute={data.heute} aktiv={d.id === dealAuswahl} waehlen={setDealAuswahl} />} />
+                    karte={(d: CockpitDeal) => <DealKarte key={d.id} d={d} heute={data.heute} aktiv={d.id === dealAuswahl} waehlen={dealWaehlen} />} />
                 ))}
               </Spalte>
             </ScrollArea>

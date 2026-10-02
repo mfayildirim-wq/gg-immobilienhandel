@@ -118,9 +118,9 @@ const ANLEITUNGEN: { wert: string; titel: string; inhalt: ReactNode }[] = [
     titel: '📸 Kalkulationsvarianten',
     inhalt: (
       <Text size="sm">
-        Im Deal unter „Kalkulation“: „💾 Aktuelle speichern als…“ legt eine Momentaufnahme von Kalkulation, Einheiten und
+        Im Deal unter „Kalkulation“: „💾 Speichern als…“ legt eine Momentaufnahme von Kalkulation, Einheiten und
         Sanierung an — auch von ungespeicherten Werten. „Variante laden“ überschreibt die aktuelle Kalkulation nach Rückfrage;
-        gespeichert wird erst mit „Kalkulation speichern“.
+        gespeichert wird erst mit „Speichern“.
       </Text>
     ),
   },

@@ -37,7 +37,7 @@ test.describe('Deal-Kalkulation', () => {
     await expect(aufteiler.getByText(gik)).toBeVisible();
     await expect(page.getByText('ungespeichert')).toBeVisible();
 
-    await page.getByRole('button', { name: 'Kalkulation speichern' }).click();
+    await page.getByRole('button', { name: 'Speichern', exact: true }).click();
     await expect(page.getByText('ungespeichert')).toBeHidden();
     await page.reload();
     await page.getByRole('button', { name: new RegExp(kennung) }).click();

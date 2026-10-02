@@ -80,6 +80,8 @@ export interface VarianteEinheit extends EinheitDaten { id?: string; lage: strin
 export interface VarianteSanierung { id?: string; beschreibung: string | null; betrag: number | null; bereich: 'both' | 'auf' | 'glo' | null }
 
 export const VARIANTE_NAME_FRAGE = 'Name der Variante? (z.B. Erstangebot)';
+/** Rückfrage, bevor ungespeicherte Eingaben der Kalkulation verloren gingen (Reiter, anderer Deal, andere Seite). */
+export const KALK_UNGESPEICHERT_FRAGE = 'Die Kalkulation hat ungespeicherte Änderungen.\n\nÄnderungen verwerfen?';
 export const varianteLadenFrage = (name: string) =>
   `Aktuelle Kalkulation wird durch Variante "${name}" überschrieben.\n\nTipp: Speichere die aktuelle vorher als Variante!\n\nWirklich überschreiben?`;
 export const varianteLoeschenFrage = (name: string) => `Variante "${name}" wirklich löschen?`;
