@@ -4,6 +4,7 @@ import {
   cockpitDeals,
   cockpitMakler,
   cockpitMitGehaltenen,
+  faelligKurz,
   dealWaehlliste,
   dealStagnation,
   deutschesDatum,
@@ -189,5 +190,16 @@ describe('cockpitMitGehaltenen (Karte bleibt nach „1W/1M/…“ stehen, bis �
     const liste = cockpitMitGehaltenen([b, c, vomServer], { a: { ...a, nextContact: '2026-10-06', version: 2 } });
     expect(liste.map((k) => k.id)).toEqual(['a', 'b', 'c']);
     expect(liste[0]).toMatchObject({ gehalten: true, version: 3, nextContact: '2026-10-06', termin: '2026-09-28', faellig: { klasse: 'ueberfaellig' } });
+  });
+});
+
+describe('faelligKurz (Fälligkeit auf der Deal-Karte, rechts neben der Adresse)', () => {
+  it('überfällig: nur die Tage', () => {
+    expect(faelligKurz({ klasse: 'ueberfaellig', tage: -32 })).toBe('32T');
+    expect(faelligKurz({ klasse: 'ueberfaellig', tage: -1 })).toBe('1T');
+  });
+  it('heute und diese Woche bleiben unterscheidbar', () => {
+    expect(faelligKurz({ klasse: 'heute', tage: 0 })).toBe('Heute');
+    expect(faelligKurz({ klasse: 'woche', tage: 3 })).toBe('in 3T');
   });
 });
