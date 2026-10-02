@@ -34,7 +34,7 @@ test('Kalkulation: Datei-Leiste, Alle setzen, Einheiten aus Mieterliste-PDF (KI-
 
   // Variante speichern (ungespeicherter Stand), dann Einheiten per PDF ersetzen, Variante wieder laden
   antwort = 'Erstangebot';
-  await detail.getByRole('button', { name: '💾 Aktuelle speichern als…' }).click();
+  await detail.getByRole('button', { name: '💾 Speichern als…' }).click();
   await expect(detail.getByText('📸 Variante "Erstangebot" gespeichert (1 insgesamt)')).toBeVisible();
   await expect(detail.getByText('1 gespeichert')).toBeVisible();
 
@@ -52,7 +52,7 @@ test('Kalkulation: Datei-Leiste, Alle setzen, Einheiten aus Mieterliste-PDF (KI-
   expect(dialoge.at(-1)).toBe('Aktuelle Kalkulation wird durch Variante "Erstangebot" überschrieben.\n\nTipp: Speichere die aktuelle vorher als Variante!\n\nWirklich überschreiben?');
   await expect(liste.getByLabel('Lage')).toHaveCount(2);
   await expect(liste.getByLabel('Verkaufspreis').first()).toHaveValue('150.000');
-  await detail.getByRole('button', { name: 'Kalkulation speichern' }).click();
+  await detail.getByRole('button', { name: 'Speichern', exact: true }).click();
   await expect(detail.getByText('ungespeichert')).toHaveCount(0);
   const gespeichert = await (await page.request.get(`/api/deals/${d.id}`)).json();
   // Einheiten behalten über die Variante ihre IDs (Verweise aus Kundenkalkulation/Vertriebsliste)
