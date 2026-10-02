@@ -42,6 +42,19 @@ export function kiAttrappe(): KiClient {
       if (werkzeug === 'classify_page') return { content: [{ type: 'tool_use', name: werkzeug, input: { type: 'agb-form' } }], usage: ohneKosten };
       if (werkzeug === 'rank') return { content: [{ type: 'tool_use', name: werkzeug, input: { orderedIndices: [] } }], usage: ohneKosten };
       if (werkzeug === 'pick_link') return { content: [{ type: 'tool_use', name: werkzeug, input: { selectedIndex: 0, reason: 'Test-Modus' } }], usage: ohneKosten };
+      // Bank-Präsentation: der bereits erfasste Bestand zuerst, dann je ein erkennbarer Punkt; der Text nennt die Zahl der Fakten
+      const frage = String(body.messages?.[0]?.content ?? '');
+      if (werkzeug === 'lagebeschreibung_speichern') {
+        const bestand = /Standort:\n([\s\S]*?)\nAnbindung:\n([\s\S]*?)\n\nLiefere/.exec(frage);
+        const punkte = (block: string | undefined) => (block ?? '').split('\n').map((z) => z.replace(/^- /, '').trim()).filter((z) => z && z !== '(noch nichts)');
+        const stadt = /STADT: (.*)/.exec(frage)?.[1] ?? '';
+        const input = { standortBullets: [...punkte(bestand?.[1]), `Wohnlage in ${stadt} (Test-Modus)`], anbindungBullets: [...punkte(bestand?.[2]), 'ÖPNV in der Nähe (Test-Modus)'] };
+        return { content: [{ type: 'tool_use', name: werkzeug, input }], usage: ohneKosten };
+      }
+      if (werkzeug === 'objektbeschreibung_speichern') {
+        const fakten = (/VORHANDENE FAKTEN:\n([\s\S]*?)\n\n/.exec(frage)?.[1] ?? '').split('\n').filter(Boolean).length;
+        return { content: [{ type: 'tool_use', name: werkzeug, input: { beschreibung: `Bei dem Objekt handelt es sich um ein Mehrfamilienhaus in solider Bausubstanz (Test-Modus, ${fakten} Fakten).` } }], usage: ohneKosten };
+      }
 
       const text = JSON.stringify(body?.messages ?? []).replace(/\\n/g, '\n');
       const feld = (name: string) => new RegExp(`${name}:\\s*([^\\n"]+)`).exec(text)?.[1]?.trim();

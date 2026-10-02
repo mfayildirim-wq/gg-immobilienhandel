@@ -35,3 +35,16 @@ export function auswahlUebernehmen(data: Record<string, unknown>, auswahl: strin
   const alteCaptions = Array.isArray(data.captions) ? (data.captions as string[]) : [];
   return { ...data, bilder: [...auswahl], captions: auswahl.map((ref) => { const i = alteBilder.indexOf(ref); return i >= 0 ? alteCaptions[i] || '' : ''; }) };
 }
+
+/** Platz eines Bildes in den Foliendaten: ein Feld (Deckblatt, Lage, Organigramm …) oder eine Stelle der Bildliste. */
+export type BildPlatz = { feld: string } | { index: number };
+
+/**
+ * Bild an seinem Platz austauschen (aufgehellte Kopie). Steht dort inzwischen ein anderes Bild — der Nutzer hat
+ * während des Hochladens gewechselt oder umsortiert —, bleiben die Daten, wie sie sind.
+ */
+export function bildErsetzen(data: Record<string, unknown>, platz: BildPlatz, alt: string, neu: string): Record<string, unknown> {
+  if ('feld' in platz) return data[platz.feld] === alt ? { ...data, [platz.feld]: neu } : data;
+  const bilder = Array.isArray(data.bilder) ? (data.bilder as string[]) : [];
+  return bilder[platz.index] === alt ? { ...data, bilder: bilder.map((b, i) => (i === platz.index ? neu : b)) } : data;
+}

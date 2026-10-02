@@ -70,3 +70,67 @@ test('Bank-Präsentation: Standard-Pitch anlegen, Kalkulation übernehmen, Bild 
   expect(p.slides.find((s: { typ: string }) => s.typ === 'grundrisse').visible).toBe(false);
   expect(p.slides.find((s: { typ: string }) => s.typ === 'deckblatt').data.bildPath).toMatch(/^photo:/);
 });
+
+/** Braucht die KI-Attrappe (KI_ATTRAPPE=1): erwartet deren erkennbare Testtexte, mit echtem Schlüssel antwortet das Modell frei. */
+test('Bank-Präsentation: KI-Texte für Lage und Objekt behalten Getipptes; „✨ Helligkeit“ ersetzt das Bild durch eine aufgehellte Kopie', async ({ page }) => {
+  const strasse = `Praes-KI ${Date.now()}`;
+  const o = await (await page.request.post('/api/objekte', { data: { strasse, hausnr: '7', plz: '70378', stadt: 'Stuttgart' } })).json();
+  const d = await (await page.request.post('/api/deals', { data: { objektId: o.id } })).json();
+  // Ein flaues Foto am Objekt: Grauverlauf von 40 (links) bis 120 (rechts)
+  await page.goto('/deals');
+  const flau = await page.evaluate(() => {
+    const c = document.createElement('canvas'); c.width = 60; c.height = 40;
+    const x = c.getContext('2d')!;
+    for (let i = 0; i < 60; i++) { const v = 40 + Math.round((i * 80) / 59); x.fillStyle = `rgb(${v},${v},${v})`; x.fillRect(i, 0, 1, 40); }
+    return c.toDataURL('image/png').split(',')[1]!;
+  });
+  const foto = await (await page.request.post(`/api/objekte/${o.id}/fotos`, { data: Buffer.from(flau, 'base64'), headers: { 'content-type': 'application/octet-stream', 'x-dateiname': 'Flau.png' } })).json();
+  const p = await (await page.request.post(`/api/deals/${d.id}/praesentation`, { data: { vorlage: 'standard' } })).json();
+  const mitBild = p.slides.map((s: { typ: string; data: Record<string, unknown> }) => (s.typ === 'deckblatt' ? { ...s, data: { ...s.data, bildPath: foto.ref } } : s));
+  expect((await page.request.put(`/api/praesentationen/${p.id}`, { data: { bankName: '', internNotiz: '', version: p.version, slides: mitBild } })).ok()).toBe(true);
+
+  await page.goto(`/praesentationen/${p.id}`);
+  const folien = page.getByRole('navigation', { name: 'Folien' });
+  const formular = page.getByRole('region', { name: 'Folie bearbeiten' });
+
+  // Lage: der getippte Punkt bleibt und steht zuerst
+  await folien.getByRole('button', { name: /Lagebeschreibung$/ }).click();
+  await formular.getByRole('textbox', { name: 'Standort' }).fill('Ruhige Wohnlage');
+  await formular.getByRole('button', { name: '🤖 KI: Lagebeschreibung generieren' }).click();
+  await expect(page.getByText('✅ Lagebeschreibung generiert (3 Bullets)')).toBeVisible();
+  await expect(formular.getByRole('textbox', { name: 'Standort' })).toHaveValue('Ruhige Wohnlage\nWohnlage in Stuttgart (Test-Modus)');
+  await expect(formular.getByRole('textbox', { name: 'Anbindung' })).toHaveValue('ÖPNV in der Nähe (Test-Modus)');
+
+  // Objekt: Beschreibung aus den bekannten Fakten
+  await folien.getByRole('button', { name: /Objektbeschreibung$/ }).click();
+  await formular.getByRole('button', { name: '🤖 KI: Beschreibung generieren' }).click();
+  await expect(page.getByText('✅ Objektbeschreibung generiert (15 Wörter)')).toBeVisible();
+  await expect(formular.getByRole('textbox', { name: 'Beschreibung' })).toHaveValue(/^Bei dem Objekt handelt es sich um ein Mehrfamilienhaus .*Test-Modus, \d+ Fakten\)\.$/);
+
+  // Helligkeit: neues Foto am Objekt, die Folie zeigt die aufgehellte Kopie
+  await folien.getByRole('button', { name: /Deckblatt$/ }).click();
+  const bild = formular.getByRole('img', { name: 'Hauptbild (1 Bild)' });
+  const vorher = await bild.getAttribute('src');
+  expect(vorher).toContain(foto.ref.slice('photo:'.length));
+  await formular.getByRole('button', { name: '✨ Helligkeit' }).click();
+  await expect(page.getByText('✨ Helligkeit optimiert')).toBeVisible();
+  await expect(bild).not.toHaveAttribute('src', vorher!);
+  const fotos = await (await page.request.get(`/api/objekte/${o.id}/fotos`)).json();
+  expect(fotos.map((f: { dateiname: string }) => f.dateiname.replace(/\d+/, 'N')).sort()).toEqual(['Flau.png', 'enhanced-N.jpg']);
+  // Der Verlauf reicht jetzt von fast Schwarz bis fast Weiß (JPEG lässt etwas Spiel)
+  const rand = await bild.evaluate(async (img: HTMLImageElement) => {
+    await img.decode();
+    const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const x = c.getContext('2d')!; x.drawImage(img, 0, 0);
+    return [x.getImageData(1, 20, 1, 1).data[0]!, x.getImageData(img.naturalWidth - 2, 20, 1, 1).data[0]!];
+  });
+  expect(rand[0]).toBeLessThan(25);
+  expect(rand[1]).toBeGreaterThan(230);
+
+  // Automatisch gespeichert: die Folie verweist auf das neue Foto
+  await expect(page.getByLabel('Speicherstand')).toHaveText('gespeichert');
+  const gespeichert = await (await page.request.get(`/api/praesentationen/${p.id}`)).json();
+  const neu = fotos.find((f: { dateiname: string }) => f.dateiname.startsWith('enhanced-'));
+  expect(gespeichert.slides.find((s: { typ: string }) => s.typ === 'deckblatt').data.bildPath).toBe(neu.ref);
+  expect(gespeichert.slides.find((s: { typ: string }) => s.typ === 'lagebeschreibung').data.standortBullets).toBe('Ruhige Wohnlage\nWohnlage in Stuttgart (Test-Modus)');
+});
