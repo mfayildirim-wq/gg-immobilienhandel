@@ -4,6 +4,7 @@ import {
   VERMIETUNG_OPTIONEN,
 } from '@gg/domain';
 import { ActionIcon, Alert, Anchor, Button, Group, Loader, NativeSelect, NumberInput, Paper, SimpleGrid, Stack, Table, Tabs, Text, Textarea, TextInput, Title } from '@mantine/core';
+import { ListeUmschalter } from './GeteilteAnsicht.tsx';
 import { Reiterleiste } from './Reiterleiste.tsx';
 import { IconDeviceFloppy, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useState } from 'react';
@@ -36,6 +37,7 @@ function ObjektInhalt({ o, geloescht }: { o: Detail; geloescht?: () => void }) {
       {aendern.error && <Alert color="red">{aendern.error.message}</Alert>}
       <Group justify="space-between">
         <Group gap="xs">
+          <ListeUmschalter />
           <Text fz={11} c="dimmed" tt="uppercase" style={{ letterSpacing: '.05em' }}>Objekt-Status</Text>
           <StatusBadge status={o.status ?? ''} />
         </Group>

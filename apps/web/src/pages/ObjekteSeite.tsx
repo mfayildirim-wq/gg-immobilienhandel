@@ -1,9 +1,10 @@
 import { LISTEN_STATUS, LISTEN_STATUS_CHIPS, objektAktuelleKriterien, objektListe } from '@gg/domain';
-import { Alert, Badge, Box, Button, Group, Modal, NumberInput, ScrollArea, SegmentedControl, Stack, Table, Text, TextInput, Title } from '@mantine/core';
+import { Alert, Badge, Button, Group, Modal, NumberInput, SegmentedControl, Stack, Table, Text, TextInput, Title } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { IconLayoutColumns, IconLayoutRows, IconPlus } from '@tabler/icons-react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useState } from 'react';
+import { GeteilteAnsicht } from '../components/GeteilteAnsicht.tsx';
 import { ObjektDetail } from '../components/ObjektDetail.tsx';
 import { Listenzeile } from '../components/Listenzeile.tsx';
 import { GespeicherteFilterLeiste, useAktiverFilter } from '../components/GespeicherteFilterLeiste.tsx';
@@ -59,29 +60,23 @@ export function ObjekteSeite() {
         </Group>
       </Group>
       <Chipleiste chips={STATUS_CHIPS} aktiv={status} waehlen={setStatus} suche={text} setSuche={setText} platzhalter="Suchen…" />
-      <Box
-        data-layout={layout}
-        style={{ display: 'flex', flexDirection: nebeneinander ? 'row' : 'column', gap: 12, flex: 1, minHeight: 0 }}
-      >
-        <ScrollArea
-          type="auto"
-          style={nebeneinander ? { width: 360, flexShrink: 0 } : { height: '38%', flexShrink: 0 }}
-          aria-label="Objekt-Liste"
-        >
-          {isLoading && <Text c="dimmed">Lädt …</Text>}
-          {!isLoading && liste.zeilen.length === 0 && <Text c="dimmed" ta="center" p="lg">🏢 Keine Objekte</Text>}
-          {nebeneinander ? (
-            <Stack gap={4}>
-              {liste.zeilen.map((o) => (
-                <ObjektZeile key={o.id} objekt={o} aktiv={o.id === auswahl} waehlen={() => setAuswahl(o.id)} />
-              ))}
-            </Stack>
-          ) : liste.zeilen.length > 0 && <ObjektTabelle zeilen={liste.zeilen} auswahlId={auswahl} waehlen={setAuswahl} />}
-        </ScrollArea>
-        <Box component="section" style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto' }} aria-label="Objekt-Detail">
-          {auswahl ? <ObjektDetail key={auswahl} id={auswahl} geloescht={geloescht} /> : <Text c="dimmed">Objekt in der Liste wählen.</Text>}
-        </Box>
-      </Box>
+      <GeteilteAnsicht
+        schluessel="objekte" layout={layout} listeLabel="Objekt-Liste" detailLabel="Objekt-Detail" standardBreite={360} standardHoehe="38%"
+        liste={
+          <>
+            {isLoading && <Text c="dimmed">Lädt …</Text>}
+            {!isLoading && liste.zeilen.length === 0 && <Text c="dimmed" ta="center" p="lg">🏢 Keine Objekte</Text>}
+            {nebeneinander ? (
+              <Stack gap={4}>
+                {liste.zeilen.map((o) => (
+                  <ObjektZeile key={o.id} objekt={o} aktiv={o.id === auswahl} waehlen={() => setAuswahl(o.id)} />
+                ))}
+              </Stack>
+            ) : liste.zeilen.length > 0 && <ObjektTabelle zeilen={liste.zeilen} auswahlId={auswahl} waehlen={setAuswahl} />}
+          </>
+        }
+        detail={auswahl ? <ObjektDetail key={auswahl} id={auswahl} geloescht={geloescht} /> : <Text c="dimmed">Objekt in der Liste wählen.</Text>}
+      />
 
       <ObjektDialog offen={offen} schliessen={dialog.close} />
     </Stack>
