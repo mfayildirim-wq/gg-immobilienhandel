@@ -12,7 +12,7 @@ test('Makler-Liste: Prio-Chip, Suche, aktuelle Auswahl als Filter speichern, anw
   await page.goto('/makler');
   const tabelle = page.getByRole('table', { name: 'Maklerliste' });
   // Die Filter liegen jetzt in einem Menü neben den Ansichtsschaltern, nicht mehr in einer eigenen Leiste.
-  const filterMenue = async () => { await page.getByRole('button', { name: 'Gespeicherte Filter' }).click(); };
+  const filterMenue = async () => { await page.getByRole('banner').getByRole('button', { name: 'Ansicht und Filter' }).click(); };
   const filterWaehlen = async (name: string) => { await filterMenue(); await page.locator(`[data-filter-option="${name}"]`).click(); };
 
   // Vorlagen der alten App werden beim ersten Anzeigen angelegt
@@ -78,7 +78,9 @@ test('Deal- und Objektliste: Zähler, Status-Chip, Suche, Tabellenansicht untere
   await expect(page.getByText('🏢 Keine Objekte')).toBeVisible();
 
   await page.goto('/deals');
+  await page.getByRole('banner').getByRole('button', { name: 'Ansicht und Filter' }).click();
   await page.getByLabel('untereinander').click();
+  await page.keyboard.press('Escape');
   const zaehler = page.locator('[data-zaehler="Closing Path"] [data-anzahl]');
   await expect(zaehler).not.toHaveText('0'); // erst wenn die Liste geladen ist — vorher steht überall 0
   const vorher = Number(await zaehler.textContent());

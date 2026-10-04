@@ -1,13 +1,14 @@
 import { LISTEN_STATUS, LISTEN_STATUS_CHIPS, objektAktuelleKriterien, objektListe } from '@gg/domain';
-import { Alert, Badge, Button, Group, Modal, NumberInput, SegmentedControl, Stack, Table, Text, TextInput, Title } from '@mantine/core';
+import { Alert, Badge, Button, Group, Modal, NumberInput, Stack, Table, Text, TextInput } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconLayoutColumns, IconLayoutRows, IconPlus } from '@tabler/icons-react';
+import { IconPlus } from '@tabler/icons-react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useState } from 'react';
 import { GeteilteAnsicht } from '../components/GeteilteAnsicht.tsx';
 import { ObjektDetail } from '../components/ObjektDetail.tsx';
 import { Listenzeile } from '../components/Listenzeile.tsx';
-import { GespeicherteFilterLeiste, useAktiverFilter } from '../components/GespeicherteFilterLeiste.tsx';
+import { AnsichtMenue } from '../components/AnsichtMenue.tsx';
+import { useAktiverFilter } from '../components/GespeicherteFilterLeiste.tsx';
 import { Chipleiste, Zaehlerleiste } from '../components/ListenKopf.tsx';
 import { useListen, useObjektAnlegen } from '../lib/api.ts';
 import { LAYOUTS, type Layout, useAuswahl, useEinstellung } from '../lib/ansicht.ts';
@@ -37,31 +38,14 @@ export function ObjekteSeite() {
 
   return (
     <Stack h="calc(100dvh - 56px - 2 * var(--mantine-spacing-md))" gap="sm">
-      <Group justify="space-between" wrap="nowrap" gap="sm" align="flex-start">
-        {/* Titel und Zähler nehmen den Platz links; die Zähler brechen bei Bedarf um, die Knöpfe rechts bleiben in der ersten Zeile */}
-        <Group gap="md" wrap="wrap" style={{ flex: 1, minWidth: 0 }}>
-          <Title order={2}>Objekte</Title>
-          <Zaehlerleiste waehlen={setStatus} kennzahlen={LISTEN_STATUS.map((s) => ({ wert: s, label: s, anzahl: liste.zaehler[s] ?? 0, farbe: STATUS_FARBE[s] }))} />
-        </Group>
-        <Group gap="xs" wrap="nowrap">
-          <GespeicherteFilterLeiste modul="objects" aktuelleKriterien={objektAktuelleKriterien(status, text)} />
-          <SegmentedControl
-            aria-label="Ansicht"
-            value={layout}
-            onChange={(v) => setLayout(v as Layout)}
-            data={[
-              { value: 'nebeneinander', label: <IconLayoutColumns size={16} aria-label="nebeneinander" /> },
-              { value: 'untereinander', label: <IconLayoutRows size={16} aria-label="untereinander" /> },
-            ]}
-          />
-          <Button leftSection={<IconPlus size={16} />} onClick={dialog.open}>
-            Neues Objekt
-          </Button>
-        </Group>
-      </Group>
-      <Chipleiste chips={STATUS_CHIPS} aktiv={status} waehlen={setStatus} suche={text} setSuche={setText} platzhalter="Suchen…" />
+      {/* Der Seitenname steht als Brotkrume in der Kopfzeile; Ansicht und Filter liegen dort im Menü. */}
+      <AnsichtMenue filterModul="objects" aktuelleKriterien={objektAktuelleKriterien(status, text)} ansichtLabel="Ansicht" layout={layout} setLayout={setLayout} />
+
+      <Chipleiste chips={STATUS_CHIPS} aktiv={status} waehlen={setStatus} suche={text} setSuche={setText} platzhalter="Suchen…"
+        rechts={<Button size="xs" leftSection={<IconPlus size={14} />} onClick={dialog.open}>Neues Objekt</Button>} />
       <GeteilteAnsicht
         schluessel="objekte" layout={layout} listeLabel="Objekt-Liste" detailLabel="Objekt-Detail" standardBreite={360} standardHoehe="38%"
+        listeKopf={<Zaehlerleiste waehlen={setStatus} kennzahlen={LISTEN_STATUS.map((s) => ({ wert: s, label: s, anzahl: liste.zaehler[s] ?? 0, farbe: STATUS_FARBE[s] }))} />}
         liste={
           <>
             {isLoading && <Text c="dimmed">Lädt …</Text>}
@@ -111,7 +95,7 @@ function ObjektTabelle({ zeilen, auswahlId, waehlen }: { zeilen: ObjektZeileDate
       <Table.Tbody>
         {zeilen.map((o) => (
           <Table.Tr key={o.id} onClick={() => waehlen(o.id)} aria-selected={o.id === auswahlId} style={{ cursor: 'pointer' }} data-objekt={o.id}
-            bg={o.id === auswahlId ? 'var(--mantine-primary-color-light)' : undefined}>
+            bg={o.id === auswahlId ? 'var(--gg-auswahl)' : undefined}>
             <Table.Td><Titelbild objektId={o.id} /></Table.Td>
             <Table.Td><Text fw={600} size="sm">{o.adresse}</Text><Text size="xs" c="dimmed">{o.ort}</Text></Table.Td>
             <Table.Td c="dimmed">{o.angeboten}</Table.Td>

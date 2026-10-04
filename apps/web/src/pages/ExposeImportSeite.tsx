@@ -207,8 +207,7 @@ export function ExposeImportSeite() {
 
   return (
     <Stack maw={960} mx="auto">
-      <Group justify="space-between">
-        <Title order={2}>📄 Exposé importieren</Title>
+      <Group justify="flex-end">
         <Button variant="subtle" color="red" leftSection={<IconX size={16} />} onClick={() => navigate({ to: '/deals' })}>Abbrechen</Button>
       </Group>
       <Stepper active={schritt} size="sm">

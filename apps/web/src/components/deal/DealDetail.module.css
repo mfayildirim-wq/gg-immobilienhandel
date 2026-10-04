@@ -7,6 +7,11 @@
   top: 0;
   z-index: 3;
   background: var(--mantine-color-body);
+  /* Der Inhalt scrollt unter dem festen Kopf weg — der Schatten zeigt die Kante. */
+  box-shadow: 0 8px 8px -8px rgba(0, 0, 0, 0.22);
+}
+:global([data-mantine-color-scheme='dark']) .fest {
+  box-shadow: 0 8px 8px -8px rgba(0, 0, 0, 0.7);
 }
 .leiste {
   padding: 6px 0;

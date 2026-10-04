@@ -1,13 +1,14 @@
-import { Alert, Anchor, Badge, Button, Group, Modal, SegmentedControl, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core';
+import { Alert, Anchor, Badge, Button, Group, Modal, Select, Stack, Table, Text, TextInput } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { FREQUENZEN, MAKLER_PRIO_CHIPS, maklerAktuelleKriterien, maklerListe } from '@gg/domain';
-import { IconLayoutColumns, IconLayoutRows, IconPlus } from '@tabler/icons-react';
+import { IconPlus } from '@tabler/icons-react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useState } from 'react';
 import { GeteilteAnsicht } from '../components/GeteilteAnsicht.tsx';
 import { MaklerDetail, maklerDublettenFrage } from '../components/MaklerDetail.tsx';
 import { Listenzeile } from '../components/Listenzeile.tsx';
-import { GespeicherteFilterLeiste, useAktiverFilter } from '../components/GespeicherteFilterLeiste.tsx';
+import { AnsichtMenue } from '../components/AnsichtMenue.tsx';
+import { useAktiverFilter } from '../components/GespeicherteFilterLeiste.tsx';
 import { Chipleiste, Zaehlerleiste } from '../components/ListenKopf.tsx';
 import { useListen, useMaklerAnlegen } from '../lib/api.ts';
 import { LAYOUTS, type Layout, useAuswahl, useEinstellung } from '../lib/ansicht.ts';
@@ -30,37 +31,20 @@ export function MaklerSeite() {
 
   return (
     <Stack h="calc(100dvh - 56px - 2 * var(--mantine-spacing-md))" gap="sm">
-      <Group justify="space-between" wrap="nowrap" gap="sm" align="flex-start">
-        {/* Titel und Zähler nehmen den Platz links; die Zähler brechen bei Bedarf um, die Knöpfe rechts bleiben in der ersten Zeile */}
-        <Group gap="md" wrap="wrap" style={{ flex: 1, minWidth: 0 }}>
-          <Title order={2}>Makler</Title>
-          <Zaehlerleiste waehlen={setPrio} kennzahlen={[
-            { wert: 'alle', label: '● Gesamt', anzahl: liste.zaehler.gesamt, klickbar: false },
-            { wert: 'A', label: '▲ A-Makler', anzahl: liste.zaehler.A ?? 0, farbe: 'teal' },
-            { wert: 'B', label: '◆ B-Makler', anzahl: liste.zaehler.B ?? 0, farbe: 'orange' },
-            { wert: 'C', label: '○ C-Makler', anzahl: liste.zaehler.C ?? 0 },
-          ]} />
-        </Group>
-        <Group gap="xs" wrap="nowrap">
-          <GespeicherteFilterLeiste modul="makler" aktuelleKriterien={maklerAktuelleKriterien(prio, text)} />
-          <SegmentedControl
-            aria-label="Ansicht"
-            value={layout}
-            onChange={(v) => setLayout(v as Layout)}
-            data={[
-              { value: 'nebeneinander', label: <IconLayoutColumns size={16} aria-label="nebeneinander" /> },
-              { value: 'untereinander', label: <IconLayoutRows size={16} aria-label="untereinander" /> },
-            ]}
-          />
-          <Button leftSection={<IconPlus size={16} />} onClick={dialog.open}>
-            Neuer Makler
-          </Button>
-        </Group>
-      </Group>
+      {/* Der Seitenname steht als Brotkrume in der Kopfzeile; Ansicht und Filter liegen dort im Menü. */}
+      <AnsichtMenue filterModul="makler" aktuelleKriterien={maklerAktuelleKriterien(prio, text)} ansichtLabel="Ansicht" layout={layout} setLayout={setLayout} />
+
       <Chipleiste chips={MAKLER_PRIO_CHIPS.map((w) => ({ wert: w, label: w === 'alle' ? 'Alle' : `${w}-Makler` }))} aktiv={prio} waehlen={setPrio}
-        suche={text} setSuche={setText} platzhalter="Name, Firma, Region…" />
+        suche={text} setSuche={setText} platzhalter="Name, Firma, Region…"
+        rechts={<Button size="xs" leftSection={<IconPlus size={14} />} onClick={dialog.open}>Neuer Makler</Button>} />
       <GeteilteAnsicht
         schluessel="makler" layout={layout} listeLabel="Makler-Liste" detailLabel="Makler-Detail" standardBreite={360} standardHoehe="38%"
+        listeKopf={<Zaehlerleiste waehlen={setPrio} kennzahlen={[
+          { wert: 'alle', label: '● Gesamt', anzahl: liste.zaehler.gesamt, klickbar: false },
+          { wert: 'A', label: '▲ A-Makler', anzahl: liste.zaehler.A ?? 0, farbe: 'teal' },
+          { wert: 'B', label: '◆ B-Makler', anzahl: liste.zaehler.B ?? 0, farbe: 'orange' },
+          { wert: 'C', label: '○ C-Makler', anzahl: liste.zaehler.C ?? 0 },
+        ]} />}
         liste={
           <>
             {isLoading && <Text c="dimmed">Lädt …</Text>}
@@ -110,7 +94,7 @@ function MaklerTabelle({ zeilen, auswahlId, waehlen }: { zeilen: MaklerZeileDate
       <Table.Tbody>
         {zeilen.map((m) => (
           <Table.Tr key={m.id} onClick={() => waehlen(m.id)} aria-selected={m.id === auswahlId} style={{ cursor: 'pointer' }} data-makler={m.id}
-            bg={m.id === auswahlId ? 'var(--mantine-primary-color-light)' : undefined}>
+            bg={m.id === auswahlId ? 'var(--gg-auswahl)' : undefined}>
             <Table.Td><Badge variant="light" tt="none" color={PRIO_FARBE[m.prio ?? ''] ?? 'gray'}>{m.prioText}</Badge></Table.Td>
             <Table.Td fw={600}>{m.name}</Table.Td>
             <Table.Td c="dimmed">{m.firma}</Table.Td>

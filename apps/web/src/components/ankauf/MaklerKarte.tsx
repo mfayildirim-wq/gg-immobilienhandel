@@ -66,12 +66,12 @@ export function MaklerKarte({ m, heute, anrufen, stilOeffnen, aktiv, waehlen, ha
 
         <Group gap={4}>
           {m.tel && (
-            <Button size="xs" color="green" leftSection={<IconPhone size={14} />} onClick={() => anrufen(m)}>
+            <Button size="xs" variant="outline" color="green" leftSection={<IconPhone size={14} />} onClick={() => anrufen(m)}>
               {m.tel} anrufen
             </Button>
           )}
           {wa && (
-            <Button component="a" href={`https://wa.me/${wa}`} target="_blank" rel="noopener noreferrer" size="xs" variant="light" color="green" leftSection={<IconBrandWhatsapp size={14} />} onClick={() => whatsapp.mutate(undefined)}>
+            <Button component="a" href={`https://wa.me/${wa}`} target="_blank" rel="noopener noreferrer" size="xs" variant="outline" color="green" leftSection={<IconBrandWhatsapp size={14} />} onClick={() => whatsapp.mutate(undefined)}>
               WhatsApp
             </Button>
           )}
@@ -98,8 +98,8 @@ export function MaklerKarte({ m, heute, anrufen, stilOeffnen, aktiv, waehlen, ha
         <Group justify="space-between" wrap="nowrap">
           <Group gap={6}>
             {m.gehalten
-              ? <Badge variant="light" color="gray" title={TERMIN_GEAENDERT_HINWEIS} data-faellig-label>{TERMIN_GEAENDERT}</Badge>
-              : <Badge variant="light" color={FAELLIG_FARBE[m.faellig.klasse]} data-faellig-label>{m.faellig.label}</Badge>}
+              ? <Badge variant="outline" color="gray" title={TERMIN_GEAENDERT_HINWEIS} data-faellig-label>{TERMIN_GEAENDERT}</Badge>
+              : <Badge variant="outline" color={FAELLIG_FARBE[m.faellig.klasse]} data-faellig-label>{m.faellig.label}</Badge>}
             {m.lastContact && <Text size="xs" c="dimmed" data-zuletzt>Zuletzt: {datumDe(m.lastContact)}</Text>}
           </Group>
           <Button size="xs" variant="light" color="green" leftSection={<IconCheck size={14} />} loading={erledigt.isPending} onClick={() => erledigt.mutate(m.version, { onSuccess: () => loslassen?.(m.id) })}>

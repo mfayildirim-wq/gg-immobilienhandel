@@ -20,6 +20,9 @@ async function makler(page: Page, name: string, felder: Record<string, unknown>)
   return m.id as string;
 }
 
+/** Ansicht und Filter liegen im Menü der Kopfzeile. */
+const ansichtMenue = (page: Page) => page.getByRole('banner').getByRole('button', { name: 'Ansicht und Filter' }).click();
+
 test.describe('Ankauf-Cockpit', () => {
   test('fälliger Makler steht unter „Heute kontaktieren“ und verschwindet nach „Erledigt“', async ({ page }) => {
     const name = `Heute ${Date.now()}`;
@@ -272,11 +275,111 @@ test.describe('Ankauf-Cockpit', () => {
     expect(await (await page.request.get(`/api/makler/${id}`)).json()).toMatchObject({ nextContact: plus(30), lastContact: heute() });
   });
 
+  test('Kopf der Liste steht fest über der Liste: Durchwählen und Zahlen nur mit Rahmen; die Seitenzeile mit „Ankauf“ entfällt', async ({ page }) => {
+    const name = `Kopf ${Date.now()}`;
+    const maklerId = await makler(page, name, { email: 'kopf@example.test' });
+    const objekt = await (await page.request.post('/api/objekte', { data: { strasse: name, hausnr: '2', stadt: 'Kopfstadt' } })).json();
+    const deal = await (await page.request.post('/api/deals', { data: { objektId: objekt.id, maklerId } })).json();
+    expect((await page.request.put(`/api/deals/${deal.id}/termin`, { data: { version: 1, nextContact: plus(-2) } })).ok()).toBe(true);
+    await page.goto('/');
+
+    // Die frühere Zeile mit Seitentitel und „Nächste Kontakte“ gibt es nicht mehr — die Seite steht in der Kopfzeile
+    await expect(page.getByRole('main').getByRole('heading', { name: 'Ankauf', exact: true })).toHaveCount(0);
+    await expect(page.getByText('Nächste Kontakte', { exact: true })).toHaveCount(0);
+
+    // Durchwählen und Zahlen: im Listenbereich, aber außerhalb der scrollenden Liste
+    const kopf = page.getByLabel('Nächste Kontakte');
+    const liste = page.getByLabel('Deal-Liste');
+    // Durchwählen als Symbol: Telefon, drei Punkte, Telefon, nur mit grünem Rahmen — der Text steht im Hinweis beim Überfahren
+    const durchwaehlen = kopf.getByRole('button', { name: 'Wählmaschine öffnen' });
+    await expect(durchwaehlen).not.toContainText('durchwählen');
+    await expect(durchwaehlen.locator('svg')).toHaveCount(2);
+    await expect(durchwaehlen.locator('[data-punkte]')).toHaveText('•••');
+    expect(await durchwaehlen.evaluate((e) => getComputedStyle(e).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
+    expect(await durchwaehlen.evaluate((e) => getComputedStyle(e).borderTopColor)).not.toBe('rgba(0, 0, 0, 0)');
+    await durchwaehlen.hover();
+    await expect(page.getByRole('tooltip', { name: /^Deals durchwählen \(\d+\)$/ })).toBeVisible();
+    await expect(liste.getByRole('button', { name: 'Wählmaschine öffnen' })).toHaveCount(0);
+    const kopfBox = (await kopf.boundingBox())!;
+    const listeBox = (await liste.boundingBox())!;
+    expect(kopfBox.y + kopfBox.height).toBeLessThanOrEqual(listeBox.y + 1);
+    expect(Math.abs(kopfBox.x - listeBox.x)).toBeLessThan(24);
+
+    // Zahlen ohne Text und ohne Füllung, die Farbe nur im Rahmen; die Bedeutung steht im Hinweis beim Überfahren
+    const hintergrund = (e: Element) => getComputedStyle(e).backgroundColor;
+    const ueberfaellig = kopf.locator('[data-zahl="ueberfaellig"]');
+    await expect(ueberfaellig).toHaveText(/^\d+$/);
+    expect(await ueberfaellig.evaluate(hintergrund)).toBe('rgba(0, 0, 0, 0)');
+    expect(await ueberfaellig.evaluate((e) => getComputedStyle(e).borderTopColor)).not.toBe('rgba(0, 0, 0, 0)');
+    await expect(kopf.getByText('überfällig', { exact: true })).toHaveCount(0);
+    await ueberfaellig.hover();
+    await expect(page.getByRole('tooltip', { name: 'überfällig' })).toBeVisible();
+
+    // Reiter in fetter Schrift, die Anzahl daran ohne Hintergrundfarbe
+    for (const reiter of [/Deals kontaktieren/, /Makler kontaktieren/]) {
+      expect(Number(await page.getByRole('tab', { name: reiter }).evaluate((e) => getComputedStyle(e).fontWeight))).toBeGreaterThanOrEqual(700);
+    }
+    expect(await page.getByRole('tab', { name: /Deals kontaktieren/ }).locator('[data-anzahl]').evaluate(hintergrund)).toBe('rgba(0, 0, 0, 0)');
+
+    // Die gewählte Karte ist dezent gelb statt grün; unter dem festen Kopf des Details liegt ein Schatten
+    const karte = page.locator(`[data-karte="deal:${deal.id}"]`);
+    await karte.getByText(`📍 ${name} 2`, { exact: false }).click();
+    await expect(karte).toHaveAttribute('data-aktiv', 'true');
+    await page.mouse.move(5, 300);
+    await expect.poll(() => karte.evaluate(hintergrund)).toBe('rgb(255, 249, 219)');
+    const rahmenFarbe = (e: Element) => getComputedStyle(e).borderTopColor;
+    expect(await karte.evaluate(rahmenFarbe)).toBe('rgb(252, 196, 25)'); // gelber Rahmen
+    // Dunkle Ansicht: ein zum Gelb passender, durchscheinender Ton mit gelbem Rahmen — nicht das orange Standard-Gelb
+    await page.getByRole('button', { name: 'Hell/Dunkel' }).click();
+    await expect.poll(() => karte.evaluate(hintergrund)).toBe('rgba(255, 236, 153, 0.14)');
+    expect(await karte.evaluate(rahmenFarbe)).toBe('rgba(255, 224, 102, 0.45)'); // gedämpft, leuchtet nicht
+    await page.getByRole('button', { name: 'Hell/Dunkel' }).click();
+    await expect.poll(() => karte.evaluate(hintergrund)).toBe('rgb(255, 249, 219)');
+    // Auf der Karte: Fälligkeit, WhatsApp und Anrufen nur mit farbigem Rahmen, ohne Füllung; „Erledigt“ bleibt gefüllt
+    const rahmen = (e: Element) => getComputedStyle(e).borderTopColor;
+    for (const teil of [karte.locator('[data-faellig-kurz]'), karte.getByRole('link', { name: 'WhatsApp-Chat öffnen' }), karte.getByRole('link', { name: 'Anrufen' })]) {
+      expect(await teil.evaluate(hintergrund)).toBe('rgba(0, 0, 0, 0)');
+      expect(await teil.evaluate(rahmen)).not.toBe('rgba(0, 0, 0, 0)');
+    }
+    expect(await karte.getByRole('button', { name: 'Erledigt' }).evaluate(hintergrund)).not.toBe('rgba(0, 0, 0, 0)');
+    // WhatsApp und Anrufen sind so hoch wie der E-Mail-Knopf daneben
+    const hoehe = async (l: ReturnType<typeof karte.getByRole>) => (await l.boundingBox())!.height;
+    const mail = await hoehe(karte.getByRole('button', { name: 'E-Mail' }));
+    expect(await hoehe(karte.getByRole('link', { name: 'WhatsApp-Chat öffnen' }))).toBe(mail);
+    expect(await hoehe(karte.getByRole('link', { name: 'Anrufen' }))).toBe(mail);
+    const fest = page.getByRole('region', { name: 'Deal-Detail' }).locator('[data-fester-kopf]');
+    expect(await fest.evaluate((e) => getComputedStyle(e).boxShadow)).not.toBe('none');
+  });
+
+  test('Ansicht und Filter liegen im Menü der Kopfzeile, links von „Exposé importieren“', async ({ page }) => {
+    await page.goto('/');
+    const banner = page.getByRole('banner');
+    const knopf = banner.getByRole('button', { name: 'Ansicht und Filter' });
+    expect((await knopf.boundingBox())!.x).toBeLessThan((await banner.getByRole('button', { name: 'Exposé importieren' }).boundingBox())!.x);
+    // auf der Seite selbst stehen Ansicht und Filter nicht mehr
+    await expect(page.getByRole('main').getByLabel('Ansicht Deals')).toHaveCount(0);
+    await expect(page.getByRole('main').getByRole('button', { name: 'Gespeicherte Filter' })).toHaveCount(0);
+
+    await knopf.click();
+    const menue = page.getByRole('menu');
+    // zuerst die zwei Knöpfe zum Teilen, darunter die Filter und ihre Verwaltung
+    const teilen = (await menue.getByLabel('Ansicht Deals').boundingBox())!;
+    const keinFilter = (await menue.locator('[data-filter-option="— Kein Filter —"]').boundingBox())!;
+    expect(teilen.y).toBeLessThan(keinFilter.y);
+    await expect(menue.getByRole('menuitem', { name: /Verwalten/ })).toBeVisible();
+    await menue.getByLabel('Ansicht Deals').getByLabel('untereinander').click();
+    await expect(page.locator('[data-layout]').first()).toHaveAttribute('data-layout', 'untereinander');
+    await menue.getByLabel('Ansicht Deals').getByLabel('nebeneinander').click();
+    await expect(page.locator('[data-layout]').first()).toHaveAttribute('data-layout', 'nebeneinander');
+  });
+
   test('Ansicht: Deals und Makler je für sich nebeneinander oder untereinander, gemerkt', async ({ page }) => {
     await page.goto('/');
     const deals = page.locator('[data-layout]').first();
     await expect(deals).toHaveAttribute('data-layout', 'nebeneinander');
+    await ansichtMenue(page);
     await page.getByLabel('Ansicht Deals').getByLabel('untereinander').click();
+    await page.keyboard.press('Escape');
     await expect(deals).toHaveAttribute('data-layout', 'untereinander');
     await expect(page.getByRole('region', { name: 'Deal-Detail' })).toBeVisible();
 
@@ -285,9 +388,11 @@ test.describe('Ankauf-Cockpit', () => {
     const makler = page.getByRole('tabpanel');
     await expect(makler.getByRole('region', { name: 'Makler-Detail' })).toBeVisible();
     await expect(makler.locator('[data-layout]')).toHaveAttribute('data-layout', 'nebeneinander');
+    await ansichtMenue(page);
     await page.getByLabel('Ansicht Makler').getByLabel('untereinander').click();
+    await page.keyboard.press('Escape');
     await expect(makler.locator('[data-layout]')).toHaveAttribute('data-layout', 'untereinander');
-    await expect(page.getByLabel('Nächste Kontakte').getByRole('button', { name: 'Wählmaschine öffnen' })).toHaveText(/Makler durchwählen/);
+    await expect(page.getByLabel('Nächste Kontakte').getByRole('button', { name: 'Wählmaschine öffnen' })).toHaveAttribute('data-durchwaehlen', 'makler');
 
     // Reiter und Ansichten bleiben über das Neuladen gemerkt
     await page.reload();
@@ -295,7 +400,7 @@ test.describe('Ankauf-Cockpit', () => {
     await expect(page.locator('[data-layout]')).toHaveAttribute('data-layout', 'untereinander');
     await page.getByRole('tab', { name: /Deals kontaktieren/ }).click();
     await expect(page.locator('[data-layout]')).toHaveAttribute('data-layout', 'untereinander');
-    await expect(page.getByLabel('Nächste Kontakte').getByRole('button', { name: 'Wählmaschine öffnen' })).toHaveText(/Deals durchwählen/);
+    await expect(page.getByLabel('Nächste Kontakte').getByRole('button', { name: 'Wählmaschine öffnen' })).toHaveAttribute('data-durchwaehlen', 'deals');
   });
 
   test('Karten: Überfahren färbt den Hintergrund, die gewählte Karte bleibt hervorgehoben', async ({ page }) => {

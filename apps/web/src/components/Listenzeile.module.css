@@ -11,14 +11,14 @@
   border-color: var(--mantine-color-default-border);
 }
 
-/* Die Auswahl bleibt auch beim Überfahren erkennbar. */
+/* Die Auswahl bleibt auch beim Überfahren erkennbar — dezent gelb mit Rahmen (Farben in auswahl.css, hell und dunkel). */
 .zeile[data-aktiv] {
-  background: var(--mantine-primary-color-light);
-  border-color: var(--mantine-primary-color-filled);
+  background: var(--gg-auswahl);
+  border-color: var(--gg-auswahl-rahmen);
 }
 
 .zeile[data-aktiv]:hover {
-  background: var(--mantine-primary-color-light-hover);
+  background: var(--gg-auswahl-hover);
 }
 
 .zeile:focus-visible {
@@ -29,7 +29,7 @@
 /*
  * Auswählbare Karte im Ankauf-Cockpit (Deals nachverfolgen, Makler kontaktieren).
  * Gleiches Verhalten wie die Listenzeile; der farbige Rand links bleibt der Karte überlassen,
- * weil seine Farbe von der Fälligkeit abhängt.
+ * weil seine Farbe von der Fälligkeit abhängt — die übrigen drei Seiten werden bei Auswahl gelb.
  */
 .karte {
   transition: background-color 120ms ease;
@@ -40,9 +40,10 @@
 }
 
 .karte[data-aktiv] {
-  background-color: var(--mantine-primary-color-light);
+  background-color: var(--gg-auswahl);
+  border-color: var(--gg-auswahl-rahmen);
 }
 
 .karte[data-aktiv]:hover {
-  background-color: var(--mantine-primary-color-light-hover);
+  background-color: var(--gg-auswahl-hover);
 }

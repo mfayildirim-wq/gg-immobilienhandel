@@ -1,5 +1,5 @@
 import { createRootRoute, createRoute, createRouter, Outlet, redirect } from '@tanstack/react-router';
-import { Stack, Title } from '@mantine/core';
+import { Stack } from '@mantine/core';
 import { EINSTELLUNGEN_SEITEN } from './lib/einstellungenSeiten.tsx';
 import { AppRahmen } from './components/AppRahmen.tsx';
 import { AnkaufSeite } from './pages/AnkaufSeite.tsx';
@@ -81,8 +81,8 @@ const einstellungen = createRoute({
   getParentRoute: () => root,
   path: '/einstellungen',
   component: () => (
+    // „Einstellungen › Unterseite“ steht als Brotkrumen in der Kopfzeile
     <Stack gap="sm">
-      <Title order={2}>Einstellungen</Title>
       <Outlet />
     </Stack>
   ),

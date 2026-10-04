@@ -1,7 +1,7 @@
 import type { GespeicherterFilter } from '@gg/api-contract';
 import { describeFilter, type FilterCriterion, filterFuerModul, type SavedFilter } from '@gg/domain';
-import { ActionIcon, Button, Group, Menu, Modal, Paper, Stack, Text } from '@mantine/core';
-import { IconBookmark, IconCheck, IconDeviceFloppy, IconSettings } from '@tabler/icons-react';
+import { ActionIcon, Group, Menu, Modal, Paper, Stack, Text } from '@mantine/core';
+import { IconCheck, IconDeviceFloppy, IconSettings } from '@tabler/icons-react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useFilter, useFilterAnlegen, useFilterLoeschen, useFilterUmbenennen, useFilterVorlagen } from '../lib/api.ts';
 
@@ -22,10 +22,11 @@ export function useAktiverFilter(modul: Modul): SavedFilter | null {
 }
 
 /**
- * Filterleiste (savedFiltersUI.ts): Auswahl, Aktiv-Hinweis, „Aktuelle als Filter speichern…“, „Verwalten“.
+ * Filter eines Moduls als Menüpunkte (savedFiltersUI.ts): Auswahl, „Aktuelle als Filter speichern…“, „Verwalten“.
  * Beim ersten Anzeigen je Modul werden fehlende Vorlagen angelegt — erst, wenn der Serverstand bekannt ist.
+ * Genutzt vom Menü „Ansicht und Filter“ in der Kopfzeile (`AnsichtMenue`).
  */
-export function GespeicherteFilterLeiste({ modul, aktuelleKriterien }: { modul: Modul; aktuelleKriterien?: FilterCriterion[] }) {
+export function useFilterMenue(modul: Modul, aktuelleKriterien?: FilterCriterion[]) {
   const { data: alle, isSuccess } = useFilter();
   const vorlagen = useFilterVorlagen();
   const anlegen = useFilterAnlegen();
@@ -40,57 +41,44 @@ export function GespeicherteFilterLeiste({ modul, aktuelleKriterien }: { modul: 
   const [meldung, setMeldung] = useState<{ farbe: string; text: string } | null>(null);
   useEffect(() => { if (!meldung) return; const t = setTimeout(() => setMeldung(null), 4000); return () => clearTimeout(t); }, [meldung]);
 
-  return (
-    <Group gap={6} wrap="nowrap" aria-label="Gespeicherte Filter">
-      {/* Was gerade filtert, steht links vom Knopf — sichtbar, ohne das Menü zu öffnen. */}
-      {meldung
-        ? <Text size="xs" c={meldung.farbe} fw={600}>{meldung.text}</Text>
-        : aktiverFilter
-          ? <Text size="xs" c="dimmed" fw={600} title={describeFilter(aktiverFilter)} data-aktiver-filter>Filter: {aktiverFilter.name}</Text>
-          : null}
-      <Menu position="bottom-end" width={260} withinPortal shadow="md">
-        <Menu.Target>
-          <Button
-            size="compact-sm"
-            variant={aktiverFilter ? 'light' : 'default'}
-            aria-label="Gespeicherte Filter"
-            leftSection={<IconBookmark size={15} />}
-          >
-            {aktiverFilter ? '1' : 'Filter'}
-          </Button>
-        </Menu.Target>
-        <Menu.Dropdown>
-          <Menu.Label>{MODUL_LABEL[modul]}</Menu.Label>
-          <Menu.Item data-filter-option="— Kein Filter —" onClick={() => setzeAktiv(modul, null)}
-            rightSection={!aktivId ? <IconCheck size={14} /> : undefined}>
-            — Kein Filter —
-          </Menu.Item>
-          {filter.map((f) => (
-            <Menu.Item key={f.id} data-filter-option={f.name} data-filter-id={f.id} title={describeFilter(f)} onClick={() => setzeAktiv(modul, f.id)}
-              rightSection={f.id === aktivId ? <IconCheck size={14} /> : undefined}>
-              {f.name}
-            </Menu.Item>
-          ))}
-          <Menu.Divider />
-          {aktuelleKriterien && (
-            <Menu.Item leftSection={<IconDeviceFloppy size={14} />} onClick={() => {
-              if (aktuelleKriterien.length === 0) { setMeldung({ farbe: 'red', text: 'Keine Filter aktiv — wähle erst Status/Suche/Chip' }); return; }
-              const name = window.prompt('Name für den gespeicherten Filter:');
-              if (!name || !name.trim()) return;
-              anlegen.mutate({ module: modul, name: name.trim(), criteria: aktuelleKriterien as GespeicherterFilter['criteria'] }, {
-                onSuccess: (f) => { setzeAktiv(modul, f.id); setMeldung({ farbe: 'teal', text: `✅ Filter „${f.name}" gespeichert` }); },
-                onError: (e) => setMeldung({ farbe: 'red', text: e.message }),
-              });
-            }}>
-              Aktuelle als Filter speichern…
-            </Menu.Item>
-          )}
-          <Menu.Item leftSection={<IconSettings size={14} />} onClick={() => setVerwalten(true)}>⚙️ Verwalten</Menu.Item>
-        </Menu.Dropdown>
-      </Menu>
-      {verwalten && <FilterVerwalten modul={modul} filter={filter} schliessen={() => setVerwalten(false)} />}
-    </Group>
+  const punkte = (
+    <>
+      <Menu.Label>{MODUL_LABEL[modul]}</Menu.Label>
+      <Menu.Item data-filter-option="— Kein Filter —" onClick={() => setzeAktiv(modul, null)}
+        rightSection={!aktivId ? <IconCheck size={14} /> : undefined}>
+        — Kein Filter —
+      </Menu.Item>
+      {filter.map((f) => (
+        <Menu.Item key={f.id} data-filter-option={f.name} data-filter-id={f.id} title={describeFilter(f)} onClick={() => setzeAktiv(modul, f.id)}
+          rightSection={f.id === aktivId ? <IconCheck size={14} /> : undefined}>
+          {f.name}
+        </Menu.Item>
+      ))}
+      <Menu.Divider />
+      {aktuelleKriterien && (
+        <Menu.Item leftSection={<IconDeviceFloppy size={14} />} onClick={() => {
+          if (aktuelleKriterien.length === 0) { setMeldung({ farbe: 'red', text: 'Keine Filter aktiv — wähle erst Status/Suche/Chip' }); return; }
+          const name = window.prompt('Name für den gespeicherten Filter:');
+          if (!name || !name.trim()) return;
+          anlegen.mutate({ module: modul, name: name.trim(), criteria: aktuelleKriterien as GespeicherterFilter['criteria'] }, {
+            onSuccess: (f) => { setzeAktiv(modul, f.id); setMeldung({ farbe: 'teal', text: `✅ Filter „${f.name}" gespeichert` }); },
+            onError: (e) => setMeldung({ farbe: 'red', text: e.message }),
+          });
+        }}>
+          Aktuelle als Filter speichern…
+        </Menu.Item>
+      )}
+      <Menu.Item leftSection={<IconSettings size={14} />} onClick={() => setVerwalten(true)}>⚙️ Verwalten</Menu.Item>
+    </>
   );
+  // Was gerade filtert, steht neben dem Knopf — sichtbar, ohne das Menü zu öffnen.
+  const hinweis = meldung
+    ? <Text size="xs" c={meldung.farbe} fw={600}>{meldung.text}</Text>
+    : aktiverFilter
+      ? <Text size="xs" c="dimmed" fw={600} title={describeFilter(aktiverFilter)} data-aktiver-filter>Filter: {aktiverFilter.name}</Text>
+      : null;
+  const dialog = verwalten ? <FilterVerwalten modul={modul} filter={filter} schliessen={() => setVerwalten(false)} /> : null;
+  return { aktiverFilter, hinweis, punkte, dialog };
 }
 
 function FilterVerwalten({ modul, filter, schliessen }: { modul: Modul; filter: SavedFilter[]; schliessen: () => void }) {

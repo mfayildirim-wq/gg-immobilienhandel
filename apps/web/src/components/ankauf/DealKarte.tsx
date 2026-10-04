@@ -18,7 +18,7 @@ const ohneAuswahl = (kind: React.ReactNode) => (
 
 /**
  * Nachverfolgungs-Karte in drei Zeilen:
- *   1 Adresse und Stadt, rechts die Fälligkeit in Kurzform („32T“, „Heute“, „in 3T“)
+ *   1 Adresse und Stadt, rechts die Fälligkeit in Kurzform („32T“, „Heute“, „in 3T“) — nur farbiger Rahmen, keine Füllung
  *   2 Makler (Name, darunter die Firma), rechts WhatsApp, Anrufen und E-Mail als Symbole
  *   3 Termin (Datum + Schnellwahl) und rechts daneben „Erledigt“ — alles in einer Zeile
  * Ein Klick auf die Karte zeigt den Deal rechts im Detailbereich. Status, Kennzahlen (Kaufpreis, Fläche, Miete) und
@@ -58,8 +58,8 @@ export function DealKarte({ d, heute, aktiv, waehlen, halten, loslassen }: {
             {d.objekt.stadt ? `, ${d.objekt.stadt}` : ''}
           </Text>
           {d.gehalten
-            ? <Badge variant="light" color="gray" title={TERMIN_GEAENDERT_HINWEIS} data-faellig-kurz style={{ flexShrink: 0 }}>{TERMIN_GEAENDERT}</Badge>
-            : <Badge variant="light" color={FAELLIG_FARBE[d.faellig.klasse]} title={d.faellig.label} data-faellig-kurz style={{ flexShrink: 0 }}>{faelligKurz(d.faellig)}</Badge>}
+            ? <Badge variant="outline" color="gray" title={TERMIN_GEAENDERT_HINWEIS} data-faellig-kurz style={{ flexShrink: 0 }}>{TERMIN_GEAENDERT}</Badge>
+            : <Badge variant="outline" color={FAELLIG_FARBE[d.faellig.klasse]} title={d.faellig.label} data-faellig-kurz style={{ flexShrink: 0 }}>{faelligKurz(d.faellig)}</Badge>}
           <span hidden data-faellig-label>{d.gehalten ? TERMIN_GEAENDERT : d.faellig.label}</span>
           {d.lastContact && <span hidden data-zuletzt>Zuletzt: {datumDe(d.lastContact)}</span>}
         </Group>
@@ -73,13 +73,13 @@ export function DealKarte({ d, heute, aktiv, waehlen, halten, loslassen }: {
           {ohneAuswahl(
             <Group gap={4} wrap="nowrap">
               {wa && (
-                <ActionIcon component="a" href={`https://wa.me/${wa}`} target="_blank" rel="noopener noreferrer" variant="light" color="green" size="lg"
+                <ActionIcon component="a" href={`https://wa.me/${wa}`} target="_blank" rel="noopener noreferrer" variant="outline" color="green" size={30}
                   aria-label="WhatsApp-Chat öffnen" title={`WhatsApp-Chat mit ${d.makler?.name ?? d.makler?.tel} öffnen`}>
                   <IconBrandWhatsapp size={18} />
                 </ActionIcon>
               )}
               {d.makler?.tel && (
-                <ActionIcon component="a" href={`tel:${d.makler.tel}`} variant="light" color="green" size="lg" aria-label="Anrufen" title={d.makler.tel}>
+                <ActionIcon component="a" href={`tel:${d.makler.tel}`} variant="outline" color="green" size={30} aria-label="Anrufen" title={d.makler.tel}>
                   <IconPhone size={18} />
                 </ActionIcon>
               )}
