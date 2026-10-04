@@ -243,6 +243,18 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   };
   const sharepointJetzt = () => (typeof sharepoint === 'function' ? sharepoint() : Promise.resolve(sharepoint));
   const dateien = async () => ({ db, speicher: ablage(), sharepoint: await sharepointJetzt() });
+  /**
+   * Die KI für jede Anfrage — die eine Stelle dafür. Fest vorgegeben (Attrappe, Tests) geht vor; sonst gilt der in
+   * Einstellungen → Zugänge hinterlegte Schlüssel, erst danach `ANTHROPIC_API_KEY` aus der Umgebung. Gelesen wird je
+   * Anfrage: ein neu eingetragener Schlüssel wirkt sofort, ohne Neustart (online: ohne neues Deployment).
+   */
+  const kiAktuell = async (): Promise<KiClient | null> => {
+    const fest = kiOpt ?? (expose?.attrappe ? expose.ki : null);
+    if (fest) return fest;
+    const key = await zugangLesen(db, 'anthropic-api-key');
+    return key ? anthropicClient(key) : (expose?.ki ?? null);
+  };
+  const exposeMitKi = async () => ({ ...(await exposeKontext()), ki: await kiAktuell() });
   const ablage = () => {
     const s = speicherOpt ?? expose?.speicher;
     if (!s) throw new FachFehler(422, 'Dateiablage ist nicht eingerichtet (SUPABASE_SERVICE_ROLE_KEY).');
@@ -405,13 +417,6 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   );
 
   // ── Makler-Detail ────────────────────────────────────────
-  const ki = () => kiOpt ?? expose?.ki;
-  /** Hinterlegte Schlüssel haben Vorrang vor der Umgebung (alt: Einstellungen → API-Schlüssel). */
-  const kiMitSchluessel = async () => {
-    if (kiOpt || expose?.ki) return ki();
-    const key = await zugangLesen(db, 'anthropic-api-key');
-    return key ? anthropicClient(key) : null;
-  };
   const openaiSchluessel = async () => (await zugangLesen(db, 'openai-api-key')) || openaiKey || '';
   const heuteDe = () => new Date().toLocaleDateString('de-DE', { timeZone: 'Europe/Berlin' });
   app.openapi(
@@ -425,32 +430,32 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   const kiFehler = { 404: fehler('Makler fehlt'), 422: fehler('KI nicht eingerichtet oder zu wenig Daten') };
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/ki/zusammenfassung', request: { params: IdParam }, responses: { 200: json(z.object({ kiSummary: z.string().nullable(), kiSummaryAt: z.string().nullable() }), 'Zusammenfassung'), ...kiFehler } }),
-    async (c) => c.json(await zusammenfassungErstellen(db, await kiMitSchluessel(), c.req.valid('param').id), 200),
+    async (c) => c.json(await zusammenfassungErstellen(db, await kiAktuell(), c.req.valid('param').id), 200),
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/ki/erwaehnungen', request: { params: IdParam, ...body(z.object({ text: z.string().max(5000), kanal: z.string().max(40) })) }, responses: { 200: json(z.object({ neu: z.number() }), 'Erwähnungen ergänzt'), ...kiFehler } }),
-    async (c) => { const b = c.req.valid('json'); return c.json(await erwaehnungenErgaenzen(db, await kiMitSchluessel(), c.req.valid('param').id, b.text, b.kanal, heuteDe()), 200); },
+    async (c) => { const b = c.req.valid('json'); return c.json(await erwaehnungenErgaenzen(db, await kiAktuell(), c.req.valid('param').id, b.text, b.kanal, heuteDe()), 200); },
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/ki/beziehungsprofil', request: { params: IdParam }, responses: { 200: json(z.object({ beziehungsNotiz: z.string() }), 'Beziehungsprofil'), ...kiFehler } }),
-    async (c) => c.json(await beziehungsprofilErstellen(db, await kiMitSchluessel(), c.req.valid('param').id), 200),
+    async (c) => c.json(await beziehungsprofilErstellen(db, await kiAktuell(), c.req.valid('param').id), 200),
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/ki/persoenliches', request: { params: IdParam }, responses: { 200: json(z.object({ persoenlich: z.record(z.string(), z.unknown()) }), 'Persönliches ergänzt'), ...kiFehler } }),
-    async (c) => c.json(await persoenlichesErgaenzen(db, await kiMitSchluessel(), c.req.valid('param').id), 200),
+    async (c) => c.json(await persoenlichesErgaenzen(db, await kiAktuell(), c.req.valid('param').id), 200),
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/ki/entwurf', request: { params: IdParam }, responses: { 200: json(NachrichtEntwurf, 'Entwurf WhatsApp + E-Mail'), ...kiFehler } }),
-    async (c) => c.json(await entwurfErstellen(db, await kiMitSchluessel(), c.req.valid('param').id), 200),
+    async (c) => c.json(await entwurfErstellen(db, await kiAktuell(), c.req.valid('param').id), 200),
   );
   const suche = (): Suchdienste => sucheOpt ?? (expose?.attrappe ? { web: async () => [], news: async () => [] } : { web: webSuche, news: nachrichtenSuche });
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/ki/anlaesse', request: { params: IdParam }, responses: { 200: json(z.object({ anlaesse: z.array(z.object({ emoji: z.string(), text: z.string(), priority: z.string(), quelleUrl: z.string().optional() })) }), 'Kontakt-Anlässe'), ...kiFehler } }),
-    async (c) => c.json(await kontaktAnlaesseErmitteln(db, await kiMitSchluessel(), suche(), c.req.valid('param').id, heuteBerlin()), 200),
+    async (c) => c.json(await kontaktAnlaesseErmitteln(db, await kiAktuell(), suche(), c.req.valid('param').id, heuteBerlin()), 200),
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/ki/gespraechsoeffner', request: { params: IdParam }, responses: { 200: json(z.object({ text: z.string() }), 'Gesprächsöffner'), ...kiFehler } }),
-    async (c) => c.json(await gespraechsoeffnerErstellen(db, await kiMitSchluessel(), c.req.valid('param').id, heuteBerlin()), 200),
+    async (c) => c.json(await gespraechsoeffnerErstellen(db, await kiAktuell(), c.req.valid('param').id, heuteBerlin()), 200),
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/osint', request: { params: IdParam }, responses: { 200: json(z.object({ persoenlich: z.record(z.string(), z.unknown()) }), 'OSINT-Ergebnis gespeichert'), 404: fehler('Makler fehlt') } }),
@@ -462,7 +467,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/persona/analyse', responses: { 200: json(PersonaStand, 'analysiert'), 422: fehler('zu wenig Daten oder KI fehlt') } }),
-    async (c) => c.json(await personaAnalysieren(db, await kiMitSchluessel()), 200),
+    async (c) => c.json(await personaAnalysieren(db, await kiAktuell()), 200),
   );
   app.post('/api/transkription', async (c) => {
     const form = await c.req.parseBody();
@@ -674,7 +679,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
     const form = await c.req.parseBody();
     const f = form['file'];
     const datei = f && typeof f !== 'string' ? { name: f.name, typ: f.type, bytes: new Uint8Array(await f.arrayBuffer()) } : null;
-    return c.json(await einheitenAusMieterliste(await dateien(), await kiMitSchluessel(), c.req.param('id'), datei), 200);
+    return c.json(await einheitenAusMieterliste(await dateien(), await kiAktuell(), c.req.param('id'), datei), 200);
   });
 
   // ── Kalkulationsvarianten (alt d.kalkVarianten) ─────────
@@ -765,7 +770,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
     async (c) => {
       botFreigeschaltet();
       return c.json(await autoImportAusfuehren(db, {
-        speicher: ablage(), ki: kiOpt ?? expose?.ki ?? null, graph: await m365Client(db, graphOpt), ordner: await m365OrdnerLesen(db),
+        speicher: ablage(), ki: await kiAktuell(), graph: await m365Client(db, graphOpt), ordner: await m365OrdnerLesen(db),
         browserStarten: autoImport?.browserStarten ?? browserStarten, maxZeitlimitSek: autoImport?.maxZeitlimitSek, lokaleZieleErlaubt: autoImport?.lokaleZieleErlaubt,
       }, c.req.valid('json').mailUid), 200);
     },
@@ -1121,7 +1126,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/praesentationen/{id}/ki', request: { params: IdParam, ...body(PraesentationKi) }, responses: { 200: json(VorbelegungErgebnis, 'KI-Text für die Folie (nicht gespeichert)'), 404: fehler('nicht gefunden'), 422: fehler('KI nicht eingerichtet'), 500: fehler('KI-Aufruf fehlgeschlagen') } }),
-    async (c) => c.json(await praesentationKiText(db, ki(), c.req.valid('param').id, c.req.valid('json')), 200),
+    async (c) => c.json(await praesentationKiText(db, await kiAktuell(), c.req.valid('param').id, c.req.valid('json')), 200),
   );
   const exportieren = (art: 'pdf' | 'pptx') => async (c: import('hono').Context) => {
     const praes = await praesentationFuerExport(db, c.req.param('id')!);
@@ -1191,7 +1196,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   });
 
   // ── Exposé-Import ────────────────────────────────────────
-  app.get('/api/ki/status', (c) => c.json({ verfuegbar: !!expose?.ki, attrappe: !!expose?.attrappe, ablage: !!expose }));
+  app.get('/api/ki/status', async (c) => c.json({ verfuegbar: !!(await kiAktuell()), attrappe: !!expose?.attrappe, ablage: !!expose }));
   app.post('/api/expose/eingang', async (c) => {
     const laenge = Number(c.req.header('content-length') ?? 0);
     if (laenge > MAX_EXPOSE_BYTES) return c.json({ fehler: 'Das PDF ist größer als 200 MB.' }, 413);
@@ -1209,7 +1214,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/expose/analyse', ...{ request: body(z.object({ key: z.string(), dateiname: z.string().max(300) })) }, responses: { 200: json(ExposeAnalyseAntwort, 'ausgewertet'), 404: fehler('Datei fehlt'), 422: fehler('nicht auswertbar') } }),
-    async (c) => { const b = c.req.valid('json'); return c.json(await exposeAnalysieren(db, await exposeKontext(), b.key, b.dateiname), 200); },
+    async (c) => { const b = c.req.valid('json'); return c.json(await exposeAnalysieren(db, await exposeMitKi(), b.key, b.dateiname), 200); },
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/expose/uebernehmen', request: body(ExposeUebernehmen), responses: { 201: json(ExposeUebernahmeErgebnis, 'angelegt'), 404: fehler('nicht gefunden'), 409: fehler('Deal bereits vorhanden'), 422: fehler('ungültig') } }),
