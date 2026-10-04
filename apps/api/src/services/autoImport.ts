@@ -124,7 +124,7 @@ const alsAntwort = (z: typeof schema.autoImportRuns.$inferSelect) => ({
 export type AutoImportLauf = ReturnType<typeof alsAntwort>;
 
 export async function autoImportAusfuehren(db: Db, k: AutoImportKontext, mailUid: string): Promise<AutoImportLauf> {
-  if (!k.ki) throw new FachFehler(422, 'Keine KI eingerichtet: ANTHROPIC_API_KEY setzen (oder KI_ATTRAPPE=1 für Tests).');
+  if (!k.ki) throw new FachFehler(422, 'Keine KI eingerichtet: Anthropic-Schlüssel unter Einstellungen → Zugänge hinterlegen.');
   const mail = (await k.graph.angebote(k.ordner)).find((m) => m.uid === mailUid);
   if (!mail) throw new FachFehler(404, 'Die Mail wurde im Posteingang nicht gefunden.');
   if (mail.anhaengeUnvollstaendig) throw new FachFehler(503, 'Anhänge konnten nicht vollständig geladen werden (Microsoft Graph gedrosselt). Bitte in einem Moment erneut versuchen.');

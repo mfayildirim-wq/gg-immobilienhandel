@@ -130,7 +130,7 @@ export async function praesentationKiText(db: Db, ki: KiClient | null | undefine
   const lage = v.art === 'lage' ? lageKiEingabe(v.data, deal, objekt) : null;
   const objektEingabe = v.art === 'objekt' ? objektKiEingabe(v.data, deal, objekt) : null;
   if (!lage && !objektEingabe) return { data: null, hinweis: v.art === 'lage' ? LAGE_KI_OHNE_ADRESSE : OBJEKT_KI_OHNE_DATEN };
-  if (!ki) throw new FachFehler(422, 'KI ist nicht eingerichtet (ANTHROPIC_API_KEY).');
+  if (!ki) throw new FachFehler(422, 'Keine KI eingerichtet: Anthropic-Schlüssel unter Einstellungen → Zugänge hinterlegen.');
   const quelle = `praesentation/${v.art}`;
   // Gebucht wird, sobald das Modell geantwortet hat — auch wenn die Antwort danach nicht taugt
   const buchen = async (a: KiAntwort<unknown>) => {

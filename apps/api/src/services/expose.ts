@@ -59,7 +59,7 @@ async function kostenBuchen(db: Db, model: string, usage: Parameters<typeof kost
 
 export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, dateiname: string): Promise<ExposeAnalyseAntwort> {
   if (!istEingangsSchluessel(key)) throw new FachFehler(422, 'Ungültiger Upload-Schlüssel.');
-  if (!k.ki) throw new FachFehler(422, 'Keine KI eingerichtet: ANTHROPIC_API_KEY setzen (oder KI_ATTRAPPE=1 für Tests).');
+  if (!k.ki) throw new FachFehler(422, 'Keine KI eingerichtet: Anthropic-Schlüssel unter Einstellungen → Zugänge hinterlegen.');
   let pdf: Uint8Array;
   try {
     pdf = await k.speicher.holen(BUCKETS.pdfs, key);

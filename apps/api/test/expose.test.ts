@@ -29,6 +29,24 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
   const json = (pfad: string, body: unknown) => app.request(pfad, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const eingang = (bytes: Uint8Array) => app.request('/api/expose/eingang', { method: 'POST', body: bytes });
 
+  it('KI-Schlüssel aus Einstellungen → Zugänge gilt auch für den Exposé-Import — ohne Neustart, vor der Umgebung', async () => {
+    // Wie online: keine Attrappe, kein Schlüssel in der Umgebung
+    const online = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, expose: { speicher, ki: null, attrappe: false } });
+    const zugang = (wert: string) => online.request('/api/zugaenge/anthropic-api-key', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ wert }) });
+    try {
+      expect((await zugang('')).status).toBe(200);
+      expect(await lies(online.request('/api/ki/status'))).toMatchObject({ verfuegbar: false, attrappe: false });
+      const ohne = await online.request('/api/expose/analyse', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: '_eingang/00000000-0000-4000-8000-000000000000', dateiname: 'x.pdf' }) });
+      expect(ohne.status).toBe(422);
+      expect((await lies(ohne)).fehler).toContain('Einstellungen → Zugänge');
+
+      expect((await zugang('sk-ant-test-nur-fuer-den-status-0000')).status).toBe(200);
+      expect(await lies(online.request('/api/ki/status'))).toMatchObject({ verfuegbar: true, attrappe: false });
+    } finally {
+      await zugang('');
+    }
+  });
+
   it('nimmt nur echte PDFs an und analysiert nur eigene Eingänge', async () => {
     expect((await eingang(new TextEncoder().encode('kein pdf'))).status).toBe(422);
     expect((await json('/api/expose/analyse', { key: 'deal-docs/fremd.pdf', dateiname: 'x.pdf' })).status).toBe(422);
