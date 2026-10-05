@@ -1,9 +1,10 @@
-import { IconBriefcase, IconBuildingBank, IconCalculator, IconChecklist, IconTableShare, IconTemplate, IconTrash, IconCopy, IconHistory, IconTool, IconKey, IconDatabaseExport, IconBook, IconShieldLock, IconMail } from '@tabler/icons-react';
+import { IconFolderShare, IconBriefcase, IconBuildingBank, IconCalculator, IconChecklist, IconTableShare, IconTemplate, IconTrash, IconCopy, IconHistory, IconTool, IconKey, IconDatabaseExport, IconBook, IconShieldLock, IconMail } from '@tabler/icons-react';
 import type { ComponentType } from 'react';
 import { BegleitscheinEinstellungen } from '../components/begleitschein/BegleitscheinEinstellungen.tsx';
 import { PraesentationStandards } from '../components/praesentation/PraesentationStandards.tsx';
 import { VertriebslistenEinstellungen } from '../components/VertriebslistenEinstellungen.tsx';
 import { M365Einstellungen } from '../components/M365Einstellungen.tsx';
+import { SharepointEinstellungen } from '../components/SharepointEinstellungen.tsx';
 import { FreigabenEinstellungen } from '../components/FreigabenEinstellungen.tsx';
 import { AnleitungenEinstellungen } from '../components/AnleitungenEinstellungen.tsx';
 import { SicherungEinstellungen } from '../components/SicherungEinstellungen.tsx';
@@ -32,6 +33,7 @@ export const EINSTELLUNGEN_SEITEN: { pfad: string; label: string; icon: Componen
   { pfad: 'dubletten', label: 'Dubletten', icon: IconCopy, komponente: DublettenEinstellungen },
   { pfad: 'papierkorb', label: 'Papierkorb', icon: IconTrash, komponente: PapierkorbEinstellungen },
   { pfad: 'm365', label: 'Microsoft 365', icon: IconMail, komponente: M365Einstellungen },
+  { pfad: 'sharepoint', label: 'SharePoint', icon: IconFolderShare, komponente: SharepointEinstellungen },
   { pfad: 'freigaben', label: 'Aktionen nach außen', icon: IconShieldLock, komponente: FreigabenEinstellungen },
   { pfad: 'anleitungen', label: 'Anleitungen', icon: IconBook, komponente: AnleitungenEinstellungen },
 ];

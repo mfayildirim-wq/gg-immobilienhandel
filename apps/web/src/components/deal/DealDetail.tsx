@@ -7,7 +7,7 @@ import { useDealDetail } from '../../lib/api.ts';
 import { useEinstellung } from '../../lib/ansicht.ts';
 import { darfVerlassen } from '../../lib/ungespeichert.ts';
 import { StatusBadge } from '../StatusBadge.tsx';
-import { DateiLeiste, DealDateien } from './DealDateien.tsx';
+import { DateiLeiste, Dokumente } from '../Dokumente.tsx';
 import { DealKalkulation } from './DealKalkulation.tsx';
 import { DealKommunikation } from './DealKommunikation.tsx';
 import { DealKundenkalkulationen } from './DealKundenkalkulationen.tsx';
@@ -78,7 +78,7 @@ export function DealDetail({ id, start = 'uebersicht' }: { id: string; start?: R
           <DealKommunikation deal={deal} />
         </Tabs.Panel>
         <Tabs.Panel value="dateien" pt="md">
-          <DealDateien dealId={deal.id} />
+          <Dokumente bezug={{ art: 'deal', id: deal.id }} objektId={deal.objekt.id} />
         </Tabs.Panel>
         <Tabs.Panel value="kundenkalkulation" pt="md">
           <DealKundenkalkulationen deal={deal} />

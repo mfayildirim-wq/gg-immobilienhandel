@@ -59,3 +59,38 @@ test('Objekt-Detail: Details mit Kennzahlen und Recherche, Bearbeiten mit Einhei
   await expect(schublade).not.toContainText(strasse);
   expect((await page.request.get(`/api/objekte/${o.id}`)).status()).toBe(404);
 });
+
+test('Objekt-Detail: Reiter „Dokumente“ — hochladen am Objekt, Pfad sichtbar, Dokumente der Deals dabei, Anzeigen liefert die Datei', async ({ page }) => {
+  page.on('dialog', (d) => void d.accept());
+  const strasse = `Dokweg ${Date.now()}`;
+  const o = await (await page.request.post('/api/objekte', { data: { strasse, hausnr: '3', stadt: 'Ulm' } })).json();
+  const d = await (await page.request.post('/api/deals', { data: { objektId: o.id } })).json();
+  // ein Deal-Dokument über die API — es muss am Objekt mit erscheinen
+  const form = { multipart: { dateien: { name: 'Mietvertrag.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7\n' + 'm'.repeat(100)) } } };
+  expect((await page.request.post(`/api/deals/${d.id}/dokumente`, form)).status()).toBe(201);
+
+  await page.goto(`/objekte?objekt=${o.id}`);
+  const detail = page.getByRole('region', { name: 'Objekt-Detail' });
+  await detail.getByRole('tab', { name: '📁 Dokumente' }).click();
+  await expect(detail.getByText('📁 Noch keine Dokumente')).toBeVisible();
+  await expect(detail.getByLabel('Dokumente der Deals').locator('[data-dokument]')).toHaveCount(1);
+  await expect(detail.getByLabel('Dokumente der Deals')).toContainText('Mietvertrag.pdf');
+
+  await detail.getByTestId('dokument-auswahl').setInputFiles([{ name: 'Grundbuch.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7\n' + 'g'.repeat(200)) }]);
+  await expect(detail.getByText('1 Dokument gespeichert')).toBeVisible({ timeout: 30_000 }); // SharePoint-Ablage braucht länger
+  const zeile = detail.locator('[data-dokument]').filter({ hasText: 'Grundbuch.pdf' });
+  // Ablage je nach Einstellung: Supabase (Standard) oder SharePoint (Einstellungen → SharePoint aktiv)
+  const ablage = await zeile.getAttribute('data-ablage');
+  expect(['supabase', 'sharepoint']).toContain(ablage);
+  await expect(zeile.locator('[data-pfad]')).toContainText(ablage === 'sharepoint' ? `Objekte/${strasse} 3, Ulm [${o.id}]/Grundbuch.pdf` : `deal-docs/${o.id}/`);
+  const antwort = await page.request.get((await zeile.getByRole('link', { name: 'Anzeigen' }).getAttribute('href'))!);
+  expect(antwort.status()).toBe(200);
+  expect((await antwort.body()).subarray(0, 5).toString()).toBe('%PDF-');
+  const liste = await (await page.request.get(`/api/objekte/${o.id}/dokumente`)).json();
+  expect(liste).toHaveLength(1);
+  expect(liste[0]).toMatchObject({ dateiname: 'Grundbuch.pdf', bezug: { art: 'objekt', id: o.id }, ablage });
+  if (ablage === 'sharepoint') { expect(liste[0].webUrl).toContain('sharepoint.com'); await expect(zeile.getByRole('link', { name: 'In SharePoint öffnen' })).toBeVisible(); }
+  else expect(liste[0].webUrl).toBeNull();
+  await zeile.getByRole('button', { name: 'Löschen' }).click();
+  await expect(detail.getByText('📁 Noch keine Dokumente')).toBeVisible();
+});

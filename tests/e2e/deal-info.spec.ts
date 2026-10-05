@@ -42,7 +42,7 @@ test('Deal-Info: Frequenz belegt Termin vor, Schnellknopf, E-Mail an Makler, Obj
     { name: 'Exposé.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7\n' + 'x'.repeat(200)) },
     { name: 'notiz.txt', mimeType: 'text/plain', buffer: Buffer.from('Besichtigung am Freitag') },
   ]);
-  await expect(detail.getByText('2 Dokumente gespeichert')).toBeVisible();
+  await expect(detail.getByText('2 Dokumente gespeichert')).toBeVisible({ timeout: 30_000 }); // SharePoint-Ablage braucht länger
   const zeilen = detail.locator('[data-dokument]');
   await expect(zeilen).toHaveCount(2);
   const txt = zeilen.filter({ hasText: 'notiz.txt' });
@@ -50,9 +50,11 @@ test('Deal-Info: Frequenz belegt Termin vor, Schnellknopf, E-Mail an Makler, Obj
   await txt.getByLabel('Bezeichnung').fill('Notiz Besichtigung');
   await txt.getByLabel('Bezeichnung').blur();
   await expect.poll(async () => (await (await page.request.get(`/api/deals/${d.id}/dokumente`)).json()).find((x: { dateiname: string }) => x.dateiname === 'notiz.txt').label).toBe('Notiz Besichtigung');
-  const oeffnen = zeilen.filter({ hasText: 'Exposé.pdf' }).getByRole('link', { name: 'Öffnen' });
+  const oeffnen = zeilen.filter({ hasText: 'Exposé.pdf' }).getByRole('link', { name: 'Anzeigen' });
+  // bei SharePoint-Ablage eine Weiterleitung auf die Download-Adresse — der Inhalt ist in beiden Fällen das PDF
   const antwort = await page.request.get((await oeffnen.getAttribute('href'))!);
-  expect(antwort.headers()['content-type']).toBe('application/pdf');
+  expect(antwort.status()).toBe(200);
+  expect((await antwort.body()).subarray(0, 5).toString()).toBe('%PDF-');
   await txt.getByRole('button', { name: 'Löschen' }).click();
   await expect(zeilen).toHaveCount(1);
 

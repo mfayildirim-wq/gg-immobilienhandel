@@ -8,7 +8,8 @@ import type {
   KundenkalkulationSpeichern,
   KundenkalkEinstellungen,
   ObjektFoto,
-  DealDokument,
+  Dokument,
+  SharepointStand,
   PapierkorbEintrag,
   DublettenPaarSicht,
   AuditBefund,
@@ -269,6 +270,22 @@ function useM365Aendern<E, R>(aufruf: (e: E) => Promise<R>) {
 }
 export const useM365Konfiguration = () => useM365Aendern((e: { clientId: string; tenantId: string; clientSecret?: string }) => anfrage('/api/m365/konfiguration', senden('PUT', e)));
 export const useM365Ordner = () => useM365Aendern((ordner: string) => anfrage<{ ordner: string }>('/api/m365/ordner', senden('PUT', { ordner })));
+// ── SharePoint als Dokumentablage (Protokoll 19) ──────────
+export const useSharepoint = () => useQuery({ queryKey: ['sharepoint'], queryFn: () => anfrage<SharepointStand>('/api/sharepoint') });
+export const useSharepointKonfiguration = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (e: { siteUrl: string; wurzel: string; aktiv: boolean }) => anfrage('/api/sharepoint/konfiguration', senden('PUT', e)), onSettled: () => qc.invalidateQueries({ queryKey: ['sharepoint'] }) });
+};
+export const useSharepointMigration = () => useQuery({ queryKey: ['sharepoint', 'migration'], queryFn: () => anfrage<{ inSupabase: number; inSharepoint: number; fehlend: number }>('/api/sharepoint/migration') });
+export const useSharepointMigrieren = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (limit: number) => anfrage<{ migriert: number; offen: number; fehler: string[] }>('/api/sharepoint/migration', senden('POST', { limit })), onSettled: () => { void qc.invalidateQueries({ queryKey: ['sharepoint'] }); void qc.invalidateQueries({ queryKey: ['dokumente'] }); } });
+};
+export const useSharepointAbgleich = () => {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: () => anfrage<{ geprueft: number; verschoben: number; verschwunden: number; zurueck: number; fehler: string[] }>('/api/sharepoint/abgleich', senden('POST', {})), onSettled: () => { void qc.invalidateQueries({ queryKey: ['sharepoint'] }); void qc.invalidateQueries({ queryKey: ['dokumente'] }); } });
+};
+export const useSharepointTest = () => useMutation({ mutationFn: () => anfrage<{ ok: true; schritte: string[]; webUrl: string; dauerMs: number }>('/api/sharepoint/test', senden('POST', {})) });
 export const useM365Anmeldung = () => useMutation({ mutationFn: (redirectUri: string) => anfrage<{ url: string }>('/api/m365/anmeldung', senden('POST', { redirectUri })) });
 export const useM365Rueckweg = () => useM365Aendern((e: { code: string; state: string }) => anfrage<{ email: string }>('/api/m365/rueckweg', senden('POST', e)));
 export const useM365Trennen = () => useM365Aendern(() => anfrage<{ ok: true }>('/api/m365/trennen', senden('POST', {})));
@@ -443,11 +460,24 @@ export const useBekannteExposeDateien = () => useQuery({ queryKey: ['expose', 'b
  * durch die API — online nimmt eine Function höchstens 4,5 MB an, echte Exposés haben bis zu 13 MB und mehr.
  * Geprüft wird danach vom Server, bei der Übernahme (`…/uebernehmen`).
  */
+/** Stückgröße für Upload-Sessions (SharePoint): Vielfaches von 320 KiB, wie Graph es verlangt. */
+const UPLOAD_STUECK = 10 * 320 * 1024 * 4;
+
 async function direktHochladen(zweck: 'expose' | 'dokument', datei: File): Promise<string> {
-  const { url, key } = await anfrage<{ url: string; key: string }>('/api/upload/ticket', senden('POST', { zweck, groesse: datei.size }));
+  const { url, key, art } = await anfrage<{ url: string; key: string; art: 'put' | 'upload-session' }>('/api/upload/ticket', senden('POST', { zweck, groesse: datei.size }));
+  const fehler = (status: number) => new ApiFehler(status, `„${datei.name}" ließ sich nicht hochladen (${status}). Bitte erneut versuchen.`);
   // Ohne Anmelde-Token: die Adresse selbst ist die Berechtigung, für genau diese eine Datei
+  if (art === 'upload-session') {
+    // SharePoint: in Stücken mit Content-Range; die letzte Antwort (200/201) trägt das fertige Item
+    for (let von = 0; von < datei.size; von += UPLOAD_STUECK) {
+      const bis = Math.min(von + UPLOAD_STUECK, datei.size);
+      const res = await fetch(url, { method: 'PUT', body: datei.slice(von, bis), headers: { 'content-range': `bytes ${von}-${bis - 1}/${datei.size}` } });
+      if (!res.ok) throw fehler(res.status);
+    }
+    return key;
+  }
   const res = await fetch(url, { method: 'PUT', body: datei, headers: { 'content-type': datei.type || 'application/octet-stream' } });
-  if (!res.ok) throw new ApiFehler(res.status, `„${datei.name}" ließ sich nicht hochladen (${res.status}). Bitte erneut versuchen.`);
+  if (!res.ok) throw fehler(res.status);
   return key;
 }
 
@@ -607,25 +637,32 @@ export const useFilterAnlegen = () => useFilterAendern((e: GespeicherterFilterAn
 export const useFilterUmbenennen = () => useFilterAendern((e: { id: string; name: string }) => anfrage<GespeicherterFilter>(`/api/filter/${e.id}`, senden('PUT', { name: e.name })));
 export const useFilterLoeschen = () => useFilterAendern((id: string) => anfrage<{ id: string }>(`/api/filter/${id}`, { method: 'DELETE' }));
 
-// ── Deal-Dokumente ────────────────────────────────────────
-export const useDokumente = (dealId: string) => useQuery({ queryKey: ['dokumente', dealId], queryFn: () => anfrage<DealDokument[]>(`/api/deals/${dealId}/dokumente`) });
-function useDokumentAendern<E, R>(dealId: string, aufruf: (e: E) => Promise<R>) {
+// ── Dokumente an Deal und Objekt (Protokoll 19) ───────────
+export type DokumentBezug = { art: 'deal' | 'objekt'; id: string };
+const bezugPfad = (b: DokumentBezug) => `/api/${b.art === 'deal' ? 'deals' : 'objekte'}/${b.id}/dokumente`;
+/** Adresse zum Öffnen über die App — bei SharePoint leitet sie auf die kurzlebige Download-Adresse weiter */
+export const dokumentDateiUrl = (b: DokumentBezug, dokId: string) => `${bezugPfad(b)}/${dokId}/datei`;
+/** `mitDeals`: am Objekt auch die Dokumente seiner Deals */
+export const useDokumente = (b: DokumentBezug, mitDeals = false, aktiv = true) =>
+  useQuery({ queryKey: ['dokumente', b.art, b.id, mitDeals], enabled: aktiv, queryFn: () => anfrage<Dokument[]>(`${bezugPfad(b)}${mitDeals ? '?mitDeals=1' : ''}`) });
+function useDokumentAendern<E, R>(b: DokumentBezug, aufruf: (e: E) => Promise<R>) {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: aufruf, onSettled: () => qc.invalidateQueries({ queryKey: ['dokumente', dealId] }) });
+  // Ein Deal-Dokument ändert auch die Liste des Objekts — alle Dokumentlisten neu laden
+  return useMutation({ mutationFn: aufruf, onSettled: () => qc.invalidateQueries({ queryKey: ['dokumente'] }) });
 }
-export const useDokumenteHochladen = (dealId: string) => useDokumentAendern(dealId, async (dateien: File[]) => {
+export const useDokumenteHochladen = (b: DokumentBezug) => useDokumentAendern(b, async (dateien: File[]) => {
   // Nacheinander: ein Stapel großer Scans soll die Leitung nicht mit zwanzig parallelen Uploads belegen
   const liegend: { key: string; name: string; typ: string }[] = [];
   for (const f of dateien) liegend.push({ key: await direktHochladen('dokument', f), name: f.name, typ: f.type || 'application/octet-stream' });
   try {
-    return await anfrage<DealDokument[]>(`/api/deals/${dealId}/dokumente/uebernehmen`, senden('POST', { dateien: liegend }));
+    return await anfrage<Dokument[]>(`${bezugPfad(b)}/uebernehmen`, senden('POST', { dateien: liegend }));
   } catch (e) {
     if (e instanceof ApiFehler) throw new ApiFehler(e.status, [e.message, (e.details as { hint?: string } | undefined)?.hint].filter(Boolean).join(' '));
     throw e;
   }
 });
-export const useDokumentBezeichnen = (dealId: string) => useDokumentAendern(dealId, (e: { id: string; label: string }) => anfrage<{ ok: true }>(`/api/deals/${dealId}/dokumente/${e.id}`, senden('PATCH', { label: e.label })));
-export const useDokumentLoeschen = (dealId: string) => useDokumentAendern(dealId, (id: string) => anfrage<{ ok: true }>(`/api/deals/${dealId}/dokumente/${id}`, { method: 'DELETE' }));
+export const useDokumentBezeichnen = (b: DokumentBezug) => useDokumentAendern(b, (e: { id: string; label: string }) => anfrage<{ ok: true }>(`${bezugPfad(b)}/${e.id}`, senden('PATCH', { label: e.label })));
+export const useDokumentLoeschen = (b: DokumentBezug) => useDokumentAendern(b, (id: string) => anfrage<{ ok: true }>(`${bezugPfad(b)}/${id}`, { method: 'DELETE' }));
 
 // ── Kalkulationsvarianten und Einheiten aus Mieterliste ───
 export const useVarianten = (dealId: string) => useQuery({ queryKey: ['varianten', dealId], queryFn: () => anfrage<KalkVariante[]>(`/api/deals/${dealId}/varianten`) });
@@ -648,7 +685,7 @@ export function useEinheitenAusPdf(dealId: string) {
       return body as ErkannteEinheiten;
     },
     // Das PDF liegt auch bei einem Fehler der KI in den Dokumenten des Deals
-    onSettled: () => qc.invalidateQueries({ queryKey: ['dokumente', dealId] }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['dokumente'] }),
   });
 }
 

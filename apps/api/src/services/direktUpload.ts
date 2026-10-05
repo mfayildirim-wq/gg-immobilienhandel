@@ -1,5 +1,6 @@
-import { BUCKETS, type Bucket, type Dateispeicher, DOKUMENT_GRENZEN, EINGANG } from '@gg/integrations';
+import { BUCKETS, type Bucket, DOKUMENT_GRENZEN, EINGANG } from '@gg/integrations';
 import { FachFehler } from '../fehler.ts';
+import { type DateienKontext, neueAblage } from './dateien.ts';
 import { MAX_EXPOSE_BYTES } from './expose.ts';
 
 /**
@@ -16,11 +17,18 @@ import { MAX_EXPOSE_BYTES } from './expose.ts';
 export const UPLOAD_ZWECKE = { expose: { bucket: BUCKETS.pdfs, maxBytes: MAX_EXPOSE_BYTES }, dokument: { bucket: BUCKETS.dealDocs, maxBytes: DOKUMENT_GRENZEN.maxBytes } } as const satisfies Record<string, { bucket: Bucket; maxBytes: number }>;
 export type UploadZweck = keyof typeof UPLOAD_ZWECKE;
 
-export async function uploadTicket(speicher: Dateispeicher, zweck: UploadZweck, groesse?: number) {
-  const { bucket, maxBytes } = UPLOAD_ZWECKE[zweck];
+/**
+ * Dokumente gehen in die Ablage, die auch die Übernahme nimmt (SharePoint, wenn eingerichtet — dort ist das Ticket eine
+ * Upload-Session). Exposés bleiben im Supabase-Eingang: die Analyse liest sie dort, erst die Übernahme legt das Dokument ab.
+ */
+export async function uploadTicket(k: DateienKontext, zweck: UploadZweck, groesse?: number) {
+  const { maxBytes } = UPLOAD_ZWECKE[zweck];
   // Die Größe kommt vom Browser und ist keine Zusage — sie erspart nur den vergeblichen Upload. Verbindlich ist die Übernahme.
   if (groesse !== undefined && groesse > maxBytes) throw new FachFehler(413, `Datei zu groß — höchstens ${maxBytes / 1024 / 1024} MB.`);
   const key = `${EINGANG}/${crypto.randomUUID()}`;
-  const { url } = await speicher.uploadTicket(bucket, key);
-  return { url, key };
+  const sharepoint = zweck === 'dokument' && neueAblage(k) === 'sharepoint';
+  const speicher = sharepoint ? k.sharepoint!.speicher : k.speicher;
+  const bucket = sharepoint ? BUCKETS.dokumente : UPLOAD_ZWECKE[zweck].bucket;
+  const { url, art = 'put' } = await speicher.uploadTicket(bucket, key);
+  return { url, key, art };
 }

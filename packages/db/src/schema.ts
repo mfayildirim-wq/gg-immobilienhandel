@@ -249,18 +249,46 @@ export const dealKalkVarianten = fach
   })
   .enableRLS();
 
-export const dealDokumente = fach
-  .table('deal_dokumente', {
-  id: text('id').primaryKey(),
-  dealId: text('deal_id').notNull().references((): AnyPgColumn => deals.id, { onDelete: 'cascade' }),
-  dateiname: text('dateiname'),
-  mimeType: text('mime_type'),
-  groesseBytes: bigint('groesse_bytes', { mode: 'number' }),
-  label: text('label'),
-  istExpose: boolean('ist_expose'),
-  storageKey: text('storage_key'),
-  hochgeladenAm: timestamp('hochgeladen_am', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
-  })
+/** Wo eine Datei liegt: im Supabase Storage (wie bisher) oder in SharePoint (Protokoll 19). */
+export const DOKUMENT_ABLAGEN = ['supabase', 'sharepoint'] as const;
+
+/**
+ * Dokumente an Geschäftsobjekten (Protokoll 19, Phase 2) — vorher `deal_dokumente`, nur am Deal. Genau ein Bezug ist
+ * gesetzt: Deal oder Objekt (Makler und Projekt folgen). Der Ablageort steht je Dokument: Bestände bleiben in Supabase,
+ * Neues kann nach SharePoint; für SharePoint werden die stabile Item-Kennung, der Pfad und der Link gemerkt.
+ */
+export const dokumente = fach
+  .table(
+    'dokumente',
+    {
+      id: text('id').primaryKey(),
+      dealId: text('deal_id').references((): AnyPgColumn => deals.id, { onDelete: 'cascade' }),
+      objektId: text('objekt_id').references((): AnyPgColumn => objekte.id, { onDelete: 'cascade' }),
+      dateiname: text('dateiname'),
+      mimeType: text('mime_type'),
+      groesseBytes: bigint('groesse_bytes', { mode: 'number' }),
+      label: text('label'),
+      istExpose: boolean('ist_expose'),
+      ablage: text('ablage').notNull().default('supabase'),
+      /** Supabase: Bucket und Schlüssel */
+      bucket: text('bucket').notNull().default('deal-docs'),
+      storageKey: text('storage_key'),
+      /** SharePoint: stabile Kennung, Pfad in der Bibliothek, Link, Änderungsstand */
+      spItemId: text('sp_item_id'),
+      spPfad: text('sp_pfad'),
+      spWebUrl: text('sp_web_url'),
+      spEtag: text('sp_etag'),
+      /** vom Abgleich gesetzt, wenn das Item in SharePoint nicht mehr gefunden wird; leer, sobald es wieder da ist */
+      spFehltSeit: timestamp('sp_fehlt_seit', { withTimezone: true, mode: 'string' }),
+      hochgeladenAm: timestamp('hochgeladen_am', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+    },
+    (t) => [
+      check('dokumente_bezug_check', sql`${t.dealId} is not null or ${t.objektId} is not null`),
+      check('dokumente_ablage_check', sql`${t.ablage} in ('supabase', 'sharepoint')`),
+      index('dokumente_objekt_idx').on(t.objektId),
+      index('dokumente_deal_idx').on(t.dealId),
+    ],
+  )
   .enableRLS();
 
 export const kundenkalkulationen = fach

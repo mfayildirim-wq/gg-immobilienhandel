@@ -20,11 +20,11 @@ const ORDNER_SCHLUESSEL = 'm365-ordner';
 const STATES_SCHLUESSEL = 'm365-anmeldeversuche';
 const STATE_TTL_MS = 600_000;
 
-async function einstellung<T>(db: Db, schluessel: string, standard: T): Promise<T> {
+export async function einstellung<T>(db: Db, schluessel: string, standard: T): Promise<T> {
   const [z] = await db.select({ wert: schema.einstellungen.wert }).from(schema.einstellungen).where(eq(schema.einstellungen.schluessel, schluessel));
   return (z?.wert as T | null) ?? standard;
 }
-async function einstellungSpeichern(db: Db, schluessel: string, wert: unknown) {
+export async function einstellungSpeichern(db: Db, schluessel: string, wert: unknown) {
   await db.insert(schema.einstellungen).values({ schluessel, wert })
     .onConflictDoUpdate({ target: schema.einstellungen.schluessel, set: { wert, updatedAt: sql`now()` } });
 }
