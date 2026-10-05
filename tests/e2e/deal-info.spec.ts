@@ -60,7 +60,9 @@ test('Deal-Info: Frequenz belegt Termin vor, Schnellknopf, E-Mail an Makler, Obj
 
   // Deal-Liste zeigt das Exposé
   await page.goto('/deals');
+  await page.getByRole('banner').getByRole('button', { name: 'Ansicht und Filter' }).click();
   await page.getByLabel('untereinander').click();
+  await page.keyboard.press('Escape');
   await page.getByLabel('Suchen').fill(`${kennung} B`);
   await expect(page.locator(`tr[data-deal="${d.id}"]`).getByTitle('Exposé öffnen')).toBeVisible();
 

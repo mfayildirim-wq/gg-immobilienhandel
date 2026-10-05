@@ -35,3 +35,16 @@
 .teiler[data-zieht]::after {
   background: var(--mantine-primary-color-filled);
 }
+
+/* Fester Kopf über der Liste (Ankauf: Durchwählen und Zahlen) — die Liste scrollt darunter weg, der Schatten zeigt es. */
+.listeKopf {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+  padding-bottom: 8px;
+  background: var(--mantine-color-body);
+  box-shadow: 0 8px 8px -8px rgba(0, 0, 0, 0.22);
+}
+:global([data-mantine-color-scheme='dark']) .listeKopf {
+  box-shadow: 0 8px 8px -8px rgba(0, 0, 0, 0.7);
+}

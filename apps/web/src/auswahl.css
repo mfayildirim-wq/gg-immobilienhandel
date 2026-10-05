@@ -1,0 +1,15 @@
+/*
+ * Auswahl in Listen (gewählte Zeile, Karte oder Tabellenzeile): dezentes Gelb mit gelbem Rahmen.
+ * Dunkel nicht Mantines `yellow-light` (wirkt dort orange), sondern ein durchscheinendes helles Gelb.
+ */
+:root {
+  --gg-auswahl: var(--mantine-color-yellow-0);
+  --gg-auswahl-hover: var(--mantine-color-yellow-1);
+  --gg-auswahl-rahmen: var(--mantine-color-yellow-5);
+}
+:root[data-mantine-color-scheme='dark'] {
+  --gg-auswahl: rgba(255, 236, 153, 0.14);
+  --gg-auswahl-hover: rgba(255, 236, 153, 0.22);
+  /* Rahmen gedämpft: ein durchscheinendes Gelb, das auf Schwarz nicht leuchtet */
+  --gg-auswahl-rahmen: rgba(255, 224, 102, 0.45);
+}

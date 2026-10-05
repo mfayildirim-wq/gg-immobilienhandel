@@ -208,7 +208,8 @@ export async function neuListe(page: Page, modul: 'deals' | 'objects' | 'makler'
 
 /** Öffnet das Filter-Menü, liest die Einträge und wählt einen davon. */
 async function filterAusMenue(page: Page, filterId: string): Promise<string[]> {
-  await page.getByRole('button', { name: 'Gespeicherte Filter' }).click();
+  // Die Filter liegen im Menü „Ansicht und Filter“ der Kopfzeile
+  await page.getByRole('banner').getByRole('button', { name: 'Ansicht und Filter' }).click();
   await page.locator('[data-filter-option]').first().waitFor();
   const namen = await page.locator('[data-filter-option]').evaluateAll((es) => es.map((e) => e.textContent ?? ''));
   // Leere Kennung = „— Kein Filter —"; dieser Eintrag trägt keine Id (wie die leere Option im früheren <select>).
