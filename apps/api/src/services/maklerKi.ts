@@ -20,7 +20,7 @@ async function kostenBuchen(db: Db, a: KiAntwort<unknown>, quelle: string, metad
 }
 
 const kiPruefen = (ki: KiClient | null | undefined) => {
-  if (!ki) throw new FachFehler(422, 'KI ist nicht eingerichtet (ANTHROPIC_API_KEY).');
+  if (!ki) throw new FachFehler(422, 'Keine KI eingerichtet: Anthropic-Schlüssel unter Einstellungen → Zugänge hinterlegen.');
   return ki;
 };
 

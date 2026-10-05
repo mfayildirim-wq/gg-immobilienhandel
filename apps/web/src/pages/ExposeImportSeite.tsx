@@ -6,11 +6,11 @@ import {
   DEAL_STATUS, emailPruefen, exposeKostenBestaetigen, exposeKostenSchaetzung, FREQUENZEN, telefonPruefen, WIZARD_KALK_FELDER, type WizardKalk,
 } from '@gg/domain';
 import {
-  ActionIcon, Alert, Badge, Button, Checkbox, Group, NumberInput, Paper, ScrollArea, Select, SimpleGrid, Stack, Stepper, Table, Text, Textarea, TextInput, Title, UnstyledButton,
+  ActionIcon, Alert, Anchor, Badge, Button, Checkbox, Group, NumberInput, Paper, ScrollArea, Select, SimpleGrid, Stack, Stepper, Table, Text, Textarea, TextInput, Title, UnstyledButton,
 } from '@mantine/core';
 import { IconFileUpload, IconPlus, IconTrash, IconX } from '@tabler/icons-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useSearch } from '@tanstack/react-router';
+import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { type ReactNode, useMemo, useRef, useState, useEffect } from 'react';
 import {
   DublettenFehler, exposeAnalysieren, exposeHochladen, exposeUebernehmen, useBekannteExposeDateien, useKiStatus, useMakler,
@@ -227,7 +227,7 @@ export function ExposeImportSeite() {
           );
         })}
       </Stepper>
-      {ki && !ki.verfuegbar && <Alert color="red" title="Keine KI eingerichtet">ANTHROPIC_API_KEY in der .env setzen (oder KI_ATTRAPPE=1 für Tests).</Alert>}
+      {ki && !ki.verfuegbar && <Alert color="red" title="Keine KI eingerichtet">Anthropic-Schlüssel unter <Anchor component={Link} to="/einstellungen/zugaenge">Einstellungen → Zugänge</Anchor> hinterlegen.</Alert>}
       {ki?.attrappe && <Alert color="yellow" title="Test-Modus">Die KI-Attrappe liefert Beispieldaten aus einfachen „Feld: Wert“-Zeilen. Für echte Exposés ANTHROPIC_API_KEY setzen.</Alert>}
       {status && <Alert color={status.fehler ? 'red' : 'teal'} aria-label="Status">{status.text}</Alert>}
 

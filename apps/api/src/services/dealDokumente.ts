@@ -171,7 +171,7 @@ export async function einheitenAusMieterliste(
   const docId = dok!.id;
   await db.update(schema.dealDokumente).set({ label: 'Mieterliste (für Einheiten-Extraktion)' }).where(eq(schema.dealDokumente.id, docId));
   try {
-    if (!ki) throw new Error('KI ist nicht eingerichtet (ANTHROPIC_API_KEY)');
+    if (!ki) throw new Error('Keine KI eingerichtet: Anthropic-Schlüssel unter Einstellungen → Zugänge hinterlegen.');
     const pages = await pdfSeitenzahl(Buffer.from(datei.bytes));
     const a = await einheitenExtrahieren(ki, datei.bytes, pages);
     const b = kostenBuchung(a.model, a.usage, 'deals/extract-units', { deal_id: dealId });
