@@ -29,10 +29,11 @@ export function ListeUmschalter() {
 /**
  * Liste und Detail neben- oder untereinander („Fenster im Fenster“). Dazwischen liegt ein Teiler: ziehen ändert die
  * Größe der Liste (Pfeiltasten gehen auch, Doppelklick stellt den Standard wieder her), `ListeUmschalter` klappt sie
- * ganz zu. Größe und Zustand merkt sich die Ansicht je Gerät unter `schluessel`.
+ * ganz zu. Größe und Zustand merkt sich die Ansicht je Gerät unter `schluessel`. `listeKopf` steht fest über der Liste
+ * und scrollt nicht mit.
  */
-export function GeteilteAnsicht({ schluessel, layout, listeLabel, liste, detailLabel, detail, standardBreite = 430, standardHoehe = '42%' }: {
-  schluessel: string; layout: Layout; listeLabel: string; liste: ReactNode; detailLabel: string; detail: ReactNode;
+export function GeteilteAnsicht({ schluessel, layout, listeLabel, liste, listeKopf, detailLabel, detail, standardBreite = 430, standardHoehe = '42%' }: {
+  schluessel: string; layout: Layout; listeLabel: string; liste: ReactNode; listeKopf?: ReactNode; detailLabel: string; detail: ReactNode;
   standardBreite?: number; standardHoehe?: string;
 }) {
   const neben = layout === 'nebeneinander';
@@ -78,9 +79,12 @@ export function GeteilteAnsicht({ schluessel, layout, listeLabel, liste, detailL
         style={{ display: 'flex', flexDirection: neben ? 'row' : 'column', flex: 1, height: '100%', minHeight: 0, userSelect: beimZiehen !== null ? 'none' : undefined }}>
         {!zu && (
           <>
-            <ScrollArea ref={listenfeld} type="auto" aria-label={listeLabel} style={neben ? { width: groesse, flexShrink: 0 } : { height: groesse, flexShrink: 0 }}>
-              {liste}
-            </ScrollArea>
+            <Box ref={listenfeld} style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, flexShrink: 0, ...(neben ? { width: groesse } : { height: groesse }) }}>
+              {listeKopf && <div className={css.listeKopf}>{listeKopf}</div>}
+              <ScrollArea type="auto" aria-label={listeLabel} style={{ flex: 1, minHeight: 0 }}>
+                {liste}
+              </ScrollArea>
+            </Box>
             <div
               role="separator" tabIndex={0} className={css.teiler} data-zieht={beimZiehen !== null || undefined}
               aria-orientation={neben ? 'vertical' : 'horizontal'} aria-label={neben ? 'Breite der Liste ändern' : 'Höhe der Liste ändern'}

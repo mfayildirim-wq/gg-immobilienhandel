@@ -1,4 +1,4 @@
-import { Alert, Button, Group, Paper, Stack, Text, Title } from '@mantine/core';
+import { Alert, Button, Group, Paper, Stack, Text } from '@mantine/core';
 import { useNavigate } from '@tanstack/react-router';
 import { StatusBadge } from '../components/StatusBadge.tsx';
 import { KkZeile } from '../components/kundenkalk/KkListe.tsx';
@@ -17,7 +17,6 @@ export function KundenkalkulationenSeite() {
   return (
     <Stack maw={1100}>
       <Group justify="space-between" align="baseline">
-        <Title order={2}>💼 Kundenkalkulationen</Title>
         <Text size="sm" c="dimmed">{data.length} Kalkulation{data.length === 1 ? '' : 'en'} in {gruppen.length} Deal{gruppen.length === 1 ? '' : 's'}</Text>
       </Group>
       {error && <Alert color="red">{error.message}</Alert>}

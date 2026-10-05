@@ -5,23 +5,22 @@ import {
   Button,
   Group,
   Modal,
-  SegmentedControl,
   Select,
   Stack,
   Table,
   Text,
   Timeline,
-  Title,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconLayoutColumns, IconLayoutRows, IconPlus } from '@tabler/icons-react';
+import { IconPlus } from '@tabler/icons-react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useState } from 'react';
 import { GeteilteAnsicht } from '../components/GeteilteAnsicht.tsx';
 import { DealDetail } from '../components/deal/DealDetail.tsx';
 import { Listenzeile } from '../components/Listenzeile.tsx';
 import { StatusBadge } from '../components/StatusBadge.tsx';
-import { GespeicherteFilterLeiste, useAktiverFilter } from '../components/GespeicherteFilterLeiste.tsx';
+import { AnsichtMenue } from '../components/AnsichtMenue.tsx';
+import { useAktiverFilter } from '../components/GespeicherteFilterLeiste.tsx';
 import { Chipleiste, Zaehlerleiste } from '../components/ListenKopf.tsx';
 import { useDealAnlegen, useListen, useMakler, useObjekte } from '../lib/api.ts';
 import { STATUS_CHIPS, STATUS_FARBE, Titelbild } from './ObjekteSeite.tsx';
@@ -47,33 +46,15 @@ export function DealsSeite() {
 
   return (
     <Stack h="calc(100dvh - 56px - 2 * var(--mantine-spacing-md))" gap="sm">
-      <Group justify="space-between" wrap="nowrap" gap="sm" align="flex-start">
-        {/* Titel und Zähler nehmen den Platz links; die Zähler brechen bei Bedarf um, die Knöpfe rechts bleiben in der ersten Zeile */}
-        <Group gap="md" wrap="wrap" style={{ flex: 1, minWidth: 0 }}>
-          <Title order={2}>Deals</Title>
-          <Zaehlerleiste waehlen={setStatus} kennzahlen={LISTEN_STATUS.map((s) => ({ wert: s, label: s, anzahl: liste.zaehler[s] ?? 0, farbe: STATUS_FARBE[s] }))} />
-        </Group>
-        <Group gap="xs" wrap="nowrap">
-          <GespeicherteFilterLeiste modul="deals" aktuelleKriterien={dealAktuelleKriterien(status, text)} />
-          <SegmentedControl
-            aria-label="Ansicht"
-            value={layout}
-            onChange={(v) => setLayout(v as Layout)}
-            data={[
-              { value: 'nebeneinander', label: <IconLayoutColumns size={16} aria-label="nebeneinander" /> },
-              { value: 'untereinander', label: <IconLayoutRows size={16} aria-label="untereinander" /> },
-            ]}
-          />
-          <Button leftSection={<IconPlus size={16} />} onClick={neu.open}>
-            Neuer Deal
-          </Button>
-        </Group>
-      </Group>
+      {/* Der Seitenname steht als Brotkrume in der Kopfzeile; Ansicht und Filter liegen dort im Menü. */}
+      <AnsichtMenue filterModul="deals" aktuelleKriterien={dealAktuelleKriterien(status, text)} ansichtLabel="Ansicht" layout={layout} setLayout={setLayout} />
 
-      <Chipleiste chips={STATUS_CHIPS} aktiv={status} waehlen={setStatus} suche={text} setSuche={setText} platzhalter="Suchen…" />
+      <Chipleiste chips={STATUS_CHIPS} aktiv={status} waehlen={setStatus} suche={text} setSuche={setText} platzhalter="Suchen…"
+        rechts={<Button size="xs" leftSection={<IconPlus size={14} />} onClick={neu.open}>Neuer Deal</Button>} />
 
       <GeteilteAnsicht
         schluessel="deals" layout={layout} listeLabel="Deal-Liste" detailLabel="Deal-Detail" standardBreite={360} standardHoehe="38%"
+        listeKopf={<Zaehlerleiste waehlen={setStatus} kennzahlen={LISTEN_STATUS.map((s) => ({ wert: s, label: s, anzahl: liste.zaehler[s] ?? 0, farbe: STATUS_FARBE[s] }))} />}
         liste={
           <>
             {isLoading && <Text c="dimmed">Lädt …</Text>}
@@ -137,7 +118,7 @@ function DealTabelle({ zeilen, exposeIds, auswahlId, waehlen }: { zeilen: DealZe
       <Table.Tbody>
         {zeilen.map((d) => (
           <Table.Tr key={d.id} data-deal={d.id} onClick={() => waehlen(d.id)} aria-selected={d.id === auswahlId} style={{ cursor: 'pointer' }}
-            bg={d.id === auswahlId ? 'var(--mantine-primary-color-light)' : undefined}>
+            bg={d.id === auswahlId ? 'var(--gg-auswahl)' : undefined}>
             <Table.Td><Titelbild objektId={d.objId} /></Table.Td>
             <Table.Td>{exposeIds[d.id] && (
               <Anchor href={`/api/deals/${d.id}/dokumente/${exposeIds[d.id]}/datei`} target="_blank" rel="noopener" title="Exposé öffnen" onClick={(e) => e.stopPropagation()} style={{ textDecoration: 'none' }}>📄</Anchor>

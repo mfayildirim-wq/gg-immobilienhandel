@@ -36,6 +36,24 @@ test.describe('App-Rahmen', () => {
     expect(await gewicht('Objekte')).not.toBe('700');
   });
 
+  test('Kopfzeile zeigt als Brotkrumen, auf welcher Seite man ist — auch die Unterseite der Einstellungen', async ({ page }) => {
+    await page.goto('/');
+    const kopf = page.getByRole('banner');
+    const krumen = kopf.getByRole('navigation', { name: 'Brotkrumen' }).locator('[data-krume]');
+    await expect(krumen).toHaveText(['Ankauf']);
+    // in der ersten Zeile, rechts vom Namen der App
+    const titel = (await kopf.getByText('GG Immobilienhandel', { exact: true }).boundingBox())!;
+    const krume = (await krumen.first().boundingBox())!;
+    expect(krume.x).toBeGreaterThan(titel.x + titel.width);
+    expect(Math.abs(krume.y + krume.height / 2 - (titel.y + titel.height / 2))).toBeLessThan(8);
+
+    await page.goto('/einstellungen/papierkorb');
+    await expect(krumen).toHaveText(['Einstellungen', 'Papierkorb']);
+    await expect(krumen.last()).toHaveAttribute('aria-current', 'page');
+    await page.goto('/deals');
+    await expect(krumen).toHaveText(['Deals']);
+  });
+
   test('Wählmaschine öffnet von „Nächste Kontakte“ aus — im Kopf der App gibt es keinen Knopf mehr', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByRole('dialog', { name: 'Wählmaschine' })).toBeHidden();
@@ -50,11 +68,52 @@ test.describe('Deals', () => {
     await page.goto('/deals');
     const bereich = page.locator('[data-layout]');
     await expect(bereich).toHaveAttribute('data-layout', 'nebeneinander');
+    await page.getByRole('banner').getByRole('button', { name: 'Ansicht und Filter' }).click();
     await page.getByLabel('untereinander').click();
     await expect(bereich).toHaveAttribute('data-layout', 'untereinander');
     await page.reload();
     await expect(page.locator('[data-layout]')).toHaveAttribute('data-layout', 'untereinander');
   });
+
+  for (const seite of [
+    { pfad: '/deals', titel: 'Deals', neu: 'Neuer Deal', zaehler: 'In Prüfung', liste: 'Deal-Liste' },
+    { pfad: '/makler', titel: 'Makler', neu: 'Neuer Makler', zaehler: '▲ A-Makler', liste: 'Makler-Liste' },
+    { pfad: '/objekte', titel: 'Objekte', neu: 'Neues Objekt', zaehler: 'In Prüfung', liste: 'Objekt-Liste' },
+  ]) {
+    test(`${seite.titel}: kein Seitentitel, Zähler nur mit Rahmen über der Liste, „${seite.neu}“ rechts neben der Suche, Ansicht und Filter im Menü der Kopfzeile`, async ({ page }) => {
+      await page.goto(seite.pfad);
+      const inhalt = page.getByRole('main');
+      // Der Seitenname steht nur noch als Brotkrume in der Kopfzeile
+      await expect(page.getByRole('banner').locator('[data-krume]')).toHaveText([seite.titel]);
+      await expect(inhalt.getByRole('heading', { name: seite.titel, exact: true })).toHaveCount(0);
+
+      // Zähler: über der Liste, nur die Zahl im Rahmen — der Name steht im Hinweis beim Überfahren
+      const zaehler = inhalt.locator(`[data-zaehler="${seite.zaehler}"]`);
+      const zahl = zaehler.locator('[data-anzahl]');
+      await expect(zaehler).toHaveText(/^\d+$/);
+      expect(await zahl.evaluate((e) => getComputedStyle(e).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
+      expect(await zahl.evaluate((e) => getComputedStyle(e).borderTopColor)).not.toBe('rgba(0, 0, 0, 0)');
+      const liste = (await inhalt.getByLabel(seite.liste).boundingBox())!;
+      const zaehlerBox = (await zaehler.boundingBox())!;
+      expect(zaehlerBox.y + zaehlerBox.height).toBeLessThanOrEqual(liste.y + 1);
+      await zaehler.hover();
+      await expect(page.getByRole('tooltip', { name: seite.zaehler })).toBeVisible();
+
+      // „Neu“ steht rechts neben dem Suchfeld in derselben Zeile
+      const suche = (await inhalt.getByLabel('Suchen').boundingBox())!;
+      const neu = (await inhalt.getByRole('button', { name: seite.neu }).boundingBox())!;
+      expect(neu.x).toBeGreaterThanOrEqual(suche.x + suche.width);
+      expect(Math.abs(neu.y + neu.height / 2 - (suche.y + suche.height / 2))).toBeLessThan(6);
+
+      // Ansicht und Filter: nicht mehr auf der Seite, sondern im Menü der Kopfzeile
+      await expect(inhalt.getByRole('button', { name: 'Gespeicherte Filter' })).toHaveCount(0);
+      await expect(inhalt.getByLabel('Ansicht', { exact: true })).toHaveCount(0);
+      await page.getByRole('banner').getByRole('button', { name: 'Ansicht und Filter' }).click();
+      const menue = page.getByRole('menu');
+      await expect(menue.getByLabel('Ansicht', { exact: true })).toBeVisible();
+      await expect(menue.locator('[data-filter-option="— Kein Filter —"]')).toBeVisible();
+    });
+  }
 
   test('Listenzeile: Überfahren färbt den Hintergrund, die Auswahl bleibt hervorgehoben', async ({ page }) => {
     await page.goto('/deals');
@@ -117,6 +176,9 @@ test.describe('Deals', () => {
 
 test('Einstellungen: Untermenü mit einer Seite je Bereich', async ({ page }) => {
   await page.goto('/einstellungen');
+  // „Einstellungen“ steht nur noch als Brotkrume in der Kopfzeile, nicht mehr als Überschrift der Seite
+  await expect(page.getByRole('banner').locator('[data-krume]')).toHaveText(['Einstellungen', 'Kalkulation']);
+  await expect(page.getByRole('main').getByRole('heading', { name: 'Einstellungen', exact: true })).toHaveCount(0);
   await expect(page).toHaveURL(/\/einstellungen\/kalkulation$/);
   await expect(page.getByRole('region', { name: 'Kalkulation Einstellungen' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Begleitscheine Einstellungen' })).toHaveCount(0);

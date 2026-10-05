@@ -1,4 +1,4 @@
-import { ActionIcon, AppShell, Box, Burger, Button, Group, NavLink, Title, Tooltip, useMantineColorScheme } from '@mantine/core';
+import { ActionIcon, Anchor, AppShell, Box, Burger, Button, Group, NavLink, Text, Title, Tooltip, useMantineColorScheme } from '@mantine/core';
 import { useDisclosure, useMediaQuery } from '@mantine/hooks';
 import {
   IconBuildingCommunity,
@@ -14,10 +14,12 @@ import {
   IconSearch,
   IconUsers, IconChecklist, IconTableShare, IconChartBar } from '@tabler/icons-react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { AbmeldenKnopf } from './Anmeldung.tsx';
 import { GlobaleSuche } from './GlobaleSuche.tsx';
 import { EINSTELLUNGEN_SEITEN } from '../lib/einstellungenSeiten.tsx';
+import { brotkrumen } from '../lib/brotkrumen.ts';
+import { KopfPlatzKontext } from './AnsichtMenue.tsx';
 
 const NAVIGATION = [
   { to: '/', label: 'Ankauf', icon: IconTarget },
@@ -31,7 +33,11 @@ const NAVIGATION = [
   { to: '/angebote', label: 'Angebote', icon: IconMail },
 ] as const;
 
-/** App-Rahmen im neuen Design: einklappbare Seitenleiste links. Die Wählmaschine gehört zur Ankaufseite (Knopf bei „Nächste Kontakte“). */
+/**
+ * App-Rahmen im neuen Design: einklappbare Seitenleiste links. Die Wählmaschine gehört zur Ankaufseite (Knopf über der Liste).
+ * Die Kopfzeile zeigt als Brotkrumen, auf welcher Seite man ist, und hält links von „Exposé importieren“ einen Platz
+ * frei, in den eine Seite ihr Menü „Ansicht und Filter“ setzt (`AnsichtMenue`).
+ */
 export function AppRahmen() {
   const [mobilOffen, { toggle: mobilUmschalten, close: mobilSchliessen }] = useDisclosure(false);
   const [leisteOffen, { toggle: leisteUmschalten }] = useDisclosure(true);
@@ -47,6 +53,8 @@ export function AppRahmen() {
   const leisteSichtbar = desktop ? true : mobilOffen;
   // Untermenü Einstellungen: auf einer Einstellungsseite offen, sonst per Klick
   const [einstellungenOffen, setEinstellungenOffen] = useState(pfad.startsWith('/einstellungen'));
+  const krumen = brotkrumen(pfad, NAVIGATION, EINSTELLUNGEN_SEITEN);
+  const [kopfPlatz, setKopfPlatz] = useState<HTMLDivElement | null>(null);
   useEffect(() => { if (pfad.startsWith('/einstellungen')) setEinstellungenOffen(true); }, [pfad]);
   // ⌘F / Strg+F öffnet die globale Suche (wie main.ts der alten App)
   useEffect(() => {
@@ -63,11 +71,25 @@ export function AppRahmen() {
     >
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between" wrap="nowrap">
-          <Group gap="xs" wrap="nowrap">
+          <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
             <Burger opened={mobilOffen} onClick={mobilUmschalten} hiddenFrom="sm" size="sm" aria-label="Menü" />
-            <Title order={4}>GG Immobilienhandel</Title>
+            <Title order={4} visibleFrom="xs" style={{ whiteSpace: 'nowrap' }}>GG Immobilienhandel</Title>
+            {krumen.length > 0 && (
+              <Group component="nav" aria-label="Brotkrumen" gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
+                {krumen.map((k, i) => (
+                  <Fragment key={k.label}>
+                    <Text c="dimmed" visibleFrom={i === 0 ? 'xs' : undefined} aria-hidden>›</Text>
+                    {k.to
+                      ? <Anchor component={Link} to={k.to} c="dimmed" underline="hover" data-krume style={{ whiteSpace: 'nowrap' }}>{k.label}</Anchor>
+                      : <Text fw={i === krumen.length - 1 ? 600 : undefined} c={i === krumen.length - 1 ? undefined : 'dimmed'} truncate data-krume
+                          aria-current={i === krumen.length - 1 ? 'page' : undefined}>{k.label}</Text>}
+                  </Fragment>
+                ))}
+              </Group>
+            )}
           </Group>
           <Group gap="xs" wrap="nowrap">
+            <div ref={setKopfPlatz} style={{ display: 'contents' }} />
             <Button size="compact-sm" variant="light" leftSection={<IconFileImport size={16} />} onClick={() => navigate({ to: '/expose-import' })} visibleFrom="xs">
               Exposé importieren
             </Button>
@@ -155,7 +177,9 @@ export function AppRahmen() {
       </AppShell.Navbar>
 
       <AppShell.Main>
-        <Outlet />
+        <KopfPlatzKontext.Provider value={kopfPlatz}>
+          <Outlet />
+        </KopfPlatzKontext.Provider>
       </AppShell.Main>
 
       <GlobaleSuche offen={sucheOffen} schliessen={suche.close} />

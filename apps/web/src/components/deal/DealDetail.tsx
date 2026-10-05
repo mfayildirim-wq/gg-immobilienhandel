@@ -34,7 +34,7 @@ export function DealDetail({ id, start = 'uebersicht' }: { id: string; start?: R
   return (
     <Stack gap="sm">
       <Tabs value={reiter} onChange={(v) => v && v !== reiter && darfVerlassen() && setReiter(v as Reiter)} keepMounted={false}>
-        <div className={css.fest}>
+        <div className={css.fest} data-fester-kopf>
           {/* Adresse, Stadt und Makler in einer Zeile — bleibt mit den Reitern stehen, damit klar ist, in welchem Deal man arbeitet */}
           <Group justify="space-between" wrap="nowrap" gap="sm" pb={4}>
             <Group gap="sm" wrap="nowrap" align="center" style={{ minWidth: 0 }}>

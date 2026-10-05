@@ -1,9 +1,10 @@
 import type { AnkaufCockpit, CockpitDeal, CockpitMakler, ListenAltformat } from '@gg/api-contract';
 import { applyFilter, cockpitMitGehaltenen, eingehendUnbekannt, maklerZuTelefon } from '@gg/domain';
-import { Alert, Badge, Button, Group, Paper, Progress, SegmentedControl, Stack, Tabs, Text, Title } from '@mantine/core';
+import { Alert, Badge, Button, Group, Paper, Progress, Stack, Tabs, Text, Title, Tooltip } from '@mantine/core';
+import { AnsichtMenue } from '../components/AnsichtMenue.tsx';
 import { GeteilteAnsicht } from '../components/GeteilteAnsicht.tsx';
 import { Reiterleiste } from '../components/Reiterleiste.tsx';
-import { IconLayoutColumns, IconLayoutRows, IconPhoneCall, IconTarget, IconUsers } from '@tabler/icons-react';
+import { IconPhone, IconPhoneCall, IconTarget, IconUsers } from '@tabler/icons-react';
 import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
 import { AnrufBriefing } from '../components/ankauf/AnrufBriefing.tsx';
 import { DealDetail } from '../components/deal/DealDetail.tsx';
@@ -13,7 +14,7 @@ import { MaklerKarte } from '../components/ankauf/MaklerKarte.tsx';
 import { ABSCHNITTE, FAELLIG_FARBE } from '../components/ankauf/Termin.tsx';
 import { Waehlmaschine, type WaehlQuelle } from '../components/ankauf/Waehlmaschine.tsx';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { GespeicherteFilterLeiste, useAktiverFilter } from '../components/GespeicherteFilterLeiste.tsx';
+import { useAktiverFilter } from '../components/GespeicherteFilterLeiste.tsx';
 import { useAnkauf, useEinplanen, useListen } from '../lib/api.ts';
 import { LAYOUTS, type Layout, useAuswahl, useEinstellung } from '../lib/ansicht.ts';
 import { darfVerlassen } from '../lib/ungespeichert.ts';
@@ -23,6 +24,9 @@ import { alsDatum } from '../lib/format.ts';
 /** Die beiden Listen der Ankaufseite als Reiter; der zuletzt gewählte wird gemerkt. */
 const REITER = ['deals', 'makler'] as const;
 type Reiter = (typeof REITER)[number];
+
+/** Zahlen im Kopf der Liste: nur die Zahl im farbigen Rahmen, die Bedeutung steht im Hinweis beim Überfahren. */
+const ZAHLEN = [{ klasse: 'heute', hinweis: 'heute' }, { klasse: 'ueberfaellig', hinweis: 'überfällig' }, { klasse: 'woche', hinweis: 'diese Woche' }] as const;
 
 const KANAL_ICON: Record<string, string> = { whatsapp: '📱', email: '✉️', anruf: '📞', notiz: '📝' };
 
@@ -101,8 +105,6 @@ export function AnkaufSeite() {
   const [maklerAuswahl, setMaklerAuswahl] = useAuswahl(ABSCHNITTE.flatMap(({ klasse }) => maklerKarten.filter((m) => m.faellig.klasse === klasse)).map((m) => m.id));
   const [dealLayout, setDealLayout] = useEinstellung<Layout>('ankauf.layout', LAYOUTS, 'nebeneinander');
   const [maklerLayout, setMaklerLayout] = useEinstellung<Layout>('ankauf.makler.layout', LAYOUTS, 'nebeneinander');
-  const dealsNebeneinander = dealLayout === 'nebeneinander';
-  const maklerNebeneinander = maklerLayout === 'nebeneinander';
 
   const liste: readonly { faellig: { klasse: string } }[] = (reiter === 'deals' ? data?.deals : data?.makler) ?? [];
   const zaehle = (k: string) => liste.filter((e) => e.faellig.klasse === k).length;
@@ -112,46 +114,53 @@ export function AnkaufSeite() {
   if (error) return <Alert color="red">{error.message}</Alert>;
   if (isLoading || !data) return <Text c="dimmed">Lädt …</Text>;
 
-  return (
-    <Stack h="calc(100dvh - 56px - 2 * var(--mantine-spacing-md))" gap="sm">
-      {/* Eine Kopfzeile: Titel, Durchwählen und die Zahlen des aktiven Reiters — Deals und Makler sind zwei Listen, nicht eine. */}
-      <Group justify="space-between" wrap="nowrap" gap="sm" align="flex-start">
-        <Group gap="md" wrap="wrap" aria-label="Nächste Kontakte" style={{ flex: 1, minWidth: 0 }}>
-          <Title order={2}>Ankauf</Title>
-          <Button size="sm" leftSection={<IconPhoneCall size={18} />} aria-label="Wählmaschine öffnen"
+  // Fester Kopf über der Liste des aktiven Reiters: Durchwählen und die Zahlen — Deals und Makler sind zwei Listen, nicht eine.
+  const listenKopf = (
+    <Stack gap={6}>
+      <Group gap="xs" wrap="wrap" aria-label="Nächste Kontakte">
+        {/* Durchwählen als Symbol: Telefon, drei Punkte, Telefon — einer nach dem anderen. Nur grüner Rahmen; der Text steht im Hinweis. */}
+        <Tooltip label={reiter === 'deals' ? `Deals durchwählen (${dealsGeordnet.length})` : `Makler durchwählen (${maklerGeordnet.length})`}>
+          <Button size="xs" px="xs" variant="outline" color="green" aria-label="Wählmaschine öffnen" data-durchwaehlen={reiter}
             onClick={() => setWmQuelle(reiter === 'deals' ? { art: 'deals', deals: dealsGeordnet } : { art: 'makler' })}>
-            {reiter === 'deals' ? `Deals durchwählen (${dealsGeordnet.length})` : `Makler durchwählen (${maklerGeordnet.length})`}
+            <Group gap={6} wrap="nowrap" align="center">
+              <IconPhone size={16} />
+              <span aria-hidden data-punkte style={{ letterSpacing: 4, fontSize: 20, lineHeight: '16px' }}>•••</span>
+              <IconPhoneCall size={16} />
+            </Group>
           </Button>
-          <Text fw={600}>Nächste Kontakte</Text>
-          <Group gap={6}><Badge color="red" size="lg">{zaehle('heute')}</Badge><Text size="sm" c="dimmed">heute</Text></Group>
-          <Group gap={6}><Badge color="orange" size="lg">{zaehle('ueberfaellig')}</Badge><Text size="sm" c="dimmed">überfällig</Text></Group>
-          <Group gap={6}><Badge color="green" size="lg">{zaehle('woche')}</Badge><Text size="sm" c="dimmed">diese Woche</Text></Group>
-          {dringend === 0 && <Text size="sm" c="green">✅ Alles erledigt!</Text>}
-        </Group>
-        <Group gap="xs" wrap="nowrap">
-          <GespeicherteFilterLeiste modul="ankauf" />
-          {reiter === 'makler' && <Button size="xs" variant="light" onClick={() => setStilOffen(true)}>🧠 KI-Stil</Button>}
-          {reiter === 'deals'
-            ? <Ansichtswahl label="Ansicht Deals" wert={dealLayout} setzen={setDealLayout} />
-            : <Ansichtswahl label="Ansicht Makler" wert={maklerLayout} setzen={setMaklerLayout} />}
-        </Group>
+        </Tooltip>
+        {ZAHLEN.map(({ klasse, hinweis }) => (
+          <Tooltip key={klasse} label={hinweis}>
+            <Badge variant="outline" color={FAELLIG_FARBE[klasse]} size="lg" data-zahl={klasse} aria-label={`${zaehle(klasse)} ${hinweis}`}>{zaehle(klasse)}</Badge>
+          </Tooltip>
+        ))}
+        {dringend === 0 && <Text size="xs" c="green">✅ Alles erledigt!</Text>}
+        {reiter === 'makler' && <Button size="xs" variant="light" ml="auto" onClick={() => setStilOffen(true)}>🧠 KI-Stil</Button>}
       </Group>
       {fortschritt.start > 0 && (
-        <Group gap="xs">
+        <Group gap="xs" wrap="nowrap">
           <Progress value={(fortschritt.erledigt / fortschritt.start) * 100} color="green" style={{ flex: 1 }} size="sm" />
           <Text size="xs" c="dimmed">{fortschritt.erledigt}/{fortschritt.start} erledigt</Text>
         </Group>
       )}
+    </Stack>
+  );
 
+  return (
+    <Stack h="calc(100dvh - 56px - 2 * var(--mantine-spacing-md))" gap="sm">
+      {/* Die Seite steht als Brotkrume in der Kopfzeile; Ansicht und Filter liegen dort im Menü. */}
+      {reiter === 'deals'
+        ? <AnsichtMenue filterModul="ankauf" ansichtLabel="Ansicht Deals" layout={dealLayout} setLayout={setDealLayout} />
+        : <AnsichtMenue filterModul="ankauf" ansichtLabel="Ansicht Makler" layout={maklerLayout} setLayout={setMaklerLayout} />}
       <Tabs value={reiter} onChange={(v) => v && v !== reiter && darfVerlassen() && setReiter(v as Reiter)} keepMounted={false} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <Reiterleiste>
-          <Tabs.Tab value="deals" leftSection={<IconTarget size={16} />} rightSection={<Badge size="sm" color={data.deals.length ? 'red' : 'gray'}>{data.deals.length}</Badge>}>Deals kontaktieren</Tabs.Tab>
-          <Tabs.Tab value="makler" leftSection={<IconUsers size={16} />} rightSection={<Badge size="sm" color={data.makler.length ? 'red' : 'gray'}>{data.makler.length}</Badge>}>Makler kontaktieren</Tabs.Tab>
+          <Tabs.Tab value="deals" fw={700} leftSection={<IconTarget size={16} />} rightSection={<Badge size="sm" variant="transparent" color={data.deals.length ? 'red' : 'gray'} data-anzahl>{data.deals.length}</Badge>}>Deals kontaktieren</Tabs.Tab>
+          <Tabs.Tab value="makler" fw={700} leftSection={<IconUsers size={16} />} rightSection={<Badge size="sm" variant="transparent" color={data.makler.length ? 'red' : 'gray'} data-anzahl>{data.makler.length}</Badge>}>Makler kontaktieren</Tabs.Tab>
         </Reiterleiste>
 
         <Tabs.Panel value="deals" pt="sm" style={{ flex: 1, minHeight: 0 }}>
           <GeteilteAnsicht
-            schluessel="ankauf.deals" layout={dealLayout} listeLabel="Deal-Liste" detailLabel="Deal-Detail"
+            schluessel="ankauf.deals" layout={dealLayout} listeLabel="Deal-Liste" detailLabel="Deal-Detail" listeKopf={listenKopf}
             liste={
               <Spalte titel="🎯 Deals nachverfolgen" anzahl={data.deals.length} leer="Keine Deals diese Woche">
                 {ABSCHNITTE.map(({ klasse, titel }) => (
@@ -169,7 +178,7 @@ export function AnkaufSeite() {
 
         <Tabs.Panel value="makler" pt="sm" style={{ flex: 1, minHeight: 0 }}>
           <GeteilteAnsicht
-            schluessel="ankauf.makler" layout={maklerLayout} listeLabel="Makler-Liste" detailLabel="Makler-Detail"
+            schluessel="ankauf.makler" layout={maklerLayout} listeLabel="Makler-Liste" detailLabel="Makler-Detail" listeKopf={listenKopf}
             liste={
               <Spalte titel="🤝 Makler kontaktieren" anzahl={data.makler.length} leer="Keine Makler diese Woche">
                 {ABSCHNITTE.map(({ klasse, titel }) => (
@@ -207,21 +216,6 @@ export function AnkaufSeite() {
       <Waehlmaschine offen={wmQuelle !== null} schliessen={() => setWmQuelle(null)} heute={data.heute} quelle={wmQuelle ?? undefined} />
       <PersonaDialog offen={stilOffen} schliessen={() => setStilOffen(false)} />
     </Stack>
-  );
-}
-
-/** Liste und Detail nebeneinander oder untereinander — wie auf den Listenseiten. */
-function Ansichtswahl({ label, wert, setzen }: { label: string; wert: Layout; setzen: (l: Layout) => void }) {
-  return (
-    <SegmentedControl
-      aria-label={label}
-      value={wert}
-      onChange={(v) => setzen(v as Layout)}
-      data={[
-        { value: 'nebeneinander', label: <IconLayoutColumns size={16} aria-label="nebeneinander" /> },
-        { value: 'untereinander', label: <IconLayoutRows size={16} aria-label="untereinander" /> },
-      ]}
-    />
   );
 }
 
