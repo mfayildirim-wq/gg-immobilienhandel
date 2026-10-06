@@ -135,7 +135,7 @@ test('Bank-Präsentation: KI-Texte für Lage und Objekt behalten Getipptes; „�
   expect(gespeichert.slides.find((s: { typ: string }) => s.typ === 'lagebeschreibung').data.standortBullets).toBe('Ruhige Wohnlage\nWohnlage in Stuttgart (Test-Modus)');
 });
 
-test('Bank-Präsentation: Mietfläche, Wohnfläche, Gewerbefläche — Knopf neben der Mietfläche übernimmt aus der Kalkulation, Mietfläche = Summe; leere Felder erscheinen nicht', async ({ page }) => {
+test('Bank-Präsentation: Mietfläche, Wohnfläche, Gewerbefläche — Vorbelegen setzt Wohn-/Gewerbefläche, der Knopf neben der Mietfläche summiert nur die Felder; leere Felder erscheinen nicht', async ({ page }) => {
   const strasse = `Praes-Flaeche ${Date.now()}`;
   const o = await (await page.request.post('/api/objekte', { data: { strasse, hausnr: '4', stadt: 'Ulm' } })).json();
   const d = await (await page.request.post('/api/deals', { data: { objektId: o.id } })).json();
@@ -154,19 +154,25 @@ test('Bank-Präsentation: Mietfläche, Wohnfläche, Gewerbefläche — Knopf neb
   const miet = formular.getByRole('textbox', { name: 'Mietfläche m²' });
   const wohn = formular.getByRole('textbox', { name: 'Wohnfläche m²' });
   const gewerbe = formular.getByRole('textbox', { name: 'Gewerbefläche m²' });
-  const knopf = formular.getByRole('button', { name: 'Flächen aus der Kalkulation übernehmen' });
+  const kpqm = formular.getByRole('textbox', { name: 'Kaufpreis pro m²' });
+  const knopf = formular.getByRole('button', { name: 'Summe aus Wohn- und Gewerbefläche übernehmen' });
   const box = async (l: typeof miet) => (await l.boundingBox())!;
   expect((await box(wohn)).y).toBeGreaterThan((await box(miet)).y);
   expect(Math.abs((await box(wohn)).y - (await box(gewerbe)).y)).toBeLessThan(4);
   expect((await box(knopf)).x).toBeGreaterThan((await box(miet)).x + (await box(miet)).width - 2);
-  expect(Math.abs((await box(knopf)).y + (await box(knopf)).height / 2 - ((await box(miet)).y + (await box(miet)).height / 2))).toBeLessThan(6);
 
-  // Knopf: Wohnung 120, Gewerbe 80 aus der Kalkulation, Mietfläche = Summe; Stellplatz zählt nicht
-  await knopf.click();
+  // Vorbelegen: Wohnung 120, Gewerbe 80 aus den Einheiten; die Mietfläche bleibt leer, Kaufpreis pro m² wie in der alten App
+  await formular.getByRole('button', { name: 'Aus Deal/Objekt vorbelegen' }).click();
   await expect(wohn).toHaveValue('120');
   await expect(gewerbe).toHaveValue('80');
-  await expect(miet).toHaveValue('200');
-  await expect(formular.getByRole('textbox', { name: 'Kaufpreis pro m²' })).toHaveValue('3.000 €/m²');
+  await expect(miet).toHaveValue('');
+  const kpqmVorher = await kpqm.inputValue();
+
+  // Knopf: nur die Summe der Felder — eigene Werte zählen, sonst ändert sich nichts
+  await wohn.fill('1.000');
+  await knopf.click();
+  await expect(miet).toHaveValue('1.080');
+  await expect(kpqm).toHaveValue(kpqmVorher);
 
   // Folie: Mietfläche, darunter Wohnfläche und Gewerbefläche
   const zeilen = vorschau.locator('.fp-keytable th');
@@ -174,10 +180,9 @@ test('Bank-Präsentation: Mietfläche, Wohnfläche, Gewerbefläche — Knopf neb
   const namen = await zeilen.allTextContents();
   expect(namen.indexOf('Wohnfläche')).toBe(namen.indexOf('Mietfläche') + 1);
   expect(namen.indexOf('Gewerbefläche')).toBe(namen.indexOf('Mietfläche') + 2);
-  await expect(vorschau.locator('.fp-keytable tr', { hasText: 'Gewerbefläche' }).locator('td')).toHaveText('80 m²');
+  await expect(vorschau.locator('.fp-keytable tr', { hasText: 'Mietfläche' }).locator('td')).toHaveText('1.080 m²');
 
   // Leer → keine Zeile
   await gewerbe.fill('');
   await expect(vorschau.locator('.fp-keytable th', { hasText: 'Gewerbefläche' })).toHaveCount(0);
-  await expect(vorschau.locator('.fp-keytable th', { hasText: 'Mietfläche' })).toHaveCount(1);
 });
