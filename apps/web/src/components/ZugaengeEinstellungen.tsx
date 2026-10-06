@@ -1,7 +1,7 @@
 import type { ZugangStatus } from '@gg/api-contract';
 import { Alert, Anchor, Badge, Button, Group, Loader, Paper, Select, Stack, Text, TextInput, Title } from '@mantine/core';
 import { useState } from 'react';
-import { usePropstackStatus, usePropstackStatusSpeichern, useZugaenge, useZugangSpeichern } from '../lib/api.ts';
+import { useAnthropicPruefen, usePropstackStatus, usePropstackStatusSpeichern, useZugaenge, useZugangSpeichern } from '../lib/api.ts';
 
 const QUELLE = {
   einstellungen: { label: 'hier hinterlegt', farbe: 'teal' },
@@ -76,6 +76,7 @@ export function PropstackZielstatus({ zugangDa }: { zugangDa: boolean }) {
 
 function Zugang({ z }: { z: ZugangStatus }) {
   const speichern = useZugangSpeichern();
+  const pruefen = useAnthropicPruefen();
   const [wert, setWert] = useState('');
   const quelle = QUELLE[z.quelle];
   return (
@@ -98,7 +99,18 @@ function Zugang({ z }: { z: ZugangStatus }) {
             Entfernen
           </Button>
         )}
+        {z.schluessel === 'anthropic-api-key' && (
+          <Button size="xs" variant="light" loading={pruefen.isPending} onClick={() => pruefen.mutate()}>Schlüssel testen</Button>
+        )}
       </Group>
+      {/* Ergebnis: welcher Schlüssel (Quelle, letzte vier Zeichen) geprüft wurde und was Anthropic sagt */}
+      {pruefen.data && (
+        <Alert mt={6} color={pruefen.data.gueltig ? 'teal' : 'red'} variant="light" role="alert">
+          {pruefen.data.meldung}
+          {pruefen.data.quelle !== 'attrappe' && pruefen.data.quelle !== 'fehlt' && ` (geprüft: ${QUELLE[pruefen.data.quelle].label}${pruefen.data.maske ? ` · ${pruefen.data.maske}` : ''})`}
+        </Alert>
+      )}
+      {pruefen.error && <Alert mt={6} color="red" variant="light" role="alert">{pruefen.error.message}</Alert>}
     </Paper>
   );
 }
