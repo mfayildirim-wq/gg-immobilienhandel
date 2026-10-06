@@ -134,3 +134,47 @@ test('Bank-Präsentation: KI-Texte für Lage und Objekt behalten Getipptes; „�
   expect(gespeichert.slides.find((s: { typ: string }) => s.typ === 'deckblatt').data.bildPath).toBe(neu.ref);
   expect(gespeichert.slides.find((s: { typ: string }) => s.typ === 'lagebeschreibung').data.standortBullets).toBe('Ruhige Wohnlage\nWohnlage in Stuttgart (Test-Modus)');
 });
+
+test('Bank-Präsentation: Mietfläche über Wohn- und Gewerbefläche im Formular; in der Folie Wohn-, Gewerbe- und Mietfläche untereinander, nur wenn ausgefüllt', async ({ page }) => {
+  const strasse = `Praes-Flaeche ${Date.now()}`;
+  const o = await (await page.request.post('/api/objekte', { data: { strasse, hausnr: '4', stadt: 'Ulm' } })).json();
+  const d = await (await page.request.post('/api/deals', { data: { objektId: o.id } })).json();
+  const dd = await (await page.request.get(`/api/deals/${d.id}`)).json();
+  const einheit = (typ: string, flaeche: number | null) => ({ typ, lage: null, zimmer: null, flaeche, mieteIst: 1000, mieteNeu: null, mieteNeuManuell: false, renditeK: 4, verkaufspreis: null, stueck: null });
+  await page.request.put(`/api/deals/${d.id}/kalkulation`, { data: { version: dd.version, kalkulation: { kaufpreis: 600_000 }, einheiten: [einheit('Wohnung', 120), einheit('Gewerbe', 80), einheit('Stellplatz', null)], sanierungen: [] } });
+  const p = await (await page.request.post(`/api/deals/${d.id}/praesentation`, { data: { vorlage: 'standard' } })).json();
+
+  await page.goto(`/praesentationen/${p.id}`);
+  const folien = page.getByRole('navigation', { name: 'Folien' });
+  const formular = page.getByRole('region', { name: 'Folie bearbeiten' });
+  const vorschau = page.frameLocator('iframe[title="Folienvorschau"]');
+  await folien.getByRole('button', { name: /Objektbeschreibung$/ }).click();
+
+  // Formular: Mietfläche oben, Wohn- und Gewerbefläche darunter nebeneinander
+  const miet = formular.getByRole('textbox', { name: 'Mietfläche m²' });
+  const wohn = formular.getByRole('textbox', { name: 'Wohnfläche m²' });
+  const gewerbe = formular.getByRole('textbox', { name: 'Gewerbefläche m²' });
+  const box = async (l: typeof miet) => (await l.boundingBox())!;
+  expect((await box(wohn)).y).toBeGreaterThan((await box(miet)).y);
+  expect(Math.abs((await box(wohn)).y - (await box(gewerbe)).y)).toBeLessThan(4);
+
+  // Vorbelegen aus den Einheiten: Wohnung 120, Gewerbe 80, Stellplatz zählt nicht
+  await formular.getByRole('button', { name: 'Aus Deal/Objekt vorbelegen' }).click();
+  await expect(wohn).toHaveValue('120');
+  await expect(gewerbe).toHaveValue('80');
+  await expect(miet).toHaveValue('200');
+  await expect(formular.getByRole('textbox', { name: 'Kaufpreis pro m²' })).toHaveValue('3.000 €/m²');
+
+  // Folie: Wohn-, Gewerbe- und Mietfläche untereinander
+  const zeilen = vorschau.locator('.fp-keytable th');
+  await expect(zeilen).toContainText(['Wohnfläche', 'Gewerbefläche', 'Mietfläche']);
+  const namen = await zeilen.allTextContents();
+  expect(namen.indexOf('Gewerbefläche')).toBe(namen.indexOf('Wohnfläche') + 1);
+  expect(namen.indexOf('Mietfläche')).toBe(namen.indexOf('Wohnfläche') + 2);
+  await expect(vorschau.locator('.fp-keytable tr', { hasText: 'Gewerbefläche' }).locator('td')).toHaveText('80 m²');
+
+  // Leer → keine Zeile
+  await gewerbe.fill('');
+  await expect(vorschau.locator('.fp-keytable th', { hasText: 'Gewerbefläche' })).toHaveCount(0);
+  await expect(vorschau.locator('.fp-keytable th', { hasText: 'Mietfläche' })).toHaveCount(1);
+});

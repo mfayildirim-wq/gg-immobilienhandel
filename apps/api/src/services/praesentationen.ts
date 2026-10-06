@@ -3,7 +3,7 @@ import { type Db, schema } from '@gg/db';
 import {
   deckblattVorbelegen, type FinanzPraes, type FinanzpraesDefaults, finanzierungVorbelegen, finanzpraesDefaultsZusammenfuehren, kiFehlerHinweis,
   LAGE_KI_OHNE_ADRESSE, lageKiEingabe, lageKiHinweis, lageKiUebernehmen, leereFolie, mietenaufstellungVorbelegen, mitStandards, OBJEKT_KI_OHNE_DATEN,
-  objektbeschreibungVorbelegen, objektKiEingabe, objektKiHinweis, objektKiUebernehmen, projektkalkulationVorbelegen, type Slide, type SlideTyp,
+  flaechenVorbelegen, objektbeschreibungVorbelegen, objektKiEingabe, objektKiHinweis, objektKiUebernehmen, projektkalkulationVorbelegen, type Slide, type SlideTyp,
   STANDARD_PRESET_ORDER, verkaufspreiseVorbelegen,
 } from '@gg/domain';
 import { type KiAntwort, type KiClient, kostenBuchung, lagebeschreibungGenerieren, objektbeschreibungGenerieren } from '@gg/integrations';
@@ -105,13 +105,16 @@ const HINWEIS: Record<PraesentationVorbelegen['art'], string> = {
 };
 
 /** Vorbelegung einer Folie aus Deal/Objekt; speichert nicht (der Editor übernimmt das Ergebnis und speichert selbst). */
+/** Wohn-, Gewerbe- und Mietfläche nach der Vorbelegung der alten App (Neuerung 06.10.2026). */
+const flaechenNachVorbelegung = (d: Record<string, unknown> | null, deal: unknown, objekt: unknown) => (d ? flaechenVorbelegen(d, deal, objekt) : null);
+
 export async function praesentationVorbelegen(db: Db, id: string, v: PraesentationVorbelegen) {
   const p = await laden(db, id);
   const { deal, objekt } = await dealUndObjektAlt(db, p.dealId);
   const scope = v.scope ?? 'aufteiler';
   const data =
     v.art === 'deckblatt' ? deckblattVorbelegen(v.data, deal, objekt)
-      : v.art === 'objektbeschreibung' ? objektbeschreibungVorbelegen(v.data, deal, objekt)
+      : v.art === 'objektbeschreibung' ? flaechenNachVorbelegung(objektbeschreibungVorbelegen(v.data, deal, objekt), deal, objekt)
         : v.art === 'projektkalkulation' ? projektkalkulationVorbelegen(v.data, deal, scope)
           : v.art === 'verkaufspreise' ? verkaufspreiseVorbelegen(v.data, deal)
             : v.art === 'mietenaufstellung' ? mietenaufstellungVorbelegen(v.data, deal, v.spalten ?? [])

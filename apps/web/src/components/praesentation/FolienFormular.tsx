@@ -176,7 +176,15 @@ export function FolienFormular({ typ, c }: { typ: string; c: FormularKontext }) 
             <Feld k="baujahr" label="Baujahr" platzhalter="z.B. 1965" c={c} />
             <Feld k="einheiten" label="Einheiten" platzhalter="z.B. 9" c={c} />
             <Feld k="stellplaetze" label="Stellplätze" platzhalter="z.B. 4" c={c} />
-            <Feld k="wohnflaeche" label="Wohnfläche m²" c={c} />
+            {/* Mietfläche an der Stelle der früheren Wohnfläche, darunter Wohn- und Gewerbefläche; leere Felder erscheinen nicht in der Präsentation */}
+            <Stack gap={4}>
+              <Feld k="mietflaeche" label="Mietfläche m²" c={c} />
+              {/* an der Unterkante ausgerichtet: bricht eine Beschriftung um, stehen die Felder trotzdem auf einer Linie */}
+              <Group grow gap={4} wrap="nowrap" align="flex-end">
+                <Feld k="wohnflaeche" label="Wohnfläche m²" c={c} />
+                <Feld k="gewerbeflaeche" label="Gewerbefläche m²" c={c} />
+              </Group>
+            </Stack>
             <Feld k="grundstueck" label="Grundstück m²" c={c} />
             <Feld k="gik" label="Kaufpreis €" c={c} />
             <Feld k="kaufpreisPerM2" label="Kaufpreis pro m²" platzhalter="z.B. 2.450 €/m²" c={c} />
