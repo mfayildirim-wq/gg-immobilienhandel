@@ -6,3 +6,4 @@ export * from './bilder.ts';
 export * from './vorbelegung.ts';
 export * from './ki.ts';
 export * from './helligkeit.ts';
+export * from './flaechen.ts';

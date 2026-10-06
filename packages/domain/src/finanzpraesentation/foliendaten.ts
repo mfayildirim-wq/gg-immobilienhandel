@@ -28,10 +28,14 @@ export interface SlideDataObjektbeschreibung {
   einheiten?: string;
   stellplaetze?: string;
   wohnflaeche?: string;
+  /** Gewerbefläche m² — nur angezeigt, wenn ausgefüllt (Neuerung 06.10.2026). */
+  gewerbeflaeche?: string;
+  /** Mietfläche m² (Wohn- + Gewerbefläche) — nur angezeigt, wenn ausgefüllt. */
+  mietflaeche?: string;
   grundstueck?: string;
   /** Feldname historisch "gik", LABEL ist Kaufpreis (siehe Editor + Renderer). */
   gik?: string;
-  /** Kaufpreis pro m² Wohnfläche, formatiert (z.B. "2.450 €/m²"). */
+  /** Kaufpreis pro m² Mietfläche, formatiert (z.B. "2.450 €/m²"). */
   kaufpreisPerM2?: string;
   /** Jahresnettokaltmiete IST, formatiert (z.B. "48.000 €"). */
   jnkm?: string;

@@ -50,7 +50,7 @@ const PptxGenJSKlasse = (
 
 type PptxGenJS = PptxGenJSTyp;
 type BorderProps = PptxGenJSTyp.BorderProps;
-import type { FinanzPraes, Slide, SlideTyp } from '@gg/domain';
+import { objektFakten, type FinanzPraes, type Slide, type SlideTyp } from '@gg/domain';
 import { loeseVerweiseAuf, type BilderDeps } from './bilder.ts';
 import { IVT_LOGO_DATA_URL } from '../logo.ts';
 import {
@@ -315,16 +315,7 @@ function renderObjektPptx(slide: Slide, pptx: PptxSlide): void {
   bgWhite(pptx);
   addTitle(pptx, 'Objektbeschreibung');
   const d = slide.data;
-  const facts: [string, string][] = [
-    ['Adresse', d.adresse], ['Baujahr', d.baujahr], ['Einheiten', d.einheiten],
-    ['Stellplätze', d.stellplaetze],
-    ['Wohnfläche', d.wohnflaeche ? `${d.wohnflaeche} m²` : ''],
-    ['Grundstück', d.grundstueck ? `${d.grundstueck} m²` : ''],
-    ['Kaufpreis', d.gik],
-    ['Kaufpreis pro m²', d.kaufpreisPerM2],
-    ['Jahresnettokaltmiete', d.jnkm],
-    ['Rendite IST', d.renditeIst],
-  ].filter(([, v]) => !!v) as [string, string][];
+  const facts = objektFakten(d);
 
   const colW = (CONTENT_W - 0.3) / 2;
   const noneBorder = { type: 'none' as const, pt: 0, color: 'FFFFFF' };
