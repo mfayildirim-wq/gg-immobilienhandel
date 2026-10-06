@@ -51,6 +51,7 @@ const PptxGenJSKlasse = (
 type PptxGenJS = PptxGenJSTyp;
 type BorderProps = PptxGenJSTyp.BorderProps;
 import { objektFakten, type FinanzPraes, type Slide, type SlideTyp } from '@gg/domain';
+import { bildRahmen } from './bildmasse.ts';
 import { loeseVerweiseAuf, type BilderDeps } from './bilder.ts';
 import { IVT_LOGO_DATA_URL } from '../logo.ts';
 import {
@@ -195,8 +196,8 @@ function addHeaderFooter(slide: PptxSlide, ctx: PptxRenderContext): void {
   slide.addImage({
     data: IVT_LOGO_DATA_URL,
     x: SLIDE_WIDTH - 1.7, y: 0.2,
-    w: 1.4, h: 0.4,
     sizing: { type: 'contain', w: 1.4, h: 0.4 },
+    ...bildRahmen(IVT_LOGO_DATA_URL, 1.4, 0.4),
   });
   // Footer (nur Bankname links, keine "Bank-Präsentation"-Bezeichnung mehr)
   const bank = ctx.praes.bankName || '';
@@ -252,8 +253,9 @@ function renderDeckblattPptx(slide: Slide, pptx: PptxSlide, _ctx: PptxRenderCont
   if (hauptbild) {
     pptx.addImage({
       data: hauptbild,
-      x: rightX, y: 0, w: rightW, h: SLIDE_HEIGHT,
+      x: rightX, y: 0,
       sizing: { type: 'cover', w: rightW, h: SLIDE_HEIGHT },
+      ...bildRahmen(hauptbild, rightW, SLIDE_HEIGHT),
     });
   } else {
     imgPlaceholder(pptx, rightX, 0, rightW, SLIDE_HEIGHT, 'Kein Hauptbild hinterlegt');
@@ -354,8 +356,8 @@ function renderObjektPptx(slide: Slide, pptx: PptxSlide): void {
   if (d.bildPath) {
     pptx.addImage({
       data: d.bildPath, x: PAD_X + colW + 0.3, y: CONTENT_TOP,
-      w: colW, h: CONTENT_H - 0.2,
       sizing: { type: 'cover', w: colW, h: CONTENT_H - 0.2 },
+      ...bildRahmen(d.bildPath, colW, CONTENT_H - 0.2),
     });
   } else {
     imgPlaceholder(pptx, PAD_X + colW + 0.3, CONTENT_TOP, colW, CONTENT_H - 0.2, 'Kein Bild');
@@ -403,8 +405,8 @@ function renderLagePptx(slide: Slide, pptx: PptxSlide): void {
   if (d.bildPath) {
     pptx.addImage({
       data: d.bildPath, x: PAD_X + colW + 0.3, y: CONTENT_TOP,
-      w: colW, h: CONTENT_H - 0.2,
       sizing: { type: 'cover', w: colW, h: CONTENT_H - 0.2 },
+      ...bildRahmen(d.bildPath, colW, CONTENT_H - 0.2),
     });
   } else {
     imgPlaceholder(pptx, PAD_X + colW + 0.3, CONTENT_TOP, colW, CONTENT_H - 0.2, 'Karte / Foto');
@@ -521,8 +523,9 @@ function renderEinzelbildPptx(slide: Slide, pptx: PptxSlide, ctx: PptxRenderCont
     });
   } else if (d.bildPath) {
     pptx.addImage({
-      data: d.bildPath, x: PAD_X, y: CONTENT_TOP, w: CONTENT_W, h: bodyH,
+      data: d.bildPath, x: PAD_X, y: CONTENT_TOP,
       sizing: { type: 'contain', w: CONTENT_W, h: bodyH },
+      ...bildRahmen(d.bildPath, CONTENT_W, bodyH),
     });
   } else {
     imgPlaceholder(pptx, PAD_X, CONTENT_TOP, CONTENT_W, bodyH, 'Bild oder Tabelle fehlt');
@@ -628,8 +631,8 @@ function renderGrundrissPagePptx(bild: string, caption: string, num: number, tot
   pptx.addImage({
     data: bild,
     x: PAD_X, y: imgTop,
-    w: CONTENT_W, h: imgH,
     sizing: { type: 'contain', w: CONTENT_W, h: imgH },
+      ...bildRahmen(bild, CONTENT_W, imgH),
   });
 }
 
@@ -659,8 +662,9 @@ function renderOrganigrammPptx(slide: Slide, pptx: PptxSlide): void {
   const imgY = CONTENT_TOP + ((CONTENT_H - imgMaxH - (beschreibung ? 0.6 : 0)) / 2);
   if (bild) {
     pptx.addImage({
-      data: bild, x: imgX, y: imgY, w: imgMaxW, h: imgMaxH,
+      data: bild, x: imgX, y: imgY,
       sizing: { type: 'contain', w: imgMaxW, h: imgMaxH },
+      ...bildRahmen(bild, imgMaxW, imgMaxH),
     });
   } else {
     imgPlaceholder(pptx, imgX, imgY, imgMaxW, imgMaxH, 'Kein Organigramm hinterlegt — bitte in den Einstellungen hochladen');
@@ -694,8 +698,9 @@ function renderAbschlussPptx(slide: Slide, pptx: PptxSlide): void {
   const photoY = 2.0;
   if (bild) {
     pptx.addImage({
-      data: bild, x: photoX, y: photoY, w: photoW, h: photoH,
+      data: bild, x: photoX, y: photoY,
       sizing: { type: 'contain', w: photoW, h: photoH },
+      ...bildRahmen(bild, photoW, photoH),
     });
   } else {
     imgPlaceholder(pptx, photoX, photoY, photoW, photoH, 'Kein Foto hinterlegt — bitte in den Einstellungen hochladen');
@@ -737,8 +742,9 @@ function renderImpressionenPptx(slide: Slide, pptx: PptxSlide): void {
     const y = CONTENT_TOP + row * (cellH + gap);
     pptx.addImage({
       data: b,
-      x, y, w: colW, h: imgH,
+      x, y,
       sizing: { type: 'cover', w: colW, h: imgH },
+      ...bildRahmen(b, colW, imgH),
     });
     if (captions[i]) {
       pptx.addText(captions[i], {
@@ -835,8 +841,9 @@ function renderMarktvergleichPptx(slide: Slide, pptx: PptxSlide): void {
     const imgH = 2.8;
     if (bild) {
       pptx.addImage({
-        data: bild, x, y: CONTENT_TOP + 0.45, w: colW, h: imgH,
+        data: bild, x, y: CONTENT_TOP + 0.45,
         sizing: { type: 'cover', w: colW, h: imgH },
+      ...bildRahmen(bild, colW, imgH),
       });
     } else {
       imgPlaceholder(pptx, x, CONTENT_TOP + 0.45, colW, imgH, 'Kein Bild');
