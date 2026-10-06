@@ -411,6 +411,9 @@ export const PropstackStatusListe = z.object({
 export type PropstackStatusListe = z.infer<typeof PropstackStatusListe>;
 export const PropstackStatusWahl = z.object({ id: z.number().int().nullable() });
 
+/** Ergebnis von „Schlüssel testen“: was geprüft wurde (Quelle, letzte vier Zeichen) und was Anthropic sagt. */
+export const ZugangPruefung = z.object({ gueltig: z.boolean(), meldung: z.string(), quelle: z.enum(['einstellungen', 'umgebung', 'fehlt', 'attrappe']), maske: z.string() });
+export type ZugangPruefung = z.infer<typeof ZugangPruefung>;
 export const ZugangStatus = z.object({
   schluessel: z.string(), label: z.string(), hinweis: z.string(), umgebung: z.string(),
   quelle: z.enum(['einstellungen', 'umgebung', 'fehlt']), maske: z.string(),

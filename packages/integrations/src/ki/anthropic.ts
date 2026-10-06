@@ -5,6 +5,34 @@ const ZEITLIMIT_MS = 120_000;
 const FILES_BETA = 'files-api-2025-04-14';
 const BASIS = 'https://api.anthropic.com/v1';
 
+/** Anthropic lehnt den Schlüssel ab (401/403): ungültig, gesperrt oder ohne Rechte. Die API macht daraus eine klare Meldung. */
+export class KiSchluesselFehler extends Error {
+  constructor(readonly status: number, readonly antwort: string) {
+    super(`Anthropic ${status}: ${antwort}`);
+    this.name = 'KiSchluesselFehler';
+  }
+}
+
+async function fehlerAus(resp: Response, was: string): Promise<Error> {
+  const text = (await resp.text()).substring(0, 200);
+  return resp.status === 401 || resp.status === 403 ? new KiSchluesselFehler(resp.status, text) : new Error(`${was} ${resp.status}: ${text}`);
+}
+
+/**
+ * „Schlüssel testen“: fragt die Modellliste ab — kostet nichts und braucht nur einen gültigen Schlüssel.
+ * `abruf` ist für Tests austauschbar.
+ */
+export async function anthropicSchluesselPruefen(apiKey: string, abruf: typeof fetch = fetch): Promise<{ gueltig: boolean; meldung: string }> {
+  try {
+    const resp = await abruf(`${BASIS}/models?limit=1`, { headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' } });
+    if (resp.ok) return { gueltig: true, meldung: 'Schlüssel gültig — Anthropic hat ihn angenommen.' };
+    if (resp.status === 401 || resp.status === 403) return { gueltig: false, meldung: `Schlüssel abgelehnt (${resp.status}): ungültig, gesperrt oder ohne Rechte.` };
+    return { gueltig: false, meldung: `Anthropic antwortete mit ${resp.status} — bitte später erneut testen.` };
+  } catch {
+    return { gueltig: false, meldung: 'Anthropic ist nicht erreichbar — bitte später erneut testen.' };
+  }
+}
+
 export interface KiClient {
   nachricht(body: unknown, zeitlimitMs?: number): Promise<any>;
   dateiHochladen(bytes: Uint8Array, dateiname: string, typ?: string, zeitlimitMs?: number): Promise<string>;
@@ -29,14 +57,14 @@ export function anthropicClient(apiKey: string): KiClient {
   return {
     async nachricht(body, zeitlimitMs = ZEITLIMIT_MS) {
       const resp = await mitZeitlimit(`${BASIS}/messages`, { method: 'POST', headers: { ...kopf, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, zeitlimitMs, 'Die Antwort von Anthropic');
-      if (!resp.ok) throw new Error(`Anthropic ${resp.status}: ${(await resp.text()).substring(0, 200)}`);
+      if (!resp.ok) throw await fehlerAus(resp, 'Anthropic');
       return resp.json();
     },
     async dateiHochladen(bytes, dateiname, typ = 'application/pdf', zeitlimitMs = ZEITLIMIT_MS) {
       const form = new FormData();
       form.append('file', new Blob([new Uint8Array(bytes)], { type: typ }), dateiname);
       const resp = await mitZeitlimit(`${BASIS}/files`, { method: 'POST', headers: kopf, body: form }, zeitlimitMs, 'Der Upload zu Anthropic');
-      if (!resp.ok) throw new Error(`Anthropic-Upload ${resp.status}: ${(await resp.text()).substring(0, 200)}`);
+      if (!resp.ok) throw await fehlerAus(resp, 'Anthropic-Upload');
       const data = (await resp.json()) as { id?: string };
       if (!data?.id) throw new Error('Anthropic hat keine Datei-Kennung zurückgegeben');
       return data.id;
