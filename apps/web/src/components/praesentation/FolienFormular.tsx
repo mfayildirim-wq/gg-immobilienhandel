@@ -3,14 +3,14 @@ import {
   entferneBild, HELLIGKEIT_KNOPF, HELLIGKEIT_TITEL, istSektionsZeile, KI_DENKT, LAGE_KI_KNOPF, MIETEN_SPALTEN, OBJEKT_KI_KNOPF, SLIDE_TYPES, teileTabellenzeilen, verschiebeBild,
 } from '@gg/domain';
 import { bildFuerVorschau } from '@gg/documents';
-import { ActionIcon, Alert, Button, Checkbox, CloseButton, Group, Image, Modal, Paper, SimpleGrid, Stack, Table, Text, Textarea, TextInput, Title } from '@mantine/core';
-import { IconArrowLeft, IconArrowRight, IconBolt, IconMap, IconPhoto, IconTable, IconTrash } from '@tabler/icons-react';
+import { ActionIcon, Alert, Button, Checkbox, CloseButton, Group, Image, Modal, Paper, SimpleGrid, Stack, Table, Text, Textarea, TextInput, Title, Tooltip } from '@mantine/core';
+import { IconArrowBackUp, IconArrowLeft, IconArrowRight, IconBolt, IconMap, IconPhoto, IconTable, IconTrash } from '@tabler/icons-react';
 import { type ReactNode, useState } from 'react';
 import type { AuswahlAuftrag } from './BildAuswahl.tsx';
 import type { BildPlatz } from './bilder.ts';
 
 type Daten = Record<string, unknown>;
-export type Vorbelegung = 'deckblatt' | 'objektbeschreibung' | 'projektkalkulation-aufteiler' | 'projektkalkulation-global' | 'verkaufspreise' | 'mietenaufstellung' | 'finanzierung' | 'organigramm' | 'abschluss';
+export type Vorbelegung = 'deckblatt' | 'objektbeschreibung' | 'flaechen' | 'projektkalkulation-aufteiler' | 'projektkalkulation-global' | 'verkaufspreise' | 'mietenaufstellung' | 'finanzierung' | 'organigramm' | 'abschluss';
 
 export interface FormularKontext {
   data: Daten;
@@ -178,7 +178,15 @@ export function FolienFormular({ typ, c }: { typ: string; c: FormularKontext }) 
             <Feld k="stellplaetze" label="Stellplätze" platzhalter="z.B. 4" c={c} />
             {/* Mietfläche an der Stelle der früheren Wohnfläche, darunter Wohn- und Gewerbefläche; leere Felder erscheinen nicht in der Präsentation */}
             <Stack gap={4}>
-              <Feld k="mietflaeche" label="Mietfläche m²" c={c} />
+              {/* rechts daneben: Wohn- und Gewerbefläche aus der Kalkulation holen, Mietfläche = Summe */}
+              <Group gap={4} wrap="nowrap" align="flex-end">
+                <div style={{ flex: 1, minWidth: 0 }}><Feld k="mietflaeche" label="Mietfläche m²" c={c} /></div>
+                <Tooltip label="Wohn- und Gewerbefläche aus der Kalkulation übernehmen, Mietfläche = Summe">
+                  <ActionIcon variant="light" size={36} aria-label="Flächen aus der Kalkulation übernehmen" onClick={() => c.vorbelegen('flaechen')}>
+                    <IconArrowBackUp size={18} />
+                  </ActionIcon>
+                </Tooltip>
+              </Group>
               {/* an der Unterkante ausgerichtet: bricht eine Beschriftung um, stehen die Felder trotzdem auf einer Linie */}
               <Group grow gap={4} wrap="nowrap" align="flex-end">
                 <Feld k="wohnflaeche" label="Wohnfläche m²" c={c} />

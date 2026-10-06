@@ -98,16 +98,20 @@ export async function praesentationLoeschen(db: Db, id: string) {
 const HINWEIS: Record<PraesentationVorbelegen['art'], string> = {
   deckblatt: 'Kein Deal/Objekt verknüpft',
   objektbeschreibung: 'Kein Deal/Objekt verknüpft',
+  flaechen: 'Kein Deal/Objekt verknüpft',
   projektkalkulation: 'Deal hat keinen Kaufpreis in der Kalkulation',
   verkaufspreise: 'Keine Einheiten im Deal',
   mietenaufstellung: 'Keine Einheiten im Deal oder keine Spalte gewählt',
   finanzierung: 'Deal hat keinen Kaufpreis in der Kalkulation',
 };
 
-/** Vorbelegung einer Folie aus Deal/Objekt; speichert nicht (der Editor übernimmt das Ergebnis und speichert selbst). */
 /** Wohn-, Gewerbe- und Mietfläche nach der Vorbelegung der alten App (Neuerung 06.10.2026). */
 const flaechenNachVorbelegung = (d: Record<string, unknown> | null, deal: unknown, objekt: unknown) => (d ? flaechenVorbelegen(d, deal, objekt) : null);
 
+/**
+ * Vorbelegung einer Folie aus Deal/Objekt; speichert nicht (der Editor übernimmt das Ergebnis und speichert selbst).
+ * `flaechen`: nur Wohn-, Gewerbe- und Mietfläche (Knopf neben der Mietfläche), der Rest der Folie bleibt.
+ */
 export async function praesentationVorbelegen(db: Db, id: string, v: PraesentationVorbelegen) {
   const p = await laden(db, id);
   const { deal, objekt } = await dealUndObjektAlt(db, p.dealId);
@@ -115,6 +119,7 @@ export async function praesentationVorbelegen(db: Db, id: string, v: Praesentati
   const data =
     v.art === 'deckblatt' ? deckblattVorbelegen(v.data, deal, objekt)
       : v.art === 'objektbeschreibung' ? flaechenNachVorbelegung(objektbeschreibungVorbelegen(v.data, deal, objekt), deal, objekt)
+        : v.art === 'flaechen' ? (deal || objekt ? flaechenVorbelegen(v.data, deal, objekt) : null)
         : v.art === 'projektkalkulation' ? projektkalkulationVorbelegen(v.data, deal, scope)
           : v.art === 'verkaufspreise' ? verkaufspreiseVorbelegen(v.data, deal)
             : v.art === 'mietenaufstellung' ? mietenaufstellungVorbelegen(v.data, deal, v.spalten ?? [])
