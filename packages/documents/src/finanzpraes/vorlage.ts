@@ -17,7 +17,7 @@
 import { IVT_LOGO_DATA_URL } from '../logo.ts';
 // Reine Rechenlogik ohne DOM — deshalb auch vom Server benutzbar, der dieses
 // Template für den PDF-Druck lädt (server/finanzpraes-pdf.ts).
-import { teileTabellenzeilen, istSektionsZeile, type FinanzPraes, type Slide, type SlideTyp } from '@gg/domain';
+import { objektFakten, teileTabellenzeilen, istSektionsZeile, type FinanzPraes, type Slide, type SlideTyp } from '@gg/domain';
 
 export type RenderMode = 'preview' | 'pdf';
 
@@ -184,18 +184,7 @@ function renderDeckblatt(slide: Slide): string {
 
 function renderObjekt(slide: Slide): string {
   const d = slide.data;
-  const facts = [
-    ['Adresse', d.adresse],
-    ['Baujahr', d.baujahr],
-    ['Einheiten', d.einheiten],
-    ['Stellplätze', d.stellplaetze],
-    ['Wohnfläche', d.wohnflaeche ? `${d.wohnflaeche} m²` : ''],
-    ['Grundstück', d.grundstueck ? `${d.grundstueck} m²` : ''],
-    ['Kaufpreis', d.gik],
-    ['Kaufpreis pro m²', d.kaufpreisPerM2],
-    ['Jahresnettokaltmiete', d.jnkm],
-    ['Rendite IST', d.renditeIst],
-  ].filter(([, v]) => v);
+  const facts = objektFakten(d);
   return `
     <div class="fp-content">
       <div class="fp-title">Objektbeschreibung</div>
