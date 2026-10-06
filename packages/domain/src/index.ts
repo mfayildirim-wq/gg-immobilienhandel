@@ -34,3 +34,4 @@ export * from './sicherung/aufbewahrung.ts';
 export * from './archiv/spiegel.ts';
 export * from './dd/vorlage.ts';
 export * from './ankaufkalkulation/vorbelegung.ts';
+export * from './ankaufkalkulation/einheitPreise.ts';
