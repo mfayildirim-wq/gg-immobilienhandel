@@ -17,9 +17,9 @@ describe('flaechenVorbelegen (Bank-Präsentation, Objektbeschreibung) — Fachen
 });
 
 describe('objektFakten: Reihenfolge der Eckdaten, leere Zeilen fallen weg', () => {
-  it('Wohnfläche, Gewerbefläche und Mietfläche untereinander, je mit m²', () => {
+  it('Mietfläche, darunter Wohnfläche und Gewerbefläche, je mit m²', () => {
     const f = objektFakten({ adresse: 'Musterweg 1', stellplaetze: '2', wohnflaeche: '100', gewerbeflaeche: '50', mietflaeche: '150', grundstueck: '400' });
-    expect(f.map(([k]) => k)).toEqual(['Adresse', 'Stellplätze', 'Wohnfläche', 'Gewerbefläche', 'Mietfläche', 'Grundstück']);
+    expect(f.map(([k]) => k)).toEqual(['Adresse', 'Stellplätze', 'Mietfläche', 'Wohnfläche', 'Gewerbefläche', 'Grundstück']);
     expect(f.find(([k]) => k === 'Gewerbefläche')![1]).toBe('50 m²');
   });
   it('nicht ausgefüllt → keine Zeile', () => {

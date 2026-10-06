@@ -746,7 +746,7 @@ export type PraesentationSpeichern = z.infer<typeof PraesentationSpeichern>;
 
 export const PraesentationAnlegen = z.object({ vorlage: z.enum(['leer', 'standard']) });
 
-export const VorbelegungArt = z.enum(['deckblatt', 'objektbeschreibung', 'projektkalkulation', 'verkaufspreise', 'mietenaufstellung', 'finanzierung']);
+export const VorbelegungArt = z.enum(['deckblatt', 'objektbeschreibung', 'flaechen', 'projektkalkulation', 'verkaufspreise', 'mietenaufstellung', 'finanzierung']);
 export const PraesentationVorbelegen = z.object({
   art: VorbelegungArt,
   data: z.record(z.string(), z.unknown()),
