@@ -8,14 +8,13 @@ import {
   KALK_STANDARD,
   type KalkStandard,
   margenAmpel,
-  sanierungAlsEingabe, kalkMitStandard } from '@gg/domain';
+  sanierungAlsEingabe, kalkMitStandard, einheitMieteGeaendert, einheitPreisSetzen, mieteSollSetzen, type PreisFeld } from '@gg/domain';
 import {
   ActionIcon,
   Alert,
   Badge,
   Box,
   Button,
-  Checkbox,
   Group,
   NumberInput,
   Paper,
@@ -28,11 +27,12 @@ import {
   TextInput,
   Title,
 } from '@mantine/core';
-import { IconDeviceFloppy, IconPlus, IconRestore, IconTrash } from '@tabler/icons-react';
-import { type ReactNode, useMemo, useState } from 'react';
+import { IconDeviceFloppy, IconGripVertical, IconPlus, IconRestore, IconTrash } from '@tabler/icons-react';
+import { type ReactNode, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useKalkStandard, useKalkulationSpeichern } from '../../lib/api.ts';
 import { alsZahl, euro, euroProQm, prozent } from '../../lib/format.ts';
+import { verschieben } from '../../lib/reihenfolge.ts';
 import { useUngespeichert } from '../../lib/ungespeichert.ts';
 import { AlleSetzen, Variantenleiste } from './KalkWerkzeuge.tsx';
 import { PropstackDialog } from './PropstackDialog.tsx';
@@ -437,6 +437,36 @@ function EinheitenTabelle({
   standardRendite: number;
 }) {
   const aendere = (i: number, teil: Partial<Einheit>) => setEinheiten((es) => es.map((e, j) => (j === i ? { ...e, ...teil } : e)));
+  // Miete geändert: bei festem VKP passt sich die Rendite an
+  // Miete IST geändert: folgt die SOLL-Miete der IST-Miete, fällt ein alter SOLL-Wert weg; bei festem VKP passt sich die Rendite an
+  const mieteIst = (i: number, wert: number | null) => setEinheiten((es) => es.map((e, j) => (j === i
+    ? einheitMieteGeaendert({ ...e, mieteIst: wert, ...(e.mieteNeuManuell ? {} : { mieteNeu: null }) }) : e)));
+  // Miete SOLL: ein abweichender Wert gilt, leer oder gleich IST folgt der IST-Miete (alt: dealUEDirectSoll, ohne Kästchen)
+  const mieteSoll = (i: number, wert: number | null) => setEinheiten((es) => es.map((e, j) => (j === i ? einheitMieteGeaendert({ ...e, ...mieteSollSetzen(e, wert) }) : e)));
+  // Zeilen verschieben: Griff ziehen (Maus, Stift, Finger) oder Pfeiltasten auf dem Griff — wie der Ziehgriff „≡“ der alten App
+  const koerper = useRef<HTMLTableSectionElement>(null);
+  const [ziehen, setZiehen] = useState<{ von: number; nach: number } | null>(null);
+  const zeileUnter = (y: number) => {
+    const reihen = [...(koerper.current?.rows ?? [])];
+    const i = reihen.findIndex((r) => y < r.getBoundingClientRect().bottom);
+    return i < 0 ? reihen.length - 1 : i;
+  };
+  const griff = (i: number) => ({
+    onPointerDown: (ev: React.PointerEvent<HTMLButtonElement>) => { ev.currentTarget.setPointerCapture(ev.pointerId); setZiehen({ von: i, nach: i }); },
+    onPointerMove: (ev: React.PointerEvent<HTMLButtonElement>) => { if (ziehen) setZiehen({ ...ziehen, nach: zeileUnter(ev.clientY) }); },
+    onPointerUp: () => { if (ziehen) setEinheiten((es) => verschieben(es, ziehen.von, ziehen.nach)); setZiehen(null); },
+    onPointerCancel: () => setZiehen(null),
+    onKeyDown: (ev: React.KeyboardEvent<HTMLButtonElement>) => {
+      const schritt = ev.key === 'ArrowUp' ? -1 : ev.key === 'ArrowDown' ? 1 : 0;
+      if (!schritt) return;
+      ev.preventDefault();
+      setEinheiten((es) => verschieben(es, i, i + schritt));
+      // Fokus wandert mit der Zeile
+      requestAnimationFrame(() => koerper.current?.rows[Math.max(0, i + schritt)]?.querySelector<HTMLButtonElement>('[data-griff]')?.focus());
+    },
+  });
+  // Rendite, VKP und KP/m²: eines eingeben, die anderen beiden folgen (wie in der alten App)
+  const preis = (i: number, feld: PreisFeld, wert: number | null) => setEinheiten((es) => es.map((e, j) => (j === i ? { ...e, ...einheitPreisSetzen(e, feld, wert) } : e)));
   const s = ergebnis.einheiten;
   const zeilen = s.zeilen;
   const [propstack, setPropstack] = useState<string | null>(null);
@@ -460,18 +490,26 @@ function EinheitenTabelle({
         <Table verticalSpacing={3} horizontalSpacing={6}>
           <Table.Thead>
             <Table.Tr>
-              <Table.Th>Typ</Table.Th><Table.Th>Lage</Table.Th><Table.Th>Zi/Stk</Table.Th>
+              <Table.Th w={28} /><Table.Th>Typ</Table.Th><Table.Th>Lage</Table.Th><Table.Th>Zi/Stk</Table.Th>
               <Table.Th c={FARBE.ist}>m²/Stk IST</Table.Th><Table.Th c={FARBE.ist}>KM IST €</Table.Th><Table.Th c={FARBE.ist}>€/m² IST</Table.Th>
               <Table.Th c={FARBE.soll}>KM SOLL €</Table.Th><Table.Th c={FARBE.soll}>€/m² SOLL</Table.Th><Table.Th c={FARBE.soll}>Rendite %</Table.Th>
               <Table.Th c={FARBE.vkp}>VKP €</Table.Th><Table.Th c={FARBE.vkp}>KP/m² €</Table.Th><Table.Th />
             </Table.Tr>
           </Table.Thead>
-          <Table.Tbody>
+          <Table.Tbody ref={koerper}>
             {einheiten.map((e, i) => {
               const z = zeilen[i];
               const stpl = e.typ === 'Stellplatz';
               return (
-                <Table.Tr key={e.id ?? `neu-${i}`}>
+                <Table.Tr key={e.id ?? `neu-${i}`} data-ziehen={ziehen?.von === i ? 'quelle' : ziehen && ziehen.nach === i && ziehen.von !== i ? (ziehen.nach > ziehen.von ? 'unten' : 'oben') : undefined}
+                  style={ziehen?.von === i ? { opacity: 0.5 } : ziehen && ziehen.nach === i && ziehen.von !== i
+                    ? { boxShadow: `inset 0 ${ziehen.nach > ziehen.von ? -3 : 3}px 0 var(--mantine-primary-color-filled)` } : undefined}>
+                  <Table.Td>
+                    <ActionIcon variant="subtle" color="gray" size="sm" aria-label="Zeile verschieben" title="Ziehen oder Pfeiltasten, um die Zeile zu verschieben"
+                      data-griff style={{ cursor: ziehen ? 'grabbing' : 'grab', touchAction: 'none' }} {...griff(i)}>
+                      <IconGripVertical size={14} />
+                    </ActionIcon>
+                  </Table.Td>
                   <Table.Td><Select size="xs" w={110} data={TYPEN} value={e.typ} allowDeselect={false} onChange={(v) => aendere(i, { typ: v })} aria-label="Typ" /></Table.Td>
                   <Table.Td><TextInput size="xs" w={90} value={e.lage ?? ''} onChange={(ev) => aendere(i, { lage: ev.currentTarget.value || null })} aria-label="Lage" /></Table.Td>
                   <Table.Td>
@@ -482,36 +520,44 @@ function EinheitenTabelle({
                     )}
                   </Table.Td>
                   <Table.Td>{stpl ? <Text size="xs" c="dimmed">–</Text> : <NumberInput size="xs" w={80} value={e.flaeche ?? ''} onChange={(v) => aendere(i, { flaeche: alsZahl(v) })} aria-label="Fläche" {...ZAHL} />}</Table.Td>
-                  <Table.Td><NumberInput size="xs" w={90} value={e.mieteIst ?? ''} onChange={(v) => aendere(i, { mieteIst: alsZahl(v) })} aria-label="Miete ist" {...ZAHL} /></Table.Td>
+                  <Table.Td><NumberInput size="xs" w={90} value={e.mieteIst ?? ''} onChange={(v) => mieteIst(i, alsZahl(v))} aria-label="Miete ist" {...ZAHL} /></Table.Td>
                   <Table.Td><Text size="xs" c="dimmed">{z?.kaltmieteProQmIst ? de2(z.kaltmieteProQmIst) : ''}</Text></Table.Td>
                   <Table.Td>
-                    <Group gap={2} wrap="nowrap">
-                      <NumberInput
-                        size="xs"
-                        w={90}
-                        placeholder={e.mieteIst ? String(e.mieteIst).replace('.', ',') : ''}
-                        value={e.mieteNeuManuell ? (e.mieteNeu ?? '') : ''}
-                        onChange={(v) => aendere(i, { mieteNeu: alsZahl(v), mieteNeuManuell: alsZahl(v) !== null })}
-                        aria-label="Miete neu"
-                        {...ZAHL}
-                      />
-                      <Checkbox size="xs" checked={e.mieteNeuManuell} onChange={(ev) => aendere(i, { mieteNeuManuell: ev.currentTarget.checked })} aria-label="Miete neu manuell" title="manuell" />
-                    </Group>
+                    {/* leer = folgt der IST-Miete (grau); ein eigener Wert gilt als SOLL */}
+                    <NumberInput
+                      size="xs"
+                      w={90}
+                      placeholder={e.mieteIst ? String(e.mieteIst).replace('.', ',') : ''}
+                      value={e.mieteNeu ?? ''}
+                      onChange={(v) => mieteSoll(i, alsZahl(v))}
+                      aria-label="Miete neu"
+                      {...ZAHL}
+                    />
                   </Table.Td>
                   <Table.Td><Text size="xs" c="dimmed">{z?.kaltmieteProQmSoll ? de2(z.kaltmieteProQmSoll) : ''}</Text></Table.Td>
-                  <Table.Td><NumberInput size="xs" w={70} value={e.renditeK ?? ''} onChange={(v) => aendere(i, { renditeK: alsZahl(v) })} aria-label="Rendite" {...ZAHL} /></Table.Td>
+                  <Table.Td>
+                    {/* Pfeile hoch/runter in 0,1-Schritten (alt: <input type="number" step="0.1">) */}
+                    <NumberInput size="xs" w={78} value={e.renditeK ?? ''} onChange={(v) => preis(i, 'rendite', alsZahl(v))} aria-label="Rendite"
+                      {...ZAHL} hideControls={false} step={0.1} min={0} decimalScale={1} />
+                  </Table.Td>
                   <Table.Td>
                     <NumberInput
                       size="xs"
                       w={110}
                       placeholder={z?.verkaufspreis ? z.verkaufspreis.toLocaleString('de-DE') : ''}
                       value={e.verkaufspreis ?? ''}
-                      onChange={(v) => aendere(i, { verkaufspreis: alsZahl(v) })}
+                      onChange={(v) => preis(i, 'vkp', alsZahl(v))}
                       aria-label="Verkaufspreis"
                       {...ZAHL}
                     />
                   </Table.Td>
-                  <Table.Td><Text size="xs" c="dimmed">{z?.verkaufspreisProQm ? z.verkaufspreisProQm.toLocaleString('de-DE') : ''}</Text></Table.Td>
+                  <Table.Td>
+                    {/* KP/m² eingeben setzt den VKP (× Fläche); errechnete Werte stehen grau als Platzhalter wie beim VKP */}
+                    {stpl || !e.flaeche ? <Text size="xs" c="dimmed">{z?.verkaufspreisProQm ? z.verkaufspreisProQm.toLocaleString('de-DE') : '–'}</Text> : (
+                      <NumberInput size="xs" w={84} placeholder={z?.verkaufspreisProQm ? z.verkaufspreisProQm.toLocaleString('de-DE') : ''}
+                        value={e.verkaufspreis && z?.verkaufspreisProQm ? z.verkaufspreisProQm : ''} onChange={(v) => preis(i, 'kpm2', alsZahl(v))} aria-label="KP/m²" {...ZAHL} />
+                    )}
+                  </Table.Td>
                   <Table.Td>
                     <Group gap={2} wrap="nowrap">
                       {!stpl && e.id && (
@@ -530,6 +576,7 @@ function EinheitenTabelle({
           </Table.Tbody>
           <Table.Tfoot>
             <Table.Tr>
+              <Table.Th />
               <Table.Th>{s.anzahlEinheiten} Einh.</Table.Th>
               <Table.Th>{s.anzahlStellplaetze ? `${s.anzahlStellplaetze} Stpl.` : '–'}</Table.Th>
               <Table.Th>–</Table.Th>
