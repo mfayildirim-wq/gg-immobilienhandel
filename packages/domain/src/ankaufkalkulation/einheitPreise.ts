@@ -38,3 +38,11 @@ export function einheitMieteGeaendert<T extends EinheitDaten>(e: T): T {
   if (!e.verkaufspreis || !mieteSoll(e)) return e;
   return { ...e, renditeK: renditeAus(e, e.verkaufspreis) };
 }
+
+/**
+ * Miete SOLL eingeben (alt: dealUEDirectSoll). Ob sie „von Hand“ gilt, ergibt sich aus dem Wert — kein eigenes Kästchen:
+ * ein Wert, der von der IST-Miete abweicht, gilt als SOLL; ein leeres Feld oder derselbe Wert folgt wieder der IST-Miete.
+ */
+export function mieteSollSetzen(e: EinheitDaten, wert: number | null): Pick<EinheitDaten, 'mieteNeu' | 'mieteNeuManuell'> {
+  return { mieteNeu: wert, mieteNeuManuell: wert !== null && wert !== (e.mieteIst ?? null) };
+}

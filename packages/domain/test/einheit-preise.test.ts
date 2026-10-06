@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { berechneAnkauf, einheitAlsEingabe, type EinheitDaten, einheitMieteGeaendert, einheitPreisSetzen } from '../src/index.ts';
+import { berechneAnkauf, einheitAlsEingabe, type EinheitDaten, einheitMieteGeaendert, einheitPreisSetzen, mieteSollSetzen } from '../src/index.ts';
 
 // 80 m², Miete SOLL 1.000 €/Monat → 12.000 €/Jahr
 const wohnung: EinheitDaten = { typ: 'Wohnung', flaeche: 80, mieteIst: 1000, mieteNeu: null, mieteNeuManuell: false, renditeK: 4, verkaufspreis: null, stueck: null };
@@ -49,5 +49,13 @@ describe('einheitMieteGeaendert: bei festem VKP passt die Rendite zur neuen Miet
   it('ohne festen VKP oder ohne Miete bleibt alles, wie es ist', () => {
     expect(einheitMieteGeaendert({ ...wohnung, mieteIst: 1100 })).toMatchObject({ renditeK: 4, verkaufspreis: null });
     expect(einheitMieteGeaendert({ ...wohnung, mieteIst: null, verkaufspreis: 330_000, renditeK: 3.6 })).toMatchObject({ renditeK: 3.6 });
+  });
+});
+
+describe('mieteSollSetzen: „von Hand“ ergibt sich aus dem Wert, ohne Kästchen (wie dealUEDirectSoll)', () => {
+  it('ein abweichender Wert gilt als SOLL, ein leerer oder gleicher Wert folgt wieder der IST-Miete', () => {
+    expect(mieteSollSetzen(wohnung, 1200)).toEqual({ mieteNeu: 1200, mieteNeuManuell: true });
+    expect(mieteSollSetzen(wohnung, null)).toEqual({ mieteNeu: null, mieteNeuManuell: false });
+    expect(mieteSollSetzen(wohnung, 1000)).toEqual({ mieteNeu: 1000, mieteNeuManuell: false });
   });
 });
