@@ -5,7 +5,6 @@ import { IconCheck } from '@tabler/icons-react';
 import { useState } from 'react';
 import { useDealErledigt, useDealInfoAendern, useKommentarAnlegen } from '../../lib/api.ts';
 import { heuteIso } from '../../lib/ansicht.ts';
-import { gehalteneKarten } from '../../lib/gehalteneKarten.ts';
 import { datumDe, zeitpunktLog } from '../../lib/format.ts';
 
 const FARBE = { ueberfaellig: 'orange', heute: 'red', woche: 'green' } as const;
@@ -18,14 +17,8 @@ export function DealKommunikation({ deal }: { deal: DealDetail }) {
   const aendern = useDealInfoAendern(deal.id);
   const erledigt = useDealErledigt(deal.id);
   const fehler = aendern.error ?? erledigt.error;
-  // Ein neuer Termin hält die Karte im Ankauf-Cockpit fest wie die Knöpfe auf der Karte selbst (gehalteneKarten)
-  const speichern = (felder: Omit<Parameters<typeof aendern.mutate>[0], 'version'>) => {
-    const termin = 'nextContact' in felder;
-    if (termin) gehalteneKarten.vormerken('deals', deal.id);
-    aendern.mutate({ version: deal.version, ...felder }, {
-      onSuccess: (r) => { if (termin) gehalteneKarten.bestaetigen('deals', deal.id, { version: r.version, nextContact: felder.nextContact ?? null }); },
-    });
-  };
+  // Ein neuer Termin hält die Karte im Ankauf-Cockpit fest (in useDealInfoAendern, wie die Knöpfe auf der Karte)
+  const speichern = (felder: Omit<Parameters<typeof aendern.mutate>[0], 'version'>) => aendern.mutate({ version: deal.version, ...felder });
   const stand = nachfassStand({ nextContact: deal.nextContact, lastContact: deal.lastContact, frequenz: deal.nachfassFrequenz }, heuteIso());
 
   return (
@@ -72,7 +65,7 @@ export function DealKommunikation({ deal }: { deal: DealDetail }) {
             </Text>
             <Group gap="xs">
               <Text size="sm">{datumDe(deal.lastContact)}</Text>
-              <Button size="xs" variant="light" leftSection={<IconCheck size={14} />} loading={erledigt.isPending} onClick={() => erledigt.mutate(deal.version, { onSuccess: () => gehalteneKarten.loslassen('deals', deal.id) })}>
+              <Button size="xs" variant="light" leftSection={<IconCheck size={14} />} loading={erledigt.isPending} onClick={() => erledigt.mutate(deal.version)}>
                 Erledigt
               </Button>
             </Group>

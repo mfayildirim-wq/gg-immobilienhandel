@@ -1,4 +1,3 @@
-import { gehalteneKarten } from '../lib/gehalteneKarten.ts';
 import type { MaklerDetail as Detail } from '@gg/api-contract';
 import {
   dublettenMakler, emailPruefen, kommunikationKopf, kommZeitstempel, mailEntwurf, MAKLER_FREQUENZ_OPTIONEN, maklerDeals, nachfassStand, NICHT_KONTAKTIEREN_FRAGE,
@@ -117,7 +116,7 @@ function Profil({ m, geloescht }: { m: Detail; geloescht?: () => void }) {
       </SimpleGrid>
       <Group gap="xs">
         <Badge color={faellig?.klasse === 'ueberfaellig' ? 'red' : faellig?.klasse === 'heute' ? 'orange' : 'gray'}>{faellig?.label ?? `nächster Kontakt ${datumDe(m.nextContact)}`}</Badge>
-        <Button size="xs" variant="light" leftSection={<IconCheck size={14} />} loading={erledigt.isPending} onClick={() => erledigt.mutate(m.version, { onSuccess: () => gehalteneKarten.loslassen('makler', m.id) })}>Erledigt</Button>
+        <Button size="xs" variant="light" leftSection={<IconCheck size={14} />} loading={erledigt.isPending} onClick={() => erledigt.mutate(m.version)}>Erledigt</Button>
       </Group>
       <Group gap="xs">
         {m.tel && <Button component="a" href={`tel:${m.tel}`} variant="default" size="xs">📞 {m.tel}</Button>}

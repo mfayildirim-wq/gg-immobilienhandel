@@ -3,7 +3,6 @@ import { faelligKurz, TERMIN_GEAENDERT, TERMIN_GEAENDERT_HINWEIS, whatsappNummer
 import { ActionIcon, Badge, Button, Card, Group, Stack, Text } from '@mantine/core';
 import { IconBrandWhatsapp, IconCheck, IconPhone } from '@tabler/icons-react';
 import { useDealErledigt, useTerminSetzen } from '../../lib/api.ts';
-import { gehalteneKarten } from '../../lib/gehalteneKarten.ts';
 import { datumDe } from '../../lib/format.ts';
 import { MailAuswahl } from './MailAuswahl.tsx';
 import { FAELLIG_FARBE, TerminWahl } from './Termin.tsx';
@@ -92,9 +91,9 @@ export function DealKarte({ d, heute, aktiv, waehlen }: {
         {ohneAuswahl(
           <Group gap={4} wrap="wrap" justify="space-between">
             <TerminWahl kompakt label="Nächster Kontakt Deal" wert={d.nextContact} heute={heute}
-              setzen={(iso) => { gehalteneKarten.vormerken('deals', d.id); termin.mutate({ version: d.version, nextContact: iso }, { onSuccess: (r) => gehalteneKarten.bestaetigen('deals', d.id, { version: r.version, nextContact: iso }) }); }} />
+              setzen={(iso) => termin.mutate({ version: d.version, nextContact: iso })} />
             <Button size="compact-sm" variant="light" color="green" leftSection={<IconCheck size={14} />} loading={erledigt.isPending}
-              onClick={() => erledigt.mutate(d.version, { onSuccess: () => gehalteneKarten.loslassen('deals', d.id) })}>
+              onClick={() => erledigt.mutate(d.version)}>
               Erledigt
             </Button>
           </Group>,

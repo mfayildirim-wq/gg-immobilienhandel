@@ -1,4 +1,4 @@
-import { gehalteneKarten } from './gehalteneKarten.ts';
+import { gehalteneKarten, type Vorher } from './gehalteneKarten.ts';
 import type { KalkStandard } from '@gg/domain';
 import type {
   ExposeAnalyseAntwort,
@@ -188,34 +188,45 @@ export const useKalkStandard = () =>
 type Geaendert = { id: string; version: number };
 
 /** Mutation, die danach die betroffenen Listen und Details neu lädt. */
-function useAendern<E, R = unknown>(bereich: 'deals' | 'makler' | 'objekte' | 'einstellungen', aufruf: (e: E) => Promise<R>) {
+/** Zusätzliche Schritte eines Datenaufrufs; sie laufen auch zu Ende, wenn die auslösende Karte inzwischen verschwunden ist. */
+type Zusatz<E, R> = { vorher?: (e: E) => Vorher; danach?: (r: R, e: E) => void; fehler?: (e: E, vorher: Vorher) => void };
+
+function useAendern<E, R = unknown>(bereich: 'deals' | 'makler' | 'objekte' | 'einstellungen', aufruf: (e: E) => Promise<R>, zusatz: Zusatz<E, R> = {}) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: aufruf,
+    onMutate: (e: E) => ({ vorher: zusatz.vorher?.(e) }),
     // Eine im Ankauf-Cockpit stehen gebliebene Karte kennt danach die neue Version (sonst Versionskonflikt bei „Erledigt“)
-    onSuccess: (r) => {
+    onSuccess: (r: R, e: E) => {
       const g = r as { id?: unknown; version?: unknown } | null;
       if ((bereich === 'deals' || bereich === 'makler') && typeof g?.id === 'string' && typeof g.version === 'number') gehalteneKarten.version(bereich, g.id, g.version);
+      zusatz.danach?.(r, e);
     },
+    onError: (_f: Error, e: E, kontext: { vorher: Vorher } | undefined) => zusatz.fehler?.(e, kontext?.vorher),
     // Das Ankauf-Cockpit zeigt Deals und Makler: bei jeder Änderung mit neu laden
     onSettled: () => Promise.all([qc.invalidateQueries({ queryKey: [bereich] }), qc.invalidateQueries({ queryKey: ['ankauf'] })]),
   });
 }
 
+/** Deal-Detail: ein neuer Termin hält die Karte im Ankauf-Cockpit fest wie die Knöpfe auf der Karte selbst. */
 export const useDealInfoAendern = (id: string) =>
-  useAendern('deals', (e: DealInfoAendern) => anfrage<Geaendert>(`/api/deals/${id}`, senden('PATCH', e)));
+  useAendern('deals', (e: DealInfoAendern) => anfrage<Geaendert>(`/api/deals/${id}`, senden('PATCH', e)), {
+    vorher: (e) => ('nextContact' in e ? gehalteneKarten.vormerken('deals', id, e.nextContact ?? null) : undefined),
+    fehler: (_e, vorher) => gehalteneKarten.zurueck('deals', id, vorher),
+  });
 export const useKalkulationSpeichern = (id: string) =>
   useAendern('deals', (e: KalkulationSpeichern) => anfrage<Geaendert & { kennzahlen: Record<string, number> }>(`/api/deals/${id}/kalkulation`, senden('PUT', e)));
 export const useKommentarAnlegen = (id: string) =>
   useAendern('deals', (text: string) => anfrage(`/api/deals/${id}/kommentare`, senden('POST', { text })));
+/** „Erledigt“ (Karte oder Detail) schließt eine stehen gebliebene Karte ab. */
 export const useDealErledigt = (id: string) =>
-  useAendern('deals', (version: number) => anfrage<Geaendert>(`/api/deals/${id}/erledigt`, senden('POST', { version })));
+  useAendern('deals', (version: number) => anfrage<Geaendert>(`/api/deals/${id}/erledigt`, senden('POST', { version })), { danach: () => gehalteneKarten.loslassen('deals', id) });
 export const useMaklerAendern = (id: string) =>
   useAendern('makler', (e: MaklerAendern) => anfrage<Geaendert>(`/api/makler/${id}`, senden('PATCH', e)));
 export const useKommunikationAnlegen = (id: string) =>
   useAendern('makler', (e: KommunikationAnlegen) => anfrage(`/api/makler/${id}/kommunikation`, senden('POST', e)));
 export const useMaklerErledigt = (id: string) =>
-  useAendern('makler', (version: number) => anfrage<Geaendert>(`/api/makler/${id}/erledigt`, senden('POST', { version })));
+  useAendern('makler', (version: number) => anfrage<Geaendert>(`/api/makler/${id}/erledigt`, senden('POST', { version })), { danach: () => gehalteneKarten.loslassen('makler', id) });
 export const useObjektAendern = (id: string) =>
   useAendern('objekte', (e: ObjektAendern) => anfrage<Geaendert>(`/api/objekte/${id}`, senden('PATCH', e)));
 export const useObjektLoeschen = () => useAendern('objekte', (id: string) => anfrage<{ id: string }>(`/api/objekte/${id}`, { method: 'DELETE' }));
@@ -418,8 +429,12 @@ export const useDealAnrufErgebnis = (id: string) =>
 export const useBriefingAbschluss = (id: string) =>
   useAendern('makler', (e: { version: number; nextContact: string | null }) => anfrage(`/api/makler/${id}/briefing-abschluss`, senden('POST', e)));
 export const useWhatsappProtokoll = (id: string) => useAendern('makler', () => anfrage(`/api/makler/${id}/whatsapp`, senden('POST', {})));
+/** Termin auf der Karte (1W/1M/3M/6M, Datum): die Karte wird schon beim Klick festgehalten, siehe gehalteneKarten. */
 export const useTerminSetzen = (art: 'deals' | 'makler', id: string) =>
-  useAendern(art, (e: { version: number; nextContact: string | null }) => anfrage<Geaendert>(`/api/${art}/${id}/termin`, senden('PUT', e)));
+  useAendern(art, (e: { version: number; nextContact: string | null }) => anfrage<Geaendert>(`/api/${art}/${id}/termin`, senden('PUT', e)), {
+    vorher: (e) => gehalteneKarten.vormerken(art, id, e.nextContact),
+    fehler: (_e, vorher) => gehalteneKarten.zurueck(art, id, vorher),
+  });
 export const holeWaehlmaschine = () => anfrage<CockpitMakler[]>('/api/ankauf/waehlmaschine');
 
 // ── Kundenkalkulation ─────────────────────────────────────
