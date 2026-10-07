@@ -3,6 +3,7 @@ import { faelligKurz, TERMIN_GEAENDERT, TERMIN_GEAENDERT_HINWEIS, whatsappNummer
 import { ActionIcon, Badge, Button, Card, Group, Stack, Text } from '@mantine/core';
 import { IconBrandWhatsapp, IconCheck, IconPhone } from '@tabler/icons-react';
 import { useDealErledigt, useTerminSetzen } from '../../lib/api.ts';
+import { gehalteneKarten } from '../../lib/gehalteneKarten.ts';
 import { datumDe } from '../../lib/format.ts';
 import { MailAuswahl } from './MailAuswahl.tsx';
 import { FAELLIG_FARBE, TerminWahl } from './Termin.tsx';
@@ -23,11 +24,10 @@ const ohneAuswahl = (kind: React.ReactNode) => (
  *   3 Termin (Datum + Schnellwahl) und rechts daneben „Erledigt“ — alles in einer Zeile
  * Ein Klick auf die Karte zeigt den Deal rechts im Detailbereich. Status, Kennzahlen (Kaufpreis, Fläche, Miete) und
  * „Zuletzt“ stehen seit dem 02.10.2026 nicht mehr auf der Karte (Kundenwunsch) — sie stehen im Detail.
- * `halten`/`loslassen`: ein neuer Termin lässt die Karte stehen, erst „Erledigt“ schließt sie ab (wie in der alten App).
+ * Ein neuer Termin lässt die Karte stehen, erst „Erledigt“ schließt sie ab (wie in der alten App; `gehalteneKarten`).
  */
-export function DealKarte({ d, heute, aktiv, waehlen, halten, loslassen }: {
+export function DealKarte({ d, heute, aktiv, waehlen }: {
   d: CockpitDeal & { gehalten?: true }; heute: string; aktiv?: boolean; waehlen?: (id: string) => void;
-  halten?: (karte: CockpitDeal) => void; loslassen?: (id: string) => void;
 }) {
   const erledigt = useDealErledigt(d.id);
   const termin = useTerminSetzen('deals', d.id);
@@ -92,9 +92,9 @@ export function DealKarte({ d, heute, aktiv, waehlen, halten, loslassen }: {
         {ohneAuswahl(
           <Group gap={4} wrap="wrap" justify="space-between">
             <TerminWahl kompakt label="Nächster Kontakt Deal" wert={d.nextContact} heute={heute}
-              setzen={(iso) => termin.mutate({ version: d.version, nextContact: iso }, { onSuccess: (r) => halten?.({ ...d, nextContact: iso, version: r.version }) })} />
+              setzen={(iso) => { gehalteneKarten.vormerken('deals', d.id); termin.mutate({ version: d.version, nextContact: iso }, { onSuccess: (r) => gehalteneKarten.bestaetigen('deals', d.id, { version: r.version, nextContact: iso }) }); }} />
             <Button size="compact-sm" variant="light" color="green" leftSection={<IconCheck size={14} />} loading={erledigt.isPending}
-              onClick={() => erledigt.mutate(d.version, { onSuccess: () => loslassen?.(d.id) })}>
+              onClick={() => erledigt.mutate(d.version, { onSuccess: () => gehalteneKarten.loslassen('deals', d.id) })}>
               Erledigt
             </Button>
           </Group>,

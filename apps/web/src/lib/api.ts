@@ -1,3 +1,4 @@
+import { gehalteneKarten } from './gehalteneKarten.ts';
 import type { KalkStandard } from '@gg/domain';
 import type {
   ExposeAnalyseAntwort,
@@ -190,6 +191,11 @@ function useAendern<E, R = unknown>(bereich: 'deals' | 'makler' | 'objekte' | 'e
   const qc = useQueryClient();
   return useMutation({
     mutationFn: aufruf,
+    // Eine im Ankauf-Cockpit stehen gebliebene Karte kennt danach die neue Version (sonst Versionskonflikt bei „Erledigt“)
+    onSuccess: (r) => {
+      const g = r as { id?: unknown; version?: unknown } | null;
+      if ((bereich === 'deals' || bereich === 'makler') && typeof g?.id === 'string' && typeof g.version === 'number') gehalteneKarten.version(bereich, g.id, g.version);
+    },
     // Das Ankauf-Cockpit zeigt Deals und Makler: bei jeder Änderung mit neu laden
     onSettled: () => Promise.all([qc.invalidateQueries({ queryKey: [bereich] }), qc.invalidateQueries({ queryKey: ['ankauf'] })]),
   });

@@ -92,6 +92,50 @@ test.describe('Ankauf-Cockpit', () => {
     expect(await breite(liste)).toBe(310);
   });
 
+  test('Deal-Karte bleibt auch, wenn der Termin rechts im Deal-Detail (Kommunikation) gesetzt wird; Erledigt geht danach ohne Versionskonflikt', async ({ page }) => {
+    const strasse = `Detailweg ${Date.now()}`;
+    const objekt = await (await page.request.post('/api/objekte', { data: { strasse, hausnr: '6', stadt: 'Ankaufstadt' } })).json();
+    const deal = await (await page.request.post('/api/deals', { data: { objektId: objekt.id } })).json();
+    expect((await page.request.put(`/api/deals/${deal.id}/termin`, { data: { version: 1, nextContact: plus(-3) } })).ok()).toBe(true);
+    await page.goto('/');
+    const karte = page.getByRole('region', { name: '🎯 Deals nachverfolgen' }).getByLabel(`Deal ${strasse} 6`);
+    await karte.locator('[data-faellig-kurz]').click(); // Karte wählen → Detail rechts, Reiter Kommunikation
+    const detail = page.getByRole('region', { name: 'Deal-Detail' });
+    await expect(detail.getByRole('heading', { name: `${strasse} 6` })).toBeVisible();
+
+    // „1 Mo“ im Detail: gespeichert, die Karte bleibt links stehen
+    await detail.getByRole('button', { name: '1 Mo', exact: true }).click();
+    await expect.poll(async () => (await (await page.request.get(`/api/deals/${deal.id}`)).json()).nextContact).toBe(plus(30));
+    await expect(karte.locator('[data-faellig-kurz]')).toHaveText('Termin geändert');
+    await expect(karte.getByLabel('Nächster Kontakt Deal', { exact: true })).toHaveValue(plus(30));
+
+    // Eine weitere Änderung im Detail (Frequenz) erhöht die Version — „Erledigt“ auf der Karte kennt die neue
+    await detail.getByLabel('Frequenz', { exact: true }).click();
+    await page.getByRole('option', { name: 'Wöchentlich' }).click();
+    await expect.poll(async () => (await (await page.request.get(`/api/deals/${deal.id}`)).json()).nachfassFrequenz).toBe('Wöchentlich');
+    await expect(karte).toBeVisible();
+    await karte.getByRole('button', { name: 'Erledigt' }).click();
+    await expect(karte).toBeHidden();
+    await expect(page.getByText(/Versionskonflikt|geändert worden/)).toHaveCount(0);
+    expect((await (await page.request.get(`/api/deals/${deal.id}`)).json()).lastContact).toBe(heute());
+  });
+
+  test('„Erledigt“ rechts im Deal-Detail schließt auch eine stehen gebliebene Karte ab', async ({ page }) => {
+    const strasse = `Detailerledigt ${Date.now()}`;
+    const objekt = await (await page.request.post('/api/objekte', { data: { strasse, hausnr: '8', stadt: 'Ankaufstadt' } })).json();
+    const deal = await (await page.request.post('/api/deals', { data: { objektId: objekt.id } })).json();
+    expect((await page.request.put(`/api/deals/${deal.id}/termin`, { data: { version: 1, nextContact: plus(-2) } })).ok()).toBe(true);
+    await page.goto('/');
+    const karte = page.getByRole('region', { name: '🎯 Deals nachverfolgen' }).getByLabel(`Deal ${strasse} 8`);
+    await karte.getByRole('button', { name: 'Nächster Kontakt Deal in 1M' }).click();
+    await expect(karte.locator('[data-faellig-kurz]')).toHaveText('Termin geändert');
+    await karte.locator('[data-faellig-kurz]').click();
+    const detail = page.getByRole('region', { name: 'Deal-Detail' });
+    await expect(detail.getByRole('heading', { name: `${strasse} 8` })).toBeVisible();
+    await detail.getByRole('button', { name: 'Erledigt' }).click();
+    await expect(karte).toBeHidden();
+  });
+
   test('Deal-Karte bleibt nach „1M“ stehen und verschwindet erst mit „Erledigt“ (wie in der alten App)', async ({ page }) => {
     const strasse = `Bleibtweg ${Date.now()}`;
     const objekt = await (await page.request.post('/api/objekte', { data: { strasse, hausnr: '4', stadt: 'Ankaufstadt' } })).json();
