@@ -4,7 +4,6 @@ import { Badge, Button, Card, Group, Stack, Text } from '@mantine/core';
 import { IconBrandWhatsapp, IconCheck, IconPhone, IconPlus } from '@tabler/icons-react';
 import { useNavigate } from '@tanstack/react-router';
 import { useAnlaesse, useKiStatus, useMaklerErledigt, useTerminSetzen, useWhatsappProtokoll } from '../../lib/api.ts';
-import { gehalteneKarten } from '../../lib/gehalteneKarten.ts';
 import { KiEntwurf } from './KiEntwurf.tsx';
 import { MailAuswahl } from './MailAuswahl.tsx';
 import { datumDe } from '../../lib/format.ts';
@@ -102,11 +101,11 @@ export function MaklerKarte({ m, heute, anrufen, stilOeffnen, aktiv, waehlen }: 
               : <Badge variant="outline" color={FAELLIG_FARBE[m.faellig.klasse]} data-faellig-label>{m.faellig.label}</Badge>}
             {m.lastContact && <Text size="xs" c="dimmed" data-zuletzt>Zuletzt: {datumDe(m.lastContact)}</Text>}
           </Group>
-          <Button size="xs" variant="light" color="green" leftSection={<IconCheck size={14} />} loading={erledigt.isPending} onClick={() => erledigt.mutate(m.version, { onSuccess: () => gehalteneKarten.loslassen('makler', m.id) })}>
+          <Button size="xs" variant="light" color="green" leftSection={<IconCheck size={14} />} loading={erledigt.isPending} onClick={() => erledigt.mutate(m.version)}>
             Erledigt
           </Button>
         </Group>
-        <TerminWahl label="Nächster Kontakt Makler" wert={m.nextContact} heute={heute} setzen={(iso) => { gehalteneKarten.vormerken('makler', m.id); termin.mutate({ version: m.version, nextContact: iso }, { onSuccess: (r) => gehalteneKarten.bestaetigen('makler', m.id, { version: r.version, nextContact: iso }) }); }} />
+        <TerminWahl label="Nächster Kontakt Makler" wert={m.nextContact} heute={heute} setzen={(iso) => termin.mutate({ version: m.version, nextContact: iso })} />
         {fehler && <Text size="xs" c="red">{fehler.message}</Text>}
       </Stack>
     </Card>
