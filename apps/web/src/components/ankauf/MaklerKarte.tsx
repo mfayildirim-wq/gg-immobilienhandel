@@ -12,10 +12,9 @@ import css from '../Listenzeile.module.css';
 
 export const PRIO_FARBE: Record<string, string> = { A: 'green', B: 'orange', C: 'gray' };
 
-export function MaklerKarte({ m, heute, anrufen, stilOeffnen, aktiv, waehlen, halten, loslassen }: {
+export function MaklerKarte({ m, heute, anrufen, stilOeffnen, aktiv, waehlen }: {
   m: CockpitMakler & { gehalten?: true }; heute: string; anrufen: (m: CockpitMakler) => void; stilOeffnen: () => void; aktiv?: boolean; waehlen?: (id: string) => void;
   /** Ein neuer Termin lässt die Karte stehen, erst „Erledigt“ schließt sie ab (wie in der alten App). */
-  halten?: (karte: CockpitMakler) => void; loslassen?: (id: string) => void;
 }) {
   const erledigt = useMaklerErledigt(m.id);
   const termin = useTerminSetzen('makler', m.id);
@@ -102,11 +101,11 @@ export function MaklerKarte({ m, heute, anrufen, stilOeffnen, aktiv, waehlen, ha
               : <Badge variant="outline" color={FAELLIG_FARBE[m.faellig.klasse]} data-faellig-label>{m.faellig.label}</Badge>}
             {m.lastContact && <Text size="xs" c="dimmed" data-zuletzt>Zuletzt: {datumDe(m.lastContact)}</Text>}
           </Group>
-          <Button size="xs" variant="light" color="green" leftSection={<IconCheck size={14} />} loading={erledigt.isPending} onClick={() => erledigt.mutate(m.version, { onSuccess: () => loslassen?.(m.id) })}>
+          <Button size="xs" variant="light" color="green" leftSection={<IconCheck size={14} />} loading={erledigt.isPending} onClick={() => erledigt.mutate(m.version)}>
             Erledigt
           </Button>
         </Group>
-        <TerminWahl label="Nächster Kontakt Makler" wert={m.nextContact} heute={heute} setzen={(iso) => termin.mutate({ version: m.version, nextContact: iso }, { onSuccess: (r) => halten?.({ ...m, nextContact: iso, version: r.version }) })} />
+        <TerminWahl geaendert={m.gehalten} label="Nächster Kontakt Makler" wert={m.nextContact} heute={heute} setzen={(iso) => termin.mutate({ version: m.version, nextContact: iso })} />
         {fehler && <Text size="xs" c="red">{fehler.message}</Text>}
       </Stack>
     </Card>

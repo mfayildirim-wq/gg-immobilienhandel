@@ -17,6 +17,7 @@ export function DealKommunikation({ deal }: { deal: DealDetail }) {
   const aendern = useDealInfoAendern(deal.id);
   const erledigt = useDealErledigt(deal.id);
   const fehler = aendern.error ?? erledigt.error;
+  // Ein neuer Termin hält die Karte im Ankauf-Cockpit fest (in useDealInfoAendern, wie die Knöpfe auf der Karte)
   const speichern = (felder: Omit<Parameters<typeof aendern.mutate>[0], 'version'>) => aendern.mutate({ version: deal.version, ...felder });
   const stand = nachfassStand({ nextContact: deal.nextContact, lastContact: deal.lastContact, frequenz: deal.nachfassFrequenz }, heuteIso());
 

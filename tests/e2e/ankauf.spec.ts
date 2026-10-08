@@ -92,6 +92,160 @@ test.describe('Ankauf-Cockpit', () => {
     expect(await breite(liste)).toBe(310);
   });
 
+  test('Deal-Karte bleibt auch, wenn der Termin rechts im Deal-Detail (Kommunikation) gesetzt wird; Erledigt geht danach ohne Versionskonflikt', async ({ page }) => {
+    const strasse = `Detailweg ${Date.now()}`;
+    const objekt = await (await page.request.post('/api/objekte', { data: { strasse, hausnr: '6', stadt: 'Ankaufstadt' } })).json();
+    const deal = await (await page.request.post('/api/deals', { data: { objektId: objekt.id } })).json();
+    expect((await page.request.put(`/api/deals/${deal.id}/termin`, { data: { version: 1, nextContact: plus(-3) } })).ok()).toBe(true);
+    await page.goto('/');
+    const karte = page.getByRole('region', { name: '🎯 Deals nachverfolgen' }).getByLabel(`Deal ${strasse} 6`);
+    await karte.locator('[data-faellig-kurz]').click(); // Karte wählen → Detail rechts, Reiter Kommunikation
+    const detail = page.getByRole('region', { name: 'Deal-Detail' });
+    await expect(detail.getByRole('heading', { name: `${strasse} 6` })).toBeVisible();
+
+    // „1 Mo“ im Detail: gespeichert, die Karte bleibt links stehen
+    await detail.getByRole('button', { name: '1 Mo', exact: true }).click();
+    await expect.poll(async () => (await (await page.request.get(`/api/deals/${deal.id}`)).json()).nextContact).toBe(plus(30));
+    await expect(karte.locator('[data-faellig-kurz]')).toHaveText('Termin geändert');
+    await expect(karte.getByLabel('Nächster Kontakt Deal', { exact: true })).toHaveValue(plus(30));
+
+    // Eine weitere Änderung im Detail (Frequenz) erhöht die Version — „Erledigt“ auf der Karte kennt die neue
+    await detail.getByLabel('Frequenz', { exact: true }).click();
+    await page.getByRole('option', { name: 'Wöchentlich' }).click();
+    await expect.poll(async () => (await (await page.request.get(`/api/deals/${deal.id}`)).json()).nachfassFrequenz).toBe('Wöchentlich');
+    await expect(karte).toBeVisible();
+    await karte.getByRole('button', { name: 'Erledigt' }).click();
+    await expect(karte).toBeHidden();
+    await expect(page.getByText(/Versionskonflikt|geändert worden/)).toHaveCount(0);
+    expect((await (await page.request.get(`/api/deals/${deal.id}`)).json()).lastContact).toBe(heute());
+  });
+
+  test('gewählte Karte: nach „1M“ bleibt sie gewählt — die Auswahl springt nicht auf einen anderen Deal', async ({ page }) => {
+    const strasse = `Auswahlweg ${Date.now()}`;
+    const objekt = await (await page.request.post('/api/objekte', { data: { strasse, hausnr: '2', stadt: 'Ankaufstadt' } })).json();
+    const deal = await (await page.request.post('/api/deals', { data: { objektId: objekt.id } })).json();
+    expect((await page.request.put(`/api/deals/${deal.id}/termin`, { data: { version: 1, nextContact: plus(-4) } })).ok()).toBe(true);
+    // Liste langsam laden wie online: zwischen Speichern und neuer Liste vergeht Zeit
+    await page.route('**/api/ankauf', async (r) => { await new Promise((w) => setTimeout(w, 800)); await r.continue(); });
+    await page.goto('/');
+    const karte = page.getByRole('region', { name: '🎯 Deals nachverfolgen' }).getByLabel(`Deal ${strasse} 2`);
+    await karte.locator('[data-faellig-kurz]').click();
+    const detail = page.getByRole('region', { name: 'Deal-Detail' });
+    await expect(detail.getByRole('heading', { name: `${strasse} 2` })).toBeVisible();
+    const sprung: string[] = [];
+    page.on('request', (r) => { const m = /\/api\/deals\/([^/?]+)$/.exec(r.url()); if (m && m[1] !== deal.id && r.method() === 'GET') sprung.push(m[1]!); });
+
+    await karte.getByRole('button', { name: 'Nächster Kontakt Deal in 1M' }).click();
+    await expect(karte.locator('[data-faellig-kurz]')).toHaveText('Termin geändert');
+    await page.waitForTimeout(2500);
+    await expect(karte).toHaveAttribute('aria-current', 'true');
+    await expect(detail.getByRole('heading', { name: `${strasse} 2` })).toBeVisible();
+    expect(sprung).toEqual([]); // kein anderer Deal wurde ins Detail geladen
+  });
+
+  test('zwei Karten schnell hintereinander „1M“: beide bleiben stehen, auch wenn Antworten online unterschiedlich schnell kommen', async ({ page }) => {
+    const k = `Schnellweg ${Date.now()}`;
+    const deals: string[] = [];
+    for (const nr of ['1', '2']) {
+      const objekt = await (await page.request.post('/api/objekte', { data: { strasse: k, hausnr: nr, stadt: 'Ankaufstadt' } })).json();
+      const deal = await (await page.request.post('/api/deals', { data: { objektId: objekt.id } })).json();
+      expect((await page.request.put(`/api/deals/${deal.id}/termin`, { data: { version: 1, nextContact: plus(-5) } })).ok()).toBe(true);
+      deals.push(deal.id);
+    }
+    await page.goto('/');
+    const liste = page.getByRole('region', { name: '🎯 Deals nachverfolgen' });
+    const erste = liste.getByLabel(`Deal ${k} 1`);
+    const zweite = liste.getByLabel(`Deal ${k} 2`);
+    await expect(zweite).toBeVisible();
+    // Online kommen Antworten unterschiedlich schnell: die Antwort auf den Termin der zweiten Karte kommt spät an,
+    // die Liste, die der erste Klick neu lädt, ist schon da — und enthält die zweite Karte nicht mehr
+    await page.route(`**/api/deals/${deals[1]}/termin`, async (r) => { const antwort = await r.fetch(); await new Promise((w) => setTimeout(w, 2500)); await r.fulfill({ response: antwort }); });
+
+    await zweite.getByRole('button', { name: 'Nächster Kontakt Deal in 1M' }).click();
+    await page.waitForTimeout(400); // der Termin der zweiten Karte ist gespeichert, die Antwort unterwegs
+    await erste.getByRole('button', { name: 'Nächster Kontakt Deal in 1M' }).click();
+    for (let i = 0; i < 8; i++) {
+      await page.waitForTimeout(500);
+      await expect(erste).toBeVisible();
+      await expect(zweite).toBeVisible();
+    }
+    await expect(erste.locator('[data-faellig-kurz]')).toHaveText('Termin geändert');
+    await expect(zweite.locator('[data-faellig-kurz]')).toHaveText('Termin geändert');
+  });
+
+  test('Karte mit gleichem Termin wie ihre Nachbarn bleibt nach „1M“ an ihrem Platz — rutscht nicht ans Ende (Kundenmeldung 08.10.)', async ({ page }) => {
+    const k = `Platzweg ${Date.now()}`;
+    const ids: string[] = [];
+    for (const nr of ['1', '2', '3']) {
+      const objekt = await (await page.request.post('/api/objekte', { data: { strasse: k, hausnr: nr, stadt: 'Ankaufstadt' } })).json();
+      const deal = await (await page.request.post('/api/deals', { data: { objektId: objekt.id } })).json();
+      expect((await page.request.put(`/api/deals/${deal.id}/termin`, { data: { version: 1, nextContact: plus(-4) } })).ok()).toBe(true);
+      ids.push(deal.id);
+    }
+    await page.goto('/');
+    const liste = page.getByRole('region', { name: '🎯 Deals nachverfolgen' });
+    const reihenfolge = async () => (await liste.locator('[data-karte^="deal:"]').evaluateAll((es) => es.map((e) => e.getAttribute('data-karte')!))).filter((x) => ids.includes(x.slice(5)));
+    await expect.poll(reihenfolge).toHaveLength(3);
+    const vorher = await reihenfolge();
+    const erste = liste.locator(`[data-karte="${vorher[0]}"]`);
+    await erste.getByRole('button', { name: 'Nächster Kontakt Deal in 1M' }).click();
+    await expect(erste.locator('[data-faellig-kurz]')).toHaveText('Termin geändert');
+    await page.waitForTimeout(1500);
+    expect(await reihenfolge()).toEqual(vorher);
+    await expect(erste).toBeInViewport();
+  });
+
+  test('geänderte Karte: der gedrückte Knopf bleibt markiert, das Datum ist rot umrandet — bis „Erledigt“', async ({ page }) => {
+    const strasse = `Markierweg ${Date.now()}`;
+    const objekt = await (await page.request.post('/api/objekte', { data: { strasse, hausnr: '3', stadt: 'Ankaufstadt' } })).json();
+    const deal = await (await page.request.post('/api/deals', { data: { objektId: objekt.id } })).json();
+    expect((await page.request.put(`/api/deals/${deal.id}/termin`, { data: { version: 1, nextContact: plus(-2) } })).ok()).toBe(true);
+    await page.goto('/');
+    const karte = page.getByRole('region', { name: '🎯 Deals nachverfolgen' }).getByLabel(`Deal ${strasse} 3`);
+    const datum = karte.getByLabel('Nächster Kontakt Deal', { exact: true });
+    const knopf = (k: string) => karte.getByRole('button', { name: `Nächster Kontakt Deal in ${k}` });
+    const rahmen = (l: typeof datum) => l.evaluate((e) => getComputedStyle(e).borderTopColor);
+    const hintergrund = (l: typeof datum) => l.evaluate((e) => getComputedStyle(e).backgroundColor);
+    // vorher: nichts markiert
+    await expect(knopf('1M')).not.toHaveAttribute('aria-pressed', 'true');
+    const rahmenVorher = await rahmen(datum);
+
+    await knopf('1M').click();
+    await expect(karte.locator('[data-faellig-kurz]')).toHaveText('Termin geändert');
+    await expect(knopf('1M')).toHaveAttribute('aria-pressed', 'true');
+    await page.mouse.move(5, 300); // weg vom Knopf, sonst Hover-Farbe
+    expect(await hintergrund(knopf('1M'))).toBe('rgb(250, 82, 82)'); // rot gefüllt
+    expect(await rahmen(datum)).toBe('rgb(250, 82, 82)'); // Datum rot umrandet
+    expect(await rahmen(datum)).not.toBe(rahmenVorher);
+
+    // ein anderer Knopf: die Markierung wandert mit
+    await knopf('3M').click();
+    await expect(knopf('3M')).toHaveAttribute('aria-pressed', 'true');
+    await expect(knopf('1M')).not.toHaveAttribute('aria-pressed', 'true');
+
+    // Datum von Hand: kein Knopf markiert, das Datum bleibt rot
+    await datum.fill(plus(45));
+    await expect.poll(async () => (await (await page.request.get(`/api/deals/${deal.id}`)).json()).nextContact).toBe(plus(45));
+    await expect(knopf('3M')).not.toHaveAttribute('aria-pressed', 'true');
+    expect(await rahmen(datum)).toBe('rgb(250, 82, 82)');
+  });
+
+  test('„Erledigt“ rechts im Deal-Detail schließt auch eine stehen gebliebene Karte ab', async ({ page }) => {
+    const strasse = `Detailerledigt ${Date.now()}`;
+    const objekt = await (await page.request.post('/api/objekte', { data: { strasse, hausnr: '8', stadt: 'Ankaufstadt' } })).json();
+    const deal = await (await page.request.post('/api/deals', { data: { objektId: objekt.id } })).json();
+    expect((await page.request.put(`/api/deals/${deal.id}/termin`, { data: { version: 1, nextContact: plus(-2) } })).ok()).toBe(true);
+    await page.goto('/');
+    const karte = page.getByRole('region', { name: '🎯 Deals nachverfolgen' }).getByLabel(`Deal ${strasse} 8`);
+    await karte.getByRole('button', { name: 'Nächster Kontakt Deal in 1M' }).click();
+    await expect(karte.locator('[data-faellig-kurz]')).toHaveText('Termin geändert');
+    await karte.locator('[data-faellig-kurz]').click();
+    const detail = page.getByRole('region', { name: 'Deal-Detail' });
+    await expect(detail.getByRole('heading', { name: `${strasse} 8` })).toBeVisible();
+    await detail.getByRole('button', { name: 'Erledigt' }).click();
+    await expect(karte).toBeHidden();
+  });
+
   test('Deal-Karte bleibt nach „1M“ stehen und verschwindet erst mit „Erledigt“ (wie in der alten App)', async ({ page }) => {
     const strasse = `Bleibtweg ${Date.now()}`;
     const objekt = await (await page.request.post('/api/objekte', { data: { strasse, hausnr: '4', stadt: 'Ankaufstadt' } })).json();

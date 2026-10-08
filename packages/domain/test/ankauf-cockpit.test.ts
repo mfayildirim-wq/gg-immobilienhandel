@@ -166,6 +166,22 @@ describe('Hinweise', () => {
 });
 
 describe('cockpitMitGehaltenen (Karte bleibt nach „1W/1M/…“ stehen, bis „Erledigt“ sie abschließt)', () => {
+  it('bei gleichem Termin bleibt die gehaltene Karte an ihrem Platz — nicht hinter den anderen (Kundenmeldung 08.10.2026)', () => {
+    const k = (id: string) => ({ id, termin: '2026-10-04', nextContact: '2026-10-04', version: 1, faellig: { klasse: 'ueberfaellig' as const, tage: -4, label: '4T überfällig', sort: 1 as const } });
+    const [a, b, c, d] = [k('a'), k('b'), k('c'), k('d')];
+    // b war die zweite Karte; nach „1M“ liefert der Server sie nicht mehr — mit der bisherigen Reihenfolge bleibt sie zweite
+    const liste = cockpitMitGehaltenen([a, c, d], { b: { ...b, nextContact: '2026-11-04', version: 2 } }, ['a', 'b', 'c', 'd']);
+    expect(liste.map((x) => x.id)).toEqual(['a', 'b', 'c', 'd']);
+    // ohne bekannte Reihenfolge hinten — so sah der Kunde die Karte „verschwinden“ (sie stand unterhalb des Sichtbereichs)
+    expect(cockpitMitGehaltenen([a, c, d], { b: { ...b, nextContact: '2026-11-04', version: 2 } }).map((x) => x.id)).toEqual(['a', 'c', 'd', 'b']);
+  });
+
+  it('neue Karten vom Server, die in der bisherigen Reihenfolge fehlen, kommen hinter die bekannten mit gleichem Termin', () => {
+    const k = (id: string, termin: string) => ({ id, termin, nextContact: termin, version: 1, faellig: { klasse: 'ueberfaellig' as const, tage: -1, label: '1T', sort: 1 as const } });
+    const liste = cockpitMitGehaltenen([k('neu', '2026-10-04'), k('a', '2026-10-04'), k('frueher', '2026-10-01')], { b: { ...k('b', '2026-10-04'), nextContact: '2026-11-04', version: 2 } }, ['a', 'b']);
+    expect(liste.map((x) => x.id)).toEqual(['frueher', 'a', 'b', 'neu']);
+  });
+
   const karte = (id: string, termin: string, klasse: 'heute' | 'ueberfaellig' | 'woche', nextContact = termin) =>
     ({ id, termin, nextContact, version: 1, faellig: { klasse, tage: 0, label: klasse, sort: 0 as const } });
   const a = karte('a', '2026-09-28', 'ueberfaellig');
