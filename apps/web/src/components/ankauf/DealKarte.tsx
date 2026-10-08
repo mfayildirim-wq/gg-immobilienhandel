@@ -90,7 +90,7 @@ export function DealKarte({ d, heute, aktiv, waehlen }: {
         {/* 3 — Datum, Schnellwahl und „Erledigt“ in einer Zeile; nur wenn die Karte sehr schmal wird, rutscht „Erledigt“ darunter */}
         {ohneAuswahl(
           <Group gap={4} wrap="wrap" justify="space-between">
-            <TerminWahl kompakt label="Nächster Kontakt Deal" wert={d.nextContact} heute={heute}
+            <TerminWahl kompakt geaendert={d.gehalten} label="Nächster Kontakt Deal" wert={d.nextContact} heute={heute}
               setzen={(iso) => termin.mutate({ version: d.version, nextContact: iso })} />
             <Button size="compact-sm" variant="light" color="green" leftSection={<IconCheck size={14} />} loading={erledigt.isPending}
               onClick={() => erledigt.mutate(d.version)}>
