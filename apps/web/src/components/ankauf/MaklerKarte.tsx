@@ -105,7 +105,7 @@ export function MaklerKarte({ m, heute, anrufen, stilOeffnen, aktiv, waehlen }: 
             Erledigt
           </Button>
         </Group>
-        <TerminWahl label="Nächster Kontakt Makler" wert={m.nextContact} heute={heute} setzen={(iso) => termin.mutate({ version: m.version, nextContact: iso })} />
+        <TerminWahl geaendert={m.gehalten} label="Nächster Kontakt Makler" wert={m.nextContact} heute={heute} setzen={(iso) => termin.mutate({ version: m.version, nextContact: iso })} />
         {fehler && <Text size="xs" c="red">{fehler.message}</Text>}
       </Stack>
     </Card>

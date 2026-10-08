@@ -195,6 +195,41 @@ test.describe('Ankauf-Cockpit', () => {
     await expect(erste).toBeInViewport();
   });
 
+  test('geänderte Karte: der gedrückte Knopf bleibt markiert, das Datum ist rot umrandet — bis „Erledigt“', async ({ page }) => {
+    const strasse = `Markierweg ${Date.now()}`;
+    const objekt = await (await page.request.post('/api/objekte', { data: { strasse, hausnr: '3', stadt: 'Ankaufstadt' } })).json();
+    const deal = await (await page.request.post('/api/deals', { data: { objektId: objekt.id } })).json();
+    expect((await page.request.put(`/api/deals/${deal.id}/termin`, { data: { version: 1, nextContact: plus(-2) } })).ok()).toBe(true);
+    await page.goto('/');
+    const karte = page.getByRole('region', { name: '🎯 Deals nachverfolgen' }).getByLabel(`Deal ${strasse} 3`);
+    const datum = karte.getByLabel('Nächster Kontakt Deal', { exact: true });
+    const knopf = (k: string) => karte.getByRole('button', { name: `Nächster Kontakt Deal in ${k}` });
+    const rahmen = (l: typeof datum) => l.evaluate((e) => getComputedStyle(e).borderTopColor);
+    const hintergrund = (l: typeof datum) => l.evaluate((e) => getComputedStyle(e).backgroundColor);
+    // vorher: nichts markiert
+    await expect(knopf('1M')).not.toHaveAttribute('aria-pressed', 'true');
+    const rahmenVorher = await rahmen(datum);
+
+    await knopf('1M').click();
+    await expect(karte.locator('[data-faellig-kurz]')).toHaveText('Termin geändert');
+    await expect(knopf('1M')).toHaveAttribute('aria-pressed', 'true');
+    await page.mouse.move(5, 300); // weg vom Knopf, sonst Hover-Farbe
+    expect(await hintergrund(knopf('1M'))).toBe('rgb(250, 82, 82)'); // rot gefüllt
+    expect(await rahmen(datum)).toBe('rgb(250, 82, 82)'); // Datum rot umrandet
+    expect(await rahmen(datum)).not.toBe(rahmenVorher);
+
+    // ein anderer Knopf: die Markierung wandert mit
+    await knopf('3M').click();
+    await expect(knopf('3M')).toHaveAttribute('aria-pressed', 'true');
+    await expect(knopf('1M')).not.toHaveAttribute('aria-pressed', 'true');
+
+    // Datum von Hand: kein Knopf markiert, das Datum bleibt rot
+    await datum.fill(plus(45));
+    await expect.poll(async () => (await (await page.request.get(`/api/deals/${deal.id}`)).json()).nextContact).toBe(plus(45));
+    await expect(knopf('3M')).not.toHaveAttribute('aria-pressed', 'true');
+    expect(await rahmen(datum)).toBe('rgb(250, 82, 82)');
+  });
+
   test('„Erledigt“ rechts im Deal-Detail schließt auch eine stehen gebliebene Karte ab', async ({ page }) => {
     const strasse = `Detailerledigt ${Date.now()}`;
     const objekt = await (await page.request.post('/api/objekte', { data: { strasse, hausnr: '8', stadt: 'Ankaufstadt' } })).json();
