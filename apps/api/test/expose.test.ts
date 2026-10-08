@@ -1,6 +1,6 @@
 import { createDb, schema, verlangeLokaleDatenbank } from '@gg/db';
 import { KALK_STANDARD } from '@gg/domain';
-import { kiAttrappe, speicherImSpeicher, testExpose } from '@gg/integrations';
+import { KiSchluesselFehler, kiAttrappe, speicherImSpeicher, testExpose } from '@gg/integrations';
 import { eq, inArray, like } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.ts';
@@ -45,6 +45,35 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
     } finally {
       await zugang('');
     }
+  });
+
+  it('abgelehnter KI-Schlüssel: klare Meldung mit Quelle statt „Interner Fehler“; „Schlüssel testen“ prüft den verwendeten Schlüssel', async () => {
+    const abgelehnt = { nachricht: async () => { throw new KiSchluesselFehler(401, 'invalid x-api-key'); }, dateiHochladen: async () => { throw new KiSchluesselFehler(401, 'invalid x-api-key'); }, dateiLoeschen: async () => {} };
+    let geprueft = '';
+    const online = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, ki: abgelehnt, expose: { speicher, ki: null, attrappe: false },
+      kiSchluesselPruefen: async (key: string) => { geprueft = key; return { gueltig: false, meldung: 'abgelehnt (Test)' }; } });
+    const post = (pfad: string, body: unknown) => online.request(pfad, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const zugang = (wert: string) => online.request('/api/zugaenge/anthropic-api-key', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ wert }) });
+    try {
+      await zugang('sk-ant-test-abgelehnt-9876');
+      const e = await lies(online.request('/api/expose/eingang', { method: 'POST', body: testExpose('Schlüsseltest') }));
+      const r = await post('/api/expose/analyse', { key: e.key, dateiname: 'schluessel.pdf' });
+      expect(r.status).toBe(422);
+      const f = (await lies(r)).fehler as string;
+      expect(f).toContain('Anthropic-Schlüssel wird abgelehnt');
+      expect(f).toContain('Einstellungen → Zugänge');
+      expect(f).toContain('••••9876');
+
+      const t = await lies(post('/api/zugaenge/anthropic-api-key/pruefen', {}));
+      expect(t).toMatchObject({ gueltig: false, meldung: 'abgelehnt (Test)', quelle: 'einstellungen', maske: '••••9876' });
+      expect(geprueft).toBe('sk-ant-test-abgelehnt-9876');
+    } finally {
+      await zugang('');
+    }
+  });
+
+  it('„Schlüssel testen“ mit KI-Attrappe: nichts wird geprüft', async () => {
+    expect(await lies(json('/api/zugaenge/anthropic-api-key/pruefen', {}))).toMatchObject({ gueltig: true, meldung: expect.stringContaining('Test-Modus') });
   });
 
   it('nimmt nur echte PDFs an und analysiert nur eigene Eingänge', async () => {

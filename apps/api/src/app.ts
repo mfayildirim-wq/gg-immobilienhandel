@@ -13,6 +13,7 @@ import {
   DublettenPaarSicht,
   AuditBefund,
   KiKosten,
+  ZugangPruefung,
   ZugangStatus,
   OutwardStand,
   BewertungsDaten,
@@ -127,7 +128,7 @@ import { autoSicherungDatei, autoSicherungEinspielen, autoSicherungErstellen, au
 import { filterAnlegen, filterListe, filterLoeschen, filterUmbenennen, filterVorlagenEinrichten, listenAltformat } from './services/listen.ts';
 import { projektAnlegen, projektDealAuswahl, projektDetail, projekteListe, projektLoeschen, projektSpeichern } from './services/projekte.ts';
 import { fotoDatei, fotoHochladen, fotoLoeschen, fotoPort, fotosListe, fotosSortieren } from './services/fotos.ts';
-import { type Dateispeicher, type GraphClient, type KiClient, type PropstackClient, nachrichtenSuche, webSuche, anthropicClient } from '@gg/integrations';
+import { type Dateispeicher, type GraphClient, type KiClient, KiSchluesselFehler, type PropstackClient, nachrichtenSuche, webSuche, anthropicClient, anthropicSchluesselPruefen } from '@gg/integrations';
 import { bekannteExposeDateien, exposeAnalysieren, exposeEingang, exposeEingangUebernehmen, type ExposeKontext, exposeUebernehmen, MAX_EXPOSE_BYTES } from './services/expose.ts';
 import { auth, type AuthOptionen } from './middleware/auth.ts';
 import {
@@ -199,6 +200,8 @@ export interface AppKontext {
    * `aktiv: false` schaltet den Bot ab: die Routen antworten 503, die Oberfläche zeigt keine Bot-Knöpfe (Standard: an).
    */
   autoImport?: { aktiv?: boolean; browserStarten?: () => Promise<import('playwright-core').Browser>; maxZeitlimitSek?: number; lokaleZieleErlaubt?: boolean };
+  /** „Schlüssel testen“ für Anthropic; Standard: echte Abfrage der Modellliste. Tests setzen einen Ersatz. */
+  kiSchluesselPruefen?: (apiKey: string) => Promise<{ gueltig: boolean; meldung: string }>;
   /** `CRON_SECRET`: ohne dieses Geheimnis antworten die Cron-Routen immer mit 401. */
   cronGeheimnis?: string;
   /** Wohin die Microsoft-Anmeldung zurückleiten darf; Standard: nur lokale Adressen (`rueckwegRegelnAusUmgebung`). */
@@ -224,7 +227,7 @@ const Version = z.object({ version: z.number().int() });
 const Geaendert = json(z.object({ id: z.string(), version: z.number().int() }), 'geändert');
 const konflikt = { 400: fehler('Eingabe ungültig'), 404: fehler('nicht gefunden'), 409: fehler('Versionskonflikt') };
 
-export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, cronGeheimnis, autoImport, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
+export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, cronGeheimnis, kiSchluesselPruefen = anthropicSchluesselPruefen, autoImport, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
   const autoImportAktiv = autoImport?.aktiv ?? true;
   const exposeKontext = () => {
     if (!expose) throw new FachFehler(422, 'Dateiablage ist nicht eingerichtet (SUPABASE_SERVICE_ROLE_KEY).');
@@ -259,8 +262,15 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
     },
   });
 
-  app.onError((err, c) => {
+  app.onError(async (err, c) => {
     if (err instanceof FachFehler) return c.json({ fehler: err.message, details: err.details }, err.status);
+    // Anthropic lehnt den Schlüssel ab: sagen, welcher benutzt wurde und wo man ihn ändert — statt „Interner Fehler“
+    if (err instanceof KiSchluesselFehler) {
+      console.error('[ki] Schlüssel abgelehnt:', err.message);
+      const z = (await zugangStatus(db)).find((x) => x.schluessel === 'anthropic-api-key');
+      const quelle = z?.quelle === 'einstellungen' ? 'Schlüssel aus Einstellungen → Zugänge' : 'Schlüssel aus der Umgebung (ANTHROPIC_API_KEY)';
+      return c.json({ fehler: `Der Anthropic-Schlüssel wird abgelehnt (ungültig oder gesperrt). Verwendet: ${quelle}${z?.maske ? ` ${z.maske}` : ''}. Bitte unter Einstellungen → Zugänge einen gültigen Schlüssel hinterlegen oder mit „Schlüssel testen“ prüfen.` }, 422);
+    }
     console.error(err);
     return c.json({ fehler: 'Interner Fehler' }, 500);
   });
@@ -856,6 +866,17 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   app.openapi(
     createRoute({ method: 'put', path: '/api/zugaenge/{schluessel}', request: { params: z.object({ schluessel: z.string().min(1) }), ...body(z.object({ wert: z.string().max(500) })) }, responses: { 200: json(z.object({ schluessel: z.string(), gesetzt: z.boolean() }), 'gespeichert'), 400: fehler('unbekannter Zugang') } }),
     async (c) => c.json(await zugangSpeichern(db, c.req.valid('param').schluessel, c.req.valid('json').wert), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/zugaenge/anthropic-api-key/pruefen', responses: { 200: json(ZugangPruefung, 'Ergebnis der Prüfung') } }),
+    async (c) => {
+      // Geprüft wird der Schlüssel, den die KI tatsächlich benutzt (Zugänge vor Umgebung) — mit Attrappe keiner
+      if (expose?.attrappe) return c.json({ gueltig: true, meldung: 'Test-Modus: KI-Attrappe aktiv — es wird kein Schlüssel geprüft.', quelle: 'attrappe' as const, maske: '' }, 200);
+      const z = (await zugangStatus(db)).find((x) => x.schluessel === 'anthropic-api-key')!;
+      const key = (await zugangLesen(db, 'anthropic-api-key')) || process.env.ANTHROPIC_API_KEY || '';
+      if (!key) return c.json({ gueltig: false, meldung: 'Kein Anthropic-Schlüssel hinterlegt.', quelle: 'fehlt' as const, maske: '' }, 200);
+      return c.json({ ...(await kiSchluesselPruefen(key)), quelle: z.quelle, maske: z.maske }, 200);
+    },
   );
 
   // ── Werkzeuge: Nachfass-Reset und KI-Kosten ─────────────

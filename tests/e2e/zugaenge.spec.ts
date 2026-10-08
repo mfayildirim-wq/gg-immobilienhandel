@@ -16,3 +16,12 @@ test('Zugänge: Schlüssel hinterlegen, maskiert sehen, entfernen', async ({ pag
   await zeile.getByRole('button', { name: 'Entfernen' }).click();
   await expect(zeile.locator('[data-quelle]')).toHaveText('nicht hinterlegt');
 });
+
+test('Zugänge: „Schlüssel testen“ beim Anthropic-Schlüssel zeigt das Ergebnis (mit KI-Attrappe: Test-Modus)', async ({ page }) => {
+  await page.goto('/einstellungen/zugaenge');
+  const zeile = page.locator('[data-zugang="anthropic-api-key"]');
+  await zeile.getByRole('button', { name: 'Schlüssel testen' }).click();
+  await expect(zeile.getByRole('alert')).toContainText('Test-Modus');
+  // nur beim Anthropic-Schlüssel
+  await expect(page.locator('[data-zugang="propstack-api-key"]').getByRole('button', { name: 'Schlüssel testen' })).toHaveCount(0);
+});

@@ -13,7 +13,7 @@ import type {
   DublettenPaarSicht,
   AuditBefund,
   KiKosten,
-  ZugangStatus,
+  ZugangPruefung, ZugangStatus,
   OutwardStand,
   PropstackBewertung,
   M365Posteingang,
@@ -322,6 +322,9 @@ export function useMaklerImport() {
 
 // ── Zugänge (API-Schlüssel) ───────────────────────────────
 export const useZugaenge = () => useQuery({ queryKey: ['zugaenge'], queryFn: () => anfrage<ZugangStatus[]>('/api/zugaenge') });
+/** „Schlüssel testen“ (nur Anthropic): prüft den Schlüssel, den die KI tatsächlich benutzt. */
+export const useAnthropicPruefen = () => useMutation({ mutationFn: () => anfrage<ZugangPruefung>('/api/zugaenge/anthropic-api-key/pruefen', senden('POST', {})) });
+
 export function useZugangSpeichern() {
   const qc = useQueryClient();
   return useMutation({
