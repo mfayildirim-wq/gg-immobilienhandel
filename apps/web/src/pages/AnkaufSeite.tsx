@@ -91,8 +91,8 @@ export function AnkaufSeite() {
   // abschließt (wie in der alten App) — auch wenn sie laut Server nicht mehr fällig sind. Gilt, solange die Seite offen ist.
   useEffect(() => { gehalteneKarten.leeren(); return () => gehalteneKarten.leeren(); }, []);
   const gehalten = useGehalteneKarten();
-  const dealKarten = useMemo(() => cockpitMitGehaltenen(data?.deals ?? [], gehalteneKarten.karten('deals', data?.deals ?? [])), [data, gehalten]);
-  const maklerKarten = useMemo(() => cockpitMitGehaltenen(data?.makler ?? [], gehalteneKarten.karten('makler', data?.makler ?? [])), [data, gehalten]);
+  const dealKarten = useMemo(() => cockpitMitGehaltenen(data?.deals ?? [], gehalteneKarten.karten('deals', data?.deals ?? []), gehalteneKarten.reihenfolge('deals')), [data, gehalten]);
+  const maklerKarten = useMemo(() => cockpitMitGehaltenen(data?.makler ?? [], gehalteneKarten.karten('makler', data?.makler ?? []), gehalteneKarten.reihenfolge('makler')), [data, gehalten]);
   // Was gerade zu sehen ist, merken: so hält ein Termin aus dem Deal-Detail die Karte an ihrem bisherigen Platz fest
   gehalteneKarten.angezeigt('deals', dealKarten);
   gehalteneKarten.angezeigt('makler', maklerKarten);

@@ -173,6 +173,28 @@ test.describe('Ankauf-Cockpit', () => {
     await expect(zweite.locator('[data-faellig-kurz]')).toHaveText('Termin geändert');
   });
 
+  test('Karte mit gleichem Termin wie ihre Nachbarn bleibt nach „1M“ an ihrem Platz — rutscht nicht ans Ende (Kundenmeldung 08.10.)', async ({ page }) => {
+    const k = `Platzweg ${Date.now()}`;
+    const ids: string[] = [];
+    for (const nr of ['1', '2', '3']) {
+      const objekt = await (await page.request.post('/api/objekte', { data: { strasse: k, hausnr: nr, stadt: 'Ankaufstadt' } })).json();
+      const deal = await (await page.request.post('/api/deals', { data: { objektId: objekt.id } })).json();
+      expect((await page.request.put(`/api/deals/${deal.id}/termin`, { data: { version: 1, nextContact: plus(-4) } })).ok()).toBe(true);
+      ids.push(deal.id);
+    }
+    await page.goto('/');
+    const liste = page.getByRole('region', { name: '🎯 Deals nachverfolgen' });
+    const reihenfolge = async () => (await liste.locator('[data-karte^="deal:"]').evaluateAll((es) => es.map((e) => e.getAttribute('data-karte')!))).filter((x) => ids.includes(x.slice(5)));
+    await expect.poll(reihenfolge).toHaveLength(3);
+    const vorher = await reihenfolge();
+    const erste = liste.locator(`[data-karte="${vorher[0]}"]`);
+    await erste.getByRole('button', { name: 'Nächster Kontakt Deal in 1M' }).click();
+    await expect(erste.locator('[data-faellig-kurz]')).toHaveText('Termin geändert');
+    await page.waitForTimeout(1500);
+    expect(await reihenfolge()).toEqual(vorher);
+    await expect(erste).toBeInViewport();
+  });
+
   test('„Erledigt“ rechts im Deal-Detail schließt auch eine stehen gebliebene Karte ab', async ({ page }) => {
     const strasse = `Detailerledigt ${Date.now()}`;
     const objekt = await (await page.request.post('/api/objekte', { data: { strasse, hausnr: '8', stadt: 'Ankaufstadt' } })).json();
