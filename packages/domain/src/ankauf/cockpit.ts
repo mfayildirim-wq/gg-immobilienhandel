@@ -132,20 +132,28 @@ export const TERMIN_GEAENDERT_HINWEIS = 'Der neue Termin ist gespeichert. Die Ka
  * deren Termin in dieser Ansicht gesetzt wurde (Stand der Karte beim ersten Setzen, mit neuem Termin und neuer Version).
  * Sie bleiben in ihrem Abschnitt und an ihrem Platz (alte Fälligkeit, alter Termin für die Reihenfolge), auch wenn der
  * Server sie nicht mehr als fällig liefert; liefert er sie weiter, gelten seine Daten.
+ *
+ * `reihenfolge` ist die zuletzt angezeigte Reihenfolge (Kennungen). Bei gleichem Termin entscheidet sie, nicht die
+ * Reihenfolge der Lieferung: eine gehaltene Karte, die der Server nicht mehr liefert, bliebe sonst hinter allen Karten mit
+ * demselben Termin hängen — bei vier gleichen Terminen rutschte sie aus dem Sichtbereich (Kundenmeldung 08.10.2026).
+ * Karten, die darin fehlen (neu vom Server), kommen hinter die bekannten mit gleichem Termin.
  */
 export function cockpitMitGehaltenen<T extends { id: string; termin: string; faellig: unknown }>(
   liste: readonly T[],
   gehalten: Readonly<Record<string, T>>,
+  reihenfolge: readonly string[] = [],
 ): (T & { gehalten?: true })[] {
   const ids = Object.keys(gehalten);
   if (ids.length === 0) return [...liste];
+  const rang = new Map(reihenfolge.map((id, i) => [id, i]));
   const vomServer = new Set(liste.map((k) => k.id));
   const alle: (T & { gehalten?: true })[] = [
     ...liste.map((k) => { const g = gehalten[k.id]; return g ? { ...k, termin: g.termin, faellig: g.faellig, gehalten: true as const } : k; }),
     ...ids.filter((id) => !vomServer.has(id)).map((id) => ({ ...gehalten[id]!, gehalten: true as const })),
   ];
-  // nach dem (alten) Termin, bei Gleichstand in der gelieferten Reihenfolge
-  return alle.map((k, i) => ({ k, i })).sort((x, y) => (x.k.termin < y.k.termin ? -1 : x.k.termin > y.k.termin ? 1 : x.i - y.i)).map((x) => x.k);
+  // nach dem (alten) Termin; bei Gleichstand wie zuletzt angezeigt, Unbekanntes dahinter in gelieferter Reihenfolge
+  const platz = (k: T, i: number) => rang.get(k.id) ?? reihenfolge.length + i;
+  return alle.map((k, i) => ({ k, p: platz(k, i) })).sort((x, y) => (x.k.termin < y.k.termin ? -1 : x.k.termin > y.k.termin ? 1 : x.p - y.p)).map((x) => x.k);
 }
 
 /** Reihenfolge der Abschnitte in „Nächste Kontakte“ und in der Wählmaschine: heute → überfällig → diese Woche. */

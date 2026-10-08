@@ -20,6 +20,7 @@ type Halt = { basis: { id: string; version: number }; nextContact: string | null
 export type Vorher = Halt | null | undefined;
 
 const angezeigtJe: Record<KartenArt, Map<string, { id: string; version: number }>> = { deals: new Map(), makler: new Map() };
+const reihenfolgeJe: Record<KartenArt, string[]> = { deals: [], makler: [] };
 let gehaltenJe: Record<KartenArt, Record<string, Halt>> = { deals: {}, makler: {} };
 const hoerer = new Set<() => void>();
 const melden = () => hoerer.forEach((h) => h());
@@ -29,6 +30,11 @@ export const gehalteneKarten = {
   /** Die Ankaufseite meldet bei jeder Anzeige die Karten, wie sie gerade zu sehen sind. */
   angezeigt<T extends { id: string; version: number }>(art: KartenArt, karten: readonly T[]) {
     for (const k of karten) angezeigtJe[art].set(k.id, k);
+    reihenfolgeJe[art] = karten.map((k) => k.id);
+  },
+  /** Die zuletzt angezeigte Reihenfolge — damit eine gehaltene Karte bei gleichem Termin an ihrem Platz bleibt. */
+  reihenfolge(art: KartenArt): readonly string[] {
+    return reihenfolgeJe[art];
   },
   /** Beim Klick auf einen Termin: die angezeigte Karte sofort festhalten (unbekannte Karten werden nicht gehalten).
    *  Gibt den Stand davor zurück — `undefined`, wenn nichts zu halten war. */
