@@ -76,3 +76,15 @@ export async function vorlagenSpeichern(db: Db, e: { vorlagen: Vorlage[]; meinNa
   });
   return vorlagenLesen(db);
 }
+
+export interface ExposeExtraktion { schema: 'v1' | 'v0'; kostenGrenzeEur: number }
+export const EXPOSE_EXTRAKTION_STANDARD: ExposeExtraktion = { schema: 'v1', kostenGrenzeEur: 1 };
+
+/** Exposé-Auswertung (Protokoll 27): Schema v1 oder v0 und Kostengrenze je Analyse; fehlende/ungültige Werte → Standard. */
+export async function exposeExtraktionLesen(db: Db | Tx): Promise<ExposeExtraktion> {
+  const w = (await wertLesen(db, 'expose-extraktion')) as Partial<ExposeExtraktion> | null;
+  return {
+    schema: w?.schema === 'v0' || w?.schema === 'v1' ? w.schema : EXPOSE_EXTRAKTION_STANDARD.schema,
+    kostenGrenzeEur: typeof w?.kostenGrenzeEur === 'number' && Number.isFinite(w.kostenGrenzeEur) && w.kostenGrenzeEur > 0 ? w.kostenGrenzeEur : EXPOSE_EXTRAKTION_STANDARD.kostenGrenzeEur,
+  };
+}

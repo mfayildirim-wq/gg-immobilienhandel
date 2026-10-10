@@ -1,7 +1,7 @@
 import type { ExposeAnalyseAntwort, ExposeUebernehmen } from '@gg/api-contract';
 import { type Db, schema } from '@gg/db';
 import {
-  berechneAnkauf, dealEinheitenAusExpose, dublettenDeal, dublettenMakler, dublettenObjekt, exposeVorbereiten, einheitAlsEingabe,
+  belegePruefen, berechneAnkauf, dealEinheitenAusExpose, einheitenDetails, EXPOSE_V1_SCHEMA, type ExposeV1, kernfeldDopplung, v1AlsV0, dublettenDeal, dublettenMakler, dublettenObjekt, exposeVorbereiten, einheitAlsEingabe,
   maklerHatDaten, normalisiereFrequenz, telefonErsetzen, telefonNormalisieren, weitereKontakte, wizardKalkSpeichern, wizardKalkVorbelegen,
 } from '@gg/domain';
 import {
@@ -10,7 +10,8 @@ import {
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { auditSchreiben } from './audit.ts';
 import { FachFehler } from '../fehler.ts';
-import { kalkStandardLesen } from './einstellungen.ts';
+import { exposeExtraktionLesen, kalkStandardLesen } from './einstellungen.ts';
+import { objektDetailsAusV1 } from './exposeAngaben.ts';
 import { objektTitel } from './objekte.ts';
 
 export interface ExposeKontext {
@@ -68,12 +69,35 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
   }
   if (!istPdf(pdf)) throw new FachFehler(422, `„${dateiname}“ ist kein PDF.`);
 
+  const einstellung = await exposeExtraktionLesen(db);
   const analyse = await analysiereExpose(pdf, dateiname, {
     ki: k.ki,
     pdfText: (b) => pdfText(Buffer.from(b)),
     buchen: (model, usage, quelle) => kostenBuchen(db, model, usage, quelle),
+  }, { schema: einstellung.schema, kostenGrenzeEur: einstellung.kostenGrenzeEur });
+
+  // v1: Belege gegen die Seitentexte prüfen (nur auf dem Textweg gibt es Seitentexte), dann ins Format der Prüfseite
+  let v1: ExposeV1 | null = null;
+  let belegt: Record<string, boolean> = {};
+  const warnungen = [...analyse.warnungen];
+  let v0: any = analyse.extrahiert;
+  if (analyse.v1) {
+    if (analyse.seitenTexte.length) ({ belegt, v1 } = belegePruefen(analyse.v1, analyse.seitenTexte));
+    else v1 = analyse.v1;
+    warnungen.push(...kernfeldDopplung(v1));
+    v0 = v1AlsV0(v1);
+  }
+
+  const importId = crypto.randomUUID();
+  await db.insert(schema.exposeImporte).values({
+    id: importId, eingangKey: key, dateiname, schemaVersion: analyse.schemaVersion, promptVersion: analyse.promptVersion, modell: analyse.modell,
+    weg: analyse.modus, seitenGelesen: analyse.seitenTexte.length || null, seitenGesamt: analyse.seiten, stopReason: analyse.stopReason,
+    inputTokens: analyse.usage.inputTokens, outputTokens: analyse.usage.outputTokens, dauerMs: analyse.dauerMs, kostenEur: analyse.kostenEur,
+    status: 'analysiert', rohdaten: v1 ?? v0,
+    analyse: { nachfass: analyse.nachfass, wiederholung: analyse.wiederholung, belegt, warnungen },
   });
-  const v = exposeVorbereiten(analyse.extrahiert);
+
+  const v = exposeVorbereiten(v0);
   const standard = await kalkStandardLesen(db);
 
   // Dubletten gegen den aktiven Bestand, neueste zuerst (Reihenfolge wie die alte Liste)
@@ -86,8 +110,9 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
     modus: analyse.modus, modell: analyse.modell, seiten: analyse.seiten, zeichenProSeite: analyse.zeichenProSeite,
     ...(analyse.hinweis ? { hinweis: analyse.hinweis } : {}),
     attrappe: k.attrappe,
-    extrahiert: analyse.extrahiert,
-    konfidenz: analyse.extrahiert?._konfidenz ?? {},
+    extrahiert: v0,
+    importId, schemaVersion: analyse.schemaVersion, v1, weitereAngaben: v1?.weitere_angaben ?? [], belegt, warnungen,
+    konfidenz: v0?._konfidenz ?? {},
     objekt: v.objekt,
     makler: { ...v.makler, prio: (dMk?.match.prio as 'A' | 'B' | 'C' | null) ?? 'B' },
     deal: { ...v.deal, kalk: wizardKalkVorbelegen(v.deal.kalk, standard) },
@@ -102,12 +127,54 @@ const text = (s: string | undefined | null) => (s && s.trim() ? s.trim() : null)
 const zahl = (n: number | null | undefined) => (typeof n === 'number' && Number.isFinite(n) ? n : null);
 
 /**
+ * `details` eines neuen Objekts: die Zusatzangaben der Prüfseite wie bisher, dazu alle `details`-Ziele aus v1
+ * (Hausgeld, Provision, Denkmalschutz …). Was auf der Prüfseite gesetzt ist, gilt vor dem v1-Wert.
+ */
+function objektDetails(d: ExposeUebernehmen['objekt']['daten'], v1: ExposeV1 | null, importId: string | undefined): Record<string, unknown> {
+  const details: Record<string, unknown> = v1 ? objektDetailsAusV1(importId ?? '', v1) : {};
+  const pruefseite: Record<string, unknown> = {
+    bruttorendite: zahl(d.bruttorendite), heizungsbaujahr: zahl(d.heizungsbaujahr), energieausweis: d.energieausweis ?? null,
+    lagebeschreibung: text(d.lagebeschreibung), ausstattung: text(d.ausstattung),
+  };
+  for (const [k, w] of Object.entries(pruefseite)) {
+    const v1Wert = details[k];
+    if (k === 'energieausweis' && w && v1Wert && typeof v1Wert === 'object') {
+      details[k] = { ...v1Wert, ...Object.fromEntries(Object.entries(w).filter(([, x]) => x !== null && x !== undefined)) };
+    } else if (w !== null || v1Wert === undefined) {
+      details[k] = w;
+    }
+  }
+  return { ...details, herkunft: 'Exposé-Import', ...(importId ? { importId } : {}) };
+}
+
+/** „Exposé überspringen“: die gespeicherte Analyse gilt als verworfen (nur solange sie nicht übernommen ist). */
+export async function importVerwerfen(db: Db, id: string) {
+  const [imp] = await db.select({ status: schema.exposeImporte.status }).from(schema.exposeImporte).where(eq(schema.exposeImporte.id, id));
+  if (!imp) throw new FachFehler(404, 'Exposé-Import nicht gefunden');
+  if (imp.status === 'analysiert') {
+    await db.update(schema.exposeImporte).set({ status: 'verworfen', updatedAt: sql`now()` })
+      .where(and(eq(schema.exposeImporte.id, id), eq(schema.exposeImporte.status, 'analysiert')));
+  }
+  return { id };
+}
+
+/**
  * „✅ Deal anlegen“ (ewFinalize): Objekt (neu oder bestehend), Makler (neu mit Ghost-Guard, bestehend mit Telefonregel),
  * Deal-Dublette Objekt+Makler → 409, Deal mit Einheiten und Status-Verlauf; danach PDF an den Deal.
  */
 export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUebernehmen, heute: string) {
   if (!istEingangsSchluessel(e.key)) throw new FachFehler(422, 'Ungültiger Upload-Schlüssel.');
   const standard = await kalkStandardLesen(db);
+
+  // Gespeicherte Analyse (expose_importe); ohne importId wie bisher das mitgeschickte `extrahiert`
+  let v1: ExposeV1 | null = null;
+  if (e.importId) {
+    const [imp] = await db.select({ schemaVersion: schema.exposeImporte.schemaVersion, rohdaten: schema.exposeImporte.rohdaten })
+      .from(schema.exposeImporte).where(eq(schema.exposeImporte.id, e.importId));
+    if (!imp) throw new FachFehler(404, 'Exposé-Import nicht gefunden');
+    if (imp.schemaVersion === EXPOSE_V1_SCHEMA) v1 = imp.rohdaten as ExposeV1;
+  }
+  const v0 = v1 ? v1AlsV0(v1) : e.extrahiert;
 
   const ids = await db.transaction(async (tx) => {
     // 1. Objekt
@@ -124,15 +191,16 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
         baujahr: zahl(d.baujahr) === null ? null : Math.round(d.baujahr!), einheitenAnzahl: zahl(d.einheitenAnz) === null ? null : Math.round(d.einheitenAnz!),
         wohnflaeche: zahl(d.wohnflaeche), grundstueck: zahl(d.grundstueck), energieklasse: text(d.energieausweis?.klasse), heizung: text(d.heizungsart),
         angebotspreis: zahl(d.angebotspreis), istMiete: zahl(d.istmiete), status: 'In Prüfung', notizen: text(d.notizen), erfasstAm: heute,
-        details: {
-          bruttorendite: zahl(d.bruttorendite), heizungsbaujahr: zahl(d.heizungsbaujahr), energieausweis: d.energieausweis ?? null,
-          lagebeschreibung: text(d.lagebeschreibung), ausstattung: text(d.ausstattung), herkunft: 'Exposé-Import',
-        },
+        details: objektDetails(d, v1, e.importId),
       });
-      for (const [sort, x] of (d.einheiten ?? []).entries()) {
+      // Zusatz je Einheit aus v1 nur, wenn die Aufstellung auf der Prüfseite gleich lang geblieben ist (Zuordnung nach Index)
+      const einheiten = d.einheiten ?? [];
+      const v1Einheiten = v1 && v1.einheiten.length === einheiten.length ? v1.einheiten : null;
+      for (const [sort, x] of einheiten.entries()) {
         await tx.insert(schema.objektEinheiten).values({
           id: `${objektId}:${crypto.randomUUID()}`, objektId, typ: x.typ || 'Wohnung', lage: text(x.lage), zimmer: zahl(x.zimmer),
           flaeche: zahl(x.flaeche), kaltmiete: zahl(x.kaltmiete), vermietung: text(x.vermiet), sort,
+          details: v1Einheiten ? einheitenDetails(v1Einheiten[sort]!) : null,
         });
       }
     }
@@ -175,10 +243,13 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
     const { kennzahlen } = berechneAnkauf(kalk, einheiten.map((x) => einheitAlsEingabe({ ...x, mieteNeu: null, mieteNeuManuell: false, verkaufspreis: null, stueck: null })), [], standard);
     await tx.insert(schema.deals).values({
       id: dealId, objektId, maklerId, status: e.deal.status, angebotsDatum: heute, nachfassFrequenz: normalisiereFrequenz(e.deal.nachfassFreq),
-      notizen: text(e.deal.notizen), kalkulation: { ...kalk, ...kennzahlen }, exposeRohdaten: { ...e.extrahiert, originalFileName: e.dateiname },
+      notizen: text(e.deal.notizen), kalkulation: { ...kalk, ...kennzahlen }, exposeRohdaten: { ...v0, originalFileName: e.dateiname, ...(e.importId ? { importId: e.importId } : {}) },
     });
     for (const x of einheiten) await tx.insert(schema.dealEinheiten).values(x);
     await tx.insert(schema.dealStatusHistorie).values({ id: crypto.randomUUID(), dealId, vonStatus: null, nachStatus: e.deal.status, quelle: 'wizard' });
+    if (e.importId) {
+      await tx.update(schema.exposeImporte).set({ dealId, objektId, maklerId, status: 'uebernommen', updatedAt: sql`now()` }).where(eq(schema.exposeImporte.id, e.importId));
+    }
     return { dealId, objektId, maklerId };
   });
 
