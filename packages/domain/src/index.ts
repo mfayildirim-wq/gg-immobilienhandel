@@ -8,6 +8,7 @@ export * from './kundenkalkulation/bearbeitung.ts';
 export * from './kundenkalkulation/feld.ts';
 export * from './expose/uebernahme.ts';
 export * from './expose/kosten.ts';
+export * from './expose/schemaV1.ts';
 export * from './finanzpraesentation/index.ts';
 export * from './begleitscheine/index.ts';
 export * from './vertriebslisten/index.ts';

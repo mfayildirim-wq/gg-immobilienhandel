@@ -1,4 +1,4 @@
-import { DealStatus, Frequenz } from '@gg/domain';
+import { DealStatus, ExposeV1, Frequenz } from '@gg/domain';
 import { z } from 'zod';
 
 /** Gemeinsamer Vertrag zwischen apps/api und apps/web. */
@@ -296,6 +296,8 @@ export const ObjektDetail = Objekt.extend({
   istMiete: ZahlOderLeer,
   sollMiete: ZahlOderLeer,
   notizen: z.string().nullable(),
+  /** Zusatzangaben (Exposé-Import): bruttorendite, heizungsbaujahr, energieausweis, lagebeschreibung, ausstattung, hausgeld … */
+  details: z.record(z.string(), z.unknown()).nullable(),
   einheiten: z.array(ObjektEinheit),
   deals: z.array(z.object({ id: z.string(), status: DealStatus, maklerName: z.string().nullable() })),
 });
@@ -690,10 +692,20 @@ export const WizardKalkSchema = z.object({
 
 export const Dublette = z.object({ id: z.string(), titel: z.string(), sicherheit: z.enum(['exact', 'fuzzy']) }).nullable();
 
+export const ExposeWeitereAngabe = z.object({ gruppe: z.string(), bezeichnung: z.string(), wert: z.string(), einheit: z.string().nullable(), seite: z.number().nullable() });
+export type ExposeWeitereAngabe = z.infer<typeof ExposeWeitereAngabe>;
+
 export const ExposeAnalyseAntwort = z.object({
   modus: z.enum(['text', 'pdf']), modell: z.string(), seiten: z.number(), zeichenProSeite: z.number(), hinweis: z.string().optional(),
   attrappe: z.boolean(),
   extrahiert: z.record(z.string(), z.unknown()),
+  /** Schema v1 (Protokoll 27): die Analyse liegt serverseitig in expose_importe; Übernehmen verweist auf importId */
+  importId: z.string(),
+  schemaVersion: z.string(),
+  v1: ExposeV1.nullable(),
+  weitereAngaben: z.array(ExposeWeitereAngabe),
+  belegt: z.record(z.string(), z.boolean()),
+  warnungen: z.array(z.string()),
   konfidenz: z.record(z.string(), z.string()),
   objekt: ExposeObjektDaten.passthrough(),
   makler: ExposeMaklerDaten.passthrough(),
@@ -706,6 +718,8 @@ export const ExposeUebernehmen = z.object({
   key: z.string(),
   dateiname: z.string().max(300),
   extrahiert: z.record(z.string(), z.unknown()),
+  /** Verweis auf die gespeicherte Analyse (expose_importe); ohne importId wird wie bisher `extrahiert` verwendet */
+  importId: z.string().optional(),
   objekt: z.object({ bestehendeId: z.string().optional(), daten: ExposeObjektDaten }),
   makler: z.object({ bestehendeId: z.string().optional(), daten: ExposeMaklerDaten }),
   deal: z.object({ status: DealStatus, nachfassFreq: z.string().max(40), notizen: z.string().max(10000), kalk: WizardKalkSchema }),
@@ -715,6 +729,30 @@ export type ExposeUebernehmen = z.infer<typeof ExposeUebernehmen>;
 export const ExposeUebernahmeErgebnis = z.object({
   dealId: z.string(), objektId: z.string(), maklerId: z.string().nullable(), pdfGespeichert: z.boolean(), warnung: z.string().optional(),
 });
+
+// ── Reiter „Aus dem Exposé“ (Objekt/Makler) ───────────────────
+const AngabeWert = z.union([z.string(), z.number(), z.boolean()]).nullable();
+export const ExposeAngabe = z.object({
+  importId: z.string(), datum: z.string(), gruppe: z.string(),
+  /** v1-Pfad, z. B. 'preise.kaufpreis', 'weitere_angaben.3', 'weitere_kontakte.0' */
+  feld: z.string(), bezeichnung: z.string(), wert: AngabeWert, einheit: z.string().nullable(),
+  seite: z.number().nullable(), zitat: z.string().nullable(), konfidenz: z.string().nullable(), belegt: z.boolean().nullable(),
+  ziel: z.object({
+    feld: z.string().nullable(), label: z.string().nullable(), aktuell: AngabeWert,
+    status: z.enum(['gleich', 'abweichend', 'leer', 'keinFeld']),
+  }),
+});
+export type ExposeAngabe = z.infer<typeof ExposeAngabe>;
+export const ExposeAngabenAntwort = z.object({
+  importe: z.array(z.object({ id: z.string(), datum: z.string(), dateiname: z.string().nullable(), dealId: z.string().nullable(), schemaVersion: z.string() })),
+  angaben: z.array(ExposeAngabe),
+});
+export type ExposeAngabenAntwort = z.infer<typeof ExposeAngabenAntwort>;
+export const ExposeUebernahme = z.object({
+  version: z.number().int(), importId: z.string(), feld: z.string(),
+  ziel: z.enum(['spalte', 'details', 'notizen']), ersetzen: z.boolean().default(false),
+});
+export type ExposeUebernahme = z.input<typeof ExposeUebernahme>;
 
 // ── Bank-Präsentation ──────────────────────────────────────
 
