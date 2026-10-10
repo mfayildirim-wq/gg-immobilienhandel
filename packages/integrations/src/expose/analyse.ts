@@ -261,7 +261,27 @@ export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: An
    */
   const versuchV1 = async (model: string, inhalt: unknown[], quelle: string): Promise<Ruf> => {
     let r = await rufeV1(model, inhalt, EXTRACT_TOOL_V1, quelle);
-    if (r.stopReason !== 'max_tokens') return r;
+    if (r.stopReason !== 'max_tokens') {
+      // Meldet die KI selbst eine unvollständige Liste (oder weniger Zeilen als das Dokument nennt), holt der Nachfass die
+      // Einheiten gezielt. Übernommen wird seine Liste nur, wenn sie länger ist (Prüfsatz 10.10.2026: 1 von 34 Einheiten).
+      const verwaltung = r.roh?.verwaltung ?? {};
+      const bisher = Array.isArray(r.roh?.einheiten) ? r.roh.einheiten.length : 0;
+      const imDokument = typeof verwaltung.einheiten_anzahl_dokument === 'number' ? verwaltung.einheiten_anzahl_dokument : null;
+      if (r.roh && (verwaltung.einheiten_vollstaendig === false || (imDokument !== null && imDokument > bisher))) {
+        warnungen.push(`Einheitenliste unvollständig (${bisher} von ${imDokument ?? '?'}) — Nachfass`);
+        try {
+          const e = await einheitenExtrahieren(a.ki, pdf, seiten);
+          await vermerke(e.model, e.usage, 'expose-analyse/v1-einheiten');
+          if (e.wert.length > bisher) {
+            r.roh.einheiten = e.wert.map(einheitAusNachfass);
+            nachfass = true;
+          }
+        } catch (e) {
+          warnungen.push(`Einheiten-Nachfass fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      return r;
+    }
     wiederholung = true;
     warnungen.push(`${model}: Antwort abgeschnitten (max_tokens) — Wiederholung ohne Einheiten und Freitexte`);
     r = await rufeV1(model, inhalt, toolOhneEinheiten(), `${quelle}-wiederholung`);

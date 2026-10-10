@@ -195,6 +195,35 @@ describe('Abgeschnittene Antwort (max_tokens)', () => {
   });
 });
 
+describe('Unvollständige Einheitenliste', () => {
+  const unvollstaendig = (anzahl: number, vollstaendig: boolean | null) => v1Antwort({
+    ...TREFFER, verwaltung: { ...exposeV1Leer().verwaltung, einheiten_anzahl_dokument: anzahl, einheiten_vollstaendig: vollstaendig },
+  });
+
+  it('meldet die KI weniger Einheiten als das Dokument nennt, holt der Nachfass die Liste und ersetzt sie, wenn sie länger ist', async () => {
+    antwort = (b) => (werkzeug(b) === 'extract_einheiten' ? einheitenAntwort(34) : unvollstaendig(34, false));
+    const r = await analysiereExpose(pdf(), 'e.pdf', abh());
+    expect(aufrufe.map((a) => werkzeug(a.body))).toEqual([EXPOSE_V1_TOOL_NAME, 'extract_einheiten']);
+    expect(r).toMatchObject({ modell: MODELL_SCHNELL, nachfass: true, wiederholung: false });
+    expect(r.v1?.einheiten).toHaveLength(34);
+    expect(r.warnungen.join(' ')).toContain('Einheitenliste unvollständig (1 von 34)');
+  });
+
+  it('liefert der Nachfass nicht mehr Einheiten, bleibt die erste Liste', async () => {
+    antwort = (b) => (werkzeug(b) === 'extract_einheiten' ? einheitenAntwort(1) : unvollstaendig(5, null));
+    const r = await analysiereExpose(pdf(), 'e.pdf', abh());
+    expect(r.nachfass).toBe(false);
+    expect(r.v1?.einheiten).toHaveLength(1);
+  });
+
+  it('kein Nachfass, wenn die Liste vollständig ist', async () => {
+    antwort = () => unvollstaendig(1, true);
+    const r = await analysiereExpose(pdf(), 'e.pdf', abh());
+    expect(aufrufe).toHaveLength(1);
+    expect(r.nachfass).toBe(false);
+  });
+});
+
 describe('Kostengrenze', () => {
   it('bricht vor dem Sonnet-Aufruf ab, wenn die Schätzung die Grenze überschreitet', async () => {
     antwort = () => v1Antwort({});
