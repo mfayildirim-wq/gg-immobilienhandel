@@ -30,6 +30,8 @@ const text = (seiten: number, zeichenJeSeite: number, gelesenSeiten = seiten): P
   text: 'x'.repeat(zeichenJeSeite * gelesenSeiten), pageCount: gelesenSeiten, seitenGesamt: seiten, charsTotal: zeichenJeSeite * gelesenSeiten,
 });
 const pdf = (bytes = 1000) => new Uint8Array(bytes);
+// Diese Tests prüfen das Ist-Verhalten des v0-Wegs (Standard ist seit T2 v1); der v1-Weg steht in expose-analyse-v1.test.ts.
+const V0 = { schema: 'v0' as const };
 
 beforeEach(() => {
   aufrufe = []; uploads = []; geloescht = []; gebucht = [];
@@ -40,7 +42,7 @@ beforeEach(() => {
 describe('Wegwahl', () => {
   it('digitales Exposé: Text an das billige Modell', async () => {
     antwort = () => tool({ objekt: { strasse: 'A', angebotspreis: 1, einheiten: [{}] } });
-    const r = await analysiereExpose(pdf(), 'e.pdf', abh());
+    const r = await analysiereExpose(pdf(), 'e.pdf', abh(), V0);
     expect(r).toMatchObject({ modus: 'text', modell: MODELL_SCHNELL });
     expect(aufrufe).toHaveLength(1);
     expect(aufrufe[0].messages[0].content[0].type).toBe('text');
@@ -48,34 +50,34 @@ describe('Wegwahl', () => {
 
   it('ein Scan geht als PDF, nicht als Bilderreihe', async () => {
     gelesen = { text: '', pageCount: 30, seitenGesamt: 30, charsTotal: 0 };
-    const r = await analysiereExpose(pdf(), 'e.pdf', abh());
+    const r = await analysiereExpose(pdf(), 'e.pdf', abh(), V0);
     expect(r).toMatchObject({ modus: 'pdf', modell: MODELL_GRUENDLICH, seiten: 30 });
     expect(aufrufe[0].messages[0].content[0]).toMatchObject({ type: 'document', source: { type: 'base64', media_type: 'application/pdf' } });
   });
 
   it('ein Deckblatt mit Text ist noch kein Text-Layer', async () => {
     gelesen = { text: 'x'.repeat(150), pageCount: 1, seitenGesamt: 1, charsTotal: 150 };
-    expect((await analysiereExpose(pdf(), 'e.pdf', abh())).modus).toBe('pdf');
+    expect((await analysiereExpose(pdf(), 'e.pdf', abh(), V0)).modus).toBe('pdf');
   });
 });
 
 describe('Textweg', () => {
   it('schlägt auf das starke Modell nach, wenn das billige zu wenig findet', async () => {
     antwort = (b) => (b.model === MODELL_SCHNELL ? tool({ objekt: { strasse: 'nur Ort' } }) : tool(TREFFER));
-    const r = await analysiereExpose(pdf(), 'e.pdf', abh());
+    const r = await analysiereExpose(pdf(), 'e.pdf', abh(), V0);
     expect(aufrufe.map((a) => a.model)).toEqual([MODELL_SCHNELL, MODELL_GRUENDLICH]);
     expect(r.modell).toBe(MODELL_GRUENDLICH);
   });
 
   it('ein Fehler des billigen Versuchs beendet die Analyse nicht', async () => {
     antwort = (b) => { if (b.model === MODELL_SCHNELL) throw new Error('529'); return tool(TREFFER); };
-    expect((await analysiereExpose(pdf(), 'e.pdf', abh())).modell).toBe(MODELL_GRUENDLICH);
+    expect((await analysiereExpose(pdf(), 'e.pdf', abh(), V0)).modell).toBe(MODELL_GRUENDLICH);
   });
 
   it('sagt es, wenn nicht alle Seiten gelesen wurden', async () => {
     gelesen = text(80, 800, 50);
     antwort = () => tool({ objekt: { strasse: 'A', angebotspreis: 1 } });
-    expect((await analysiereExpose(pdf(), 'e.pdf', abh())).hinweis).toBe('Ausgewertet wurden die ersten 50 von 80 Seiten.');
+    expect((await analysiereExpose(pdf(), 'e.pdf', abh(), V0)).hinweis).toBe('Ausgewertet wurden die ersten 50 von 80 Seiten.');
   });
 });
 
@@ -83,7 +85,7 @@ describe('Bildweg — Größe und Grenzen', () => {
   beforeEach(() => { gelesen = { text: '', pageCount: 5, seitenGesamt: 5, charsTotal: 0 }; });
 
   it('ein großes PDF wird hochgeladen statt eingebettet und danach gelöscht', async () => {
-    await analysiereExpose(pdf(INLINE_MAX_BYTES + 1), 'gross.pdf', abh());
+    await analysiereExpose(pdf(INLINE_MAX_BYTES + 1), 'gross.pdf', abh(), V0);
     expect(uploads).toEqual([{ name: 'gross.pdf', bytes: INLINE_MAX_BYTES + 1 }]);
     expect(aufrufe[0].messages[0].content[0].source).toEqual({ type: 'file', file_id: 'file_abc' });
     expect(geloescht).toEqual(['file_abc']);
@@ -91,25 +93,25 @@ describe('Bildweg — Größe und Grenzen', () => {
 
   it('räumt die Datei auch weg, wenn die Auswertung scheitert', async () => {
     antwort = () => ({ content: [] });
-    await expect(analysiereExpose(pdf(INLINE_MAX_BYTES + 1), 'gross.pdf', abh())).rejects.toThrow('nichts auslesen');
+    await expect(analysiereExpose(pdf(INLINE_MAX_BYTES + 1), 'gross.pdf', abh(), V0)).rejects.toThrow('nichts auslesen');
     expect(geloescht).toEqual(['file_abc']);
   });
 
   it('lehnt ein Dokument jenseits der Seitengrenze mit einer Meldung ab, die weiterhilft', async () => {
     gelesen = { text: '', pageCount: 50, seitenGesamt: MAX_PDF_SEITEN + 1, charsTotal: 0 };
-    await expect(analysiereExpose(pdf(), 'e.pdf', abh())).rejects.toThrow('ohne Anhänge');
+    await expect(analysiereExpose(pdf(), 'e.pdf', abh(), V0)).rejects.toThrow('ohne Anhänge');
   });
 
   it('sagt es, wenn sich das PDF nicht öffnen ließ', async () => {
     gelesen = { text: '', pageCount: 0, seitenGesamt: 0, charsTotal: 0, grund: 'Invalid PDF structure' };
-    await expect(analysiereExpose(pdf(), 'e.pdf', abh())).rejects.toThrow('Invalid PDF structure');
+    await expect(analysiereExpose(pdf(), 'e.pdf', abh(), V0)).rejects.toThrow('Invalid PDF structure');
   });
 });
 
 describe('Kosten', () => {
   it('bucht beide Aufrufe, wenn nachgeschlagen wird', async () => {
     antwort = (b) => (b.model === MODELL_SCHNELL ? tool({}) : tool(TREFFER));
-    await analysiereExpose(pdf(), 'e.pdf', abh());
+    await analysiereExpose(pdf(), 'e.pdf', abh(), V0);
     expect(gebucht).toEqual([
       { model: MODELL_SCHNELL, quelle: 'expose-analyse/text-schnell' },
       { model: MODELL_GRUENDLICH, quelle: 'expose-analyse/text-gruendlich' },

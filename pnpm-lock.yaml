@@ -217,6 +217,9 @@ importers:
 
   packages/integrations:
     dependencies:
+      '@gg/domain':
+        specifier: workspace:*
+        version: link:../domain
       pdf-lib:
         specifier: 1.17.1
         version: 1.17.1

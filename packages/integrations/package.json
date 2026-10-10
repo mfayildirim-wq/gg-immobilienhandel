@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@gg/domain": "workspace:*",
     "pdf-lib": "1.17.1",
     "pdfjs-dist": "^5.7.284",
     "playwright-core": "1.63.0",
