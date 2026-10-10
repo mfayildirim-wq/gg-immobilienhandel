@@ -12,6 +12,7 @@ export * from './expose/schemaV1.ts';
 export * from './expose/abbildung.ts';
 export * from './expose/belege.ts';
 export * from './expose/angaben.ts';
+export * from './expose/kennzahlen.ts';
 export * from './finanzpraesentation/index.ts';
 export * from './begleitscheine/index.ts';
 export * from './vertriebslisten/index.ts';
