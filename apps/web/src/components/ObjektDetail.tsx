@@ -8,8 +8,9 @@ import { ListeUmschalter } from './GeteilteAnsicht.tsx';
 import { Reiterleiste } from './Reiterleiste.tsx';
 import { IconDeviceFloppy, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useState } from 'react';
-import { useObjektAendern, useObjektDetail, useObjektLoeschen } from '../lib/api.ts';
-import { alsZahl } from '../lib/format.ts';
+import { useExposeAngaben, useObjektAendern, useObjektDetail, useObjektLoeschen } from '../lib/api.ts';
+import { alsZahl, euro, prozent } from '../lib/format.ts';
+import { anzahlOffen, ExposeAngaben, neuesteAngaben } from './ExposeAngaben.tsx';
 import { ObjektFotos } from './ObjektFotos.tsx';
 import { StatusBadge } from './StatusBadge.tsx';
 
@@ -22,15 +23,17 @@ const PREISE = [['angebotspreis', 'Angebotspreis €'], ['zielpreis', 'Zielkaufp
 
 export function ObjektDetail({ id, geloescht }: { id: string; geloescht?: () => void }) {
   const { data: o, isLoading, error } = useObjektDetail(id);
+  const { data: angaben } = useExposeAngaben('objekte', id);
+  // Der Reiter bleibt beim Speichern stehen (der Inhalt wird je Version neu aufgebaut)
+  const [reiter, setReiter] = useState<string | null>('details');
   if (isLoading) return <Loader size="sm" />;
   if (error || !o) return <Alert color="red">{error?.message ?? 'Objekt nicht gefunden'}</Alert>;
-  return <ObjektInhalt key={o.version} o={o} geloescht={geloescht} />;
+  return <ObjektInhalt key={o.version} o={o} geloescht={geloescht} reiter={reiter} setReiter={setReiter} offen={anzahlOffen(neuesteAngaben(angaben))} />;
 }
 
-function ObjektInhalt({ o, geloescht }: { o: Detail; geloescht?: () => void }) {
+function ObjektInhalt({ o, geloescht, reiter, setReiter, offen }: { o: Detail; geloescht?: () => void; reiter: string | null; setReiter: (r: string | null) => void; offen: number }) {
   const aendern = useObjektAendern(o.id);
   const loeschen = useObjektLoeschen();
-  const [reiter, setReiter] = useState<string | null>('details');
 
   return (
     <Stack gap="sm">
@@ -49,9 +52,11 @@ function ObjektInhalt({ o, geloescht }: { o: Detail; geloescht?: () => void }) {
         <Reiterleiste>
           <Tabs.Tab value="details">📋 Details</Tabs.Tab>
           <Tabs.Tab value="bearbeiten">✏️ Bearbeiten</Tabs.Tab>
+          <Tabs.Tab value="expose">📄 Aus dem Exposé ({offen})</Tabs.Tab>
         </Reiterleiste>
         <Tabs.Panel value="details" pt="sm"><Details o={o} /></Tabs.Panel>
         <Tabs.Panel value="bearbeiten" pt="sm"><Formular o={o} /></Tabs.Panel>
+        <Tabs.Panel value="expose" pt="sm"><ExposeAngaben art="objekte" id={o.id} version={o.version} /></Tabs.Panel>
       </Tabs>
 
       <ObjektFotos objektId={o.id} />
@@ -141,6 +146,7 @@ function Details({ o }: { o: Detail }) {
           </Table.ScrollContainer>
         </Paper>
       )}
+      <WeitereAngaben details={o.details} />
       {o.notizen && (
         <Paper withBorder p="sm" aria-label="Notizen">
           <Title order={6} mb={6}>📝 Notizen</Title>
@@ -148,6 +154,68 @@ function Details({ o }: { o: Detail }) {
         </Paper>
       )}
     </Stack>
+  );
+}
+
+// ── Weitere Angaben (Zusatzangaben aus dem Exposé-Import, `details`) ──
+const DETAIL_LABEL: Record<string, string> = {
+  bruttorendite: 'Rendite brutto (Exposé)', heizungsbaujahr: 'Heizung Baujahr', lagebeschreibung: 'Lagebeschreibung', ausstattung: 'Ausstattung',
+  hausgeld: 'Hausgeld/Monat', hausgeld_monat: 'Hausgeld/Monat', provision_text: 'Provision', provision_prozent: 'Provision (%)',
+  nebenkosten: 'Nebenkosten/Monat', nebenkosten_monat: 'Nebenkosten/Monat', denkmalschutz: 'Denkmalschutz', erbpacht: 'Erbbaurecht',
+  objektart: 'Objektart', nutzungsart: 'Nutzungsart', objektnr_extern: 'Objekt-Nr. (Makler)',
+};
+const ENERGIE_LABEL: Record<string, string> = { klasse: 'Energieklasse', kennwert: 'Energiekennwert', art: 'Energieausweis Art', gueltig_bis: 'Energieausweis gültig bis' };
+/** Verwaltungsangaben des Imports, keine Objektangaben. */
+const DETAIL_VERSTECKT = new Set(['herkunft', 'importId']);
+/** Fließtexte brauchen die ganze Breite. */
+const DETAIL_LANG = new Set(['lagebeschreibung', 'ausstattung']);
+
+function detailText(schluessel: string, wert: unknown): string {
+  if (typeof wert === 'boolean') return wert ? 'Ja' : 'Nein';
+  if (typeof wert === 'number') {
+    if (schluessel === 'bruttorendite' || schluessel === 'provision_prozent') return prozent(wert, 2);
+    if (schluessel === 'hausgeld' || schluessel === 'hausgeld_monat' || schluessel === 'nebenkosten' || schluessel === 'nebenkosten_monat') return euro(wert, '0 €');
+    if (schluessel === 'kennwert') return `${wert.toLocaleString('de-DE')} kWh/m²a`;
+    if (schluessel === 'heizungsbaujahr') return String(wert);
+    return wert.toLocaleString('de-DE');
+  }
+  if (typeof wert === 'string') return wert;
+  return JSON.stringify(wert);
+}
+
+function detailZeilen(details: Record<string, unknown>): { label: string; wert: string; lang: boolean }[] {
+  const zeilen: { label: string; wert: string; lang: boolean }[] = [];
+  const gesetzt = (v: unknown) => v !== null && v !== undefined && v !== '';
+  for (const [k, v] of Object.entries(details)) {
+    if (DETAIL_VERSTECKT.has(k) || !gesetzt(v)) continue;
+    if (k === 'energieausweis' && typeof v === 'object' && !Array.isArray(v)) {
+      for (const [ek, ev] of Object.entries(v as Record<string, unknown>)) {
+        if (gesetzt(ev)) zeilen.push({ label: ENERGIE_LABEL[ek] ?? `Energieausweis ${ek}`, wert: detailText(ek, ev), lang: false });
+      }
+      continue;
+    }
+    zeilen.push({ label: DETAIL_LABEL[k] ?? k, wert: detailText(k, v), lang: DETAIL_LANG.has(k) });
+  }
+  return zeilen;
+}
+
+/** Nur gesetzte Werte; unbekannte Schlüssel erscheinen mit ihrem Namen, damit nichts verloren geht. */
+function WeitereAngaben({ details }: { details: Record<string, unknown> | null }) {
+  const zeilen = details ? detailZeilen(details) : [];
+  if (!zeilen.length) return null;
+  return (
+    <Paper withBorder p="sm" aria-label="Weitere Angaben">
+      <Title order={6} mb={6}>📄 Weitere Angaben</Title>
+      <SimpleGrid cols={{ base: 2, sm: 3 }}>
+        {zeilen.filter((z) => !z.lang).map((z) => <Feld key={z.label} label={z.label} wert={z.wert} />)}
+      </SimpleGrid>
+      {zeilen.filter((z) => z.lang).map((z) => (
+        <div key={z.label} data-feld={z.label} style={{ marginTop: 8 }}>
+          <Text fz={10} c="dimmed" tt="uppercase" style={{ letterSpacing: '.05em' }}>{z.label}</Text>
+          <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>{z.wert}</Text>
+        </div>
+      ))}
+    </Paper>
   );
 }
 

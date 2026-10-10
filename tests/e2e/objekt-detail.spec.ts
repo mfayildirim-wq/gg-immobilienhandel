@@ -50,6 +50,11 @@ test('Objekt-Detail: Details mit Kennzahlen und Recherche, Bearbeiten mit Einhei
   await expect(tabelle.locator('tbody tr').nth(1)).toContainText('⬜ Leerstand');
   await expect(schublade.getByLabel('Notizen')).toContainText('Dach 2021 neu');
 
+  // Aus dem Exposé: ohne Import leer
+  await schublade.getByRole('tab', { name: '📄 Aus dem Exposé (0)' }).click();
+  await expect(schublade.getByText('Keine Exposé-Angaben zu diesem Objekt.')).toBeVisible();
+  await schublade.getByRole('tab', { name: '📋 Details' }).click();
+
   // Status-Schnellwahl und Löschen
   await schublade.getByLabel('Objekt-Status').selectOption('Angekauft');
   await expect(schublade.getByLabel('Objekt-Status')).toHaveValue('Angekauft');

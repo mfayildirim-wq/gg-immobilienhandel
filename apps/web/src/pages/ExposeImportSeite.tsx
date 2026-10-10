@@ -6,15 +6,16 @@ import {
   DEAL_STATUS, emailPruefen, exposeKostenBestaetigen, exposeKostenSchaetzung, FREQUENZEN, telefonPruefen, WIZARD_KALK_FELDER, type WizardKalk,
 } from '@gg/domain';
 import {
-  ActionIcon, Alert, Anchor, Badge, Button, Checkbox, Group, NumberInput, Paper, ScrollArea, Select, SimpleGrid, Stack, Stepper, Table, Text, Textarea, TextInput, Title, UnstyledButton,
+  Accordion, ActionIcon, Alert, Anchor, Badge, Button, Checkbox, Group, NumberInput, Paper, ScrollArea, Select, SimpleGrid, Stack, Stepper, Table, Text, Textarea, TextInput, Title, UnstyledButton,
 } from '@mantine/core';
 import { IconFileUpload, IconPlus, IconTrash, IconX } from '@tabler/icons-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { type ReactNode, useMemo, useRef, useState, useEffect } from 'react';
 import {
-  DublettenFehler, exposeAnalysieren, exposeHochladen, exposeUebernehmen, useBekannteExposeDateien, useKiStatus, useMakler,
+  DublettenFehler, exposeAnalysieren, exposeHochladen, exposeImportVerwerfen, exposeUebernehmen, useBekannteExposeDateien, useKiStatus, useMakler,
 } from '../lib/api.ts';
+import { KonfidenzPunkt } from '../components/ExposeAngaben.tsx';
 
 const ZAHL = { decimalSeparator: ',', thousandSeparator: '.', hideControls: true } as const;
 const WIZARD_STATUS = DEAL_STATUS.filter((s) => s !== 'Angekauft');
@@ -164,7 +165,7 @@ export function ExposeImportSeite() {
     setLaeuft(true);
     try {
       const r = await exposeUebernehmen({
-        key: a.key, dateiname: datei.name, extrahiert: a.extrahiert,
+        key: a.key, dateiname: datei.name, extrahiert: a.extrahiert, importId: a.importId,
         objekt: { ...(objektBestehend ? { bestehendeId: objektBestehend } : {}), daten: objekt },
         makler: { ...(maklerBestehend ? { bestehendeId: maklerBestehend } : {}), daten: makler },
         deal: { ...deal, status: deal.status as (typeof DEAL_STATUS)[number] },
@@ -255,7 +256,11 @@ export function ExposeImportSeite() {
         <Alert color="orange" title="Deal bereits vorhanden">
           <Text size="sm" mb="xs">Für „{[objekt.strasse, objekt.hausnr].filter(Boolean).join(' ') || 'Objekt'}“ mit Makler „{makler.name || 'Makler'}“ gibt es schon einen Deal.</Text>
           <Group>
-            <Button size="xs" onClick={() => navigate({ to: '/deals', search: { deal: dublette } })}>Exposé überspringen</Button>
+            <Button size="xs" onClick={() => {
+              // Die gespeicherte Analyse gilt als verworfen; schlägt das fehl, geht es trotzdem zum bestehenden Deal
+              if (a?.importId) void exposeImportVerwerfen(a.importId).catch(() => {});
+              navigate({ to: '/deals', search: { deal: dublette } });
+            }}>Exposé überspringen</Button>
             <Button size="xs" variant="default" onClick={() => setDublette(null)}>Zurück zum Wizard</Button>
           </Group>
         </Alert>
@@ -355,13 +360,7 @@ function UploadSchritt(p: {
   );
 }
 
-function Punkt({ konf }: { konf?: string }) {
-  const farbe = konf === 'hoch' ? 'green' : konf === 'mittel' ? 'orange' : 'red';
-  const tipp = konf === 'hoch' ? 'Sicher erkannt' : konf === 'mittel' ? 'Unsicher – bitte prüfen' : 'Nicht erkannt';
-  return <span title={tipp} aria-label={tipp} style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4, background: `var(--mantine-color-${farbe}-6)`, marginLeft: 6 }} />;
-}
-
-const feldLabel = (text: string, konf?: string): ReactNode => <span>{text}<Punkt konf={konf} /></span>;
+const feldLabel = (text: string, konf?: string): ReactNode => <span>{text}<KonfidenzPunkt konf={konf} /></span>;
 
 function ObjektSchritt({ a, objekt, setObjekt, bestehend, setBestehend }: { a: ExposeAnalyseAntwort; objekt: ExposeObjektDaten; setObjekt: (o: ExposeObjektDaten) => void; bestehend: string | null; setBestehend: (id: string | null) => void }) {
   const k = a.konfidenz;
@@ -378,6 +377,11 @@ function ObjektSchritt({ a, objekt, setObjekt, bestehend, setBestehend }: { a: E
     <Stack>
       <Title order={3}>🏢 Objekt prüfen</Title>
       <Text size="sm" c="dimmed">Erkannte Werte prüfen und korrigieren. Punkt: grün sicher · orange unsicher · rot nicht erkannt.</Text>
+      {a.warnungen.length > 0 && (
+        <Alert color="yellow" title="Hinweise der Analyse" aria-label="Warnungen">
+          <Stack gap={2}>{a.warnungen.map((w, i) => <Text key={i} size="sm">{w}</Text>)}</Stack>
+        </Alert>
+      )}
       {a.dubletten.objekt && (
         <Alert color={bestehend ? 'green' : 'orange'} title={a.dubletten.objekt.sicherheit === 'exact' ? 'Objekt existiert bereits' : 'Ähnliches Objekt gefunden'}>
           <Text size="sm" mb="xs">{a.dubletten.objekt.titel}</Text>
@@ -428,6 +432,29 @@ function ObjektSchritt({ a, objekt, setObjekt, bestehend, setBestehend }: { a: E
         <Textarea label="Ausstattung" autosize minRows={3} value={objekt.ausstattung ?? ''} onChange={(e) => setObjekt({ ...objekt, ausstattung: e.currentTarget.value })} />
       </SimpleGrid>
       <Textarea label="Notizen aus Exposé" autosize minRows={2} value={objekt.notizen ?? ''} onChange={(e) => setObjekt({ ...objekt, notizen: e.currentTarget.value })} />
+      {a.weitereAngaben.length > 0 && (
+        // Nur Anzeige: diese Angaben haben kein Feld im Wizard; am Objekt stehen sie später im Reiter „Aus dem Exposé“
+        <Accordion variant="separated" chevronPosition="left">
+          <Accordion.Item value="weitere">
+            <Accordion.Control>Weitere Angaben aus dem Exposé ({a.weitereAngaben.length})</Accordion.Control>
+            <Accordion.Panel>
+              <ScrollArea>
+                <Table miw={480} verticalSpacing={4} horizontalSpacing={6} aria-label="Weitere Angaben">
+                  <Table.Thead><Table.Tr><Table.Th>Gruppe</Table.Th><Table.Th>Bezeichnung</Table.Th><Table.Th>Wert</Table.Th><Table.Th>Seite</Table.Th></Table.Tr></Table.Thead>
+                  <Table.Tbody>
+                    {a.weitereAngaben.map((w, i) => (
+                      <Table.Tr key={i}>
+                        <Table.Td c="dimmed" fz="xs">{w.gruppe}</Table.Td><Table.Td>{w.bezeichnung}</Table.Td>
+                        <Table.Td>{w.wert}{w.einheit ? ` ${w.einheit}` : ''}</Table.Td><Table.Td>{w.seite === null ? '–' : `S. ${w.seite}`}</Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </ScrollArea>
+            </Accordion.Panel>
+          </Accordion.Item>
+        </Accordion>
+      )}
     </Stack>
   );
 }
