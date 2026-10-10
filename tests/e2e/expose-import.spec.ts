@@ -65,28 +65,26 @@ test('Exposé v1: weitere Angaben auf der Prüfseite, Reiter „Aus dem Exposé�
   const dealId = new URL(page.url()).searchParams.get('deal')!;
   const deal = await (await page.request.get(`/api/deals/${dealId}`)).json();
 
-  // Objekt: Reiter „Aus dem Exposé“ — Hausgeld (Zusatzangabe) und Grundstück (Spalte) sind noch leer
+  // Objekt: Zusatzangaben und Grundstück stehen schon beim Anlegen im Objekt (Status „gleich“)
   await page.goto(`/objekte?objekt=${deal.objekt.id}`);
   const s = page.getByRole('region', { name: 'Objekt-Detail' });
+  await expect(s.getByLabel('Weitere Angaben', { exact: true })).toContainText('Hausgeld/Monat');
+  await expect(s.getByLabel('Weitere Angaben', { exact: true })).toContainText('350 €');
+  await expect(s.getByLabel('Gebäude')).toContainText('480 m²');
   await s.getByRole('tab', { name: /Aus dem Exposé/ }).click();
   const angaben = s.getByRole('region', { name: 'Exposé-Angaben' });
   const hausgeld = angaben.locator('[data-feld="preise.hausgeld_monat"]');
   await expect(hausgeld).toContainText('350');
-  await expect(hausgeld).toHaveAttribute('data-status', 'leer');
-  await expect(angaben.locator('[data-feld="zustand.denkmalschutz"]')).toContainText('Ja');
-  await hausgeld.getByRole('button', { name: 'Übernehmen' }).click();
   await expect(hausgeld).toHaveAttribute('data-status', 'gleich');
-  await s.getByRole('tab', { name: '📋 Details' }).click();
-  await expect(s.getByLabel('Weitere Angaben', { exact: true })).toContainText('Hausgeld/Monat');
-  await expect(s.getByLabel('Weitere Angaben', { exact: true })).toContainText('350 €');
+  await expect(angaben.locator('[data-feld="flaechen.grundstuecksflaeche"]')).toHaveAttribute('data-status', 'gleich');
+  await expect(angaben.locator('[data-feld="zustand.denkmalschutz"]')).toContainText('Ja');
 
-  await s.getByRole('tab', { name: /Aus dem Exposé/ }).click();
-  const grundstueck = angaben.locator('[data-feld="flaechen.grundstuecksflaeche"]');
-  await expect(grundstueck).toHaveAttribute('data-status', 'leer');
-  await grundstueck.getByRole('button', { name: 'Übernehmen' }).click();
-  await expect(grundstueck).toHaveAttribute('data-status', 'gleich');
+  // Angabe ohne Feld: per Klick in die Notizen übernehmen
+  const dach = angaben.locator('[data-feld="weitere_angaben.0"]');
+  await expect(dach).toHaveAttribute('data-status', 'keinFeld');
+  await dach.getByRole('button', { name: 'In Notizen' }).click();
   await s.getByRole('tab', { name: '📋 Details' }).click();
-  await expect(s.getByLabel('Gebäude')).toContainText('480 m²');
+  await expect(s.getByLabel('Notizen', { exact: true })).toContainText('Dach');
 
   // Makler: der zweite Kontakt aus dem Exposé steht im Reiter
   await page.goto(`/makler?makler=${deal.makler.id}`);
