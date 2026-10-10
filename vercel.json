@@ -39,6 +39,10 @@
       "destination": "/api/render"
     },
     {
+      "source": "/api/expose/analyse",
+      "destination": "/api/render"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api"
     },

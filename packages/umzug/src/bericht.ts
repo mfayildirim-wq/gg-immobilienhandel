@@ -1,6 +1,6 @@
 import { einheitAlsEingabe, sanierungAlsEingabe, schema } from '@gg/db';
-import { berechneAnkauf, computeKKalk, type KKalkInputs, DEAL_STATUS, DealStatus, KALK_STANDARD, type KalkStandard, START_STATUS, weitereKontakte, type WeitereKontakte } from '@gg/domain';
-import { asc, count, eq, isNotNull, sql } from 'drizzle-orm';
+import { berechneAnkauf, computeKKalk, type KKalkInputs, DEAL_STATUS, DealStatus, EXPOSE_V0_SCHEMA, KALK_STANDARD, type KalkStandard, START_STATUS, weitereKontakte, type WeitereKontakte } from '@gg/domain';
+import { and, asc, count, eq, isNotNull, like, sql } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
 import type { Tx } from './schreiben.ts';
 import { type Befund, BS_TYPEN, FILTER_MODULE, bsAktionenAlt, bsVorlageAlt, EINSTELLUNGEN, FINANZPRAES_STANDARD_SCHLUESSEL, finanzpraesStandardUmformen, DOKUMENT_TABELLE, FOTO_TABELLE, type KvDaten, type Umformung } from './umformen.ts';
@@ -98,6 +98,10 @@ export async function pruefen(tx: Tx, kv: KvDaten, u: Umformung): Promise<Pruefu
       { namen: m.alleNamen, telefonnummern: m.alleTelefonnummern, emails: m.alleEmails })), 0),
     zielMakler.reduce((a, m) => a + weitereAnzahl(m.weitere as WeitereKontakte | null), 0));
   vergleiche('Status-Verlauf (ein Eintrag je Deal)', deals.length, await anzahl(schema.dealStatusHistorie));
+  vergleiche('Exposé-Altimporte als expose_importe (v0) überführt',
+    deals.filter((d) => istObjekt(d._exposeRaw)).length,
+    (await tx.select({ n: count() }).from(schema.exposeImporte)
+      .where(and(eq(schema.exposeImporte.schemaVersion, EXPOSE_V0_SCHEMA), like(schema.exposeImporte.id, 'imp:%'), isNotNull(schema.exposeImporte.dealId))))[0]!.n);
 
   // Rechengrundlage erhalten? Kalkulation je Deal aus Altdaten und aus den neuen Tabellen rechnen und vergleichen.
   const standard: KalkStandard = { ...KALK_STANDARD, ...(istObjekt(kv['immo-kalk-defaults']) ? (kv['immo-kalk-defaults'] as Partial<KalkStandard>) : {}) };
