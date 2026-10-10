@@ -68,9 +68,9 @@ ZIMMER-ANZAHL — Erkennungsmuster:
 
 ═══ MAKLER ═══
 - Kontaktdaten stehen oft im Impressum, Kontaktbereich oder am Seitenende
-- Telefon: Unterscheide Mobilnummer (beginnt mit 01.../+49 1...) von Festnetz. Gib beides separat an (mobiltel/festnetztel)
-- WICHTIG: Extrahiere ALLE gefundenen Kontaktdaten in die Array-Felder (alleNamen, alleTelefonnummern, alleEmails). Oft gibt es mehrere Ansprechpartner.
-- In Schema v1 heißen die Felder: Ansprechpartner in "kontaktperson" (mobil/tel_zentrale/tel_durchwahl/fax), alle weiteren Personen mit ihren Nummern und Adressen in "weitere_kontakte".
+- Telefon: Unterscheide Mobilnummer (beginnt mit 01.../+49 1...) von Festnetz. Gib beides separat an ("kontaktperson.mobil" / "kontaktperson.tel_zentrale" bzw. "tel_durchwahl")
+- Der bevorzugte Ansprechpartner steht in "kontaktperson" (mit Firma, Büroadresse, Fax, E-Mail, Web).
+- WICHTIG: ALLE weiteren im Dokument genannten Personen mit ihren Nummern und E-Mails in "weitere_kontakte" (name, rolle, tel, mobil, email). Oft gibt es mehrere Ansprechpartner.
 
 ═══ WEITERE ANGABEN ═══
 - "weitere_angaben" ist der Auffangbereich NUR für Angaben, für die es KEIN Feld im Schema gibt. Zuerst alle Schemafelder füllen.
