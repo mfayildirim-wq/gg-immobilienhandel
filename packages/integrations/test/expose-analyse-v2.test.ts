@@ -3,7 +3,7 @@
 import { EXPOSE_V2_TOOL_NAME, ExposeV2, einheitenAusTabellen, exposeV2Leer, KATALOG, v2Traegt, zuordnen } from '@gg/domain';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  analysiereExpose, type AnalyseAbhaengigkeiten, anfrageV2, attrappeErfassung, EXPOSE_EINHEITEN_TOOL_V2, EXPOSE_SYSTEM_PROMPT_V2, EXPOSE_TOOL_V2,
+  AnalyseFehler, analysiereExpose, type AnalyseAbhaengigkeiten, KiDienstFehler, anfrageV2, attrappeErfassung, EXPOSE_EINHEITEN_TOOL_V2, EXPOSE_SYSTEM_PROMPT_V2, EXPOSE_TOOL_V2,
   HINWEIS_NACHFASS_V2, HINWEIS_WIEDERHOLUNG_V2, kiAttrappe, kostenEur, kostenSchaetzung, MAX_TOKENS_V2, MODELL_GRUENDLICH, MODELL_SCHNELL, pdfText,
   PROMPT_VERSION_V2, SCHAETZUNG_AUSGABE_TOKENS, seitenAufteilen, testExpose, testExposeV2, ZEITLIMIT_V2_MS,
 } from '../src/index.ts';
@@ -139,9 +139,22 @@ describe('Wegwahl v2', () => {
     expect((await analysiereExpose(pdf(), 'e.pdf', abh())).modell).toBe(MODELL_SCHNELL);
   });
 
-  it('wirft, wenn auch Sonnet nichts liefert', async () => {
+  it('wirft, wenn auch Sonnet nichts liefert — als AnalyseFehler mit Meldung für die Oberfläche', async () => {
     antwort = () => ({ content: [], stop_reason: 'end_turn', usage: USAGE });
-    await expect(analysiereExpose(pdf(), 'e.pdf', abh())).rejects.toThrow('nichts auslesen');
+    const f = await analysiereExpose(pdf(), 'e.pdf', abh()).catch((e) => e);
+    expect(f).toBeInstanceOf(AnalyseFehler);
+    expect(f.message).toContain('nichts auslesen');
+  });
+
+  it('Nutzungslimit bei Haiku: sofort durchreichen, kein zweiter Versuch mit Sonnet', async () => {
+    antwort = () => { throw new KiDienstFehler(400, 'limit', 'Das Nutzungslimit des Anthropic-Kontos ist erreicht'); };
+    await expect(analysiereExpose(pdf(), 'e.pdf', abh())).rejects.toMatchObject({ art: 'limit' });
+    expect(aufrufe).toHaveLength(1);
+  });
+
+  it('Überlast bei Haiku: Sonnet versucht es noch einmal', async () => {
+    antwort = (b) => { if (b.model === MODELL_SCHNELL) throw new KiDienstFehler(529, 'ueberlastet', 'überlastet'); return v2Antwort(TREFFER); };
+    expect((await analysiereExpose(pdf(), 'e.pdf', abh())).modell).toBe(MODELL_GRUENDLICH);
   });
 });
 

@@ -130,7 +130,7 @@ import { autoSicherungDatei, autoSicherungEinspielen, autoSicherungErstellen, au
 import { filterAnlegen, filterListe, filterLoeschen, filterUmbenennen, filterVorlagenEinrichten, listenAltformat } from './services/listen.ts';
 import { projektAnlegen, projektDealAuswahl, projektDetail, projekteListe, projektLoeschen, projektSpeichern } from './services/projekte.ts';
 import { fotoDatei, fotoHochladen, fotoLoeschen, fotoPort, fotosListe, fotosSortieren } from './services/fotos.ts';
-import { type Dateispeicher, type GraphClient, type KiClient, KiSchluesselFehler, type PropstackClient, nachrichtenSuche, webSuche, anthropicClient, anthropicSchluesselPruefen } from '@gg/integrations';
+import { type Dateispeicher, type GraphClient, AnalyseFehler, type KiClient, KiDienstFehler, KiSchluesselFehler, type PropstackClient, nachrichtenSuche, webSuche, anthropicClient, anthropicSchluesselPruefen } from '@gg/integrations';
 import { bekannteExposeDateien, exposeAnalysieren, exposeEingang, exposeEingangUebernehmen, type ExposeKontext, exposeUebernehmen, importVerwerfen, MAX_EXPOSE_BYTES } from './services/expose.ts';
 import { maklerAngaben, maklerUebernahme, objektAngaben, objektUebernahme } from './services/exposeAngaben.ts';
 import { auth, type AuthOptionen } from './middleware/auth.ts';
@@ -274,8 +274,17 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
       const quelle = z?.quelle === 'einstellungen' ? 'Schlüssel aus Einstellungen → Zugänge' : 'Schlüssel aus der Umgebung (ANTHROPIC_API_KEY)';
       return c.json({ fehler: `Der Anthropic-Schlüssel wird abgelehnt (ungültig oder gesperrt). Verwendet: ${quelle}${z?.maske ? ` ${z.maske}` : ''}. Bitte unter Einstellungen → Zugänge einen gültigen Schlüssel hinterlegen oder mit „Schlüssel testen“ prüfen.` }, 422);
     }
+    // Anthropic-Fehler (Limit, Guthaben, Überlast, Zeitlimit …) und fachliche Abbrüche der Analyse: die Ursache zeigen
+    if (err instanceof KiDienstFehler) {
+      console.error('[ki]', err.art, err.antwort || err.message);
+      const status = ({ limit: 503, guthaben: 503, rate: 429, ueberlastet: 503, stoerung: 502, anfrage: 502, zeitlimit: 504, netz: 502 } as const)[err.art];
+      return c.json({ fehler: err.meldung, details: { quelle: 'anthropic', art: err.art, status: err.status } }, status);
+    }
+    if (err instanceof AnalyseFehler) return c.json({ fehler: err.message }, 422);
     console.error(err);
-    return c.json({ fehler: 'Interner Fehler' }, 500);
+    // Unerwartet: die Ursache mitgeben statt nur „Interner Fehler“ (ohne Stack, gekürzt)
+    const ursache = err instanceof Error && err.message ? `: ${err.message.replace(/\s+/g, ' ').substring(0, 300)}` : '';
+    return c.json({ fehler: `Interner Fehler${ursache}`, details: { pfad: c.req.path } }, 500);
   });
 
   app.get('/api/health', async (c) => {

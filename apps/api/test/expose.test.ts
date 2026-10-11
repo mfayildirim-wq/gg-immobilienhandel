@@ -1,6 +1,6 @@
 import { createDb, schema, verlangeLokaleDatenbank } from '@gg/db';
 import { KALK_STANDARD } from '@gg/domain';
-import { KiSchluesselFehler, kiAttrappe, speicherImSpeicher, testExpose, testExposeV2 } from '@gg/integrations';
+import { KiDienstFehler, KiSchluesselFehler, kiAttrappe, speicherImSpeicher, testExpose, testExposeV2 } from '@gg/integrations';
 import { eq, inArray, like } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.ts';
@@ -77,6 +77,31 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
       expect(geprueft).toBe('sk-ant-test-abgelehnt-9876');
     } finally {
       await zugang('');
+    }
+  });
+
+  it('Nutzungslimit, Überlast und unerwartete Fehler: die Ursache steht in der Antwort statt nur „Interner Fehler“', async () => {
+    const mit = (fehler: Error) => {
+      const ki = { nachricht: async () => { throw fehler; }, dateiHochladen: async () => 'f', dateiLoeschen: async () => {} };
+      return createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, ki, expose: { speicher, ki: null, attrappe: false } });
+    };
+    const analysieren = async (app: ReturnType<typeof createApp>) => {
+      const e = await lies(app.request('/api/expose/eingang', { method: 'POST', body: testExpose('Fehlertest') }));
+      return app.request('/api/expose/analyse', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: e.key, dateiname: 'f.pdf' }) });
+    };
+    const zugang = (app: ReturnType<typeof createApp>, wert: string) => app.request('/api/zugaenge/anthropic-api-key', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ wert }) });
+    const limit = mit(new KiDienstFehler(400, 'limit', 'Das Nutzungslimit des Anthropic-Kontos ist erreicht — die KI-Auswertung ist gesperrt. Wieder verfügbar ab 01.11.2026, 00:00 UTC.'));
+    try {
+      await zugang(limit, 'sk-ant-test-limit-0000');
+      const r = await analysieren(limit);
+      expect(r.status).toBe(503);
+      expect(await lies(r)).toMatchObject({ fehler: expect.stringContaining('Nutzungslimit'), details: { quelle: 'anthropic', art: 'limit' } });
+      const kaputt = mit(new Error('Verbindung zur Datenbank verloren'));
+      const k = await analysieren(kaputt);
+      expect(k.status).toBe(500);
+      expect((await lies(k)).fehler).toBe('Interner Fehler: Verbindung zur Datenbank verloren');
+    } finally {
+      await zugang(limit, '');
     }
   });
 

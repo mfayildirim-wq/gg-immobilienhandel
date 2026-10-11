@@ -9,7 +9,7 @@
 // - v0: der bisherige Weg (Mail-Weg, Prüfsatz-Vergleich), inhaltlich unverändert, aber mit denselben Messwerten.
 
 import { EXPOSE_V0_SCHEMA, EXPOSE_V2_SCHEMA, EXPOSE_V2_TOOL_NAME, type ExposeV2, einheitenAusTabellen, exposeV2Bereinigen, v2Traegt } from '@gg/domain';
-import type { KiClient } from '../ki/anthropic.ts';
+import { type KiClient, KiDienstFehler, KiSchluesselFehler } from '../ki/anthropic.ts';
 import { kostenEur, type Verbrauch } from '../ki/kosten.ts';
 import type { PdfTextResult } from '../pdf/text.ts';
 import { EXTRACT_TOOL, SYSTEM_PROMPT } from './prompt.ts';
@@ -76,8 +76,19 @@ export interface AnalyseAbhaengigkeiten {
   buchen: (model: string, usage: Verbrauch | undefined, quelle: string) => Promise<void>;
 }
 
+/** Fachlich erklärbarer Abbruch der Analyse (PDF unlesbar, nichts gefunden, Kostengrenze); die Meldung geht an die Oberfläche. */
+export class AnalyseFehler extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AnalyseFehler';
+  }
+}
+
+/** Limit, Guthaben und Schlüssel ändern sich nicht durch einen zweiten Versuch mit einem anderen Modell. */
+const endgueltig = (e: unknown) => (e instanceof KiDienstFehler && (e.art === 'limit' || e.art === 'guthaben')) || e instanceof KiSchluesselFehler;
+
 function toolErgebnis(data: any, toolName = EXTRACT_TOOL.name): any {
-  if (data?.error) throw new Error(data.error.message || 'Anthropic meldete einen Fehler');
+  if (data?.error) throw new KiDienstFehler(200, 'anfrage', `Anthropic meldete einen Fehler: ${data.error.message || 'ohne Text'}`);
   return data?.content?.find((c: any) => c.type === 'tool_use' && c.name === toolName)?.input ?? null;
 }
 
@@ -170,10 +181,10 @@ export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: An
 
   const pdfWegPruefen = () => {
     if (seiten > MAX_PDF_SEITEN) {
-      throw new Error(`Das PDF hat ${seiten} Seiten und enthält keinen auslesbaren Text — ausgewertet werden höchstens ${MAX_PDF_SEITEN} Seiten. Bitte das Exposé ohne Anhänge hochladen.`);
+      throw new AnalyseFehler(`Das PDF hat ${seiten} Seiten und enthält keinen auslesbaren Text — ausgewertet werden höchstens ${MAX_PDF_SEITEN} Seiten. Bitte das Exposé ohne Anhänge hochladen.`);
     }
     if (seiten === 0) {
-      throw new Error(gelesen.grund ? `Das PDF ließ sich nicht öffnen — ${gelesen.grund}` : 'Das PDF ließ sich nicht öffnen — bitte die Datei prüfen.');
+      throw new AnalyseFehler(gelesen.grund ? `Das PDF ließ sich nicht öffnen — ${gelesen.grund}` : 'Das PDF ließ sich nicht öffnen — bitte die Datei prüfen.');
     }
   };
 
@@ -199,13 +210,14 @@ export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: An
       try {
         extrahiert = await rufe(MODELL_SCHNELL, inhalt, 'expose-analyse/text-schnell');
       } catch (e) {
+        if (endgueltig(e)) throw e;
         console.warn('[expose-analyse] schneller Versuch fehlgeschlagen:', e);
       }
       if (!ergebnisTraegt(extrahiert)) {
         extrahiert = await rufe(MODELL_GRUENDLICH, inhalt, 'expose-analyse/text-gruendlich');
         modell = MODELL_GRUENDLICH;
       }
-      if (!extrahiert) throw new Error(NICHTS);
+      if (!extrahiert) throw new AnalyseFehler(NICHTS);
       return fertig(extrahiert, 'text', modell);
     }
 
@@ -214,14 +226,14 @@ export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: An
     if (pdf.byteLength <= INLINE_MAX_BYTES) {
       const inhalt = [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: zuBase64(pdf) } }, frage];
       const extrahiert = await rufe(MODELL_GRUENDLICH, inhalt, 'expose-analyse/pdf', ZEITLIMIT_PDF_MS);
-      if (!extrahiert) throw new Error(NICHTS);
+      if (!extrahiert) throw new AnalyseFehler(NICHTS);
       return fertig(extrahiert, 'pdf', MODELL_GRUENDLICH);
     }
     const fileId = await a.ki.dateiHochladen(pdf, dateiname, 'application/pdf', ZEITLIMIT_PDF_MS);
     try {
       const inhalt = [{ type: 'document', source: { type: 'file', file_id: fileId } }, frage];
       const extrahiert = await rufe(MODELL_GRUENDLICH, inhalt, 'expose-analyse/pdf-datei', ZEITLIMIT_PDF_MS);
-      if (!extrahiert) throw new Error(NICHTS);
+      if (!extrahiert) throw new AnalyseFehler(NICHTS);
       return fertig(extrahiert, 'pdf', MODELL_GRUENDLICH);
     } finally {
       await a.ki.dateiLoeschen(fileId);
@@ -290,7 +302,7 @@ export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: An
   const traegt = (r: Ruf | null) => !!r?.roh && r.stopReason !== 'max_tokens' && v2Traegt(exposeV2Bereinigen(r.roh).v2);
 
   const fertig = (ruf: Ruf, modus: 'text' | 'pdf', modell: string): AnalyseErgebnis => {
-    if (!ruf.roh) throw new Error(NICHTS);
+    if (!ruf.roh) throw new AnalyseFehler(NICHTS);
     if (ruf.stopReason === 'max_tokens') warnungen.push(`${modell}: Antwort auch nach der Wiederholung abgeschnitten — Erfassung unvollständig`);
     const { v2, warnungen: w } = exposeV2Bereinigen(ruf.roh);
     warnungen.push(...w);
@@ -308,6 +320,7 @@ export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: An
     try {
       ruf = await versuchV2(MODELL_SCHNELL, inhalt, 'expose-analyse/v2-text-schnell');
     } catch (e) {
+      if (endgueltig(e)) throw e;
       console.warn('[expose-analyse] schneller Versuch (v2) fehlgeschlagen:', e);
       warnungen.push(`${MODELL_SCHNELL}: ${fehlerText(e)}`);
     }
@@ -316,7 +329,7 @@ export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: An
     const zeichen = text.length + SYSTEM_PROMPT_V2.length + JSON.stringify(EXTRACT_TOOL_V2.input_schema).length;
     const geschaetzt = kostenSchaetzung(MODELL_GRUENDLICH, zeichen);
     if (geschaetzt > kostenGrenze) {
-      throw new Error(`Kostengrenze ${kostenGrenze.toFixed(2)} € überschritten: der gründliche Versuch würde etwa ${geschaetzt.toFixed(2)} € kosten (${Math.ceil(zeichen / 4)} Eingabe-Tokens).`);
+      throw new AnalyseFehler(`Kostengrenze ${kostenGrenze.toFixed(2)} € überschritten: der gründliche Versuch würde etwa ${geschaetzt.toFixed(2)} € kosten (${Math.ceil(zeichen / 4)} Eingabe-Tokens).`);
     }
     nachfass = false; // `wiederholung` bleibt: sie ist in dieser Analyse geschehen, auch wenn Sonnet jetzt neu beginnt
     const gruendlich = await versuchV2(MODELL_GRUENDLICH, inhalt, 'expose-analyse/v2-text-gruendlich');
