@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { einheitenAusTabellen, exposeV2Leer, exposeVorbereiten, GG_ZIELE, KATALOG, MAPPING, v2Traegt, zuordnen } from '../src/index.ts';
+import { einheitenAusTabellen, einheitTyp, exposeV2Leer, exposeVorbereiten, GG_ZIELE, KATALOG, MAPPING, v2Traegt, zuordnen } from '../src/index.ts';
 import { exposeV2Beispiel, exposeV2MitFeldern } from './fixtures/expose-v2-beispiel.ts';
 
 describe('Exposé v2: Mapping Standard → gg (Protokoll 28)', () => {
@@ -79,6 +79,13 @@ describe('Exposé v2: Mapping Standard → gg (Protokoll 28)', () => {
     expect(details[0]).toEqual({ nr: '1', nebenkosten: 150, mietbeginn: '01.01.2020', seite: 4, weitere: { Kaution: '2.400 €' } });
   });
 
+  it.each(['TG-Stellplatz 3', 'Stpl. 1', 'Garage', 'Carport', 'Außenstellplatz', 'Duplexparker', 'Pkw-Platz', 'Kfz 2', 'SP 4', 'Tiefgarage'])('Stellplatz erkannt: %s', (text) => {
+    expect(einheitTyp(text)).toBe('Stellplatz');
+  });
+  it.each(['Whg. 1', 'EG links', '3-Zi.-Whg.', 'Laden'])('kein Stellplatz: %s', (text) => {
+    expect(einheitTyp(text)).not.toBe('Stellplatz');
+  });
+
   it('trägt = Ort ∧ Preis ∧ Einheiten', () => {
     expect(v2Traegt(exposeV2Beispiel())).toBe(true);
     const ohne = exposeV2Beispiel();
@@ -134,6 +141,12 @@ describe('Exposé v2: Mapping Standard → gg (Protokoll 28)', () => {
       expect(r.warnungen.some((w) => w.includes('„1250000“ (KI-Feld) und „1.300.000 €“ (S. 5)'))).toBe(true);
       expect(r.zeilen[17]).toMatchObject({ ziel: 'objekt.lagebeschreibung', grund: 'zugeordnet' });
       expect(r.pruefdaten.objekt.lagebeschreibung).toBe('Ruhige Wohnlage nahe der Innenstadt. Schulen und Einkauf fußläufig.');
+    });
+
+    it('gleich lange Listen: sagt die wörtliche Liste Stellplatz, Teil A aber Wohnung, gilt Stellplatz', () => {
+      const v2 = exposeV2MitFeldern();
+      (v2.felder!.objekt as { einheiten: { typ: string }[] }).einheiten[3]!.typ = 'Wohnung';
+      expect(zuordnen(v2).pruefdaten.objekt.einheiten[3]!.typ).toBe('Stellplatz');
     });
 
     it('trägt auch, wenn nur Teil A geliefert wurde', () => {

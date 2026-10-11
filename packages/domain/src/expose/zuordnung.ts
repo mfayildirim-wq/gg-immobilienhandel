@@ -199,7 +199,7 @@ function setzePfad(o: Record<string, unknown>, pfad: string, wert: unknown) {
 
 // ── Einheiten ──────────────────────────────────────────────────
 
-const STELLPLATZ = /stellpl|garage|\btg\b|tiefgarage|carport|parkpl|duplex/i;
+const STELLPLATZ = /stellpl|stpl|st\.\s?pl|garage|\btg\b|tiefgarage|carport|parkpl|parker|duplex|\bpkw\b|\bkfz\b|motorrad|au(ß|ss)enpl|\bsp\s?\d/i;
 const GEWERBE = /gewerb|laden|büro|buero|praxis|gastro|lager|halle|werkstatt|kiosk|shop/i;
 const SUMME = /^(summe|gesamt|total|σ|insgesamt)/i;
 
@@ -471,7 +471,13 @@ export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null): Zuor
   const einheitenA = einheitenAusFeldern(felder);
   // Teil A wie früher; nur wenn die wörtlichen Tabellen mehr Einheiten haben (z. B. nach dem Nachfass), gelten sie
   const ausA = einheitenA.length >= ausTabellen.einheiten.length && einheitenA.length > 0;
-  const einheiten = ausA ? einheitenA : ausTabellen.einheiten;
+  // Gleich lang: die Art aus der wörtlichen Liste, wo sie ausdrücklich Stellplatz/Gewerbe sagt und Teil A „Wohnung“ meint
+  const einheiten = ausA
+    ? einheitenA.map((e, i) => {
+      const t = ausTabellen.einheiten.length === einheitenA.length ? ausTabellen.einheiten[i]!.typ : null;
+      return e.typ === 'Wohnung' && (t === 'Stellplatz' || t === 'Gewerbe') ? { ...e, typ: t } : e;
+    })
+    : ausTabellen.einheiten;
   // Zusatz je Einheit aus den wörtlichen Tabellen nur, wenn beide Listen gleich lang sind (Zuordnung nach Reihenfolge)
   const einheitenDetails = ausA && ausTabellen.einheiten.length !== einheitenA.length ? einheitenA.map(() => null) : ausTabellen.details;
   p.objekt.einheiten = einheiten;
