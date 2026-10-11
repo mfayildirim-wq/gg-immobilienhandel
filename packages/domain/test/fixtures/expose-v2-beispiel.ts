@@ -7,6 +7,7 @@ const A = (bezeichnung: string, wert: string, seite: number | null, pfad: string
 export function exposeV2Beispiel(): ExposeV2 {
   return {
     schema: EXPOSE_V2_SCHEMA,
+    felder: null,
     angaben: [
       A('Objekt', 'Gepflegtes Mehrfamilienhaus in Ulm', 1, 'freitexte.objekttitel'),
       A('Adresse', 'Musterweg 12, 89073 Ulm', 1, 'geo.strasse'),
@@ -66,3 +67,26 @@ export const BEISPIEL_SEITEN = [
   'Jahresnettokaltmiete (Ist) 27.840 € Faktor 22,9-fach Wohnfläche ca. 240 m² Grundstück 480 m²',
   'Energieausweis: Verbrauchsausweis',
 ];
+
+/** Teil A wie vom bisherigen Prompt: die KI hat die gg-Felder gedeutet (Adresse getrennt, Jahresmiete schon als Monat …). */
+export function exposeV2MitFeldern(): ExposeV2 {
+  const v2 = exposeV2Beispiel();
+  v2.felder = {
+    objekt: {
+      strasse: 'Musterweg', hausnr: '12', plz: '89073', stadt: 'Ulm', bundesland: 'Baden-Württemberg', baujahr: 1965, wohnflaeche: 240,
+      grundstueck: 480, einheitenAnz: 3, angebotspreis: 1_250_000, istmiete: 2320, bruttorendite: 2.23, heizungsart: 'Gas-Zentralheizung',
+      heizungsbaujahr: null, energieausweis: { klasse: 'D', kennwert: 128.4, art: 'Verbrauchsausweis' }, lagebeschreibung: 'Ruhige Wohnlage.',
+      ausstattung: 'Balkon, Keller', notizen: null,
+      einheiten: [
+        { typ: 'Wohnung', lage: 'EG', zimmer: 3, flaeche: 80, kaltmiete: 800, vermiet: 'Vermietet' },
+        { typ: 'Wohnung', lage: 'OG', zimmer: 3, flaeche: 80, kaltmiete: 820, vermiet: 'Vermietet' },
+        { typ: 'Wohnung', lage: 'DG', zimmer: 2.5, flaeche: 80, kaltmiete: 0, vermiet: 'Leerstand' },
+        { typ: 'Stellplatz', lage: 'TG', zimmer: null, flaeche: null, kaltmiete: 60, vermiet: 'Vermietet' },
+      ],
+    },
+    makler: { name: 'Anna Beispiel', firma: 'Beispiel Immobilien GmbH', mobiltel: '0171 1234567', festnetztel: '0731 98765-0', email: 'anna@beispiel.test', alleNamen: ['Anna Beispiel'] },
+    kalkulation: { kaufpreis: 1_250_000, makler: 3.57, gest: 5 },
+    _konfidenz: { angebotspreis: 'hoch', wohnflaeche: 'hoch' },
+  };
+  return v2;
+}

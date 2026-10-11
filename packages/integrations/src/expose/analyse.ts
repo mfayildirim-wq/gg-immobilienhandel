@@ -150,6 +150,8 @@ export function kostenSchaetzung(model: string, zeichen: number): number {
 
 /** Erfasste Einheiten (ohne Summenzeilen) einer rohen Antwort. */
 const zeilenAnzahl = (roh: any) => einheitenAusTabellen(exposeV2Bereinigen({ einheiten_tabellen: roh?.einheiten_tabellen }).v2.einheiten_tabellen).einheiten.length;
+/** Erfasste Einheiten: die längere Liste aus Teil A (`objekt.einheiten` wie früher) und den wörtlichen Tabellen. */
+const einheitenAnzahl = (roh: any) => Math.max(zeilenAnzahl(roh), Array.isArray(roh?.objekt?.einheiten) ? roh.objekt.einheiten.length : 0);
 
 const zuBase64 = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64');
 const NICHTS = 'Aus dem Exposé ließ sich nichts auslesen — bitte erneut versuchen.';
@@ -257,7 +259,7 @@ export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: An
    * längere Liste aus einer nicht abgeschnittenen Antwort (Prüfsatz 10.10.2026: 1 von 34 Einheiten).
    */
   const nachfassen = async (r: Ruf, model: string, inhalt: unknown[], quelle: string) => {
-    const bisher = zeilenAnzahl(r.roh);
+    const bisher = einheitenAnzahl(r.roh);
     try {
       const n = await rufeV2(model, [...inhalt, { type: 'text', text: HINWEIS_NACHFASS_V2 }], EINHEITEN_TOOL_V2, `${quelle}-einheiten`);
       if (n.stopReason === 'max_tokens') { warnungen.push(`${model}: Einheiten-Nachfass abgeschnitten (max_tokens) — nicht übernommen`); return; }
@@ -281,7 +283,7 @@ export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: An
     let r = await rufeV2(model, inhalt, EXTRACT_TOOL_V2, quelle);
     if (r.stopReason !== 'max_tokens') {
       if (!r.roh) return r;
-      const bisher = zeilenAnzahl(r.roh);
+      const bisher = einheitenAnzahl(r.roh);
       const imDokument = typeof r.roh.einheiten_im_dokument === 'number' ? r.roh.einheiten_im_dokument : null;
       if (r.roh.einheiten_vollstaendig === false || (imDokument !== null && imDokument > bisher)) {
         warnungen.push(`Einheitenliste unvollständig (${bisher} von ${imDokument ?? '?'}) — Nachfass`);

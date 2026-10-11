@@ -7,6 +7,7 @@ import {
   HINWEIS_NACHFASS_V2, HINWEIS_WIEDERHOLUNG_V2, kiAttrappe, kostenEur, kostenSchaetzung, MAX_TOKENS_V2, MODELL_GRUENDLICH, MODELL_SCHNELL, pdfText,
   PROMPT_VERSION_V2, SCHAETZUNG_AUSGABE_TOKENS, seitenAufteilen, testExpose, testExposeV2, ZEITLIMIT_V2_MS,
 } from '../src/index.ts';
+import { EXTRACT_TOOL, SYSTEM_PROMPT } from '../src/expose/prompt.ts';
 import type { PdfTextResult } from '../src/pdf/text.ts';
 
 let aufrufe: { body: any; zeitlimit: number | undefined }[] = [];
@@ -62,15 +63,18 @@ describe('Prompt und Werkzeug v2', () => {
     expect(EXPOSE_SYSTEM_PROMPT_V2).toContain('details.instandhaltungsruecklage — Instandhaltungsrücklage');
     expect(EXPOSE_SYSTEM_PROMPT_V2).toContain('makler.email — E-Mail');
     for (const pfad of Object.keys(KATALOG)) expect(EXPOSE_SYSTEM_PROMPT_V2).toContain(`${pfad} — `);
-    expect(EXPOSE_SYSTEM_PROMPT_V2).not.toContain('Grunderwerbsteuer');
-    expect(PROMPT_VERSION_V2).toBe('v2.0');
+    // Teil A: der bisherige Prompt steht wortgleich darin („mindestens wie früher“)
+    expect(EXPOSE_SYSTEM_PROMPT_V2).toContain(SYSTEM_PROMPT);
+    expect(EXPOSE_SYSTEM_PROMPT_V2.indexOf('TEIL A')).toBeLessThan(EXPOSE_SYSTEM_PROMPT_V2.indexOf('TEIL B'));
+    expect(PROMPT_VERSION_V2).toBe('v2.1');
   });
 
-  it('das Werkzeug trägt das Schema aus @gg/domain; der Nachfass nur die Einheiten-Tabellen', () => {
+  it('das Werkzeug trägt Teil A (bisheriges Schema, wortgleich) und Teil B aus @gg/domain; der Nachfass nur die Einheiten-Tabellen', () => {
     expect(EXPOSE_TOOL_V2.name).toBe(EXPOSE_V2_TOOL_NAME);
     expect(EXPOSE_EINHEITEN_TOOL_V2.name).toBe(EXPOSE_V2_TOOL_NAME);
     const props = (EXPOSE_TOOL_V2.input_schema as any).properties;
-    expect(Object.keys(props).sort()).toEqual(['angaben', 'einheiten_im_dokument', 'einheiten_tabellen', 'einheiten_vollstaendig']);
+    expect(Object.keys(props)).toEqual(['objekt', 'makler', 'kalkulation', '_konfidenz', 'angaben', 'einheiten_tabellen', 'einheiten_im_dokument', 'einheiten_vollstaendig']);
+    expect(props.objekt).toBe((EXTRACT_TOOL.input_schema as any).properties.objekt);
     expect(props.angaben.items.properties.pfad.enum ?? props.angaben.items.properties.pfad.anyOf).toBeDefined();
     expect(Object.keys((EXPOSE_EINHEITEN_TOOL_V2.input_schema as any).properties).sort()).toEqual(['einheiten_im_dokument', 'einheiten_tabellen', 'einheiten_vollstaendig']);
   });
@@ -89,7 +93,7 @@ describe('Prompt und Werkzeug v2', () => {
 describe('Wegwahl v2', () => {
   it('Standard ist v2: Text an Haiku mit 280 s Zeitlimit, Ergebnis mit Messwerten und Seitentexten', async () => {
     const r = await analysiereExpose(pdf(), 'e.pdf', abh());
-    expect(r).toMatchObject({ modus: 'text', modell: MODELL_SCHNELL, schemaVersion: 'gg-expose-v2', promptVersion: 'v2.0', stopReason: 'end_turn', nachfass: false, wiederholung: false });
+    expect(r).toMatchObject({ modus: 'text', modell: MODELL_SCHNELL, schemaVersion: 'gg-expose-v2', promptVersion: 'v2.1', stopReason: 'end_turn', nachfass: false, wiederholung: false });
     expect(aufrufe).toHaveLength(1);
     expect(aufrufe[0]!.zeitlimit).toBe(ZEITLIMIT_V2_MS);
     expect(aufrufe[0]!.body.max_tokens).toBe(MAX_TOKENS_V2);
@@ -331,12 +335,13 @@ describe('Attrappe v2 gegen das Test-Exposé', () => {
     expect(z.pruefdaten.makler.name).toBe('Anna E1');
   });
 
-  it('„Attrappe: abgeschnitten“: erste Antwort max_tokens, Wiederholung ohne Mietliste, Tabellen über den Nachfass', async () => {
+  it('„Attrappe: abgeschnitten“: erste Antwort max_tokens, Wiederholung ohne Mietliste; Teil A hat die Einheiten schon, der Nachfass bringt keine längere Liste', async () => {
     const r = await analysiereExpose(testExposeV2('T2', { abgeschnitten: true }), 't2.pdf', echt());
-    expect(r).toMatchObject({ modell: MODELL_SCHNELL, wiederholung: true, nachfass: true, stopReason: 'end_turn' });
+    expect(r).toMatchObject({ modell: MODELL_SCHNELL, wiederholung: true, nachfass: false, stopReason: 'end_turn' });
     expect(gebucht.map((g) => g.quelle)).toEqual(['expose-analyse/v2-text-schnell', 'expose-analyse/v2-text-schnell-wiederholung', 'expose-analyse/v2-text-schnell-einheiten']);
     expect(ExposeV2.safeParse(r.v2).success).toBe(true);
-    expect(r.v2?.einheiten_tabellen[0]!.zeilen).toHaveLength(3);
+    expect(r.v2?.einheiten_tabellen).toEqual([]);
+    expect(zuordnen(r.v2!).pruefdaten.objekt.einheiten).toHaveLength(3);
     expect(r.v2?.angaben.some((x) => x.bezeichnung === 'Besichtigung')).toBe(true);
   });
 

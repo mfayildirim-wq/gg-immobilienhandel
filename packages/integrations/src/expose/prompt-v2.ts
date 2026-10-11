@@ -1,16 +1,17 @@
-// Anweisung und Werkzeug für die Erfassung v2 (Protokoll 28): Vollerfassung, wörtlich, Standard-Pfad + gg-Vorschlag.
-//
-// Die KI rechnet, kürzt und deutet nichts; Zahlen und Zuordnung macht der Code (@gg/domain: normalisieren, zuordnen).
-// Aus dem alten Prompt (prompt.ts/v1) übernommen sind nur die Erkennungshinweise für Mietlisten (Wohnfläche, Kaltmiete,
-// Zimmer) — hier als Hilfe für die Spaltenzuordnung, nicht zum Umrechnen.
+// Anweisung und Werkzeug für die Erfassung v2 (Protokoll 28) in zwei Teilen, EIN Aufruf:
+// - Teil A: der bisherige Prompt (prompt.ts) und das bisherige Werkzeug-Schema WORTGLEICH — die gg-Felder kommen
+//   mindestens so wie früher (Auftraggeber 11.10.2026: „mindestens wie früher alles“). Hier darf die KI wie bisher deuten.
+// - Teil B: Vollerfassung aller Angaben wörtlich mit Seite, Standard-Pfad und gg-Vorschlag; Mietlisten als Tabellen.
+//   Teil B füllt im Code nur Lücken von Teil A (@gg/domain: zuordnen) und landet sonst unter „Weitere Angaben“.
 //
 // Katalog und Zielliste stehen fest im Text; der System-Prompt wird zwischengespeichert und darf keine variablen Teile haben.
 import { EXPOSE_V2_TOOL_NAME, exposeV2ToolSchema, katalogFuerPrompt, zieleFuerPrompt } from '@gg/domain';
+import { EXTRACT_TOOL, SYSTEM_PROMPT } from './prompt.ts';
 
 /** Fassung der Anweisung; wird je Import festgehalten, damit Ergebnisse vergleichbar bleiben. */
-export const PROMPT_VERSION_V2 = 'v2.0';
+export const PROMPT_VERSION_V2 = 'v2.1';
 
-export const SYSTEM_PROMPT_V2 = `Du erfasst deutsche Immobilien-Exposés VOLLSTÄNDIG und WÖRTLICH.
+const TEIL_B = `Du erfasst deutsche Immobilien-Exposés zusätzlich VOLLSTÄNDIG und WÖRTLICH.
 
 ═══ AUFGABE: VOLLERFASSUNG ═══
 - Gehe das Dokument Seite für Seite durch und nimm JEDE Angabe als Eintrag in "angaben" auf, in Dokumentreihenfolge.
@@ -83,11 +84,28 @@ ${katalogFuerPrompt()}
 ═══ GG-ZIELE (gg — Bedeutung) ═══
 ${zieleFuerPrompt()}`;
 
-/** Werkzeug der Vollerfassung; das Schema kommt aus @gg/domain. */
+export const SYSTEM_PROMPT_V2 = `═══════════ TEIL A: DIE FELDER objekt, makler, kalkulation, _konfidenz ═══════════
+Fülle diese Felder GENAU so, wie es die folgende Anweisung verlangt (sie gilt unverändert seit Monaten):
+
+${SYSTEM_PROMPT}
+
+═══════════ TEIL B: ZUSÄTZLICH DIE FELDER angaben, einheiten_tabellen, einheiten_im_dokument, einheiten_vollstaendig ═══════════
+Teil A bleibt davon unberührt: fülle Teil A vollständig wie oben. Die folgenden Regeln (WÖRTLICH, nichts umrechnen) gelten NUR für Teil B.
+
+${TEIL_B}`;
+
+/** Teil A (bisheriges Schema, wortgleich) + Teil B (Vollerfassung aus @gg/domain) in einem Werkzeug. */
+function werkzeugSchema(): Record<string, unknown> {
+  const a = EXTRACT_TOOL.input_schema as { properties: Record<string, unknown>; required?: string[] };
+  const b = exposeV2ToolSchema() as { properties: Record<string, unknown>; required?: string[] };
+  return { type: 'object', properties: { ...a.properties, ...b.properties }, required: [...(a.required ?? []), ...(b.required ?? [])] };
+}
+
+/** Werkzeug der Erfassung v2 (Teil A + Teil B). */
 export const EXTRACT_TOOL_V2 = {
   name: EXPOSE_V2_TOOL_NAME,
-  description: 'Erfasst alle Angaben eines deutschen Immobilien-Exposés wörtlich (mit Seite, Standard-Pfad und gg-Vorschlag) und die Mietlisten als Tabellen.',
-  input_schema: exposeV2ToolSchema(),
+  description: 'Extrahiert die Daten eines deutschen Immobilien-Exposés wie bisher (objekt, makler, kalkulation) und erfasst zusätzlich alle Angaben wörtlich (mit Seite, Standard-Pfad und gg-Vorschlag) sowie die Mietlisten als Tabellen.',
+  input_schema: werkzeugSchema(),
 };
 
 /** Dasselbe Werkzeug nur mit den Einheiten-Tabellen — für den Nachfass. */

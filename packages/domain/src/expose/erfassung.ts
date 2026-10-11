@@ -1,5 +1,6 @@
 /**
- * Exposé-Erfassung v2 (Protokoll 28): Was die KI liefert — jede Angabe des Dokuments wörtlich, mit Seite, Standard-Pfad
+ * Exposé-Erfassung v2 (Protokoll 28): Was die KI liefert — Teil A `felder`: die gg-Felder wie früher (bewährter Prompt,
+ * Format der Prüfseite: objekt, makler, kalkulation, _konfidenz); Teil B: jede Angabe des Dokuments wörtlich, mit Seite, Standard-Pfad
  * (OpenImmo + gg-Erweiterung, `katalog.ts`) und gg-Mapping-Vorschlag (`ziele.ts`). Mietlisten als Tabellen mit
  * Spaltenüberschriften und wörtlichen Zellen. Kein Wert wird von der KI umgerechnet, gekürzt oder gedeutet;
  * Zahlen macht erst der Code daraus (`normalisieren.ts`), die Zuordnung zu gg die Mapping-Tabelle (`zuordnung.ts`).
@@ -35,8 +36,12 @@ export const EinheitenTabelle = z.object({
 });
 export type EinheitenTabelle = z.infer<typeof EinheitenTabelle>;
 
+/** Teil A: Antwort im Format des bisherigen Werkzeugs (`extract_expose_data`) — locker typisiert, `zuordnen` liest sie. */
+export const ExposeFelder = z.record(z.string(), z.unknown());
+
 export const ExposeV2 = z.object({
   schema: z.literal(EXPOSE_V2_SCHEMA),
+  felder: ExposeFelder.nullable(),
   angaben: z.array(ErfassteAngabe),
   einheiten_tabellen: z.array(EinheitenTabelle),
   einheiten_im_dokument: z.number().int().nullable(),
@@ -45,12 +50,12 @@ export const ExposeV2 = z.object({
 export type ExposeV2 = z.infer<typeof ExposeV2>;
 
 /** Werkzeug-Eingabe = ExposeV2 ohne das Kennzeichen `schema` (setzt der Code). */
-const Werkzeug = ExposeV2.omit({ schema: true }).extend({
+const Werkzeug = ExposeV2.omit({ schema: true, felder: true }).extend({
   einheiten_im_dokument: z.number().int().nullable().describe('Anzahl der Einheiten, die das Dokument insgesamt nennt (Wohnungen + Gewerbe + Stellplätze), null wenn nicht genannt'),
   einheiten_vollstaendig: z.boolean().describe('true, wenn alle Einheiten des Dokuments in einheiten_tabellen stehen'),
 });
 
-/** JSON-Schema für das Werkzeug; `nurEinheiten` für den Nachfass. */
+/** JSON-Schema für Teil B des Werkzeugs (Teil A hängt @gg/integrations aus dem bisherigen Werkzeug davor); `nurEinheiten` für den Nachfass. */
 export function exposeV2ToolSchema(nurEinheiten = false): Record<string, unknown> {
   const quelle = nurEinheiten ? Werkzeug.pick({ einheiten_tabellen: true, einheiten_im_dokument: true, einheiten_vollstaendig: true }) : Werkzeug;
   const s = z.toJSONSchema(quelle, { target: 'draft-7' }) as Record<string, unknown>;
@@ -104,13 +109,16 @@ export function exposeV2Bereinigen(roh: unknown): { v2: ExposeV2; warnungen: str
       .filter((z) => z.some(Boolean));
     tabellen.push({ seite: ganz(x.seite), titel: istText(x.titel) ? x.titel : null, spalten, zeilen });
   }
+  const felder: Record<string, unknown> | null = ['objekt', 'makler', 'kalkulation'].some((k) => r[k] && typeof r[k] === 'object')
+    ? Object.fromEntries(['objekt', 'makler', 'kalkulation', '_konfidenz'].filter((k) => r[k] && typeof r[k] === 'object').map((k) => [k, r[k]]))
+    : (r.felder && typeof r.felder === 'object' ? r.felder as Record<string, unknown> : null);
   return {
     v2: {
-      schema: EXPOSE_V2_SCHEMA, angaben, einheiten_tabellen: tabellen,
+      schema: EXPOSE_V2_SCHEMA, felder, angaben, einheiten_tabellen: tabellen,
       einheiten_im_dokument: ganz(r.einheiten_im_dokument), einheiten_vollstaendig: r.einheiten_vollstaendig !== false,
     },
     warnungen,
   };
 }
 
-export const exposeV2Leer = (): ExposeV2 => ({ schema: EXPOSE_V2_SCHEMA, angaben: [], einheiten_tabellen: [], einheiten_im_dokument: null, einheiten_vollstaendig: true });
+export const exposeV2Leer = (): ExposeV2 => ({ schema: EXPOSE_V2_SCHEMA, felder: null, angaben: [], einheiten_tabellen: [], einheiten_im_dokument: null, einheiten_vollstaendig: true });

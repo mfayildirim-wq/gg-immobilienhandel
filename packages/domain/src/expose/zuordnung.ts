@@ -1,5 +1,8 @@
 /**
- * Mapping Standard → gg (Protokoll 28). Feste Tabelle `MAPPING` (Standard-Pfad → gg-Ziele) plus wenige Regeln mit Test:
+ * Mapping → gg (Protokoll 28). Zuerst gelten die gg-Felder aus Teil A (`v2.felder`, bewährter Prompt wie früher — „mindestens
+ * wie früher“, Auftraggeber 11.10.2026). Teil B (wörtliche Angaben) füllt nur, was dort leer ist; widerspricht eine Angabe
+ * einem Teil-A-Wert, bleibt sie „doppelt“ unter „Weitere Angaben“ (Ersetzen per Klick).
+ * Feste Tabelle `MAPPING` (Standard-Pfad → gg-Ziele) plus wenige Regeln mit Test:
  * Straße/Hausnummer trennen, Vor- und Nachname zusammen, Jahres- → Monatswert, Provision in Prozent, Einheiten aus Tabellen.
  *
  * Erster Treffer füllt ein Ziel; ein späterer Treffer mit gleichem Wert gilt als zugeordnet, mit anderem Wert bleibt er
@@ -9,7 +12,7 @@
 import type { EinheitenTabelle, ExposeV2 } from './erfassung.ts';
 import type { EinheitFeld } from './katalog.ts';
 import { jahrAusText, leerraum, type NormWert, plzOrtTrennen, strasseTrennen, wertNormalisieren, zahlAusText } from './normalisieren.ts';
-import { GG_ZIELE } from './ziele.ts';
+import { GG_ZIELE, type GgZiel } from './ziele.ts';
 
 // ── Mapping-Tabelle ────────────────────────────────────────────
 
@@ -243,6 +246,56 @@ export function einheitenAusTabellen(tabellen: EinheitenTabelle[]): { einheiten:
   return { einheiten, details };
 }
 
+// ── Teil A (gg-Felder wie früher) ──────────────────────────────
+
+function pfadLesen(o: unknown, pfad: string): unknown {
+  let akt: unknown = o;
+  for (const t of pfad.split('.')) {
+    if (!akt || typeof akt !== 'object') return undefined;
+    akt = (akt as Record<string, unknown>)[t];
+  }
+  return akt;
+}
+
+/** Wert eines Teil-A-Felds im Zieltyp; leer → null. Zahlen kommen als Zahl, zur Sicherheit auch als Text gelesen. */
+function feldWert(v: unknown, typ: GgZiel['typ']): NormWert {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? (typ === 'text' ? String(v) : v) : null;
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'string') return v.trim() ? wertNormalisieren(v, typ) : null;
+  return null;
+}
+
+/** Teil A über das leere Gerüst legen: bekannte Gruppen flach zusammenführen, Energieausweis verschachtelt. */
+function mitFeldern(p: ExtrahiertV0, felder: Record<string, unknown> | null): ExtrahiertV0 {
+  if (!felder) return p;
+  const gruppe = (k: string) => (felder[k] && typeof felder[k] === 'object' ? felder[k] as Record<string, unknown> : {});
+  const leerWeg = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, w]) => w !== null && w !== undefined && w !== ''));
+  const o = leerWeg(gruppe('objekt'));
+  const ea = o.energieausweis && typeof o.energieausweis === 'object' ? leerWeg(o.energieausweis as Record<string, unknown>) : {};
+  return {
+    objekt: { ...p.objekt, ...o, energieausweis: { ...p.objekt.energieausweis, ...ea }, einheiten: [] } as ObjektV0,
+    makler: { ...p.makler, ...leerWeg(gruppe('makler')) } as MaklerV0,
+    kalkulation: { ...p.kalkulation, ...leerWeg(gruppe('kalkulation')) } as KalkulationV0,
+    _konfidenz: { ...(gruppe('_konfidenz') as Record<string, Konfidenz>) },
+  };
+}
+
+const ERLAUBTE_TYPEN = new Set(['Wohnung', 'Gewerbe', 'Stellplatz', 'Sonstiges']);
+
+/** Einheiten aus Teil A (`objekt.einheiten` wie früher). */
+function einheitenAusFeldern(felder: Record<string, unknown> | null): EinheitV0[] {
+  const liste = (felder?.objekt as { einheiten?: unknown } | undefined)?.einheiten;
+  if (!Array.isArray(liste)) return [];
+  const zahl = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' ? zahlAusText(v) : null);
+  const txt = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  return liste.filter((e) => e && typeof e === 'object').map((e) => {
+    const x = e as Record<string, unknown>;
+    const typ = txt(x.typ);
+    return { typ: typ && ERLAUBTE_TYPEN.has(typ) ? typ : typ ? einheitTyp(typ) : 'Wohnung', lage: txt(x.lage), zimmer: zahl(x.zimmer), flaeche: zahl(x.flaeche), kaltmiete: zahl(x.kaltmiete), vermiet: txt(x.vermiet) };
+  });
+}
+
 // ── Zuordnen ───────────────────────────────────────────────────
 
 const leerePruefdaten = (): ExtrahiertV0 => ({
@@ -282,8 +335,40 @@ export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null): Zuor
 
   const weitere = { namen: [] as string[], tel: [] as string[], email: [] as string[] };
 
+  // Teil A: gg-Felder wie früher — sie gelten zuerst
+  const ausFeldern = new Set<string>();
+  const felder = (v2.felder ?? null) as Record<string, unknown> | null;
+  if (felder) {
+    for (const [ziel, z] of Object.entries(GG_ZIELE)) {
+      if (!z.pruef) continue;
+      const w = feldWert(pfadLesen(felder, z.pruef), z.typ);
+      if (w === null) continue;
+      werte[ziel] = z.liste && typeof w === 'string' ? [w] : w;
+      ausFeldern.add(ziel);
+    }
+  }
+  let listenVorschlag: string | null = null;
+
   const belegen = (ziel: string, wert: NormWert, i: number, wort: string): ZuordnungGrund => {
     const z = GG_ZIELE[ziel]!;
+    if (ausFeldern.has(ziel)) {
+      const da = werte[ziel];
+      if (z.liste) {
+        const passt = Array.isArray(da) && typeof wert === 'string' && da.some((x) => leerraum(x).toLowerCase().includes(leerraum(wert).toLowerCase()));
+        if (passt) return 'zugeordnet';
+        listenVorschlag = ziel;
+        return 'keinMapping';
+      }
+      if (gleich(da, wert)) return 'zugeordnet';
+      const a = angaben[i]!;
+      // Freitext: der vollständige wörtliche Text ersetzt eine kürzere Fassung aus Teil A
+      if (a.pfad?.startsWith('freitexte.') && typeof wert === 'string' && typeof da === 'string' && wert.length > da.length) {
+        werte[ziel] = wert; quelleIndex[ziel] = i; ausFeldern.delete(ziel);
+        return 'zugeordnet';
+      }
+      warnungen.push(`${z.label}: „${Array.isArray(da) ? da.join(', ') : String(da)}“ (KI-Feld) und „${a.wert}“ (S. ${a.seite ?? '?'}) — das KI-Feld gilt`);
+      return 'doppelt';
+    }
     if (z.liste) {
       const neu = typeof wert === 'string' ? wert : wort;
       const liste = (werte[ziel] as string[] | undefined) ?? [];
@@ -303,9 +388,11 @@ export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null): Zuor
   angaben.forEach((a, i) => {
     const kontakt = kontaktVon(a);
     const vorschlagGueltig = a.gg && GG_ZIELE[a.gg] ? a.gg : null;
+    listenVorschlag = null;
     const ohneZiel = (grund: ZuordnungGrund, hinweis?: string): ZuordnungZeile => {
-      const w = vorschlagGueltig ? zielWert(vorschlagGueltig, a.wert, a.pfad).wert : null;
-      return { index: i, ziel: null, grund, vorschlag: vorschlagGueltig, wert: w, ...(hinweis ? { hinweis } : {}) };
+      const vorschlag = listenVorschlag ?? vorschlagGueltig;
+      const w = vorschlag ? zielWert(vorschlag, a.wert, a.pfad).wert : null;
+      return { index: i, ziel: null, grund, vorschlag, wert: w, ...(hinweis ? { hinweis } : {}) };
     };
 
     // weitere Kontakte
@@ -372,21 +459,27 @@ export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null): Zuor
     zeilen.push(erste ?? ohneZiel(schlechtester, hinweisAus));
   });
 
-  // Prüfdaten füllen
-  const p = leerePruefdaten();
+  // Prüfdaten: Teil A vollständig (auch Felder ohne gg-Ziel, z. B. Kalkulationswerte), dann Teil B in die Lücken
+  const p = mitFeldern(leerePruefdaten(), felder);
   for (const [ziel, w] of Object.entries(werte)) {
     const z = GG_ZIELE[ziel];
-    if (!z?.pruef) continue;
+    if (!z?.pruef || ausFeldern.has(ziel)) continue;
     const wert = Array.isArray(w) ? w.join('\n') : w;
     setzePfad(p as unknown as Record<string, unknown>, z.pruef, wert);
   }
-  const { einheiten, details: einheitenDetails } = einheitenAusTabellen(v2.einheiten_tabellen);
+  const ausTabellen = einheitenAusTabellen(v2.einheiten_tabellen);
+  const einheitenA = einheitenAusFeldern(felder);
+  // Teil A wie früher; nur wenn die wörtlichen Tabellen mehr Einheiten haben (z. B. nach dem Nachfass), gelten sie
+  const ausA = einheitenA.length >= ausTabellen.einheiten.length && einheitenA.length > 0;
+  const einheiten = ausA ? einheitenA : ausTabellen.einheiten;
+  // Zusatz je Einheit aus den wörtlichen Tabellen nur, wenn beide Listen gleich lang sind (Zuordnung nach Reihenfolge)
+  const einheitenDetails = ausA && ausTabellen.einheiten.length !== einheitenA.length ? einheitenA.map(() => null) : ausTabellen.details;
   p.objekt.einheiten = einheiten;
   const m = p.makler;
-  m.tel = m.mobiltel ?? m.festnetztel;
-  m.alleNamen = ohneDoppel([m.name, ...weitere.namen]);
-  m.alleTelefonnummern = ohneDoppel([m.mobiltel, m.festnetztel, ...weitere.tel]);
-  m.alleEmails = ohneDoppel([m.email, ...weitere.email]);
+  m.tel ??= m.mobiltel ?? m.festnetztel;
+  m.alleNamen = ohneDoppel([m.name, ...m.alleNamen, ...weitere.namen]);
+  m.alleTelefonnummern = ohneDoppel([m.mobiltel, m.festnetztel, m.tel, ...m.alleTelefonnummern, ...weitere.tel]);
+  m.alleEmails = ohneDoppel([m.email, ...m.alleEmails, ...weitere.email]);
   if (weitere.namen.length || weitere.tel.length || weitere.email.length) {
     werte['makler.weitereKontakte'] = [...ohneDoppel(weitere.namen), ...ohneDoppel(weitere.tel), ...ohneDoppel(weitere.email)];
   }
@@ -395,7 +488,7 @@ export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null): Zuor
   if (belegt) {
     for (const [ziel, i] of Object.entries(quelleIndex)) {
       const z = GG_ZIELE[ziel];
-      if (!z?.pruef?.startsWith('objekt.')) continue;
+      if (!z?.pruef?.startsWith('objekt.') || ausFeldern.has(ziel)) continue;
       const b = belegt[i];
       p._konfidenz[z.pruef.split('.').at(-1)!] = b === true ? 'hoch' : b === false ? 'niedrig' : 'mittel';
     }
@@ -416,9 +509,9 @@ export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null): Zuor
 
 /** Trägt die Erfassung? Ort und Kaufpreis gefunden und mindestens eine Einheit (oder das Dokument nennt genau eine). */
 export function v2Traegt(v2: ExposeV2): boolean {
-  const { werte, pruefdaten } = zuordnen(v2);
-  const ort = !!(werte['objekt.stadt'] || werte['objekt.strasse'] || werte['objekt.plz']);
-  const preis = typeof werte['objekt.angebotspreis'] === 'number' && werte['objekt.angebotspreis'] > 0;
-  const einheiten = pruefdaten.objekt.einheiten.length > 0 || v2.einheiten_im_dokument === 1 || werte['objekt.einheitenAnz'] === 1;
+  const { objekt: o, kalkulation: k } = zuordnen(v2).pruefdaten;
+  const ort = !!(o.stadt || o.strasse || o.plz);
+  const preis = (typeof o.angebotspreis === 'number' && o.angebotspreis > 0) || (typeof k.kaufpreis === 'number' && k.kaufpreis > 0);
+  const einheiten = o.einheiten.length > 0 || v2.einheiten_im_dokument === 1 || o.einheitenAnz === 1;
   return ort && preis && einheiten;
 }

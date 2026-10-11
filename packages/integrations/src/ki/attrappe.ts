@@ -20,9 +20,10 @@ import type { KiClient } from './anthropic.ts';
  *   Kontakt: Max Zweit | Geschäftsführer | 0711 123456 | max@beispiel.test   → Kontakt 2, 3 …
  *   Attrappe: abgeschnitten   → die erste Antwort endet mit stop_reason max_tokens (nur die ersten Angaben)
  */
+const zahl = (s: string | undefined) => { const m = s?.match(/\d[\d.,]*/)?.[0]; return m ? Number(m.replace(/\./g, '').replace(',', '.')) || null : null; };
+
 export function kiAttrappe(): KiClient {
   // erste Zahl im Wert („240 m2“ → 240, „1.250.000 EUR“ → 1250000)
-  const zahl = (s: string | undefined) => { const m = s?.match(/\d[\d.,]*/)?.[0]; return m ? Number(m.replace(/\./g, '').replace(',', '.')) || null : null; };
   return {
     async nachricht(body: any) {
       // Aufrufe ohne Werkzeug (Makler-KI, Persona): feste, erkennbare Textantworten
@@ -68,27 +69,32 @@ export function kiAttrappe(): KiClient {
 
       const text = JSON.stringify(body?.messages ?? []).replace(/\\n/g, '\n');
       if (werkzeug === EXPOSE_V2_TOOL_NAME) return antwortV2(textBloecke(body), body.tools[0]);
-      const feld = (name: string) => new RegExp(`${name}:\\s*([^\\n"]+)`).exec(text)?.[1]?.trim();
-      const adresse = /^(.+?)\s+(\d+\s*\w?),\s*(\d{5})\s+(.+)$/.exec(feld('Adresse') ?? '');
-      const makler = (feld('Makler') ?? '').split('|').map((s) => s.trim());
-      const einheiten = [...text.matchAll(/Einheit:\s*([^\n"]+)/g)].map((m) => {
-        const [typ, lage, zimmer, flaeche, kaltmiete] = m[1]!.split('|').map((s) => s.trim());
-        return { typ: typ || 'Wohnung', lage, zimmer: zahl(zimmer), flaeche: zahl(flaeche), kaltmiete: zahl(kaltmiete), vermiet: 'Vermietet' };
-      });
-      const input = {
-        objekt: {
-          strasse: adresse?.[1] ?? '', hausnr: adresse?.[2] ?? '', plz: adresse?.[3] ?? '', stadt: adresse?.[4] ?? '',
-          angebotspreis: zahl(feld('Kaufpreis')), wohnflaeche: zahl(feld('Wohnfläche') ?? feld('Wohnflaeche')), baujahr: zahl(feld('Baujahr')),
-          einheitenAnz: einheiten.length || null, einheiten,
-        },
-        makler: { name: makler[0] ?? '', firma: makler[1] ?? '', mobiltel: makler[2] ?? '', email: makler[3] ?? '' },
-        kalkulation: { kaufpreis: zahl(feld('Kaufpreis')) },
-        _konfidenz: { strasse: adresse ? 'hoch' : 'niedrig', angebotspreis: feld('Kaufpreis') ? 'hoch' : 'niedrig', wohnflaeche: 'mittel' },
-      };
+      const input = teilA(text);
       return { content: [{ type: 'tool_use', name: 'extract_expose_data', input }], usage: { input_tokens: 0, output_tokens: 0 } };
     },
     async dateiHochladen() { return 'attrappe'; },
     async dateiLoeschen() {},
+  };
+}
+
+/** Teil A wie das bisherige Werkzeug (`extract_expose_data`): objekt, makler, kalkulation, _konfidenz aus den Testzeilen. */
+function teilA(text: string) {
+  const feld = (name: string) => new RegExp(`${name}:\\s*([^\\n"]+)`).exec(text)?.[1]?.trim();
+  const adresse = /^(.+?)\s+(\d+\s*\w?),\s*(\d{5})\s+(.+)$/.exec(feld('Adresse') ?? '');
+  const makler = (feld('Makler') ?? '').split('|').map((s) => s.trim());
+  const einheiten = [...text.matchAll(/Einheit:\s*([^\n"]+)/g)].map((m) => {
+    const [typ, lage, zimmer, flaeche, kaltmiete] = m[1]!.split('|').map((s) => s.trim());
+    return { typ: typ || 'Wohnung', lage, zimmer: zahl(zimmer), flaeche: zahl(flaeche), kaltmiete: zahl(kaltmiete), vermiet: 'Vermietet' };
+  });
+  return {
+    objekt: {
+      strasse: adresse?.[1] ?? '', hausnr: adresse?.[2] ?? '', plz: adresse?.[3] ?? '', stadt: adresse?.[4] ?? '',
+      angebotspreis: zahl(feld('Kaufpreis')), wohnflaeche: zahl(feld('Wohnfläche') ?? feld('Wohnflaeche')), baujahr: zahl(feld('Baujahr')),
+      einheitenAnz: einheiten.length || null, einheiten,
+    },
+    makler: { name: makler[0] ?? '', firma: makler[1] ?? '', mobiltel: makler[2] ?? '', email: makler[3] ?? '' },
+    kalkulation: { kaufpreis: zahl(feld('Kaufpreis')) },
+    _konfidenz: { strasse: adresse ? 'hoch' : 'niedrig', angebotspreis: feld('Kaufpreis') ? 'hoch' : 'niedrig', wohnflaeche: 'mittel' },
   };
 }
 
@@ -203,7 +209,9 @@ function antwortV2(text: string, tool: any) {
   const wiederholt = text.includes(HINWEIS_WIEDERHOLUNG_V2);
   const sauber = text.replace(HINWEIS_WIEDERHOLUNG_V2, '').replace(HINWEIS_NACHFASS_V2, '');
   const v2 = attrappeErfassung(sauber);
-  const { schema: _s, ...voll } = v2;
+  const { schema: _s, felder: _f, ...teilB } = v2;
+  // Teil A (wie früher) und Teil B (Vollerfassung) in einer Antwort, wie das echte Werkzeug
+  const voll: Record<string, unknown> = { ...teilA(sauber), ...teilB };
   const nurEinheiten = !tool?.input_schema?.properties?.angaben;
   let input: Record<string, unknown> = voll;
   let stop_reason = 'end_turn';

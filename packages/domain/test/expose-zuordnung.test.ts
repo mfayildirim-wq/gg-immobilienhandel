@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { einheitenAusTabellen, exposeV2Leer, exposeVorbereiten, GG_ZIELE, KATALOG, MAPPING, v2Traegt, zuordnen } from '../src/index.ts';
-import { exposeV2Beispiel } from './fixtures/expose-v2-beispiel.ts';
+import { exposeV2Beispiel, exposeV2MitFeldern } from './fixtures/expose-v2-beispiel.ts';
 
 describe('Exposé v2: Mapping Standard → gg (Protokoll 28)', () => {
   it('die Mapping-Tabelle nennt nur Katalog-Pfade und gg-Ziele', () => {
@@ -97,5 +97,50 @@ describe('Exposé v2: Mapping Standard → gg (Protokoll 28)', () => {
     const v2 = exposeV2Beispiel();
     const belegt = v2.angaben.map((_, i) => (i === 2 ? true : i === 6 ? false : null));
     expect(zuordnen(v2, belegt).pruefdaten._konfidenz).toMatchObject({ angebotspreis: 'hoch', wohnflaeche: 'niedrig', baujahr: 'mittel' });
+  });
+
+  describe('Teil A (gg-Felder wie früher) gilt zuerst — mindestens wie früher', () => {
+    it('übernimmt Teil A vollständig, auch Felder ohne gg-Ziel (Kalkulation, Bundesland)', () => {
+      const { pruefdaten: p } = zuordnen(exposeV2MitFeldern());
+      expect(p.objekt).toMatchObject({ strasse: 'Musterweg', hausnr: '12', bundesland: 'Baden-Württemberg', bruttorendite: 2.23, ausstattung: 'Balkon, Keller' });
+      expect(p.kalkulation).toMatchObject({ kaufpreis: 1_250_000, makler: 3.57, gest: 5 });
+      expect(p._konfidenz).toMatchObject({ angebotspreis: 'hoch' });
+      // Teil B füllt Lücken: Heizungsbaujahr fehlt in Teil A
+      expect(p.objekt.heizungsbaujahr).toBe(2018);
+      expect(p.makler.alleNamen).toEqual(['Anna Beispiel', 'Max Zweit']);
+    });
+
+    it('Einheiten aus Teil A; Zusatz je Einheit aus der Tabelle, wenn gleich viele', () => {
+      const r = zuordnen(exposeV2MitFeldern());
+      expect(r.pruefdaten.objekt.einheiten).toHaveLength(4);
+      expect(r.pruefdaten.objekt.einheiten[3]).toMatchObject({ typ: 'Stellplatz', lage: 'TG' });
+      expect(r.einheitenDetails[0]).toMatchObject({ nebenkosten: 150, weitere: { Kaution: '2.400 €' } });
+      // Teil A länger als die Tabelle → Teil A, ohne Zusatz
+      const mehr = exposeV2MitFeldern();
+      (mehr.felder!.objekt as { einheiten: unknown[] }).einheiten.push({ typ: 'Gewerbe', lage: 'Laden', flaeche: 50, kaltmiete: 900 });
+      expect(zuordnen(mehr).pruefdaten.objekt.einheiten).toHaveLength(5);
+      expect(zuordnen(mehr).einheitenDetails).toEqual([null, null, null, null, null]);
+      // Tabelle länger (z. B. nach dem Nachfass) → die Tabelle gilt
+      const weniger = exposeV2MitFeldern();
+      (weniger.felder!.objekt as { einheiten: unknown[] }).einheiten.splice(1);
+      expect(zuordnen(weniger).pruefdaten.objekt.einheiten).toHaveLength(4);
+    });
+
+    it('gleiche wörtliche Angabe → zugeordnet; abweichende → doppelt mit Warnung; längerer wörtlicher Freitext ersetzt die Kurzfassung', () => {
+      const r = zuordnen(exposeV2MitFeldern());
+      expect(r.zeilen[2]).toMatchObject({ ziel: 'objekt.angebotspreis', grund: 'zugeordnet' });
+      expect(r.zeilen[4]).toMatchObject({ ziel: 'objekt.istmiete', grund: 'zugeordnet' }); // 27.840 € / Jahr = 2.320 €
+      expect(r.zeilen[20]).toMatchObject({ grund: 'doppelt' });
+      expect(r.warnungen.some((w) => w.includes('„1250000“ (KI-Feld) und „1.300.000 €“ (S. 5)'))).toBe(true);
+      expect(r.zeilen[17]).toMatchObject({ ziel: 'objekt.lagebeschreibung', grund: 'zugeordnet' });
+      expect(r.pruefdaten.objekt.lagebeschreibung).toBe('Ruhige Wohnlage nahe der Innenstadt. Schulen und Einkauf fußläufig.');
+    });
+
+    it('trägt auch, wenn nur Teil A geliefert wurde', () => {
+      const v2 = exposeV2MitFeldern();
+      v2.angaben = [];
+      v2.einheiten_tabellen = [];
+      expect(v2Traegt(v2)).toBe(true);
+    });
   });
 });
