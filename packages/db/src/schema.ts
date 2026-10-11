@@ -120,7 +120,7 @@ export const objektEinheiten = fach
   kaltmiete: numeric('kaltmiete', { precision: 14, scale: 2, mode: 'number' }),
   vermietung: text('vermietung'),
   sort: integer('sort'),
-  /** Zusatz aus dem Exposé-Import (Schema v1): { nebenkosten, sollmiete, mietbeginn, seite } */
+  /** Zusatz aus dem Exposé-Import (Erfassung v2): { nr, nebenkosten, warmmiete, sollmiete, mietbeginn, mietende, status, seite, weitere } */
   details: jsonb('details'),
   ...zeitSpalten,
   })
@@ -656,7 +656,7 @@ export const archiveLedger = fach
   .enableRLS();
 
 /**
- * Exposé-Importe (Protokoll 26/27): eine Zeile je Analyse — Rohdaten (Schema v1, bei Altimporten v0), Messwerte und die
+ * Exposé-Importe (Protokoll 26/27): eine Zeile je Analyse — Rohdaten (Erfassung v2, Protokoll 28; bei Altimporten v0), Messwerte und die
  * Verknüpfung zu Deal, Objekt und Makler. Der „Stand am Objekt“ wird beim Lesen aus diesen Zeilen gerechnet.
  */
 export const exposeImporte = fach
@@ -669,7 +669,7 @@ export const exposeImporte = fach
       dealId: text('deal_id').references((): AnyPgColumn => deals.id, { onDelete: 'set null' }),
       objektId: text('objekt_id').references((): AnyPgColumn => objekte.id, { onDelete: 'set null' }),
       maklerId: text('makler_id').references((): AnyPgColumn => makler.id, { onDelete: 'set null' }),
-      /** 'gg-expose-v1' | 'gg-expose-v0' */
+      /** 'gg-expose-v2' | 'gg-expose-v0' */
       schemaVersion: text('schema_version').notNull(),
       promptVersion: text('prompt_version'),
       modell: text('modell'),
@@ -704,7 +704,7 @@ export const importKorrekturen = fach
   /** objekt | makler | einheit */
   art: text('art').notNull(),
   bezugId: text('bezug_id').notNull(),
-  /** v1-Pfad, z. B. 'preise.kaufpreis' oder 'weitere_angaben.3' */
+  /** Angabe des Imports, z. B. 'angaben.12' */
   feld: text('feld').notNull(),
   ziel: text('ziel'),
   kiWert: jsonb('ki_wert'),

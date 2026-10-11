@@ -1,4 +1,5 @@
-import { ANGABE_GRUPPEN, EINHEIT_TYP, EXPOSE_V1_TOOL_NAME, type ExposeV1, exposeV1Leer } from '@gg/domain';
+import { EXPOSE_V2_TOOL_NAME, type ExposeV2, exposeV2Leer } from '@gg/domain';
+import { HINWEIS_NACHFASS_V2, HINWEIS_WIEDERHOLUNG_V2 } from '../expose/prompt-v2.ts';
 import type { KiClient } from './anthropic.ts';
 
 /**
@@ -11,12 +12,13 @@ import type { KiClient } from './anthropic.ts';
  *   Makler: Anna Beispiel | Beispiel Immobilien GmbH | 0171 1234567 | anna@beispiel.test
  *   Einheit: Wohnung | EG links | 3 | 78 | 780
  *
- * Schema v1 (Werkzeug extract_expose_v1) versteht zusätzlich:
+ * Erfassung v2 (Werkzeug erfasse_expose) liest dieselben Zeilen seitenweise als wörtliche Angaben mit Seite, Standard-Pfad
+ * und gg-Vorschlag; die Einheit-Zeilen werden eine Mietliste (`attrappeErfassung`). Zusätzlich:
  *   Grundstück: 480 m2        Hausgeld: 350 EUR        Denkmalschutz: ja
- *   Weitere: zustand | Dach | 2015 neu gedeckt
- *   Kontakt: Max Zweit | Geschäftsführer | 0711 123456 | max@beispiel.test
- *   Attrappe: abgeschnitten   → die erste Antwort endet mit stop_reason max_tokens (nur geo und preise gefüllt)
- * Belege tragen die Seite des letzten Seitenmarkers „──────── Seite N“ vor der Zeile und die Zeile als Zitat.
+ *   Instandhaltungsrücklage: 12.000 EUR   → ohne Pfad, gg-Vorschlag details.instandhaltungsruecklage
+ *   Besichtigung: nach Vereinbarung       → ohne Pfad und ohne Vorschlag (ebenso jede andere unbekannte „Feld: Wert“-Zeile)
+ *   Kontakt: Max Zweit | Geschäftsführer | 0711 123456 | max@beispiel.test   → Kontakt 2, 3 …
+ *   Attrappe: abgeschnitten   → die erste Antwort endet mit stop_reason max_tokens (nur die ersten Angaben)
  */
 export function kiAttrappe(): KiClient {
   // erste Zahl im Wert („240 m2“ → 240, „1.250.000 EUR“ → 1250000)
@@ -65,7 +67,7 @@ export function kiAttrappe(): KiClient {
       }
 
       const text = JSON.stringify(body?.messages ?? []).replace(/\\n/g, '\n');
-      if (werkzeug === EXPOSE_V1_TOOL_NAME) return antwortV1(textBloecke(body), body.tools[0]);
+      if (werkzeug === EXPOSE_V2_TOOL_NAME) return antwortV2(textBloecke(body), body.tools[0]);
       const feld = (name: string) => new RegExp(`${name}:\\s*([^\\n"]+)`).exec(text)?.[1]?.trim();
       const adresse = /^(.+?)\s+(\d+\s*\w?),\s*(\d{5})\s+(.+)$/.exec(feld('Adresse') ?? '');
       const makler = (feld('Makler') ?? '').split('|').map((s) => s.trim());
@@ -115,83 +117,104 @@ function textBloecke(body: any): string {
   return (Array.isArray(inhalt) ? inhalt : []).filter((c: any) => c?.type === 'text').map((c: any) => String(c.text ?? '')).join('\n');
 }
 
-// erste Zahl im Wert („240 m2“ → 240, „1.250.000 EUR“ → 1250000)
-const zahlV1 = (s: string | undefined) => { const m = s?.match(/\d[\d.,]*/)?.[0]; return m ? Number(m.replace(/\./g, '').replace(',', '.')) || null : null; };
+type Angabe = ExposeV2['angaben'][number];
 
-/**
- * Antwort der Attrappe für Schema v1. Liest die „Feld: Wert“-Zeilen seitenweise, damit jeder Beleg seine Seite kennt.
- * Steuerzeile „Attrappe: abgeschnitten“: mit dem vollen Werkzeug nur geo + preise und stop_reason max_tokens; mit dem
- * Werkzeug ohne Einheiten (Wiederholversuch) die vollständige Antwort ohne Einheiten — die holt dann extract_einheiten.
- */
-function antwortV1(text: string, tool: any) {
-  const v1 = exposeV1Leer();
-  const beleg = (zeile: string, seite: number) => ({ seite, zitat: zeile.slice(0, 80), konfidenz: 'hoch' as const });
-  const zeilen = text.split('\n');
-  let seite = 1;
-  let einheitenImDokument = 0;
-  for (const roh of zeilen) {
+/** Bekannte „Feld: Wert“-Zeilen → Standard-Pfad und gg-Vorschlag (wie die echte KI sie zuordnen würde). */
+const FELDER_V2: Record<string, { pfad: Angabe['pfad']; gg: Angabe['gg'] }> = {
+  Adresse: { pfad: 'geo.strasse', gg: 'objekt.strasse' },
+  Kaufpreis: { pfad: 'preise.kaufpreis', gg: 'objekt.angebotspreis' },
+  Wohnfläche: { pfad: 'flaechen.wohnflaeche', gg: 'objekt.wohnflaeche' },
+  Wohnflaeche: { pfad: 'flaechen.wohnflaeche', gg: 'objekt.wohnflaeche' },
+  Grundstück: { pfad: 'flaechen.grundstuecksflaeche', gg: 'objekt.grundstueck' },
+  Grundstueck: { pfad: 'flaechen.grundstuecksflaeche', gg: 'objekt.grundstueck' },
+  Baujahr: { pfad: 'zustand_angaben.baujahr', gg: 'objekt.baujahr' },
+  Hausgeld: { pfad: 'preise.hausgeld', gg: 'details.hausgeld_monat' },
+  Denkmalschutz: { pfad: 'verwaltung_objekt.denkmalgeschuetzt', gg: 'details.denkmalschutz' },
+  // bewusst ohne Pfad: Angabe ohne Mapping, nur mit Vorschlag
+  Instandhaltungsrücklage: { pfad: null, gg: 'details.instandhaltungsruecklage' },
+  Instandhaltungsruecklage: { pfad: null, gg: 'details.instandhaltungsruecklage' },
+};
+
+const mobil = (tel: string | undefined) => /^(\+49\s?|0)1/.test(tel ?? '');
+
+/** Spalten der Mietliste aus den „Einheit:“-Zeilen. */
+const SPALTEN_V2: ExposeV2['einheiten_tabellen'][number]['spalten'] = [
+  { ueberschrift: 'Art', feld: 'typ' }, { ueberschrift: 'Lage', feld: 'lage' }, { ueberschrift: 'Zimmer', feld: 'zimmer' },
+  { ueberschrift: 'Fläche', feld: 'flaeche' }, { ueberschrift: 'Kaltmiete', feld: 'kaltmiete' },
+];
+
+/** Die Zeilen der Attrappe als Erfassung v2: Angaben wörtlich mit Seite, Einheit-Zeilen als eine Mietliste. */
+export function attrappeErfassung(text: string): ExposeV2 {
+  const v2 = exposeV2Leer();
+  const neu = (bezeichnung: string, wert: string, seite: number, pfad: Angabe['pfad'], gg: Angabe['gg'] = null, kontakt: number | null = null) => {
+    if (wert) v2.angaben.push({ bezeichnung, wert, seite, pfad, kontakt, gg });
+  };
+  const zeilen: string[][] = [];
+  let tabellenSeite: number | null = null;
+  let seite = 0; // vor dem ersten Seitenmarker steht nur die Anweisung
+  let kontakte = 1;
+  for (const roh of text.split('\n')) {
     const zeile = roh.trim();
-    const marker = /──────── Seite (\d+)/.exec(zeile);
+    const marker = /^──────── Seite (\d+)/.exec(zeile);
     if (marker) { seite = Number(marker[1]); continue; }
+    if (!seite || !zeile || /^Attrappe:/.test(zeile)) continue;
     const m = /^([A-Za-zÄÖÜäöüß\-]+):\s*(.+)$/.exec(zeile);
-    if (!m) continue;
+    if (!m) {
+      if (/^Expose\b/i.test(zeile)) neu('Titel', zeile, seite, 'freitexte.objekttitel', 'details.titel');
+      else if (zeile.length >= 60) neu('Lage', zeile, seite, 'freitexte.lage', 'objekt.lagebeschreibung');
+      continue;
+    }
     const [, name, wert] = m as unknown as [string, string, string];
     const teile = wert.split('|').map((t) => t.trim());
-    switch (name) {
-      case 'Adresse': {
-        const a = /^(.+?)\s+(\d+\s*\w?),\s*(\d{5})\s+(.+)$/.exec(wert);
-        if (a) { v1.geo = { ...v1.geo, strasse: a[1]!, hausnummer: a[2]!, plz: a[3]!, ort: a[4]! }; v1.belege.adresse = beleg(zeile, seite); }
-        break;
-      }
-      case 'Kaufpreis': v1.preise.kaufpreis = zahlV1(wert); v1.belege.kaufpreis = beleg(zeile, seite); break;
-      case 'Wohnfläche': case 'Wohnflaeche': v1.flaechen.wohnflaeche = zahlV1(wert); v1.belege.wohnflaeche = beleg(zeile, seite); break;
-      case 'Grundstück': case 'Grundstueck': v1.flaechen.grundstuecksflaeche = zahlV1(wert); v1.belege.grundstueck = beleg(zeile, seite); break;
-      case 'Baujahr': v1.zustand.baujahr = zahlV1(wert); v1.belege.baujahr = beleg(zeile, seite); break;
-      case 'Hausgeld': v1.preise.hausgeld_monat = zahlV1(wert); break;
-      case 'Denkmalschutz': v1.zustand.denkmalschutz = /^(ja|yes|true)$/i.test(wert) ? true : /^(nein|no|false)$/i.test(wert) ? false : null; break;
-      case 'Makler': {
-        const [person, firma, mobil, email] = teile;
+    if (name === 'Einheit') { zeilen.push(teile.slice(0, 5)); tabellenSeite ??= seite; continue; }
+    if (name === 'Makler' || name === 'Kontakt') {
+      const nr = name === 'Makler' ? 1 : ++kontakte;
+      const [person, zweites, tel, email] = teile;
+      if (name === 'Makler') {
         const namen = (person ?? '').split(/\s+/);
-        v1.kontaktperson = { ...v1.kontaktperson, vorname: namen.length > 1 ? namen[0]! : null, name: namen.length > 1 ? namen.slice(1).join(' ') : (person || null), firma: firma || null, mobil: mobil || null, email: email || null };
-        break;
+        if (namen.length > 1) { neu('Vorname', namen[0]!, seite, 'kontaktperson.vorname', 'makler.name', nr); neu('Name', namen.slice(1).join(' '), seite, 'kontaktperson.name', 'makler.name', nr); }
+        else neu('Name', person ?? '', seite, 'kontaktperson.name', 'makler.name', nr);
+        neu('Firma', zweites ?? '', seite, 'kontaktperson.firma', 'makler.firma', nr);
+        neu('Telefon', tel ?? '', seite, mobil(tel) ? 'kontaktperson.tel_handy' : 'kontaktperson.tel_durchw', mobil(tel) ? 'makler.mobiltel' : 'makler.festnetztel', nr);
+        neu('E-Mail', email ?? '', seite, 'kontaktperson.email_direkt', 'makler.email', nr);
+      } else {
+        neu('Ansprechpartner', person ?? '', seite, 'kontaktperson.name', null, nr);
+        neu('Position', zweites ?? '', seite, 'kontaktperson.position', null, nr);
+        neu('Telefon', tel ?? '', seite, mobil(tel) ? 'kontaktperson.tel_handy' : 'kontaktperson.tel_durchw', null, nr);
+        neu('E-Mail', email ?? '', seite, 'kontaktperson.email_direkt', null, nr);
       }
-      case 'Einheit': {
-        const [typ, lage, zimmer, flaeche, kaltmiete] = teile;
-        einheitenImDokument++;
-        v1.einheiten.push({
-          typ: (EINHEIT_TYP as readonly string[]).includes(typ ?? '') ? (typ as ExposeV1['einheiten'][number]['typ']) : 'Wohnung',
-          lage: lage || null, zimmer: zahlV1(zimmer), flaeche: zahlV1(flaeche), kaltmiete: zahlV1(kaltmiete),
-          nebenkosten: null, sollmiete: null, vermiet: 'Vermietet', mietbeginn: null, _seite: seite,
-        });
-        break;
-      }
-      case 'Weitere': {
-        const [gruppe, bezeichnung, w] = teile;
-        if (bezeichnung && w) v1.weitere_angaben.push({ gruppe: (ANGABE_GRUPPEN as readonly string[]).includes(gruppe ?? '') ? (gruppe as ExposeV1['weitere_angaben'][number]['gruppe']) : 'sonstiges', bezeichnung: bezeichnung.slice(0, 80), wert: w.slice(0, 200), einheit: null, seite });
-        break;
-      }
-      case 'Kontakt': {
-        const [kname, rolle, tel, email] = teile;
-        if (kname) v1.weitere_kontakte.push({ name: kname, rolle: rolle || null, tel: tel || null, mobil: null, email: email || null });
-        break;
-      }
-      default: break;
+      continue;
     }
+    const f = FELDER_V2[name];
+    neu(name, wert, seite, f?.pfad ?? null, f?.gg ?? null);
   }
-  const wohnungen = v1.einheiten.filter((e) => e.typ === 'Wohnung').length;
-  v1.verwaltung = { ...v1.verwaltung, anzahl_wohneinheiten: wohnungen || null, einheiten_anzahl_dokument: einheitenImDokument || null, einheiten_vollstaendig: einheitenImDokument > 0 ? true : null };
+  if (zeilen.length) v2.einheiten_tabellen.push({ seite: tabellenSeite, titel: 'Mietaufstellung', spalten: SPALTEN_V2, zeilen: zeilen.map((z) => SPALTEN_V2.map((_, i) => z[i] ?? '')) });
+  v2.einheiten_im_dokument = zeilen.length || null;
+  v2.einheiten_vollstaendig = true;
+  return v2;
+}
 
-  const abgeschnitten = /Attrappe:\s*abgeschnitten/.test(text);
-  const vollesWerkzeug = !!tool?.input_schema?.properties?.einheiten;
-  let input: Record<string, unknown> = v1;
+/**
+ * Antwort der Attrappe für die Erfassung v2. Das Nachfass-Werkzeug (ohne `angaben`) bekommt nur die Tabellen.
+ * Steuerzeile „Attrappe: abgeschnitten“: die erste Antwort enthält nur die ersten Angaben und endet mit max_tokens; die
+ * Wiederholung (Hinweis in der user-Nachricht) liefert alle Angaben ohne Mietliste — die holt dann der Nachfass.
+ */
+function antwortV2(text: string, tool: any) {
+  const wiederholt = text.includes(HINWEIS_WIEDERHOLUNG_V2);
+  const sauber = text.replace(HINWEIS_WIEDERHOLUNG_V2, '').replace(HINWEIS_NACHFASS_V2, '');
+  const v2 = attrappeErfassung(sauber);
+  const { schema: _s, ...voll } = v2;
+  const nurEinheiten = !tool?.input_schema?.properties?.angaben;
+  let input: Record<string, unknown> = voll;
   let stop_reason = 'end_turn';
-  if (abgeschnitten && vollesWerkzeug) {
-    input = { ...exposeV1Leer(), geo: v1.geo, preise: v1.preise };
+  if (nurEinheiten) {
+    input = { einheiten_tabellen: v2.einheiten_tabellen, einheiten_im_dokument: v2.einheiten_im_dokument, einheiten_vollstaendig: true };
+  } else if (wiederholt) {
+    input = { ...voll, einheiten_tabellen: [], einheiten_vollstaendig: false };
+  } else if (/Attrappe:\s*abgeschnitten/.test(text)) {
+    input = { ...voll, angaben: v2.angaben.slice(0, 2), einheiten_tabellen: [] };
     stop_reason = 'max_tokens';
-  } else if (!vollesWerkzeug) {
-    const { einheiten: _e, freitexte: _f, ...rest } = v1;
-    input = rest;
   }
   const json = JSON.stringify(input);
-  return { content: [{ type: 'tool_use', name: EXPOSE_V1_TOOL_NAME, input }], stop_reason, usage: { input_tokens: Math.floor(text.length / 4), output_tokens: Math.floor(json.length / 3) } };
+  return { content: [{ type: 'tool_use', name: EXPOSE_V2_TOOL_NAME, input }], stop_reason, usage: { input_tokens: Math.floor(text.length / 4), output_tokens: Math.floor(json.length / 3) } };
 }

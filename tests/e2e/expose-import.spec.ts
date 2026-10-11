@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { testExpose, testExposeV1 } from '@gg/integrations/test-pdf';
+import { pdfAusSeiten, testExpose } from '@gg/integrations/test-pdf';
 import { expect, type Page, test } from '@playwright/test';
 
 /** Exposé-Import mit der KI-Attrappe (KI_ATTRAPPE=1): liest die „Feld: Wert“-Zeilen des Test-PDFs. */
@@ -46,18 +46,75 @@ test('Exposé importieren: Objekt, Makler, Deal anlegen; zweiter Import erkennt 
   await expect(page.getByRole('heading', { name: `${kennung}strasse 12` })).toBeVisible();
 });
 
-test('Exposé v1: weitere Angaben auf der Prüfseite, Reiter „Aus dem Exposé“ am Objekt (Übernehmen) und am Makler', async ({ page }, info) => {
+/**
+ * Test-Exposé für die Erfassung v2 (Attrappe-Zweig erfasse_expose): Kernwerte mit Standard-Pfad (automatisch zugeordnet),
+ * „Instandhaltungsrücklage“ ohne Pfad mit gg-Vorschlag, „Energieverbrauch“, „Zustand“ und „Besichtigung“ ohne Pfad und ohne
+ * Vorschlag, zweiter Kontakt auf Seite 2.
+ */
+function testExposeV2(kennung: string): Uint8Array {
+  return pdfAusSeiten([
+    [
+      `Expose ${kennung} - Mehrfamilienhaus in guter Lage mit solidem Mietertrag und Entwicklungspotenzial`,
+      `Adresse: ${kennung}strasse 12, 89073 Ulm`,
+      'Kaufpreis: 1.250.000 EUR',
+      'Wohnflaeche: 240 m2',
+      'Grundstück: 480 m2',
+      'Baujahr: 1965',
+      'Hausgeld: 350 EUR',
+      'Instandhaltungsrücklage: 12.000 EUR',
+      `Makler: Anna ${kennung} | Beispiel Immobilien GmbH | 0171 ${kennung.replace(/\D/g, '').slice(-7).padStart(7, '0')} | anna.${kennung.toLowerCase()}@beispiel.test`,
+    ],
+    [
+      'Mietaufstellung',
+      'Einheit: Wohnung | EG links | 3 | 80 | 800',
+      'Einheit: Wohnung | OG rechts | 3 | 80 | 820',
+      'Einheit: Wohnung | DG | 2 | 80 | 700',
+      'Energieverbrauch: 128,5 kWh/m2a',
+      'Zustand: gepflegt',
+      'Besichtigung: nach Vereinbarung',
+      'Kontakt: Max Zweit | Geschäftsführer | 0711 123456 | max@beispiel.test',
+    ],
+  ]);
+}
+
+test('Exposé v2: weitere Angaben per Dropdown auf der Prüfseite und im Reiter „Aus dem Exposé“', async ({ page }, info) => {
   const kennung = `V${Date.now()}${info.project.name.slice(0, 1)}`;
   const datei = join(tmpdir(), `${kennung}.pdf`);
-  writeFileSync(datei, testExposeV1(kennung));
+  writeFileSync(datei, testExposeV2(kennung));
 
   await durchWizard(page, datei);
-  // Angaben ohne Feld im Wizard: eingeklappt, nur zur Ansicht
-  const weitere = page.getByRole('button', { name: 'Weitere Angaben aus dem Exposé (2)' });
-  await expect(weitere).toBeVisible();
-  await weitere.click();
-  await expect(page.getByLabel('Weitere Angaben', { exact: true })).toContainText('Dach');
-  await expect(page.getByLabel('Weitere Angaben', { exact: true })).toContainText('Besichtigung');
+  await expect(page.locator('[data-erfassung]')).toHaveText(/\d+ Angaben erfasst · \d+ automatisch zugeordnet · \d+ weitere/);
+  const weitere = page.getByLabel('Weitere Angaben', { exact: true });
+  await expect(weitere.getByRole('heading', { name: /^Weitere Angaben aus dem Exposé \(\d+\)$/ })).toBeVisible();
+  const zeile = (text: string) => weitere.locator('tr[data-feld]').filter({ hasText: text });
+  await expect(zeile('Besichtigung')).toContainText('nach Vereinbarung');
+  await expect(zeile('Besichtigung').getByRole('combobox', { name: 'Übernehmen in …' })).toHaveValue('');
+
+  // Vorschlag der KI ist vorausgewählt; ein Feld ohne Formularfeld wird beim Anlegen gespeichert (rückgängig möglich)
+  const ruecklage = zeile('Instandhaltungsrücklage');
+  await expect(ruecklage.getByRole('combobox', { name: 'Übernehmen in …' })).toHaveValue(/^Instandhaltungsrücklage/);
+  await ruecklage.getByRole('button', { name: 'Übernehmen' }).click();
+  await expect(ruecklage).toHaveAttribute('data-zustand', 'gemerkt');
+  await expect(ruecklage).toContainText('wird beim Anlegen gespeichert');
+  await ruecklage.getByRole('button', { name: 'Rückgängig' }).click();
+  await expect(ruecklage).toHaveAttribute('data-zustand', 'offen');
+  await ruecklage.getByRole('button', { name: 'Übernehmen' }).click();
+  await expect(ruecklage).toHaveAttribute('data-zustand', 'gemerkt');
+
+  // Übernahme in ein leeres Formularfeld: der Wert steht sofort im Formular (deutsche Zahl gelesen)
+  const verbrauch = zeile('Energieverbrauch');
+  await verbrauch.getByRole('combobox', { name: 'Übernehmen in …' }).click();
+  await page.getByRole('option', { name: /^Energiekennwert/ }).click();
+  await verbrauch.getByRole('button', { name: 'Übernehmen' }).click();
+  await expect(verbrauch).toHaveAttribute('data-zustand', 'uebernommen');
+  await expect(page.getByRole('textbox', { name: /Energiekennwert/ })).toHaveValue('128,5');
+
+  // Alle erfassten Angaben: eingeklappt, nur lesend
+  await page.getByRole('button', { name: /^Alle erfassten Angaben \(\d+\)$/ }).click();
+  const alle = page.getByLabel('Alle erfassten Angaben', { exact: true });
+  await expect(alle.locator('tr[data-feld]').filter({ hasText: 'Kaufpreis' })).toContainText('→ Angebotspreis');
+  await expect(alle.locator('tr[data-feld]').filter({ hasText: 'Besichtigung' })).toContainText('—');
+
   await page.getByRole('button', { name: 'Weiter: Makler →' }).click();
   await page.getByRole('button', { name: 'Weiter: Deal →' }).click();
   await page.getByRole('button', { name: '✅ Deal anlegen' }).click();
@@ -65,26 +122,43 @@ test('Exposé v1: weitere Angaben auf der Prüfseite, Reiter „Aus dem Exposé�
   const dealId = new URL(page.url()).searchParams.get('deal')!;
   const deal = await (await page.request.get(`/api/deals/${dealId}`)).json();
 
-  // Objekt: Zusatzangaben und Grundstück stehen schon beim Anlegen im Objekt (Status „gleich“)
+  // Objekt: zugeordnete und per Dropdown gewählte Werte stehen unter „Weitere Angaben“
   await page.goto(`/objekte?objekt=${deal.objekt.id}`);
   const s = page.getByRole('region', { name: 'Objekt-Detail' });
-  await expect(s.getByLabel('Weitere Angaben', { exact: true })).toContainText('Hausgeld/Monat');
-  await expect(s.getByLabel('Weitere Angaben', { exact: true })).toContainText('350 €');
+  const details = s.getByLabel('Weitere Angaben', { exact: true });
+  await expect(details).toContainText('Hausgeld/Monat');
+  await expect(details).toContainText('350 €');
+  await expect(details).toContainText('Instandhaltungsrücklage');
+  await expect(details).toContainText('12.000 €');
+  await expect(details).toContainText('128,5 kWh/m²a');
   await expect(s.getByLabel('Gebäude')).toContainText('480 m²');
+
+  // Reiter „Aus dem Exposé“: Status je Angabe
   await s.getByRole('tab', { name: /Aus dem Exposé/ }).click();
   const angaben = s.getByRole('region', { name: 'Exposé-Angaben' });
-  const hausgeld = angaben.locator('[data-feld="preise.hausgeld_monat"]');
-  await expect(hausgeld).toContainText('350');
-  await expect(hausgeld).toHaveAttribute('data-status', 'gleich');
-  await expect(angaben.locator('[data-feld="flaechen.grundstuecksflaeche"]')).toHaveAttribute('data-status', 'gleich');
-  await expect(angaben.locator('[data-feld="zustand.denkmalschutz"]')).toContainText('Ja');
+  const reiterZeile = (text: string) => angaben.locator('tr[data-feld]').filter({ hasText: text });
+  await expect(reiterZeile('Hausgeld')).toHaveAttribute('data-status', 'gleich');
+  await expect(reiterZeile('Grundstück')).toHaveAttribute('data-status', 'gleich');
+  await expect(reiterZeile('Instandhaltungsrücklage')).toHaveAttribute('data-status', 'gleich');
 
-  // Angabe ohne Feld: per Klick in die Notizen übernehmen
-  const dach = angaben.locator('[data-feld="weitere_angaben.0"]');
-  await expect(dach).toHaveAttribute('data-status', 'keinFeld');
-  await dach.getByRole('button', { name: 'In Notizen' }).click();
+  // Übernahme per Dropdown: „Zustand“ in das gleichnamige Feld
+  const zustand = reiterZeile('Zustand');
+  await zustand.getByRole('combobox', { name: 'Übernehmen in …' }).click();
+  await page.getByRole('option', { name: 'Zustand', exact: true }).click();
+  const gespeichert = page.waitForResponse((r) => r.url().includes('/expose-uebernahme') && r.request().method() === 'POST');
+  await zustand.getByRole('button', { name: 'Übernehmen' }).click();
+  expect((await gespeichert).status()).toBe(200);
   await s.getByRole('tab', { name: '📋 Details' }).click();
-  await expect(s.getByLabel('Notizen', { exact: true })).toContainText('Dach');
+  await expect(s.getByLabel('Weitere Angaben', { exact: true })).toContainText('gepflegt');
+
+  // … und „Besichtigung“ in die Notizen
+  await s.getByRole('tab', { name: /Aus dem Exposé/ }).click();
+  const besichtigung = reiterZeile('Besichtigung');
+  await besichtigung.getByRole('combobox', { name: 'Übernehmen in …' }).click();
+  await page.getByRole('option', { name: 'In Notizen' }).click();
+  await besichtigung.getByRole('button', { name: 'Übernehmen' }).click();
+  await s.getByRole('tab', { name: '📋 Details' }).click();
+  await expect(s.getByLabel('Notizen', { exact: true })).toContainText('Besichtigung');
 
   // Makler: der zweite Kontakt aus dem Exposé steht im Reiter
   await page.goto(`/makler?makler=${deal.makler.id}`);

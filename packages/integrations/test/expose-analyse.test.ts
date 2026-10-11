@@ -30,7 +30,7 @@ const text = (seiten: number, zeichenJeSeite: number, gelesenSeiten = seiten): P
   text: 'x'.repeat(zeichenJeSeite * gelesenSeiten), pageCount: gelesenSeiten, seitenGesamt: seiten, charsTotal: zeichenJeSeite * gelesenSeiten,
 });
 const pdf = (bytes = 1000) => new Uint8Array(bytes);
-// Diese Tests prüfen das Ist-Verhalten des v0-Wegs (Standard ist seit T2 v1); der v1-Weg steht in expose-analyse-v1.test.ts.
+// Diese Tests prüfen das Ist-Verhalten des v0-Wegs (Standard ist v2); der v2-Weg steht in expose-analyse-v2.test.ts.
 const V0 = { schema: 'v0' as const };
 
 beforeEach(() => {

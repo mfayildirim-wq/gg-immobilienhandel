@@ -2,19 +2,18 @@
 // Übernommen aus gg-immohandel server/expose-analyse.ts – Wegwahl, Grenzen, Modelle und Anfrageform des v0-Wegs unverändert.
 // Geändert: KI-Client, Kostenbuchung und PDF-Textlesen werden übergeben (testbar ohne Netz); die Route liegt in apps/api.
 //
-// Seit 10.10.2026 (Protokoll 26/27, T2) gibt es zwei Schemata:
-// - v1 (Standard): großes Werkzeug aus @gg/domain, max_tokens 12000, stop_reason wird ausgewertet. Abgeschnittene Antwort →
-//   ein Wiederholversuch ohne Einheiten/Freitexte, danach Einheiten über den bestehenden Nachfass (ki/einheiten.ts).
-//   Vor dem gründlichen Modell eine Kostenabschätzung gegen die Kostengrenze je Analyse.
+// Zwei Schemata (Protokoll 28):
+// - v2 (Standard): Vollerfassung — jede Angabe wörtlich mit Seite, Standard-Pfad und gg-Vorschlag, Mietlisten als Tabellen.
+//   max_tokens 32000, stop_reason wird ausgewertet. Abgeschnittene Antwort → eine Wiederholung ohne Mietliste, danach der
+//   Nachfass nur für die Einheiten-Tabellen. Vor dem gründlichen Modell eine Kostenabschätzung gegen die Kostengrenze.
 // - v0: der bisherige Weg (Mail-Weg, Prüfsatz-Vergleich), inhaltlich unverändert, aber mit denselben Messwerten.
 
-import { EINHEIT_TYP, EXPOSE_V0_SCHEMA, EXPOSE_V1_SCHEMA, EXPOSE_V1_TOOL_NAME, type ExposeV1, type ExposeV1Einheit, exposeV1Bereinigen } from '@gg/domain';
+import { EXPOSE_V0_SCHEMA, EXPOSE_V2_SCHEMA, EXPOSE_V2_TOOL_NAME, type ExposeV2, einheitenAusTabellen, exposeV2Bereinigen, v2Traegt } from '@gg/domain';
 import type { KiClient } from '../ki/anthropic.ts';
-import { einheitenExtrahieren } from '../ki/einheiten.ts';
 import { kostenEur, type Verbrauch } from '../ki/kosten.ts';
 import type { PdfTextResult } from '../pdf/text.ts';
 import { EXTRACT_TOOL, SYSTEM_PROMPT } from './prompt.ts';
-import { EXTRACT_TOOL_V1, PROMPT_VERSION_V1, SYSTEM_PROMPT_V1, toolOhneEinheiten } from './prompt-v1.ts';
+import { EINHEITEN_TOOL_V2, EXTRACT_TOOL_V2, HINWEIS_NACHFASS_V2, HINWEIS_WIEDERHOLUNG_V2, PROMPT_VERSION_V2, SYSTEM_PROMPT_V2 } from './prompt-v2.ts';
 
 const MB = 1024 * 1024;
 export const MODELL_SCHNELL = 'claude-haiku-4-5-20251001';
@@ -25,33 +24,34 @@ export const MAX_PDF_SEITEN = 200;
 export const INLINE_MAX_BYTES = 20 * MB;
 const ZEITLIMIT_PDF_MS = 300_000;
 
-/** v1: 280 s für jeden Aufruf — unter den 300 s der Function, in der die Analyse läuft (Protokoll 26, 8.1). */
-export const ZEITLIMIT_V1_MS = 280_000;
-export const MAX_TOKENS_V1 = 12_000;
+/** v2: 280 s für jeden Aufruf — unter den 300 s der Function, in der die Analyse läuft (Protokoll 26, 8.1). */
+export const ZEITLIMIT_V2_MS = 280_000;
+/** Vollerfassung mit ungekürzten Freitexten braucht Platz. */
+export const MAX_TOKENS_V2 = 32_000;
 /** Angenommene Ausgabe für die Kostenabschätzung vor dem gründlichen Modell. */
-export const SCHAETZUNG_AUSGABE_TOKENS = 8_000;
+export const SCHAETZUNG_AUSGABE_TOKENS = 16_000;
 export const KOSTENGRENZE_STANDARD_EUR = 1;
 export const PROMPT_VERSION_V0 = 'v0';
 export const SEITENMARKER = /^──────── Seite (\d+)\n?/m;
 
-export type SchemaWahl = 'v0' | 'v1';
+export type SchemaWahl = 'v0' | 'v2';
 
 export interface AnalyseOptionen {
-  /** Standard v1; v0 für den Mail-Weg und den Prüfsatz-Vergleich. */
+  /** Standard v2; v0 für den Mail-Weg und den Prüfsatz-Vergleich. */
   schema?: SchemaWahl;
   /** Obergrenze je Analyse in Euro; geprüft vor dem gründlichen Modell (Standard 1,00 €). */
   kostenGrenzeEur?: number;
 }
 
 export interface AnalyseErgebnis {
-  /** v1: identisch mit `v1`; v0: die Antwort des v0-Werkzeugs. Bleibt gesetzt für Aufrufer, die nur dieses Feld kennen. */
+  /** v2: identisch mit `v2`; v0: die Antwort des v0-Werkzeugs. Bleibt gesetzt für Aufrufer, die nur dieses Feld kennen. */
   extrahiert: any;
   modus: 'text' | 'pdf';
   modell: string;
   seiten: number;
   zeichenProSeite: number;
   hinweis?: string;
-  schemaVersion: typeof EXPOSE_V0_SCHEMA | typeof EXPOSE_V1_SCHEMA;
+  schemaVersion: typeof EXPOSE_V0_SCHEMA | typeof EXPOSE_V2_SCHEMA;
   promptVersion: string;
   /** stop_reason der Antwort, die ins Ergebnis eingeht (null, wenn Anthropic keinen liefert). */
   stopReason: string | null;
@@ -60,11 +60,11 @@ export interface AnalyseErgebnis {
   dauerMs: number;
   /** Summe der Kosten aller Aufrufe nach ki/kosten.ts. */
   kostenEur: number;
-  /** Einheiten wurden über den Nachfass (extract_einheiten) geholt. */
+  /** Die Einheiten-Tabellen kommen aus dem Nachfass. */
   nachfass: boolean;
-  /** Irgendeine Antwort dieser Analyse war abgeschnitten (max_tokens) und wurde ohne Einheiten wiederholt. */
+  /** Irgendeine Antwort dieser Analyse war abgeschnitten (max_tokens) und wurde ohne Mietliste wiederholt. */
   wiederholung: boolean;
-  v1?: ExposeV1;
+  v2?: ExposeV2;
   warnungen: string[];
   /** Textweg: Text je Seite (Index 0 = Seite 1) aus den Seitenmarkern; PDF-Weg: leer. */
   seitenTexte: string[];
@@ -91,19 +91,6 @@ export function ergebnisTraegt(ex: any): boolean {
   return [hatOrt, hatPreis, hatEinheiten].filter(Boolean).length >= 2;
 }
 
-/**
- * v1: Ort UND Preis UND (Einheiten > 0 ODER das Dokument nennt genau eine Einheit) UND nicht abgeschnitten.
- * Bewusste Korrektur gegenüber v0 (2 von 3), Protokoll 26 Abschnitt 8.1.
- */
-export function traegtV1(v1: ExposeV1 | null | undefined, stopReason: string | null): boolean {
-  if (!v1) return false;
-  if (stopReason === 'max_tokens') return false;
-  const hatOrt = !!(v1.geo.strasse || v1.geo.ort || v1.geo.plz);
-  const hatPreis = v1.preise.kaufpreis != null && v1.preise.kaufpreis > 0;
-  const hatEinheiten = v1.einheiten.length > 0 || v1.verwaltung.einheiten_anzahl_dokument === 1;
-  return hatOrt && hatPreis && hatEinheiten;
-}
-
 /** System-Prompt und Schema sind bei jedem Exposé gleich → als zwischenspeicherbar markiert. (v0) */
 export function anfrage(model: string, inhalt: unknown[]): any {
   return {
@@ -116,12 +103,12 @@ export function anfrage(model: string, inhalt: unknown[]): any {
   };
 }
 
-/** Anfrage v1: großes Werkzeug (oder die Variante ohne Einheiten), max_tokens 12000. */
-export function anfrageV1(model: string, inhalt: unknown[], tool: typeof EXTRACT_TOOL_V1 = EXTRACT_TOOL_V1): any {
+/** Anfrage v2: Vollerfassung (oder Nachfass nur Einheiten), max_tokens 32000, Anweisung und Werkzeug zwischenspeicherbar. */
+export function anfrageV2(model: string, inhalt: unknown[], tool: typeof EXTRACT_TOOL_V2 = EXTRACT_TOOL_V2): any {
   return {
     model,
-    max_tokens: MAX_TOKENS_V1,
-    system: [{ type: 'text', text: SYSTEM_PROMPT_V1, cache_control: { type: 'ephemeral' } }],
+    max_tokens: MAX_TOKENS_V2,
+    system: [{ type: 'text', text: SYSTEM_PROMPT_V2, cache_control: { type: 'ephemeral' } }],
     tools: [{ ...tool, cache_control: { type: 'ephemeral' } }],
     tool_choice: { type: 'tool', name: tool.name },
     messages: [{ role: 'user', content: inhalt }],
@@ -143,26 +130,24 @@ export function seitenAufteilen(text: string): string[] {
 }
 
 /**
- * Kostenabschätzung für einen Aufruf des gründlichen Modells: Eingabe ≈ Zeichen/4, Ausgabe pauschal 8000 Tokens,
+ * Kostenabschätzung für einen Aufruf des gründlichen Modells: Eingabe ≈ Zeichen/4, Ausgabe pauschal 16000 Tokens,
  * Preise aus ki/kosten.ts. Grob, aber vor dem Aufruf — danach wäre das Geld ausgegeben.
  */
 export function kostenSchaetzung(model: string, zeichen: number): number {
   return kostenEur(model, { input_tokens: Math.ceil(zeichen / 4), output_tokens: SCHAETZUNG_AUSGABE_TOKENS });
 }
 
-/** Einheit aus dem Nachfass (extract_einheiten) in eine v1-Zeile; Seite ist dort unbekannt. */
-function einheitAusNachfass(e: { typ: string; lage?: string; zimmer?: number | null; flaeche?: number | null; kaltmiete?: number | null }): ExposeV1Einheit {
-  const typ = (EINHEIT_TYP as readonly string[]).includes(e.typ) ? (e.typ as ExposeV1Einheit['typ']) : 'Sonstiges';
-  return { typ, lage: e.lage ?? null, zimmer: e.zimmer ?? null, flaeche: e.flaeche ?? null, kaltmiete: e.kaltmiete ?? null, nebenkosten: null, sollmiete: null, vermiet: null, mietbeginn: null, _seite: null };
-}
+/** Erfasste Einheiten (ohne Summenzeilen) einer rohen Antwort. */
+const zeilenAnzahl = (roh: any) => einheitenAusTabellen(exposeV2Bereinigen({ einheiten_tabellen: roh?.einheiten_tabellen }).v2.einheiten_tabellen).einheiten.length;
 
 const zuBase64 = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64');
 const NICHTS = 'Aus dem Exposé ließ sich nichts auslesen — bitte erneut versuchen.';
+const fehlerText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** Wirft, wenn nichts herauskommt – ein leeres Ergebnis darf keinen Deal aus Nichts anlegen. */
 export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: AnalyseAbhaengigkeiten, optionen: AnalyseOptionen = {}): Promise<AnalyseErgebnis> {
   const start = Date.now();
-  const schema: SchemaWahl = optionen.schema ?? 'v1';
+  const schema: SchemaWahl = optionen.schema ?? 'v2';
   const kostenGrenze = optionen.kostenGrenzeEur ?? KOSTENGRENZE_STANDARD_EUR;
 
   // Messwerte über alle Aufrufe dieser Analyse
@@ -243,104 +228,111 @@ export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: An
     }
   }
 
-  // ───────────── v1 ─────────────
+  // ───────────── v2 ─────────────
   const warnungen: string[] = [];
   let nachfass = false;
   let wiederholung = false;
 
   interface Ruf { roh: any; stopReason: string | null }
-  const rufeV1 = async (model: string, inhalt: unknown[], tool: typeof EXTRACT_TOOL_V1, quelle: string): Promise<Ruf> => {
-    const data = await a.ki.nachricht(anfrageV1(model, inhalt, tool), ZEITLIMIT_V1_MS);
+  const rufeV2 = async (model: string, inhalt: unknown[], tool: typeof EXTRACT_TOOL_V2, quelle: string): Promise<Ruf> => {
+    const data = await a.ki.nachricht(anfrageV2(model, inhalt, tool), ZEITLIMIT_V2_MS);
     await vermerke(model, data?.usage, quelle);
-    return { roh: toolErgebnis(data, EXPOSE_V1_TOOL_NAME), stopReason: data?.stop_reason ?? null };
+    return { roh: toolErgebnis(data, EXPOSE_V2_TOOL_NAME), stopReason: data?.stop_reason ?? null };
   };
 
   /**
-   * Ein Versuch mit dem vollen Werkzeug. Abgeschnitten (max_tokens) → einmal ohne Einheiten/Freitexte wiederholen und die
-   * Einheiten über den bestehenden Nachfass holen. Nie stille Teilübernahme: eine abgeschnittene Antwort trägt nicht.
+   * Nachfass nur für die Einheiten-Tabellen: derselbe Inhalt, das Werkzeug ohne `angaben`. Übernommen wird nur eine
+   * längere Liste aus einer nicht abgeschnittenen Antwort (Prüfsatz 10.10.2026: 1 von 34 Einheiten).
    */
-  const versuchV1 = async (model: string, inhalt: unknown[], quelle: string): Promise<Ruf> => {
-    let r = await rufeV1(model, inhalt, EXTRACT_TOOL_V1, quelle);
+  const nachfassen = async (r: Ruf, model: string, inhalt: unknown[], quelle: string) => {
+    const bisher = zeilenAnzahl(r.roh);
+    try {
+      const n = await rufeV2(model, [...inhalt, { type: 'text', text: HINWEIS_NACHFASS_V2 }], EINHEITEN_TOOL_V2, `${quelle}-einheiten`);
+      if (n.stopReason === 'max_tokens') { warnungen.push(`${model}: Einheiten-Nachfass abgeschnitten (max_tokens) — nicht übernommen`); return; }
+      const neu = zeilenAnzahl(n.roh);
+      if (!n.roh || neu <= bisher) return;
+      r.roh.einheiten_tabellen = n.roh.einheiten_tabellen;
+      if (typeof n.roh.einheiten_im_dokument === 'number') r.roh.einheiten_im_dokument = n.roh.einheiten_im_dokument;
+      if (typeof n.roh.einheiten_vollstaendig === 'boolean') r.roh.einheiten_vollstaendig = n.roh.einheiten_vollstaendig;
+      nachfass = true;
+    } catch (e) {
+      warnungen.push(`Einheiten-Nachfass fehlgeschlagen: ${fehlerText(e)}`);
+    }
+  };
+
+  /**
+   * Ein Versuch mit der Vollerfassung. Meldet die KI eine unvollständige Liste (oder weniger Zeilen als das Dokument
+   * nennt), holt der Nachfass die Tabellen. Abgeschnitten (max_tokens) → einmal ohne Mietliste wiederholen, dann Nachfass.
+   * Nie stille Teilübernahme: eine abgeschnittene Antwort trägt nicht.
+   */
+  const versuchV2 = async (model: string, inhalt: unknown[], quelle: string): Promise<Ruf> => {
+    let r = await rufeV2(model, inhalt, EXTRACT_TOOL_V2, quelle);
     if (r.stopReason !== 'max_tokens') {
-      // Meldet die KI selbst eine unvollständige Liste (oder weniger Zeilen als das Dokument nennt), holt der Nachfass die
-      // Einheiten gezielt. Übernommen wird seine Liste nur, wenn sie länger ist (Prüfsatz 10.10.2026: 1 von 34 Einheiten).
-      const verwaltung = r.roh?.verwaltung ?? {};
-      const bisher = Array.isArray(r.roh?.einheiten) ? r.roh.einheiten.length : 0;
-      const imDokument = typeof verwaltung.einheiten_anzahl_dokument === 'number' ? verwaltung.einheiten_anzahl_dokument : null;
-      if (r.roh && (verwaltung.einheiten_vollstaendig === false || (imDokument !== null && imDokument > bisher))) {
+      if (!r.roh) return r;
+      const bisher = zeilenAnzahl(r.roh);
+      const imDokument = typeof r.roh.einheiten_im_dokument === 'number' ? r.roh.einheiten_im_dokument : null;
+      if (r.roh.einheiten_vollstaendig === false || (imDokument !== null && imDokument > bisher)) {
         warnungen.push(`Einheitenliste unvollständig (${bisher} von ${imDokument ?? '?'}) — Nachfass`);
-        try {
-          const e = await einheitenExtrahieren(a.ki, pdf, seiten);
-          await vermerke(e.model, e.usage, 'expose-analyse/v1-einheiten');
-          if (e.wert.length > bisher) {
-            r.roh.einheiten = e.wert.map(einheitAusNachfass);
-            nachfass = true;
-          }
-        } catch (e) {
-          warnungen.push(`Einheiten-Nachfass fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`);
-        }
+        await nachfassen(r, model, inhalt, quelle);
       }
       return r;
     }
     wiederholung = true;
-    warnungen.push(`${model}: Antwort abgeschnitten (max_tokens) — Wiederholung ohne Einheiten und Freitexte`);
-    r = await rufeV1(model, inhalt, toolOhneEinheiten(), `${quelle}-wiederholung`);
+    warnungen.push(`${model}: Antwort abgeschnitten (max_tokens) — Wiederholung ohne Mietliste`);
+    r = await rufeV2(model, [...inhalt, { type: 'text', text: HINWEIS_WIEDERHOLUNG_V2 }], EXTRACT_TOOL_V2, `${quelle}-wiederholung`);
     if (r.stopReason === 'max_tokens' || !r.roh) return r;
-    try {
-      const e = await einheitenExtrahieren(a.ki, pdf, seiten);
-      await vermerke(e.model, e.usage, 'expose-analyse/v1-einheiten');
-      r.roh.einheiten = e.wert.map(einheitAusNachfass);
-      nachfass = true;
-    } catch (e) {
-      warnungen.push(`Einheiten-Nachfass fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`);
-    }
+    r.roh.einheiten_tabellen = [];
+    await nachfassen(r, model, inhalt, quelle);
     return r;
   };
 
+  /** Trägt der Versuch? Nicht abgeschnitten, und die bereinigte Erfassung nennt Ort, Preis und Einheiten. */
+  const traegt = (r: Ruf | null) => !!r?.roh && r.stopReason !== 'max_tokens' && v2Traegt(exposeV2Bereinigen(r.roh).v2);
+
   const fertig = (ruf: Ruf, modus: 'text' | 'pdf', modell: string): AnalyseErgebnis => {
     if (!ruf.roh) throw new Error(NICHTS);
-    const { v1, warnungen: w } = exposeV1Bereinigen(ruf.roh);
+    if (ruf.stopReason === 'max_tokens') warnungen.push(`${modell}: Antwort auch nach der Wiederholung abgeschnitten — Erfassung unvollständig`);
+    const { v2, warnungen: w } = exposeV2Bereinigen(ruf.roh);
     warnungen.push(...w);
     return {
-      extrahiert: v1, v1, modus, modell, seiten, zeichenProSeite, ...(modus === 'text' && hinweis ? { hinweis } : {}),
-      schemaVersion: EXPOSE_V1_SCHEMA, promptVersion: PROMPT_VERSION_V1, stopReason: ruf.stopReason, ...messwerte(),
+      extrahiert: v2, v2, modus, modell, seiten, zeichenProSeite, ...(modus === 'text' && hinweis ? { hinweis } : {}),
+      schemaVersion: EXPOSE_V2_SCHEMA, promptVersion: PROMPT_VERSION_V2, stopReason: ruf.stopReason, ...messwerte(),
       nachfass, wiederholung, warnungen, seitenTexte: modus === 'text' ? seitenAufteilen(gelesen.text) : [],
     };
   };
 
   if (textTraegt) {
-    const text = `Analysiere dieses Immobilien-Exposé (extrahierter Text-Layer, Seiten durch "──────── Seite N" getrennt) und extrahiere ALLE relevanten Daten vollständig:\n\n${gelesen.text}`;
+    const text = `Erfasse dieses Immobilien-Exposé vollständig und wörtlich (extrahierter Text-Layer, Seiten durch "──────── Seite N" getrennt):\n\n${gelesen.text}`;
     const inhalt = [{ type: 'text', text }];
     let ruf: Ruf | null = null;
     try {
-      ruf = await versuchV1(MODELL_SCHNELL, inhalt, 'expose-analyse/v1-text-schnell');
+      ruf = await versuchV2(MODELL_SCHNELL, inhalt, 'expose-analyse/v2-text-schnell');
     } catch (e) {
-      console.warn('[expose-analyse] schneller Versuch (v1) fehlgeschlagen:', e);
-      warnungen.push(`${MODELL_SCHNELL}: ${e instanceof Error ? e.message : String(e)}`);
+      console.warn('[expose-analyse] schneller Versuch (v2) fehlgeschlagen:', e);
+      warnungen.push(`${MODELL_SCHNELL}: ${fehlerText(e)}`);
     }
-    const schnellTraegt = !!ruf?.roh && traegtV1(exposeV1Bereinigen(ruf.roh).v1, ruf.stopReason);
-    if (schnellTraegt) return fertig(ruf!, 'text', MODELL_SCHNELL);
+    if (traegt(ruf)) return fertig(ruf!, 'text', MODELL_SCHNELL);
 
-    const zeichen = text.length + SYSTEM_PROMPT_V1.length + JSON.stringify(EXTRACT_TOOL_V1.input_schema).length;
+    const zeichen = text.length + SYSTEM_PROMPT_V2.length + JSON.stringify(EXTRACT_TOOL_V2.input_schema).length;
     const geschaetzt = kostenSchaetzung(MODELL_GRUENDLICH, zeichen);
     if (geschaetzt > kostenGrenze) {
       throw new Error(`Kostengrenze ${kostenGrenze.toFixed(2)} € überschritten: der gründliche Versuch würde etwa ${geschaetzt.toFixed(2)} € kosten (${Math.ceil(zeichen / 4)} Eingabe-Tokens).`);
     }
     nachfass = false; // `wiederholung` bleibt: sie ist in dieser Analyse geschehen, auch wenn Sonnet jetzt neu beginnt
-    const gruendlich = await versuchV1(MODELL_GRUENDLICH, inhalt, 'expose-analyse/v1-text-gruendlich');
+    const gruendlich = await versuchV2(MODELL_GRUENDLICH, inhalt, 'expose-analyse/v2-text-gruendlich');
     return fertig(gruendlich, 'text', MODELL_GRUENDLICH);
   }
 
   pdfWegPruefen();
-  const frage = { type: 'text', text: 'Analysiere dieses Immobilien-Exposé und extrahiere alle relevanten Daten vollständig. Seitennummern sind die PDF-Seiten.' };
+  const frage = { type: 'text', text: 'Erfasse dieses Immobilien-Exposé vollständig und wörtlich. Seitennummern sind die PDF-Seiten.' };
   if (pdf.byteLength <= INLINE_MAX_BYTES) {
     const inhalt = [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: zuBase64(pdf) } }, frage];
-    return fertig(await versuchV1(MODELL_GRUENDLICH, inhalt, 'expose-analyse/v1-pdf'), 'pdf', MODELL_GRUENDLICH);
+    return fertig(await versuchV2(MODELL_GRUENDLICH, inhalt, 'expose-analyse/v2-pdf'), 'pdf', MODELL_GRUENDLICH);
   }
-  const fileId = await a.ki.dateiHochladen(pdf, dateiname, 'application/pdf', ZEITLIMIT_V1_MS);
+  const fileId = await a.ki.dateiHochladen(pdf, dateiname, 'application/pdf', ZEITLIMIT_V2_MS);
   try {
     const inhalt = [{ type: 'document', source: { type: 'file', file_id: fileId } }, frage];
-    return fertig(await versuchV1(MODELL_GRUENDLICH, inhalt, 'expose-analyse/v1-pdf-datei'), 'pdf', MODELL_GRUENDLICH);
+    return fertig(await versuchV2(MODELL_GRUENDLICH, inhalt, 'expose-analyse/v2-pdf-datei'), 'pdf', MODELL_GRUENDLICH);
   } finally {
     await a.ki.dateiLoeschen(fileId);
   }

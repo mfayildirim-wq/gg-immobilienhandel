@@ -73,11 +73,12 @@ export function pdfAusSeiten(seiten: string[][]): Uint8Array {
 }
 
 /**
- * Ein Test-Exposé für Schema v1 (Attrappe-Zweig extract_expose_v1): zwei Seiten, Seite 1 mit Kernwerten und Makler,
- * Seite 2 mit Einheitenliste, weiteren Angaben und zweitem Kontakt. `abgeschnitten` fügt die Steuerzeile ein, mit der die
- * Attrappe die erste Antwort an max_tokens abschneidet (Wiederholung + Einheiten-Nachfass).
+ * Ein Test-Exposé für die Erfassung v2 (Attrappe-Zweig erfasse_expose): zwei Seiten, Seite 1 mit Kernwerten und Makler,
+ * Seite 2 mit Mietaufstellung, Angaben ohne Mapping (Instandhaltungsrücklage mit Vorschlag, Besichtigung ohne) und
+ * zweitem Kontakt. `abgeschnitten` fügt die Steuerzeile ein, mit der die Attrappe die erste Antwort an max_tokens
+ * abschneidet (Wiederholung ohne Mietliste + Nachfass).
  */
-export function testExposeV1(kennung: string, optionen: { abgeschnitten?: boolean } = {}): Uint8Array {
+export function testExposeV2(kennung: string, optionen: { abgeschnitten?: boolean } = {}): Uint8Array {
   return pdfAusSeiten([
     [
       `Expose ${kennung} - Mehrfamilienhaus in guter Lage mit solidem Mietertrag und Entwicklungspotenzial`,
@@ -93,11 +94,11 @@ export function testExposeV1(kennung: string, optionen: { abgeschnitten?: boolea
     ],
     [
       'Mietaufstellung',
-      'Einheit: Wohnung | EG links | 3 | 80 | 800',
-      'Einheit: Wohnung | OG rechts | 3 | 80 | 820',
-      'Einheit: Wohnung | DG | 2 | 80 | 700',
-      'Weitere: zustand | Dach | 2015 neu gedeckt',
-      'Weitere: vertrieb | Besichtigung | nach Vereinbarung',
+      'Einheit: Wohnung | EG links | 3 | 80 m2 | 800 EUR',
+      'Einheit: Wohnung | OG rechts | 3 | 80 m2 | 820 EUR',
+      'Einheit: Wohnung | DG | 2 | 80 m2 | 700 EUR',
+      'Instandhaltungsrücklage: 12.000 EUR',
+      'Besichtigung: nach Vereinbarung',
       'Kontakt: Max Zweit | Geschäftsführer | 0711 123456 | max@beispiel.test',
       'Die Liegenschaft befindet sich in ruhiger Wohnlage, Einkaufsmoeglichkeiten und Schulen sind fusslaeufig erreichbar.',
     ],

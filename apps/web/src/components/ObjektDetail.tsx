@@ -1,6 +1,6 @@
 import type { ObjektDetail as Detail, ObjektEinheit } from '@gg/api-contract';
 import {
-  EINHEIT_TYPEN, ENERGIE_KLASSEN, OBJEKT_HAT_DEAL_HINWEIS, OBJEKT_LOESCHEN_FRAGE, OBJEKT_STATUS, objektAnzeige, objektEinheitAendern, objektEinheitenAnzeige, objektEinheitNeu, objektRecherche,
+  EINHEIT_TYPEN, ENERGIE_KLASSEN, GG_ZIELE, OBJEKT_HAT_DEAL_HINWEIS, OBJEKT_LOESCHEN_FRAGE, OBJEKT_STATUS, objektAnzeige, objektEinheitAendern, objektEinheitenAnzeige, objektEinheitNeu, objektRecherche,
   VERMIETUNG_OPTIONEN,
 } from '@gg/domain';
 import { ActionIcon, Alert, Anchor, Button, Group, Loader, NativeSelect, NumberInput, Paper, SimpleGrid, Stack, Table, Tabs, Text, Textarea, TextInput, Title } from '@mantine/core';
@@ -168,7 +168,9 @@ const ENERGIE_LABEL: Record<string, string> = { klasse: 'Energieklasse', kennwer
 /** Verwaltungsangaben des Imports, keine Objektangaben. */
 const DETAIL_VERSTECKT = new Set(['herkunft', 'importId']);
 /** Fließtexte brauchen die ganze Breite. */
-const DETAIL_LANG = new Set(['lagebeschreibung', 'ausstattung']);
+const DETAIL_LANG = new Set(['lagebeschreibung', 'ausstattung', 'objektbeschreibung']);
+/** Übrige Schlüssel (Exposé v2, auch per Dropdown zugeordnet): Beschriftung und Einheit aus dem gg-Zielkatalog. */
+const ZIEL_JE_DETAIL = new Map(Object.values(GG_ZIELE).filter((z) => z.details && !z.details.includes('.')).map((z) => [z.details!, z]));
 
 function detailText(schluessel: string, wert: unknown): string {
   if (typeof wert === 'boolean') return wert ? 'Ja' : 'Nein';
@@ -177,9 +179,11 @@ function detailText(schluessel: string, wert: unknown): string {
     if (schluessel === 'hausgeld' || schluessel === 'hausgeld_monat' || schluessel === 'nebenkosten' || schluessel === 'nebenkosten_monat') return euro(wert, '0 €');
     if (schluessel === 'kennwert') return `${wert.toLocaleString('de-DE')} kWh/m²a`;
     if (schluessel === 'heizungsbaujahr') return String(wert);
-    return wert.toLocaleString('de-DE');
+    const einheit = ZIEL_JE_DETAIL.get(schluessel)?.einheit;
+    return einheit ? `${wert.toLocaleString('de-DE')} ${einheit}` : wert.toLocaleString('de-DE');
   }
   if (typeof wert === 'string') return wert;
+  if (Array.isArray(wert) && wert.every((w) => typeof w === 'string')) return wert.join('\n');
   return JSON.stringify(wert);
 }
 
@@ -194,7 +198,8 @@ function detailZeilen(details: Record<string, unknown>): { label: string; wert: 
       }
       continue;
     }
-    zeilen.push({ label: DETAIL_LABEL[k] ?? k, wert: detailText(k, v), lang: DETAIL_LANG.has(k) });
+    const ziel = ZIEL_JE_DETAIL.get(k);
+    zeilen.push({ label: DETAIL_LABEL[k] ?? ziel?.label ?? k, wert: detailText(k, v), lang: DETAIL_LANG.has(k) || !!ziel?.liste || (ziel?.typ === 'text' && String(v).length > 80) });
   }
   return zeilen;
 }

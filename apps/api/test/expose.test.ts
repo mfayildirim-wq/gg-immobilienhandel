@@ -1,6 +1,6 @@
 import { createDb, schema, verlangeLokaleDatenbank } from '@gg/db';
 import { KALK_STANDARD } from '@gg/domain';
-import { KiSchluesselFehler, kiAttrappe, speicherImSpeicher, testExpose, testExposeV1 } from '@gg/integrations';
+import { KiSchluesselFehler, kiAttrappe, speicherImSpeicher, testExpose, testExposeV2 } from '@gg/integrations';
 import { eq, inArray, like } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.ts';
@@ -191,37 +191,76 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
     expect((await db.select().from(schema.deals)).length).toBe(vorher);
   });
 
-  it('Analyse (Schema v1) legt eine Import-Zeile mit Messwerten an und liefert v1, weitere Angaben und Belege', async () => {
+  it('Analyse (Erfassung v2) legt eine Import-Zeile mit Messwerten und Belegprüfung an und liefert Angaben und Ziele', async () => {
     const eigene = `Vein${Date.now()}`;
-    const { key } = await lies(eingang(testExposeV1(eigene)));
+    const { key } = await lies(eingang(testExposeV2(eigene)));
     const a = await lies(json('/api/expose/analyse', { key, dateiname: `${eigene}.pdf` }));
     expect(a).toMatchObject({
-      schemaVersion: 'gg-expose-v1', importId: expect.any(String),
-      objekt: { strasse: `${eigene}strasse`, angebotspreis: 1_250_000 },
+      schemaVersion: 'gg-expose-v2', importId: expect.any(String),
+      objekt: { strasse: `${eigene}strasse`, hausnr: '12', angebotspreis: 1_250_000, wohnflaeche: 240, grundstueck: 480 },
       extrahiert: { objekt: { angebotspreis: 1_250_000 } },
-      v1: { preise: { kaufpreis: 1_250_000, hausgeld_monat: 350 } },
-      belegt: { kaufpreis: true },
+      makler: { name: `Anna ${eigene}` },
     });
-    expect(a.weitereAngaben.map((w: any) => w.bezeichnung)).toEqual(['Dach', 'Besichtigung']);
+    expect(a).not.toHaveProperty('v1');
+    expect(a.belegQuote).toBeGreaterThan(0.5);
     expect(Array.isArray(a.warnungen)).toBe(true);
+
+    // Angaben: Mapping, KI-Vorschlag, ohne Ziel; leerer Datensatz → Status „leer“
+    const nach = (art: 'objekt' | 'makler', bezeichnung: string) => a.angaben[art].find((x: any) => x.bezeichnung === bezeichnung);
+    expect(nach('objekt', 'Kaufpreis')).toMatchObject({
+      importId: a.importId, feld: expect.stringMatching(/^angaben\.\d+$/), wert: '1.250.000 EUR', seite: 1, belegt: true, pfad: 'preise.kaufpreis',
+      ziel: { feld: 'objekt.angebotspreis', wert: 1_250_000, aktuell: null, status: 'leer', quelle: 'mapping' },
+    });
+    expect(nach('objekt', 'Instandhaltungsrücklage')).toMatchObject({ seite: 2, ziel: { feld: 'details.instandhaltungsruecklage', quelle: 'vorschlag' } });
+    expect(nach('objekt', 'Besichtigung')).toMatchObject({ wert: 'nach Vereinbarung', ziel: { feld: null, status: 'keinFeld' } });
+    expect(nach('objekt', 'Ansprechpartner')).toBeUndefined();
+    expect(nach('makler', 'Ansprechpartner')).toMatchObject({ wert: 'Max Zweit', ziel: { feld: 'makler.weitereKontakte' } });
+    expect(a.angaben.objekt.filter((x: any) => x.gruppe === 'einheiten')).toHaveLength(3);
+
+    // Ziele: Objekt mit Kalkulation (Prüfseite zeigt beides gemeinsam), Makler getrennt
+    const schluessel = (art: 'objekt' | 'makler') => a.ziele[art].map((z: any) => z.schluessel as string);
+    expect(schluessel('objekt')).toEqual(expect.arrayContaining(['objekt.angebotspreis', 'details.hausgeld_monat', 'kalkulation.kaufpreis']));
+    expect(schluessel('objekt').some((s: string) => s.startsWith('makler.'))).toBe(false);
+    expect(schluessel('makler').every((s: string) => s.startsWith('makler.'))).toBe(true);
+    expect(a.ziele.objekt.find((z: any) => z.schluessel === 'objekt.wohnflaeche')).toEqual({ schluessel: 'objekt.wohnflaeche', label: 'Wohnfläche', einheit: 'm²', pruef: 'objekt.wohnflaeche' });
+    expect(a.ziele.objekt.find((z: any) => z.schluessel === 'details.provision')).toMatchObject({ pruef: null, einheit: null });
 
     const [imp] = await db.select().from(schema.exposeImporte).where(eq(schema.exposeImporte.id, a.importId));
     expect(imp).toMatchObject({
-      eingangKey: key, dateiname: `${eigene}.pdf`, schemaVersion: 'gg-expose-v1', weg: 'text', status: 'analysiert', seitenGesamt: 2, seitenGelesen: 2,
+      eingangKey: key, dateiname: `${eigene}.pdf`, schemaVersion: 'gg-expose-v2', weg: 'text', status: 'analysiert', seitenGesamt: 2, seitenGelesen: 2,
       dealId: null, objektId: null, maklerId: null,
-      rohdaten: { preise: { hausgeld_monat: 350 } },
-      analyse: { nachfass: false, belegt: { kaufpreis: true } },
+      rohdaten: { schema: 'gg-expose-v2', einheiten_tabellen: [{ seite: 2 }] },
+      analyse: { nachfass: false, wiederholung: false, belegQuote: a.belegQuote },
     });
+    const roh = imp!.rohdaten as any;
+    const analyse = imp!.analyse as any;
+    expect(analyse.belegt).toHaveLength(roh.angaben.length);
+    expect(roh.angaben.find((x: any) => x.bezeichnung === 'Kaufpreis')).toMatchObject({ wert: '1.250.000 EUR', seite: 1, pfad: 'preise.kaufpreis' });
     expect(imp!.promptVersion).toBeTruthy();
   });
 
-  it('Übernehmen mit importId: Import verknüpft, Objekt-details mit v1-Zusatz und importId, Einheiten mit details', async () => {
+  it('Übernehmen mit importId: Import verknüpft, details aus der Zuordnung, manuelle Zuordnungen samt Korrektur-Zeilen', async () => {
     const eigene = `Vueb${Date.now()}`;
-    const { key } = await lies(eingang(testExposeV1(eigene)));
+    const { key } = await lies(eingang(testExposeV2(eigene)));
     const a = await lies(json('/api/expose/analyse', { key, dateiname: `${eigene}.pdf` }));
+    const feld = (art: 'objekt' | 'makler', bezeichnung: string) => a.angaben[art].find((x: any) => x.bezeichnung === bezeichnung).feld as string;
+    const ruecklage = feld('objekt', 'Instandhaltungsrücklage');
+    const besichtigung = feld('objekt', 'Besichtigung');
+    const position = feld('makler', 'Position');
     const r = await json('/api/expose/uebernehmen', {
       key, dateiname: `${eigene}.pdf`, extrahiert: a.extrahiert, importId: a.importId,
-      objekt: { daten: a.objekt }, makler: { daten: a.makler }, deal: a.deal,
+      zuordnungen: [
+        { feld: ruecklage, ziel: 'details.instandhaltungsruecklage' },
+        { feld: besichtigung, ziel: 'notizen' },
+        { feld: besichtigung, ziel: 'details.sanierungen' },
+        { feld: position, ziel: 'makler.weitereKontakte' },
+        // werden übergangen: Formularfeld der Prüfseite, unbekanntes Ziel, unbekannte Angabe, unlesbarer Wert
+        { feld: feld('objekt', 'Kaufpreis'), ziel: 'objekt.angebotspreis' },
+        { feld: ruecklage, ziel: 'gibt.es.nicht' },
+        { feld: 'angaben.999', ziel: 'details.titel' },
+        { feld: besichtigung, ziel: 'details.stellplaetze' },
+      ],
+      objekt: { daten: { ...a.objekt, notizen: 'Von der Prüfseite' } }, makler: { daten: a.makler }, deal: a.deal,
     });
     expect(r.status).toBe(201);
     const erg = await lies(r);
@@ -233,15 +272,32 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
     expect(deal!.exposeRohdaten).toMatchObject({ importId: a.importId, originalFileName: `${eigene}.pdf`, objekt: { angebotspreis: 1_250_000 } });
 
     const o = await lies(app.request(`/api/objekte/${erg.objektId}`));
-    expect(o.details).toMatchObject({ hausgeld_monat: 350, denkmalschutz: true, herkunft: 'Exposé-Import', importId: a.importId });
+    expect(o.details).toMatchObject({
+      hausgeld_monat: 350, denkmalschutz: 'ja', instandhaltungsruecklage: 12_000, sanierungen: ['Besichtigung: nach Vereinbarung'],
+      herkunft: 'Exposé-Import', importId: a.importId,
+    });
+    expect(o.details).not.toHaveProperty('stellplaetze');
+    expect(o.notizen).toBe(`Von der Prüfseite\nBesichtigung: nach Vereinbarung (Exposé S. 2)`);
+    const [makler] = await db.select().from(schema.makler).where(eq(schema.makler.id, erg.maklerId));
+    expect((makler!.weitereKontakte as any).namen).toEqual(expect.arrayContaining(['Max Zweit', 'Geschäftsführer']));
+
     const einheiten = await db.select().from(schema.objektEinheiten).where(eq(schema.objektEinheiten.objektId, erg.objektId)).orderBy(schema.objektEinheiten.sort);
     expect(einheiten).toHaveLength(3);
     expect(einheiten.map((x) => x.details)).toEqual([{ seite: 2 }, { seite: 2 }, { seite: 2 }]);
+
+    const k = await db.select().from(schema.importKorrekturen).where(eq(schema.importKorrekturen.importId, a.importId));
+    expect(k).toHaveLength(4);
+    expect(k).toEqual(expect.arrayContaining([
+      expect.objectContaining({ art: 'objekt', bezugId: erg.objektId, feld: ruecklage, ziel: 'details.instandhaltungsruecklage', kiWert: '12.000 EUR', aktion: 'zugeordnet', konfidenz: null, promptVersion: imp!.promptVersion }),
+      expect.objectContaining({ art: 'objekt', feld: besichtigung, ziel: 'notizen', kiWert: 'nach Vereinbarung', aktion: 'zugeordnet' }),
+      expect.objectContaining({ art: 'objekt', feld: besichtigung, ziel: 'details.sanierungen' }),
+      expect.objectContaining({ art: 'makler', bezugId: erg.maklerId, feld: position, ziel: 'makler.weitereKontakte', kiWert: 'Geschäftsführer' }),
+    ]));
   });
 
   it('Exposé überspringen: Import wird verworfen; unbekannt → 404; übernommene bleiben übernommen', async () => {
     const eigene = `Vverw${Date.now()}`;
-    const { key } = await lies(eingang(testExposeV1(eigene)));
+    const { key } = await lies(eingang(testExposeV2(eigene)));
     const a = await lies(json('/api/expose/analyse', { key, dateiname: `${eigene}.pdf` }));
     const r = await json(`/api/expose/importe/${a.importId}/verwerfen`, {});
     expect(r.status).toBe(200);

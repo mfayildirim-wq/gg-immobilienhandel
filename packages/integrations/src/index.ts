@@ -3,7 +3,10 @@ export * from './ki/kosten.ts';
 export * from './pdf/text.ts';
 export * from './expose/analyse.ts';
 export { EXTRACT_TOOL as EXPOSE_TOOL, SYSTEM_PROMPT as EXPOSE_SYSTEM_PROMPT } from './expose/prompt.ts';
-export { EXTRACT_TOOL_V1 as EXPOSE_TOOL_V1, PROMPT_VERSION_V1, SYSTEM_PROMPT_V1 as EXPOSE_SYSTEM_PROMPT_V1, toolOhneEinheiten } from './expose/prompt-v1.ts';
+export {
+  EINHEITEN_TOOL_V2 as EXPOSE_EINHEITEN_TOOL_V2, EXTRACT_TOOL_V2 as EXPOSE_TOOL_V2, HINWEIS_NACHFASS_V2, HINWEIS_WIEDERHOLUNG_V2, PROMPT_VERSION_V2,
+  SYSTEM_PROMPT_V2 as EXPOSE_SYSTEM_PROMPT_V2,
+} from './expose/prompt-v2.ts';
 export { extractExposeFromText, hasCompleteAddress, missingCoreFields, type ExtractedExpose } from './expose/mailtext.ts';
 export * from './ki/attrappe.ts';
 export * from './speicher/speicher.ts';

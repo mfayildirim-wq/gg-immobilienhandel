@@ -1,9 +1,9 @@
 import {
   ExposeMaklerDaten as MaklerVertrag, ExposeObjektDaten as ObjektVertrag, ExposeUebernehmen,
-  type ExposeAnalyseAntwort, type ExposeMaklerDaten, type ExposeObjektDaten,
+  type ExposeAnalyseAntwort, type ExposeAngabe, type ExposeMaklerDaten, type ExposeObjektDaten, type ExposeZiel,
 } from '@gg/api-contract';
 import {
-  DEAL_STATUS, emailPruefen, exposeKostenBestaetigen, exposeKostenSchaetzung, FREQUENZEN, telefonPruefen, WIZARD_KALK_FELDER, type WizardKalk,
+  DEAL_STATUS, emailPruefen, exposeKostenBestaetigen, exposeKostenSchaetzung, FREQUENZEN, GG_ZIELE, telefonPruefen, WIZARD_KALK_FELDER, zielWert, type WizardKalk,
 } from '@gg/domain';
 import {
   Accordion, ActionIcon, Alert, Anchor, Badge, Button, Checkbox, Group, NumberInput, Paper, ScrollArea, Select, SimpleGrid, Stack, Stepper, Table, Text, Textarea, TextInput, Title, UnstyledButton,
@@ -15,7 +15,7 @@ import { type ReactNode, useMemo, useRef, useState, useEffect } from 'react';
 import {
   DublettenFehler, exposeAnalysieren, exposeHochladen, exposeImportVerwerfen, exposeUebernehmen, useBekannteExposeDateien, useKiStatus, useMakler,
 } from '../lib/api.ts';
-import { KonfidenzPunkt } from '../components/ExposeAngaben.tsx';
+import { Bezeichnung, Fundstelle, istEinheit, KonfidenzPunkt, Wortlaut } from '../components/ExposeAngaben.tsx';
 
 const ZAHL = { decimalSeparator: ',', thousandSeparator: '.', hideControls: true } as const;
 const WIZARD_STATUS = DEAL_STATUS.filter((s) => s !== 'Angekauft');
@@ -88,6 +88,10 @@ export function ExposeImportSeite() {
   const [maklerBestehend, setMaklerBestehend] = useState<string | null>(null);
   const [deal, setDeal] = useState<{ status: string; nachfassFreq: string; notizen: string; kalk: WizardKalk }>({ status: 'In Prüfung', nachfassFreq: 'Wöchentlich', notizen: '', kalk: {} });
   const [dublette, setDublette] = useState<string | null>(null);
+  /** Weitere Angaben, die beim Anlegen gespeichert werden (Feld → gg-Ziel oder 'notizen') */
+  const [zuordnungen, setZuordnungen] = useState<Record<string, string>>({});
+  /** Weitere Angaben, die schon ins Formular geschrieben wurden (Feld → gg-Ziel) */
+  const [uebernommen, setUebernommen] = useState<Record<string, string>>({});
 
   const schaetzung = useMemo(() => stapel.map((f) => exposeKostenSchaetzung(f.size)), [stapel]);
   const summe = schaetzung.reduce((s, e) => s + e.eur, 0);
@@ -108,6 +112,8 @@ export function ExposeImportSeite() {
       setMaklerBestehend(r.dubletten.makler?.id ?? null);
       setDeal({ status: r.deal.status, nachfassFreq: r.deal.nachfassFreq, notizen: r.deal.notizen, kalk: r.deal.kalk });
       setDublette(null);
+      setZuordnungen({});
+      setUebernommen({});
       setStatus({ text: `✅ Analyse abgeschlossen${r.hinweis ? ` · ${r.hinweis}` : ''}` });
       setPhase({ art: 'pruefen', schritt: 1 });
     } catch (e) {
@@ -144,6 +150,8 @@ export function ExposeImportSeite() {
       setMaklerBestehend(r.dubletten.makler?.id ?? null);
       setDeal({ status: r.deal.status, nachfassFreq: r.deal.nachfassFreq, notizen: r.deal.notizen, kalk: r.deal.kalk });
       setDublette(null);
+      setZuordnungen({});
+      setUebernommen({});
       setStatus({ text: `✅ Analyse abgeschlossen${label}${r.hinweis ? ` · ${r.hinweis}` : ''}` });
       setPhase({ art: 'pruefen', schritt: 1 });
     } catch (e) {
@@ -166,6 +174,7 @@ export function ExposeImportSeite() {
     try {
       const r = await exposeUebernehmen({
         key: a.key, dateiname: datei.name, extrahiert: a.extrahiert, importId: a.importId,
+        ...(Object.keys(zuordnungen).length ? { zuordnungen: Object.entries(zuordnungen).map(([feld, ziel]) => ({ feld, ziel })) } : {}),
         objekt: { ...(objektBestehend ? { bestehendeId: objektBestehend } : {}), daten: objekt },
         makler: { ...(maklerBestehend ? { bestehendeId: maklerBestehend } : {}), daten: makler },
         deal: { ...deal, status: deal.status as (typeof DEAL_STATUS)[number] },
@@ -246,6 +255,13 @@ export function ExposeImportSeite() {
       )}
       {phase.art === 'pruefen' && a && phase.schritt === 1 && (
         <ObjektSchritt a={a} objekt={objekt} setObjekt={setObjekt} bestehend={objektBestehend} setBestehend={setObjektBestehend} />
+      )}
+      {phase.art === 'pruefen' && a && phase.schritt === 1 && (
+        <ErfassteAngaben
+          a={a} formular={{ objekt, makler, kalkulation: deal.kalk }}
+          schreiben={(f) => { setObjekt(f.objekt); setMakler(f.makler); setDeal((d) => ({ ...d, kalk: f.kalkulation })); }}
+          zuordnungen={zuordnungen} setZuordnungen={setZuordnungen} uebernommen={uebernommen} setUebernommen={setUebernommen}
+        />
       )}
       {phase.art === 'pruefen' && a && phase.schritt === 2 && (
         <MaklerSchritt a={a} makler={makler} setMakler={setMakler} bestehend={maklerBestehend} setBestehend={setMaklerBestehend} />
@@ -432,29 +448,6 @@ function ObjektSchritt({ a, objekt, setObjekt, bestehend, setBestehend }: { a: E
         <Textarea label="Ausstattung" autosize minRows={3} value={objekt.ausstattung ?? ''} onChange={(e) => setObjekt({ ...objekt, ausstattung: e.currentTarget.value })} />
       </SimpleGrid>
       <Textarea label="Notizen aus Exposé" autosize minRows={2} value={objekt.notizen ?? ''} onChange={(e) => setObjekt({ ...objekt, notizen: e.currentTarget.value })} />
-      {a.weitereAngaben.length > 0 && (
-        // Nur Anzeige: diese Angaben haben kein Feld im Wizard; am Objekt stehen sie später im Reiter „Aus dem Exposé“
-        <Accordion variant="separated" chevronPosition="left">
-          <Accordion.Item value="weitere">
-            <Accordion.Control>Weitere Angaben aus dem Exposé ({a.weitereAngaben.length})</Accordion.Control>
-            <Accordion.Panel>
-              <ScrollArea>
-                <Table miw={480} verticalSpacing={4} horizontalSpacing={6} aria-label="Weitere Angaben">
-                  <Table.Thead><Table.Tr><Table.Th>Gruppe</Table.Th><Table.Th>Bezeichnung</Table.Th><Table.Th>Wert</Table.Th><Table.Th>Seite</Table.Th></Table.Tr></Table.Thead>
-                  <Table.Tbody>
-                    {a.weitereAngaben.map((w, i) => (
-                      <Table.Tr key={i}>
-                        <Table.Td c="dimmed" fz="xs">{w.gruppe}</Table.Td><Table.Td>{w.bezeichnung}</Table.Td>
-                        <Table.Td>{w.wert}{w.einheit ? ` ${w.einheit}` : ''}</Table.Td><Table.Td>{w.seite === null ? '–' : `S. ${w.seite}`}</Table.Td>
-                      </Table.Tr>
-                    ))}
-                  </Table.Tbody>
-                </Table>
-              </ScrollArea>
-            </Accordion.Panel>
-          </Accordion.Item>
-        </Accordion>
-      )}
     </Stack>
   );
 }
@@ -533,6 +526,162 @@ function DealSchritt({ deal, setDeal }: { deal: { status: string; nachfassFreq: 
         <Text size="xs" c="dimmed" mt="xs">Alle Werte lassen sich nach dem Import in der Kalkulation anpassen. Eine 0 bleibt 0.</Text>
       </Paper>
       <Textarea label="Deal-Notizen" autosize minRows={3} value={deal.notizen} onChange={(e) => setDeal({ ...deal, notizen: e.currentTarget.value })} />
+    </Stack>
+  );
+}
+
+// ── Weitere Angaben (Erfassung v2): nicht automatisch zugeordnete Angaben per Dropdown übernehmen ──
+
+/** Die Formulare der Prüfseite unter den Pfaden, die `ExposeZiel.pruef` nennt (objekt.*, makler.*, kalkulation.*). */
+type Formular = { objekt: ExposeObjektDaten; makler: ExposeMaklerDaten; kalkulation: WizardKalk };
+type AngabeArt = 'objekt' | 'makler';
+const NOTIZEN = 'notizen';
+
+function formLesen(f: Formular, pfad: string): unknown {
+  let akt: unknown = f;
+  for (const t of pfad.split('.')) akt = akt && typeof akt === 'object' ? (akt as Record<string, unknown>)[t] : undefined;
+  return akt;
+}
+function formSchreiben(f: Formular, pfad: string, wert: unknown): Formular {
+  const setze = (o: unknown, teile: string[]): Record<string, unknown> => {
+    const basis = o && typeof o === 'object' ? { ...(o as Record<string, unknown>) } : {};
+    const [kopf, ...rest] = teile;
+    basis[kopf!] = rest.length ? setze(basis[kopf!], rest) : wert;
+    return basis;
+  };
+  return setze(f, pfad.split('.')) as Formular;
+}
+const istLeer = (v: unknown) => v === null || v === undefined || (typeof v === 'string' && !v.trim());
+
+function ErfassteAngaben({ a, formular, schreiben, zuordnungen, setZuordnungen, uebernommen, setUebernommen }: {
+  a: ExposeAnalyseAntwort; formular: Formular; schreiben: (f: Formular) => void;
+  zuordnungen: Record<string, string>; setZuordnungen: (z: Record<string, string>) => void;
+  uebernommen: Record<string, string>; setUebernommen: (u: Record<string, string>) => void;
+}) {
+  const [auswahl, setAuswahl] = useState<Record<string, string | null>>({});
+  const [fehler, setFehler] = useState<Record<string, string>>({});
+  const alle = [
+    ...a.angaben.objekt.map((x) => ({ art: 'objekt' as AngabeArt, x })),
+    ...a.angaben.makler.map((x) => ({ art: 'makler' as AngabeArt, x })),
+  ];
+  const erfasst = alle.filter(({ x }) => !istEinheit(x));
+  const automatisch = erfasst.filter(({ x }) => x.zuordnung === 'zugeordnet').length;
+  const weitere = erfasst.filter(({ x }) => x.zuordnung !== 'zugeordnet');
+  const zielLabel = (art: AngabeArt, s: string) => (s === NOTIZEN ? 'Notizen' : a.ziele[art].find((z) => z.schluessel === s)?.label ?? s);
+  if (!alle.length) return null;
+
+  /** Angeboten wird, was im Formular noch leer ist oder kein Formularfeld hat — und immer der Vorschlag. */
+  const optionen = (art: AngabeArt, x: ExposeAngabe) => {
+    const vorschlag = x.ziel.quelle === 'vorschlag' ? x.ziel.feld : null;
+    const vergeben = new Set(Object.entries(zuordnungen).filter(([f]) => f !== x.feld).map(([, z]) => z));
+    const passt = (z: ExposeZiel) => z.schluessel === vorschlag
+      || (z.pruef ? istLeer(formLesen(formular, z.pruef)) : !vergeben.has(z.schluessel) || !!GG_ZIELE[z.schluessel]?.liste);
+    const eintrag = (z: ExposeZiel) => ({ value: z.schluessel, label: `${z.label}${z.einheit ? ` (${z.einheit})` : ''}${z.schluessel === vorschlag ? ' · Vorschlag' : ''}` });
+    const ziele = a.ziele[art].filter(passt);
+    return [
+      { group: 'Formular', items: ziele.filter((z) => z.pruef).map(eintrag) },
+      { group: 'Weitere Felder', items: ziele.filter((z) => !z.pruef).map(eintrag) },
+      { group: 'Sonstiges', items: [{ value: NOTIZEN, label: 'In Notizen' }] },
+    ].filter((g) => g.items.length);
+  };
+
+  const uebernehmen = (art: AngabeArt, x: ExposeAngabe, ziel: string) => {
+    setFehler((f) => Object.fromEntries(Object.entries(f).filter(([feld]) => feld !== x.feld)));
+    const pruef = ziel === NOTIZEN ? null : a.ziele[art].find((z) => z.schluessel === ziel)?.pruef ?? null;
+    if (!pruef) {
+      setZuordnungen({ ...zuordnungen, [x.feld]: ziel });
+      return;
+    }
+    // Lesen wie die API: der vorgeschlagene Wert, sonst der Wortlaut für dieses Ziel (Regel in @gg/domain)
+    const wert = ziel === x.ziel.feld && x.ziel.wert !== null ? x.ziel.wert : zielWert(ziel, x.wert, x.pfad).wert;
+    if (wert === null) { setFehler((f) => ({ ...f, [x.feld]: 'Wert passt nicht zu diesem Feld' })); return; }
+    const bisher = formLesen(formular, pruef);
+    const neu = GG_ZIELE[ziel]?.liste && typeof wert === 'string' && typeof bisher === 'string' && bisher.trim() ? `${bisher}\n${wert}` : wert;
+    schreiben(formSchreiben(formular, pruef, neu));
+    setUebernommen({ ...uebernommen, [x.feld]: ziel });
+  };
+
+  return (
+    <Stack gap="sm">
+      <Text size="sm" c="dimmed" data-erfassung>
+        {erfasst.length} Angaben erfasst · {automatisch} automatisch zugeordnet · {weitere.length} weitere
+        {a.belegQuote !== null ? ` · ${Math.round(a.belegQuote * 100)} % auf der Seite belegt` : ''}
+      </Text>
+      {weitere.length > 0 && (
+        <Paper withBorder p="sm" aria-label="Weitere Angaben">
+          <Title order={5} mb={4}>Weitere Angaben aus dem Exposé ({weitere.length})</Title>
+          <Text size="xs" c="dimmed" mb="xs">Nicht automatisch zugeordnet. Ins Formular, in ein weiteres Feld oder in die Notizen übernehmen — sonst bleiben sie im Reiter „Aus dem Exposé“.</Text>
+          <ScrollArea>
+            <Table miw={760} verticalSpacing={4} horizontalSpacing={6}>
+              <Table.Thead><Table.Tr><Table.Th>Bezeichnung</Table.Th><Table.Th>Wert</Table.Th><Table.Th>Seite</Table.Th><Table.Th>Übernehmen in …</Table.Th></Table.Tr></Table.Thead>
+              <Table.Tbody>
+                {weitere.map(({ art, x }) => {
+                  const vorschlag = x.ziel.quelle === 'vorschlag' ? x.ziel.feld : null;
+                  const wahl = x.feld in auswahl ? auswahl[x.feld]! : vorschlag;
+                  const imFormular = uebernommen[x.feld];
+                  const gemerkt = zuordnungen[x.feld];
+                  return (
+                    <Table.Tr key={`${art}:${x.feld}`} data-feld={x.feld} data-zustand={imFormular ? 'uebernommen' : gemerkt ? 'gemerkt' : 'offen'}>
+                      <Table.Td>
+                        <Bezeichnung a={x} />
+                        {x.zuordnung === 'doppelt' && <Badge size="xs" color="yellow" variant="light" mt={2} title="Das Feld ist schon aus einer anderen Angabe gefüllt">doppelt</Badge>}
+                      </Table.Td>
+                      <Table.Td maw={300}><Wortlaut text={x.wert} /></Table.Td>
+                      <Table.Td><Fundstelle a={x} /></Table.Td>
+                      <Table.Td>
+                        {imFormular ? (
+                          <Badge color="teal" variant="light">übernommen → {zielLabel(art, imFormular)}</Badge>
+                        ) : gemerkt ? (
+                          <Group gap={6} wrap="nowrap">
+                            <Badge color="blue" variant="light">{zielLabel(art, gemerkt)} · wird beim Anlegen gespeichert</Badge>
+                            <Button size="compact-xs" variant="subtle" onClick={() => setZuordnungen(Object.fromEntries(Object.entries(zuordnungen).filter(([f]) => f !== x.feld)))}>Rückgängig</Button>
+                          </Group>
+                        ) : (
+                          <Stack gap={2}>
+                            <Group gap={6} wrap="nowrap">
+                              <Select size="xs" w={250} aria-label="Übernehmen in …" placeholder="Übernehmen in …" searchable clearable
+                                data={optionen(art, x)} value={wahl} onChange={(v) => setAuswahl((s) => ({ ...s, [x.feld]: v }))} />
+                              <Button size="compact-xs" variant="light" disabled={!wahl} onClick={() => wahl && uebernehmen(art, x, wahl)}>Übernehmen</Button>
+                            </Group>
+                            {fehler[x.feld] && <Text fz={11} c="red">{fehler[x.feld]}</Text>}
+                            {!fehler[x.feld] && x.ziel.hinweis && <Text fz={11} c="dimmed">{x.ziel.hinweis}</Text>}
+                          </Stack>
+                        )}
+                      </Table.Td>
+                    </Table.Tr>
+                  );
+                })}
+              </Table.Tbody>
+            </Table>
+          </ScrollArea>
+        </Paper>
+      )}
+      <Accordion variant="separated" chevronPosition="left">
+        <Accordion.Item value="alle">
+          <Accordion.Control>Alle erfassten Angaben ({alle.length})</Accordion.Control>
+          <Accordion.Panel>
+            <ScrollArea>
+              <Table miw={560} verticalSpacing={4} horizontalSpacing={6} aria-label="Alle erfassten Angaben">
+                <Table.Thead><Table.Tr><Table.Th>Bezeichnung</Table.Th><Table.Th>Wert</Table.Th><Table.Th>Seite</Table.Th><Table.Th>Ziel</Table.Th></Table.Tr></Table.Thead>
+                <Table.Tbody>
+                  {alle.map(({ art, x }) => {
+                    const manuell = uebernommen[x.feld] ?? zuordnungen[x.feld];
+                    const ziel = x.zuordnung === 'zugeordnet' ? x.ziel.label : manuell ? zielLabel(art, manuell) : null;
+                    return (
+                      <Table.Tr key={`${art}:${x.feld}`} data-feld={x.feld}>
+                        <Table.Td><Bezeichnung a={x} /></Table.Td>
+                        <Table.Td maw={320}><Wortlaut text={x.wert} /></Table.Td>
+                        <Table.Td><Fundstelle a={x} /></Table.Td>
+                        <Table.Td><Text size="sm" c={ziel ? undefined : 'dimmed'}>{ziel ? `→ ${ziel}` : '—'}</Text></Table.Td>
+                      </Table.Tr>
+                    );
+                  })}
+                </Table.Tbody>
+              </Table>
+            </ScrollArea>
+          </Accordion.Panel>
+        </Accordion.Item>
+      </Accordion>
     </Stack>
   );
 }

@@ -1,4 +1,4 @@
-import { DealStatus, ExposeV1, Frequenz } from '@gg/domain';
+import { DealStatus, Frequenz } from '@gg/domain';
 import { z } from 'zod';
 
 /** Gemeinsamer Vertrag zwischen apps/api und apps/web. */
@@ -692,19 +692,38 @@ export const WizardKalkSchema = z.object({
 
 export const Dublette = z.object({ id: z.string(), titel: z.string(), sicherheit: z.enum(['exact', 'fuzzy']) }).nullable();
 
-export const ExposeWeitereAngabe = z.object({ gruppe: z.string(), bezeichnung: z.string(), wert: z.string(), einheit: z.string().nullable(), seite: z.number().nullable() });
-export type ExposeWeitereAngabe = z.infer<typeof ExposeWeitereAngabe>;
+// ── Exposé v2: Angaben, Ziele, Zuordnung (Protokoll 28) ─────
+const AngabeWert = z.union([z.string(), z.number(), z.boolean()]).nullable();
+/** Eine erfasste Angabe — wörtlich, mit Standard-Pfad und gg-Ziel (Mapping oder KI-Vorschlag). Struktur = `Angabe` in @gg/domain. */
+export const ExposeAngabe = z.object({
+  importId: z.string(), datum: z.string(), gruppe: z.string(),
+  /** 'angaben.12' oder 'einheiten.3' */
+  feld: z.string(), pfad: z.string().nullable(), bezeichnung: z.string(), standard: z.string().nullable(), wert: z.string(),
+  seite: z.number().nullable(), belegt: z.boolean().nullable(),
+  zuordnung: z.enum(['zugeordnet', 'doppelt', 'keinWert', 'keinMapping']).nullable(),
+  ziel: z.object({
+    feld: z.string().nullable(), label: z.string().nullable(), wert: AngabeWert, aktuell: AngabeWert,
+    status: z.enum(['gleich', 'abweichend', 'leer', 'keinFeld']), quelle: z.enum(['mapping', 'vorschlag']).nullable(), hinweis: z.string().nullable(),
+  }),
+});
+export type ExposeAngabe = z.infer<typeof ExposeAngabe>;
+/** gg-Zielfeld für das Dropdown; `pruef` = Pfad im Formular der Prüfseite (objekt.*, makler.*, kalkulation.*), falls es dort steht. */
+export const ExposeZiel = z.object({ schluessel: z.string(), label: z.string(), einheit: z.string().nullable(), pruef: z.string().nullable() });
+export type ExposeZiel = z.infer<typeof ExposeZiel>;
 
 export const ExposeAnalyseAntwort = z.object({
   modus: z.enum(['text', 'pdf']), modell: z.string(), seiten: z.number(), zeichenProSeite: z.number(), hinweis: z.string().optional(),
   attrappe: z.boolean(),
   extrahiert: z.record(z.string(), z.unknown()),
-  /** Schema v1 (Protokoll 27): die Analyse liegt serverseitig in expose_importe; Übernehmen verweist auf importId */
+  /** Die Analyse liegt serverseitig in expose_importe; Übernehmen verweist auf importId */
   importId: z.string(),
   schemaVersion: z.string(),
-  v1: ExposeV1.nullable(),
-  weitereAngaben: z.array(ExposeWeitereAngabe),
-  belegt: z.record(z.string(), z.boolean()),
+  /** v2: alle erfassten Angaben für Objekt und Makler (leer bei v0) */
+  angaben: z.object({ objekt: z.array(ExposeAngabe), makler: z.array(ExposeAngabe) }),
+  /** gg-Ziele für das Dropdown unter „Weitere Angaben“ */
+  ziele: z.object({ objekt: z.array(ExposeZiel), makler: z.array(ExposeZiel) }),
+  /** Anteil der Angaben, deren Wert auf der genannten Seite steht (Textweg), sonst null */
+  belegQuote: z.number().nullable(),
   warnungen: z.array(z.string()),
   konfidenz: z.record(z.string(), z.string()),
   objekt: ExposeObjektDaten.passthrough(),
@@ -720,6 +739,8 @@ export const ExposeUebernehmen = z.object({
   extrahiert: z.record(z.string(), z.unknown()),
   /** Verweis auf die gespeicherte Analyse (expose_importe); ohne importId wird wie bisher `extrahiert` verwendet */
   importId: z.string().optional(),
+  /** Auf der Prüfseite per Dropdown zugeordnete weitere Angaben (Ziel: gg-Ziel-Schlüssel oder 'notizen') */
+  zuordnungen: z.array(z.object({ feld: z.string(), ziel: z.string() })).max(500).optional(),
   objekt: z.object({ bestehendeId: z.string().optional(), daten: ExposeObjektDaten }),
   makler: z.object({ bestehendeId: z.string().optional(), daten: ExposeMaklerDaten }),
   deal: z.object({ status: DealStatus, nachfassFreq: z.string().max(40), notizen: z.string().max(10000), kalk: WizardKalkSchema }),
@@ -731,26 +752,16 @@ export const ExposeUebernahmeErgebnis = z.object({
 });
 
 // ── Reiter „Aus dem Exposé“ (Objekt/Makler) ───────────────────
-const AngabeWert = z.union([z.string(), z.number(), z.boolean()]).nullable();
-export const ExposeAngabe = z.object({
-  importId: z.string(), datum: z.string(), gruppe: z.string(),
-  /** v1-Pfad, z. B. 'preise.kaufpreis', 'weitere_angaben.3', 'weitere_kontakte.0' */
-  feld: z.string(), bezeichnung: z.string(), wert: AngabeWert, einheit: z.string().nullable(),
-  seite: z.number().nullable(), zitat: z.string().nullable(), konfidenz: z.string().nullable(), belegt: z.boolean().nullable(),
-  ziel: z.object({
-    feld: z.string().nullable(), label: z.string().nullable(), aktuell: AngabeWert,
-    status: z.enum(['gleich', 'abweichend', 'leer', 'keinFeld']),
-  }),
-});
-export type ExposeAngabe = z.infer<typeof ExposeAngabe>;
 export const ExposeAngabenAntwort = z.object({
   importe: z.array(z.object({ id: z.string(), datum: z.string(), dateiname: z.string().nullable(), dealId: z.string().nullable(), schemaVersion: z.string() })),
   angaben: z.array(ExposeAngabe),
+  /** Dropdown: gg-Ziele dieser Art mit aktuellem Wert; `leer` = frei (Listen-Ziele immer) */
+  ziele: z.array(z.object({ schluessel: z.string(), label: z.string(), einheit: z.string().nullable(), aktuell: AngabeWert, leer: z.boolean() })),
 });
 export type ExposeAngabenAntwort = z.infer<typeof ExposeAngabenAntwort>;
+/** `ziel`: gg-Ziel-Schlüssel (z. B. 'objekt.angebotspreis', 'details.hausgeld_monat') oder 'notizen' */
 export const ExposeUebernahme = z.object({
-  version: z.number().int(), importId: z.string(), feld: z.string(),
-  ziel: z.enum(['spalte', 'details', 'notizen']), ersetzen: z.boolean().default(false),
+  version: z.number().int(), importId: z.string(), feld: z.string(), ziel: z.string().min(1).max(80), ersetzen: z.boolean().default(false),
 });
 export type ExposeUebernahme = z.input<typeof ExposeUebernahme>;
 

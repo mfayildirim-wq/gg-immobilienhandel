@@ -1,9 +1,9 @@
 /**
- * Prüfsatz der Exposé-Extraktion (Protokoll 27, T6): ein Ordner voller Exposé-PDFs durch `analysiereExpose`, je Exposé
+ * Prüfsatz der Exposé-Extraktion (Protokoll 27 T6, Protokoll 28): ein Ordner voller Exposé-PDFs durch `analysiereExpose`, je Exposé
  * die Kennzahlen aus `@gg/domain` (Füllgrad, Einheiten, Belege, Konsistenz, Dauer, Kosten), am Ende Zusammenfassung
  * als JSON und Markdown. In die Ausgabe gehen nur Dateinamen und Kennzahlen — keine Inhalte, Adressen oder Personen.
  *
- *   pnpm extraktion:pruefen --ordner "<Pfad>" [--schema v1|v0] [--max N] [--nur "teil"] [--attrappe]
+ *   pnpm extraktion:pruefen --ordner "<Pfad>" [--schema v2|v0] [--max N] [--nur "teil"] [--attrappe]
  *                           [--cache <dir>] [--vergleich <json>] [--ausgabe <dir>] [--parallel N]
  *
  * Cache: je PDF `<cache>/<sha256>-<schema>-<promptVersion>.json` (Ergebnis ohne Seitentexte, dazu `belegt`).
@@ -19,7 +19,7 @@ import {
   kennzahlenJeExpose, kennzahlenVergleich, kennzahlenZusammenfassen,
 } from '@gg/domain';
 import {
-  type AnalyseAbhaengigkeiten, type AnalyseErgebnis, PROMPT_VERSION_V0, PROMPT_VERSION_V1, analysiereExpose, anthropicClient, kiAttrappe, pdfText,
+  type AnalyseAbhaengigkeiten, type AnalyseErgebnis, PROMPT_VERSION_V0, PROMPT_VERSION_V2, analysiereExpose, anthropicClient, kiAttrappe, pdfText,
 } from '@gg/integrations';
 
 const WURZEL = join(import.meta.dirname, '..');
@@ -27,7 +27,7 @@ const WURZEL = join(import.meta.dirname, '..');
 const { values: arg } = parseArgs({
   options: {
     ordner: { type: 'string' },
-    schema: { type: 'string', default: 'v1' },
+    schema: { type: 'string', default: 'v2' },
     max: { type: 'string' },
     nur: { type: 'string' },
     attrappe: { type: 'boolean', default: false },
@@ -43,10 +43,10 @@ function abbruch(meldung: string): never {
   process.exit(1);
 }
 
-if (!arg.ordner) abbruch('Aufruf: pnpm extraktion:pruefen --ordner "<Pfad>" [--schema v1|v0] [--max N] [--nur "teil"] [--attrappe] [--cache <dir>] [--vergleich <json>] [--ausgabe <dir>] [--parallel N]');
-if (arg.schema !== 'v1' && arg.schema !== 'v0') abbruch('--schema ist v1 oder v0');
-const schema = arg.schema as 'v0' | 'v1';
-const promptVersion = schema === 'v1' ? PROMPT_VERSION_V1 : PROMPT_VERSION_V0;
+if (!arg.ordner) abbruch('Aufruf: pnpm extraktion:pruefen --ordner "<Pfad>" [--schema v2|v0] [--max N] [--nur "teil"] [--attrappe] [--cache <dir>] [--vergleich <json>] [--ausgabe <dir>] [--parallel N]');
+if (arg.schema !== 'v2' && arg.schema !== 'v0') abbruch('--schema ist v2 oder v0');
+const schema = arg.schema as 'v0' | 'v2';
+const promptVersion = schema === 'v2' ? PROMPT_VERSION_V2 : PROMPT_VERSION_V0;
 const parallel = Math.max(1, Number(arg.parallel) || 3);
 const ordner = resolve(arg.ordner);
 const cacheDir = resolve(arg.cache!);
@@ -74,7 +74,7 @@ const abh: AnalyseAbhaengigkeiten = {
   buchen: async (model, _usage, quelle) => { buchungen.push({ model, quelle }); },
 };
 
-interface CacheEintrag { ergebnis: Omit<AnalyseErgebnis, 'seitenTexte'>; belegt: Record<string, boolean> | null }
+interface CacheEintrag { ergebnis: Omit<AnalyseErgebnis, 'seitenTexte'>; belegt: (boolean | null)[] | null }
 
 mkdirSync(cacheDir, { recursive: true });
 const cachePfad = (hash: string) => join(cacheDir, `${hash}-${schema}-${promptVersion}${arg.attrappe ? '-attrappe' : ''}.json`);
@@ -86,7 +86,7 @@ async function auswerten(datei: string): Promise<{ eintrag: CacheEintrag; ausCac
   if (existsSync(pfad)) return { eintrag: JSON.parse(readFileSync(pfad, 'utf8')) as CacheEintrag, ausCache: true };
   const { seitenTexte, ...ergebnis } = await analysiereExpose(pdf, datei, abh, { schema });
   // Belege nur auf dem Textweg prüfbar (PDF-Weg liefert keine Seitentexte)
-  const belegt = schema === 'v1' && ergebnis.v1 && seitenTexte.length ? belegePruefen(ergebnis.v1, seitenTexte).belegt : null;
+  const belegt = schema === 'v2' && ergebnis.v2 && seitenTexte.length ? belegePruefen(ergebnis.v2, seitenTexte).belegt : null;
   const eintrag: CacheEintrag = { ergebnis, belegt };
   writeFileSync(pfad, JSON.stringify(eintrag));
   return { eintrag, ausCache: false };
@@ -109,7 +109,7 @@ async function arbeiter(): Promise<void> {
       const { eintrag, ausCache } = await auswerten(datei);
       const e = eintrag.ergebnis;
       const k = kennzahlenJeExpose({
-        datei, schema, v1: e.v1 ?? null, v0: schema === 'v0' ? e.extrahiert : undefined, modell: e.modell, modus: e.modus, stopReason: e.stopReason,
+        datei, schema, v2: e.v2 ?? null, v0: schema === 'v0' ? e.extrahiert : undefined, modell: e.modell, modus: e.modus, stopReason: e.stopReason,
         usage: e.usage, dauerMs: e.dauerMs, kostenEur: e.kostenEur, nachfass: e.nachfass, wiederholung: e.wiederholung, warnungen: e.warnungen,
         belegt: eintrag.belegt ?? undefined,
       });

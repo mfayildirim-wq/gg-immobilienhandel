@@ -1,8 +1,9 @@
 import type { ExposeAnalyseAntwort, ExposeUebernehmen } from '@gg/api-contract';
 import { type Db, schema } from '@gg/db';
 import {
-  belegePruefen, berechneAnkauf, dealEinheitenAusExpose, einheitenDetails, EXPOSE_V1_SCHEMA, type ExposeV1, kernfeldDopplung, v1AlsV0, dublettenDeal, dublettenMakler, dublettenObjekt, exposeVorbereiten, einheitAlsEingabe,
-  maklerHatDaten, normalisiereFrequenz, telefonErsetzen, telefonNormalisieren, weitereKontakte, wizardKalkSpeichern, wizardKalkVorbelegen,
+  type Angabe, angabenAusImport, belegePruefen, berechneAnkauf, dealEinheitenAusExpose, dublettenDeal, dublettenMakler, dublettenObjekt, einheitAlsEingabe,
+  EXPOSE_V2_SCHEMA, type ExposeV2, exposeVorbereiten, GG_ZIELE, type ImportFuerAngaben, maklerHatDaten, normalisiereFrequenz, telefonErsetzen,
+  telefonNormalisieren, uebernahmeWert, type WeitereKontakte, weitereKontakte, wizardKalkSpeichern, wizardKalkVorbelegen, type ZielArt, zuordnen,
 } from '@gg/domain';
 import {
   analysiereExpose, BUCKETS, type Dateispeicher, dokumentSchluessel, EINGANG, istEingangsSchluessel, istPdf, type KiClient, kostenBuchung, pdfText,
@@ -11,7 +12,7 @@ import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { auditSchreiben } from './audit.ts';
 import { FachFehler } from '../fehler.ts';
 import { exposeExtraktionLesen, kalkStandardLesen } from './einstellungen.ts';
-import { objektDetailsAusV1 } from './exposeAngaben.ts';
+import { detailsLesen, detailsSetzen, fuerAngaben, listeAnhaengen } from './exposeAngaben.ts';
 import { objektTitel } from './objekte.ts';
 
 export interface ExposeKontext {
@@ -76,27 +77,37 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
     buchen: (model, usage, quelle) => kostenBuchen(db, model, usage, quelle),
   }, { schema: einstellung.schema, kostenGrenzeEur: einstellung.kostenGrenzeEur });
 
-  // v1: Belege gegen die Seitentexte prüfen (nur auf dem Textweg gibt es Seitentexte), dann ins Format der Prüfseite
-  let v1: ExposeV1 | null = null;
-  let belegt: Record<string, boolean> = {};
+  // v2: Werte gegen die Seitentexte prüfen (nur der Textweg hat Seitentexte), falsche Seiten berichtigen,
+  // dann per Mapping-Tabelle ins Format der Prüfseite
+  let v2: ExposeV2 | null = null;
+  let belegt: (boolean | null)[] = [];
+  let belegQuote: number | null = null;
   const warnungen = [...analyse.warnungen];
   let v0: any = analyse.extrahiert;
-  if (analyse.v1) {
-    if (analyse.seitenTexte.length) ({ belegt, v1 } = belegePruefen(analyse.v1, analyse.seitenTexte));
-    else v1 = analyse.v1;
-    warnungen.push(...kernfeldDopplung(v1));
-    v0 = v1AlsV0(v1);
+  if (analyse.v2) {
+    v2 = analyse.v2;
+    belegt = v2.angaben.map(() => null);
+    if (analyse.seitenTexte.length) {
+      const b = belegePruefen(v2, analyse.seitenTexte);
+      belegt = b.belegt;
+      belegQuote = b.quote;
+      v2 = { ...v2, angaben: v2.angaben.map((x, i) => (b.seiteBerichtigt[i] !== undefined ? { ...x, seite: b.seiteBerichtigt[i]! } : x)) };
+    }
+    const z = zuordnen(v2, belegt);
+    warnungen.push(...z.warnungen);
+    v0 = z.pruefdaten;
   }
 
   const importId = crypto.randomUUID();
-  await db.insert(schema.exposeImporte).values({
+  const [zeile] = await db.insert(schema.exposeImporte).values({
     id: importId, eingangKey: key, dateiname, schemaVersion: analyse.schemaVersion, promptVersion: analyse.promptVersion, modell: analyse.modell,
     weg: analyse.modus, seitenGelesen: analyse.seitenTexte.length || null, seitenGesamt: analyse.seiten, stopReason: analyse.stopReason,
     inputTokens: analyse.usage.inputTokens, outputTokens: analyse.usage.outputTokens, dauerMs: analyse.dauerMs, kostenEur: analyse.kostenEur,
-    status: 'analysiert', rohdaten: v1 ?? v0,
-    analyse: { nachfass: analyse.nachfass, wiederholung: analyse.wiederholung, belegt, warnungen },
-  });
+    status: 'analysiert', rohdaten: v2 ?? v0,
+    analyse: { belegt, belegQuote, warnungen, nachfass: analyse.nachfass, wiederholung: analyse.wiederholung },
+  }).returning({ createdAt: schema.exposeImporte.createdAt });
 
+  const imp = v2 ? { id: importId, datum: zeile!.createdAt, rohdaten: v2, belegt } : null;
   const v = exposeVorbereiten(v0);
   const standard = await kalkStandardLesen(db);
 
@@ -111,7 +122,11 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
     ...(analyse.hinweis ? { hinweis: analyse.hinweis } : {}),
     attrappe: k.attrappe,
     extrahiert: v0,
-    importId, schemaVersion: analyse.schemaVersion, v1, weitereAngaben: v1?.weitere_angaben ?? [], belegt, warnungen,
+    importId, schemaVersion: analyse.schemaVersion,
+    // Leerer Datensatz: auf der Prüfseite gibt es noch nichts Gespeichertes → Status „leer“
+    angaben: { objekt: imp ? angabenAusImport(imp, 'objekt', {}) : [], makler: imp ? angabenAusImport(imp, 'makler', {}) : [] },
+    ziele: { objekt: zieleListe(['objekt', 'kalkulation']), makler: zieleListe(['makler']) },
+    belegQuote, warnungen,
     konfidenz: v0?._konfidenz ?? {},
     objekt: v.objekt,
     makler: { ...v.makler, prio: (dMk?.match.prio as 'A' | 'B' | 'C' | null) ?? 'B' },
@@ -123,28 +138,73 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
   };
 }
 
+/** gg-Ziele für das Dropdown der Prüfseite; Objekt und Kalkulation stehen dort gemeinsam. */
+const zieleListe = (arten: ZielArt[]) =>
+  Object.entries(GG_ZIELE).filter(([, z]) => arten.includes(z.art)).map(([schluessel, z]) => ({ schluessel, label: z.label, einheit: z.einheit ?? null, pruef: z.pruef ?? null }));
+
 const text = (s: string | undefined | null) => (s && s.trim() ? s.trim() : null);
 const zahl = (n: number | null | undefined) => (typeof n === 'number' && Number.isFinite(n) ? n : null);
+const wertText = (w: unknown) => (typeof w === 'string' ? text(w) : typeof w === 'number' ? String(w) : null);
 
 /**
- * `details` eines neuen Objekts: die Zusatzangaben der Prüfseite wie bisher, dazu alle `details`-Ziele aus v1
- * (Hausgeld, Provision, Denkmalschutz …). Was auf der Prüfseite gesetzt ist, gilt vor dem v1-Wert.
+ * `details` eines neuen Objekts: alle `details`-Ziele aus der Zuordnung (Hausgeld, Provision, Sanierungen …), dazu die
+ * Zusatzangaben der Prüfseite wie bisher. Was auf der Prüfseite gesetzt ist, gilt vor dem Wert aus der Zuordnung.
  */
-function objektDetails(d: ExposeUebernehmen['objekt']['daten'], v1: ExposeV1 | null, importId: string | undefined): Record<string, unknown> {
-  const details: Record<string, unknown> = v1 ? objektDetailsAusV1(importId ?? '', v1) : {};
+function objektDetails(d: ExposeUebernehmen['objekt']['daten'], ausZuordnung: Record<string, unknown>, importId: string | undefined): Record<string, unknown> {
+  const details: Record<string, unknown> = { ...ausZuordnung };
   const pruefseite: Record<string, unknown> = {
     bruttorendite: zahl(d.bruttorendite), heizungsbaujahr: zahl(d.heizungsbaujahr), energieausweis: d.energieausweis ?? null,
     lagebeschreibung: text(d.lagebeschreibung), ausstattung: text(d.ausstattung),
   };
   for (const [k, w] of Object.entries(pruefseite)) {
-    const v1Wert = details[k];
-    if (k === 'energieausweis' && w && v1Wert && typeof v1Wert === 'object') {
-      details[k] = { ...v1Wert, ...Object.fromEntries(Object.entries(w).filter(([, x]) => x !== null && x !== undefined)) };
-    } else if (w !== null || v1Wert === undefined) {
+    const alt = details[k];
+    if (k === 'energieausweis' && w && alt && typeof alt === 'object') {
+      details[k] = { ...alt, ...Object.fromEntries(Object.entries(w).filter(([, x]) => x !== null && x !== undefined)) };
+    } else if (w !== null || alt === undefined) {
       details[k] = w;
     }
   }
   return { ...details, herkunft: 'Exposé-Import', ...(importId ? { importId } : {}) };
+}
+
+/** Spalten, die eine manuelle Zuordnung der Prüfseite direkt schreiben darf (alle übrigen Ziele stehen im Formular). */
+const ZUORDNUNG_SPALTEN = { objekt: new Set(['sollMiete']), makler: new Set(['strasse', 'plz', 'ort', 'weitereKontakte']) };
+
+interface Zuordnungen {
+  objekt: { details: Record<string, unknown>; notizen: string[]; spalten: Record<string, unknown> };
+  makler: { spalten: Record<string, unknown>; weitere: WeitereKontakte };
+  korrekturen: { art: 'objekt' | 'makler'; feld: string; ziel: string; kiWert: string }[];
+}
+
+/**
+ * Manuelle Zuordnungen der Prüfseite (`angaben.N` → gg-Ziel oder 'notizen') in Schreibaufträge übersetzen. Ziele mit
+ * Prüfseitenfeld (`pruef`) setzt die Oberfläche selbst ins Formular; Kalkulation ebenso. Ungültiges wird übergangen.
+ */
+function zuordnungenAuswerten(imp: ImportFuerAngaben, liste: ExposeUebernehmen['zuordnungen'], details: Record<string, unknown>): Zuordnungen {
+  const aus: Zuordnungen = { objekt: { details, notizen: [], spalten: {} }, makler: { spalten: {}, weitere: { namen: [], telefonnummern: [], emails: [] } }, korrekturen: [] };
+  if (!liste?.length) return aus;
+  const angaben = new Map<string, Angabe>([...angabenAusImport(imp, 'objekt', {}), ...angabenAusImport(imp, 'makler', {})].map((a) => [a.feld, a]));
+  for (const { feld, ziel } of liste) {
+    const a = angaben.get(feld);
+    if (!a || !feld.startsWith('angaben.')) continue;
+    const z = ziel === 'notizen' ? null : GG_ZIELE[ziel];
+    if (ziel !== 'notizen' && (!z || z.pruef || z.art === 'kalkulation')) continue;
+    const art = z?.art === 'makler' ? 'makler' : 'objekt';
+    const u = uebernahmeWert(a, ziel, art);
+    if (!u) continue;
+    if (u.notizText !== undefined) aus.objekt.notizen.push(u.notizText);
+    else if (u.detailsSchluessel && art === 'objekt') {
+      const vorher = detailsLesen(aus.objekt.details, u.detailsSchluessel);
+      aus.objekt.details = detailsSetzen(aus.objekt.details, u.detailsSchluessel, u.liste ? listeAnhaengen(vorher, u.wert) : u.wert);
+    } else if (u.spalte && ZUORDNUNG_SPALTEN[art].has(u.spalte)) {
+      if (u.spalte === 'weitereKontakte') {
+        const k = u.wert as WeitereKontakte;
+        aus.makler.weitere.namen.push(...k.namen); aus.makler.weitere.telefonnummern.push(...k.telefonnummern); aus.makler.weitere.emails.push(...k.emails);
+      } else aus[art].spalten[u.spalte] = u.wert;
+    } else continue;
+    aus.korrekturen.push({ art, feld, ziel, kiWert: a.wert });
+  }
+  return aus;
 }
 
 /** „Exposé überspringen“: die gespeicherte Analyse gilt als verworfen (nur solange sie nicht übernommen ist). */
@@ -167,18 +227,21 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
   const standard = await kalkStandardLesen(db);
 
   // Gespeicherte Analyse (expose_importe); ohne importId wie bisher das mitgeschickte `extrahiert`
-  let v1: ExposeV1 | null = null;
+  let imp: (ImportFuerAngaben & { promptVersion: string | null }) | null = null;
   if (e.importId) {
-    const [imp] = await db.select({ schemaVersion: schema.exposeImporte.schemaVersion, rohdaten: schema.exposeImporte.rohdaten })
-      .from(schema.exposeImporte).where(eq(schema.exposeImporte.id, e.importId));
-    if (!imp) throw new FachFehler(404, 'Exposé-Import nicht gefunden');
-    if (imp.schemaVersion === EXPOSE_V1_SCHEMA) v1 = imp.rohdaten as ExposeV1;
+    const [z] = await db.select().from(schema.exposeImporte).where(eq(schema.exposeImporte.id, e.importId));
+    if (!z) throw new FachFehler(404, 'Exposé-Import nicht gefunden');
+    if (z.schemaVersion === EXPOSE_V2_SCHEMA) imp = { ...fuerAngaben(z), promptVersion: z.promptVersion };
   }
-  const v0 = v1 ? v1AlsV0(v1) : e.extrahiert;
+  const zuordnung = imp ? zuordnen(imp.rohdaten, imp.belegt) : null;
+  const v0 = zuordnung ? zuordnung.pruefdaten : e.extrahiert;
+  const manuell = imp ? zuordnungenAuswerten(imp, e.zuordnungen, objektDetails(e.objekt.daten, zuordnung!.details, e.importId)) : null;
 
   const ids = await db.transaction(async (tx) => {
     // 1. Objekt
     let objektId: string;
+    let objektNeu = false;
+    let maklerNeu = false;
     if (e.objekt.bestehendeId) {
       const [o] = await tx.select({ id: schema.objekte.id }).from(schema.objekte).where(and(eq(schema.objekte.id, e.objekt.bestehendeId), isNull(schema.objekte.deletedAt)));
       if (!o) throw new FachFehler(404, 'Gewähltes Objekt nicht gefunden');
@@ -190,17 +253,20 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
         id: objektId, strasse: text(d.strasse), hausnr: text(d.hausnr), plz: text(d.plz), stadt: text(d.stadt), bundesland: text(d.bundesland),
         baujahr: zahl(d.baujahr) === null ? null : Math.round(d.baujahr!), einheitenAnzahl: zahl(d.einheitenAnz) === null ? null : Math.round(d.einheitenAnz!),
         wohnflaeche: zahl(d.wohnflaeche), grundstueck: zahl(d.grundstueck), energieklasse: text(d.energieausweis?.klasse), heizung: text(d.heizungsart),
-        angebotspreis: zahl(d.angebotspreis), istMiete: zahl(d.istmiete), status: 'In Prüfung', notizen: text(d.notizen), erfasstAm: heute,
-        details: objektDetails(d, v1, e.importId),
+        angebotspreis: zahl(d.angebotspreis), istMiete: zahl(d.istmiete), status: 'In Prüfung', erfasstAm: heute,
+        sollMiete: zahl((manuell?.objekt.spalten.sollMiete ?? zuordnung?.werte['objekt.sollmiete']) as number | null),
+        notizen: [text(d.notizen), ...(manuell?.objekt.notizen ?? [])].filter(Boolean).join('\n') || null,
+        details: manuell ? manuell.objekt.details : objektDetails(d, {}, e.importId),
       });
-      // Zusatz je Einheit aus v1 nur, wenn die Aufstellung auf der Prüfseite gleich lang geblieben ist (Zuordnung nach Index)
+      objektNeu = true;
+      // Zusatz je Einheit nur, wenn die Aufstellung auf der Prüfseite gleich lang geblieben ist (Zuordnung nach Index)
       const einheiten = d.einheiten ?? [];
-      const v1Einheiten = v1 && v1.einheiten.length === einheiten.length ? v1.einheiten : null;
+      const zusatz = zuordnung && zuordnung.einheitenDetails.length === einheiten.length ? zuordnung.einheitenDetails : null;
       for (const [sort, x] of einheiten.entries()) {
         await tx.insert(schema.objektEinheiten).values({
           id: `${objektId}:${crypto.randomUUID()}`, objektId, typ: x.typ || 'Wohnung', lage: text(x.lage), zimmer: zahl(x.zimmer),
           flaeche: zahl(x.flaeche), kaltmiete: zahl(x.kaltmiete), vermietung: text(x.vermiet), sort,
-          details: v1Einheiten ? einheitenDetails(v1Einheiten[sort]!) : null,
+          details: zusatz?.[sort] ?? null,
         });
       }
     }
@@ -221,11 +287,18 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
       await tx.insert(schema.makler).values({
         id: maklerId, name: text(m.name), firma: text(m.firma), tel: text(tel), email: text(m.email), webseite: text(m.webseite),
         mobil: text(m.mobiltel ? telefonNormalisieren(m.mobiltel) : ''), festnetz: text(m.festnetztel ? telefonNormalisieren(m.festnetztel) : ''),
+        // Anschrift aus der Zuordnung; manuelle Zuordnung nur, wo die Zuordnung nichts gefunden hat
+        ...Object.fromEntries((['strasse', 'plz', 'ort'] as const).map((s) => [s, wertText(zuordnung?.werte[`makler.${s}`]) ?? wertText(manuell?.makler.spalten[s])])),
         weitereKontakte: weitereKontakte(
           { name: m.name, tel, mobil: m.mobiltel, festnetz: m.festnetztel, email: m.email },
-          { namen: m.alleNamen, telefonnummern: m.alleTelefonnummern, emails: m.alleEmails }),
+          {
+            namen: [...(m.alleNamen ?? []), ...(manuell?.makler.weitere.namen ?? [])],
+            telefonnummern: [...(m.alleTelefonnummern ?? []), ...(manuell?.makler.weitere.telefonnummern ?? [])],
+            emails: [...(m.alleEmails ?? []), ...(manuell?.makler.weitere.emails ?? [])],
+          }),
         prio: m.prio ?? 'B', kontaktFrequenz: normalisiereFrequenz(m.kontaktFreq || 'Monatlich'),
       });
+      maklerNeu = true;
       if (text(m.notizen)) {
         await tx.insert(schema.maklerKommunikation).values({ id: `${maklerId}:${crypto.randomUUID()}`, maklerId, zeitpunkt: sql`now()`, kanal: 'notiz', text: text(m.notizen) });
       }
@@ -249,6 +322,15 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
     await tx.insert(schema.dealStatusHistorie).values({ id: crypto.randomUUID(), dealId, vonStatus: null, nachStatus: e.deal.status, quelle: 'wizard' });
     if (e.importId) {
       await tx.update(schema.exposeImporte).set({ dealId, objektId, maklerId, status: 'uebernommen', updatedAt: sql`now()` }).where(eq(schema.exposeImporte.id, e.importId));
+    }
+    // Manuelle Zuordnungen der Prüfseite: Lerndaten für die Mapping-Tabelle (nur, was tatsächlich geschrieben wurde)
+    for (const x of manuell?.korrekturen ?? []) {
+      const bezugId = x.art === 'objekt' ? (objektNeu ? objektId : null) : (maklerNeu ? maklerId : null);
+      if (!bezugId) continue;
+      await tx.insert(schema.importKorrekturen).values({
+        id: crypto.randomUUID(), importId: e.importId!, art: x.art, bezugId, feld: x.feld, ziel: x.ziel, kiWert: x.kiWert, handWert: null,
+        aktion: 'zugeordnet', konfidenz: null, promptVersion: imp!.promptVersion,
+      });
     }
     return { dealId, objektId, maklerId };
   });

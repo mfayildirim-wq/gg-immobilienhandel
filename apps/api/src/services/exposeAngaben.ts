@@ -1,12 +1,13 @@
 /**
- * Reiter „Aus dem Exposé“ (Protokoll 27, T4): gespeicherte Importe eines Objekts/Maklers lesen und einzelne Angaben
- * übernehmen — mit Versionsprüfung, Korrektur-Zeile (import_korrekturen) und Audit.
+ * Reiter „Aus dem Exposé“ (Protokoll 28): gespeicherte Importe (Erfassung v2) eines Objekts/Maklers lesen und einzelne
+ * Angaben in ein frei gewähltes gg-Ziel übernehmen — mit Versionsprüfung, Korrektur-Zeile (import_korrekturen) und Audit.
+ * Altimporte (v0, v1) erscheinen in der Importliste, liefern aber keine Angaben.
  */
 import type { ExposeAngabenAntwort, ExposeUebernahme } from '@gg/api-contract';
 import { type Db, schema } from '@gg/db';
 import {
-  type Angabe, angabenAusImport, angabenAusImportMakler, EXPOSE_V1_SCHEMA, type ExposeV1, type ImportFuerAngaben, type MaklerFuerAngaben,
-  type ObjektFuerAngaben, telefonNormalisieren, uebernahmeWert, type WeitereKontakte, weitereKontakte,
+  type Angabe, type AngabeWert, angabenAusImport, type DatensatzFuerAngaben, EXPOSE_V2_SCHEMA, type ExposeV2, GG_ZIELE, type ImportFuerAngaben,
+  telefonNormalisieren, telefonSchluessel, uebernahmeWert, vergleichsStatus, type WeitereKontakte, weitereKontakte, zieleMitStand,
 } from '@gg/domain';
 import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { FachFehler } from '../fehler.ts';
@@ -17,7 +18,7 @@ import { versionFortschreiben } from './version.ts';
 type Art = 'objekt' | 'makler';
 type ImportZeile = typeof schema.exposeImporte.$inferSelect;
 
-const leer = (v: unknown) => v === null || v === undefined || (typeof v === 'string' && !v.trim());
+const leer = (v: unknown) => v === null || v === undefined || (typeof v === 'string' && !v.trim()) || (Array.isArray(v) && !v.length);
 
 /** Schlüssel mit Punkt verschachtelt setzen (`energieausweis.art`), vorhandene Nachbarn bleiben. */
 export function detailsSetzen(details: Record<string, unknown>, schluessel: string, wert: unknown): Record<string, unknown> {
@@ -33,20 +34,26 @@ export function detailsSetzen(details: Record<string, unknown>, schluessel: stri
   return kopie;
 }
 
-/** Alle `details`-Ziele eines v1-Imports (Allowlist ZIEL_OBJEKT) als verschachteltes Objekt — für ein neu angelegtes Objekt. */
-export function objektDetailsAusV1(id: string, v1: ExposeV1): Record<string, unknown> {
-  let details: Record<string, unknown> = {};
-  for (const a of angabenAusImport({ id, datum: '', rohdaten: v1 }, {})) {
-    const u = uebernahmeWert(a, 'details');
-    if (u?.detailsSchluessel && !leer(u.wert)) details = detailsSetzen(details, u.detailsSchluessel, u.wert);
-  }
-  return details;
+/** Wert unter einem verschachtelten Schlüssel. */
+export function detailsLesen(details: Record<string, unknown> | null | undefined, schluessel: string): unknown {
+  return schluessel.split('.').reduce<unknown>((a, k) => (a && typeof a === 'object' && !Array.isArray(a) ? (a as Record<string, unknown>)[k] : undefined), details ?? {});
 }
 
-const fuerAngaben = (z: ImportZeile): ImportFuerAngaben => ({
-  id: z.id, datum: z.createdAt, rohdaten: z.rohdaten as ExposeV1,
-  belegt: ((z.analyse as { belegt?: Record<string, boolean> } | null)?.belegt) ?? null,
-});
+/** Listen-Ziel: Eintrag anhängen (Array; ein bisheriger Einzeltext wird erster Eintrag), Doppeltes nicht nochmal. */
+export function listeAnhaengen(vorher: unknown, eintrag: unknown): unknown[] {
+  const liste = Array.isArray(vorher) ? [...vorher] : leer(vorher) ? [] : [vorher];
+  if (!liste.some((x) => x === eintrag)) liste.push(eintrag);
+  return liste;
+}
+
+/** Notiz/Text-Spalte: neue Zeile anhängen. */
+export const zeileAnhaengen = (vorher: string | null | undefined, zeile: string) => (leer(vorher) ? zeile : `${vorher!.trimEnd()}\n${zeile}`);
+
+/** Gespeicherte Import-Zeile (v2) → Eingabe für `angabenAusImport`; `belegt` aus der Analyse. */
+export function fuerAngaben(z: Pick<ImportZeile, 'id' | 'createdAt' | 'rohdaten' | 'analyse'>): ImportFuerAngaben {
+  const belegt = (z.analyse as { belegt?: unknown } | null)?.belegt;
+  return { id: z.id, datum: z.createdAt, rohdaten: z.rohdaten as ExposeV2, belegt: Array.isArray(belegt) ? (belegt as (boolean | null)[]) : null };
+}
 
 /** Importe zu Objekt/Makler: direkt verknüpft oder über einen Deal; neueste zuerst. */
 async function importeZu(db: Db | Tx, art: Art, id: string): Promise<ImportZeile[]> {
@@ -57,10 +64,11 @@ async function importeZu(db: Db | Tx, art: Art, id: string): Promise<ImportZeile
   return db.select().from(i).where(or(eq(direkt, id), inArray(i.dealId, deals))).orderBy(desc(i.createdAt));
 }
 
-function antwort(importe: ImportZeile[], angaben: (imp: ImportFuerAngaben) => Angabe[]): ExposeAngabenAntwort {
+function antwort(importe: ImportZeile[], art: Art, d: DatensatzFuerAngaben): ExposeAngabenAntwort {
   return {
     importe: importe.map((z) => ({ id: z.id, datum: z.createdAt, dateiname: z.dateiname, dealId: z.dealId, schemaVersion: z.schemaVersion })),
-    angaben: importe.filter((z) => z.schemaVersion === EXPOSE_V1_SCHEMA).flatMap((z) => angaben(fuerAngaben(z))),
+    angaben: importe.filter((z) => z.schemaVersion === EXPOSE_V2_SCHEMA).flatMap((z) => angabenAusImport(fuerAngaben(z), art, d)),
+    ziele: zieleMitStand(art, d),
   };
 }
 
@@ -76,35 +84,36 @@ async function maklerLesen(db: Db | Tx, id: string) {
   return m;
 }
 
-const alsObjektWerte = (o: typeof schema.objekte.$inferSelect): ObjektFuerAngaben => ({ ...o, details: (o.details as Record<string, unknown> | null) ?? null });
-const alsMaklerWerte = (m: typeof schema.makler.$inferSelect): MaklerFuerAngaben => ({ ...m, weitereKontakte: (m.weitereKontakte as WeitereKontakte | null) ?? null });
+const alsObjektWerte = (o: typeof schema.objekte.$inferSelect): DatensatzFuerAngaben => ({ ...o, details: (o.details as Record<string, unknown> | null) ?? null });
+const alsMaklerWerte = (m: typeof schema.makler.$inferSelect): DatensatzFuerAngaben => ({ ...m, weitereKontakte: (m.weitereKontakte as WeitereKontakte | null) ?? null });
 
 export async function objektAngaben(db: Db, objektId: string): Promise<ExposeAngabenAntwort> {
   const o = alsObjektWerte(await objektLesen(db, objektId));
-  return antwort(await importeZu(db, 'objekt', objektId), (imp) => angabenAusImport(imp, o));
+  return antwort(await importeZu(db, 'objekt', objektId), 'objekt', o);
 }
 
 export async function maklerAngaben(db: Db, maklerId: string): Promise<ExposeAngabenAntwort> {
   const m = alsMaklerWerte(await maklerLesen(db, maklerId));
-  return antwort(await importeZu(db, 'makler', maklerId), (imp) => angabenAusImportMakler(imp, m));
+  return antwort(await importeZu(db, 'makler', maklerId), 'makler', m);
 }
 
-/** Import muss zu Objekt/Makler gehören und Schema v1 tragen; die Angabe muss es darin geben. */
-async function angabeSuchen(tx: Tx, art: Art, id: string, e: ExposeUebernahme, angaben: (imp: ImportFuerAngaben) => Angabe[]) {
+/** Import muss zu Objekt/Makler gehören und Erfassung v2 tragen; die Angabe muss es darin geben. */
+async function angabeSuchen(tx: Tx, art: Art, id: string, e: ExposeUebernahme, d: DatensatzFuerAngaben) {
   const imp = (await importeZu(tx, art, id)).find((z) => z.id === e.importId);
-  if (!imp || imp.schemaVersion !== EXPOSE_V1_SCHEMA) throw new FachFehler(404, 'Exposé-Import nicht gefunden');
-  const angabe = angaben(fuerAngaben(imp)).find((a) => a.feld === e.feld);
+  if (!imp || imp.schemaVersion !== EXPOSE_V2_SCHEMA) throw new FachFehler(404, 'Exposé-Import nicht gefunden');
+  const angabe = angabenAusImport(fuerAngaben(imp), art, d).find((a) => a.feld === e.feld);
   if (!angabe) throw new FachFehler(404, `Angabe „${e.feld}“ nicht im Exposé-Import`);
   return { imp, angabe };
 }
 
-interface Protokoll { art: Art; bezugId: string; imp: ImportZeile; angabe: Angabe; ziel: string; vorher: unknown; aktion: 'uebernommen' | 'ersetzt' }
+type Aktion = 'uebernommen' | 'ersetzt';
+interface Protokoll { art: Art; bezugId: string; imp: ImportZeile; angabe: Angabe; ziel: string; vorher: unknown; aktion: Aktion }
 
 async function korrekturSchreiben(tx: Tx, p: Protokoll) {
   await tx.insert(schema.importKorrekturen).values({
     id: crypto.randomUUID(), importId: p.imp.id, art: p.art, bezugId: p.bezugId, feld: p.angabe.feld, ziel: p.ziel,
     kiWert: p.angabe.wert, handWert: leer(p.vorher) ? null : (p.vorher as object), aktion: p.aktion,
-    konfidenz: p.angabe.konfidenz, promptVersion: p.imp.promptVersion,
+    konfidenz: null, promptVersion: p.imp.promptVersion,
   });
 }
 
@@ -116,40 +125,49 @@ async function auditBuchen(db: Db, p: Protokoll, neu: unknown) {
   });
 }
 
-/** Spalte: belegt und abweichend ohne `ersetzen` → 409 mit dem aktuellen Wert (die Oberfläche fragt dann nach). */
-function spalteFreiOderErsetzen(angabe: Angabe, ersetzen: boolean): 'uebernommen' | 'ersetzt' {
-  if (angabe.ziel.status !== 'abweichend') return 'uebernommen';
-  if (!ersetzen) throw new FachFehler(409, `${angabe.ziel.label ?? 'Feld'} enthält bereits einen anderen Wert`, { aktuell: angabe.ziel.aktuell });
+const alsWert = (v: unknown): AngabeWert =>
+  v === null || v === undefined ? null : typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? v : JSON.stringify(v);
+
+/** Einzelwert-Ziel: belegt und abweichend ohne `ersetzen` → 409 mit dem aktuellen Wert (die Oberfläche fragt dann nach). */
+function freiOderErsetzen(label: string, neu: unknown, vorher: unknown, ersetzen: boolean, telefon = false): Aktion {
+  if (leer(vorher)) return 'uebernommen';
+  const gleich = telefon && typeof neu === 'string' && typeof vorher === 'string'
+    ? telefonSchluessel(neu) === telefonSchluessel(vorher)
+    : vergleichsStatus(alsWert(neu), alsWert(vorher)) === 'gleich';
+  if (gleich) return 'uebernommen';
+  if (!ersetzen) throw new FachFehler(409, `${label} enthält bereits einen anderen Wert`, { aktuell: alsWert(vorher) });
   return 'ersetzt';
 }
+
+const PASST_NICHT = 'Wert passt nicht zu diesem Feld';
 
 export async function objektUebernahme(db: Db, objektId: string, e: ExposeUebernahme) {
   const { ergebnis, protokoll, neu } = await db.transaction(async (tx) => {
     const version = await versionFortschreiben(tx, schema.objekte, objektId, e.version, 'Objekt');
     const o = await objektLesen(tx, objektId);
-    const { imp, angabe } = await angabeSuchen(tx, 'objekt', objektId, e, (i) => angabenAusImport(i, alsObjektWerte(o)));
-    const u = uebernahmeWert(angabe, e.ziel);
-    if (!u) throw new FachFehler(422, `„${angabe.bezeichnung}“ kann nicht als ${e.ziel} übernommen werden`);
+    const { imp, angabe } = await angabeSuchen(tx, 'objekt', objektId, e, alsObjektWerte(o));
+    const u = uebernahmeWert(angabe, e.ziel, 'objekt');
+    if (!u) throw new FachFehler(422, PASST_NICHT);
 
-    let ziel: string; let vorher: unknown; let aktion: Protokoll['aktion'] = 'uebernommen'; let wert: unknown = u.wert;
-    if (u.spalte) {
-      ziel = u.spalte;
-      vorher = (o as Record<string, unknown>)[u.spalte];
-      aktion = spalteFreiOderErsetzen(angabe, e.ersetzen ?? false);
-      await tx.update(schema.objekte).set({ [u.spalte]: u.wert }).where(eq(schema.objekte.id, objektId));
-    } else if (u.detailsSchluessel) {
-      ziel = `details.${u.detailsSchluessel}`;
-      const details = (o.details as Record<string, unknown> | null) ?? {};
-      vorher = u.detailsSchluessel.split('.').reduce<unknown>((a, k) => (a && typeof a === 'object' ? (a as Record<string, unknown>)[k] : undefined), details);
-      if (!leer(vorher) && vorher !== u.wert) aktion = 'ersetzt';
-      await tx.update(schema.objekte).set({ details: detailsSetzen(details, u.detailsSchluessel, u.wert) }).where(eq(schema.objekte.id, objektId));
-    } else {
-      ziel = 'notizen';
+    let vorher: unknown; let aktion: Aktion = 'uebernommen'; let wert: unknown = u.wert;
+    if (u.notizText !== undefined) {
       vorher = o.notizen;
-      wert = leer(o.notizen) ? u.notizText! : `${o.notizen!.trimEnd()}\n${u.notizText}`;
+      wert = zeileAnhaengen(o.notizen, u.notizText);
       await tx.update(schema.objekte).set({ notizen: wert as string }).where(eq(schema.objekte.id, objektId));
-    }
-    const protokoll: Protokoll = { art: 'objekt', bezugId: objektId, imp, angabe, ziel, vorher, aktion };
+    } else if (u.spalte) {
+      vorher = (o as Record<string, unknown>)[u.spalte];
+      if (u.liste) wert = zeileAnhaengen(vorher as string | null, String(u.wert));
+      else aktion = freiOderErsetzen(zielLabel(e.ziel), u.wert, vorher, e.ersetzen ?? false);
+      await tx.update(schema.objekte).set({ [u.spalte]: wert }).where(eq(schema.objekte.id, objektId));
+    } else if (u.detailsSchluessel) {
+      const details = (o.details as Record<string, unknown> | null) ?? {};
+      vorher = detailsLesen(details, u.detailsSchluessel);
+      if (u.liste) wert = listeAnhaengen(vorher, u.wert);
+      else aktion = freiOderErsetzen(zielLabel(e.ziel), u.wert, vorher, e.ersetzen ?? false);
+      await tx.update(schema.objekte).set({ details: detailsSetzen(details, u.detailsSchluessel, wert) }).where(eq(schema.objekte.id, objektId));
+    } else throw new FachFehler(422, PASST_NICHT);
+
+    const protokoll: Protokoll = { art: 'objekt', bezugId: objektId, imp, angabe, ziel: e.ziel, vorher, aktion };
     await korrekturSchreiben(tx, protokoll);
     return { ergebnis: { id: objektId, version }, protokoll, neu: wert };
   });
@@ -157,20 +175,23 @@ export async function objektUebernahme(db: Db, objektId: string, e: ExposeUebern
   return ergebnis;
 }
 
+/** Bezeichnung des Ziels für die 409-Meldung. */
+const zielLabel = (ziel: string) => GG_ZIELE[ziel]?.label ?? ziel;
+
 const TELEFON = new Set(['tel', 'mobil', 'festnetz']);
 
 export async function maklerUebernahme(db: Db, maklerId: string, e: ExposeUebernahme) {
-  if (e.ziel !== 'spalte') throw new FachFehler(422, 'Am Makler können Exposé-Angaben nur in ein Feld übernommen werden');
   const { ergebnis, protokoll, neu } = await db.transaction(async (tx) => {
     const version = await versionFortschreiben(tx, schema.makler, maklerId, e.version, 'Makler');
     const m = await maklerLesen(tx, maklerId);
-    const { imp, angabe } = await angabeSuchen(tx, 'makler', maklerId, e, (i) => angabenAusImportMakler(i, alsMaklerWerte(m)));
-    const u = uebernahmeWert(angabe, 'spalte');
-    if (!u?.spalte) throw new FachFehler(422, `„${angabe.bezeichnung}“ hat kein Feld am Makler`);
+    const { imp, angabe } = await angabeSuchen(tx, 'makler', maklerId, e, alsMaklerWerte(m));
+    const u = uebernahmeWert(angabe, e.ziel, 'makler');
+    // Am Makler gibt es keine Notizspalte; Notizen laufen über die Kommunikation
+    if (!u?.spalte) throw new FachFehler(422, PASST_NICHT);
 
     const vorher = (m as Record<string, unknown>)[u.spalte];
     let wert: unknown = u.wert;
-    let aktion: Protokoll['aktion'] = 'uebernommen';
+    let aktion: Aktion = 'uebernommen';
     if (u.spalte === 'weitereKontakte') {
       // Zusammenführen statt überschreiben; der Hauptkontakt bleibt außen vor
       const alt = (m.weitereKontakte as WeitereKontakte | null) ?? { namen: [], telefonnummern: [], emails: [] };
@@ -180,11 +201,12 @@ export async function maklerUebernahme(db: Db, maklerId: string, e: ExposeUebern
         { namen: [...alt.namen, ...dazu.namen], telefonnummern: [...alt.telefonnummern, ...dazu.telefonnummern], emails: [...alt.emails, ...dazu.emails] },
       );
     } else {
-      aktion = spalteFreiOderErsetzen(angabe, e.ersetzen ?? false);
-      if (TELEFON.has(u.spalte) && typeof wert === 'string') wert = telefonNormalisieren(wert);
+      const telefon = TELEFON.has(u.spalte);
+      if (telefon && typeof wert === 'string') wert = telefonNormalisieren(wert);
+      aktion = freiOderErsetzen(zielLabel(e.ziel), wert, vorher, e.ersetzen ?? false, telefon);
     }
     await tx.update(schema.makler).set({ [u.spalte]: wert }).where(eq(schema.makler.id, maklerId));
-    const protokoll: Protokoll = { art: 'makler', bezugId: maklerId, imp, angabe, ziel: u.spalte, vorher, aktion };
+    const protokoll: Protokoll = { art: 'makler', bezugId: maklerId, imp, angabe, ziel: e.ziel, vorher, aktion };
     await korrekturSchreiben(tx, protokoll);
     return { ergebnis: { id: maklerId, version }, protokoll, neu: wert };
   });
