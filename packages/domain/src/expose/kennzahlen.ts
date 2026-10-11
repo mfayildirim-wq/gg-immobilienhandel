@@ -1,12 +1,11 @@
 /**
  * Kennzahlen des Prüfsatzes (Protokoll 27, T6): Was hat die Extraktion je Exposé gefunden, wie teuer und wie lange war
- * sie, und passen die Zahlen zueinander? Reine Funktionen über dem Analyse-Ergebnis — v0 und v1 werden auf dieselben
- * Feldnamen abgebildet, damit die beiden Schemata je Feld vergleichbar sind. Keine Rohtexte, keine Adressen: nur Flags,
+ * sie, und passen die Zahlen zueinander? Reine Funktionen über dem Analyse-Ergebnis — v0 und v2 werden über das Format der
+ * Prüfseite auf dieselben Feldnamen abgebildet (v2 über `zuordnen`), damit die beiden Schemata je Feld vergleichbar sind. Keine Rohtexte, keine Adressen: nur Flags,
  * Zähler und Quoten, damit die Ausgabe in die Doku darf.
  */
-import { kontaktName, v1Traegt } from './abbildung.ts';
-import { kernfeldDopplung } from './belege.ts';
-import type { ExposeV1 } from './schemaV1.ts';
+import type { ExposeV2 } from './erfassung.ts';
+import { v2Traegt, zuordnen } from './zuordnung.ts';
 
 export const KERNFELDER = [
   'strasse', 'hausnr', 'plz', 'stadt', 'baujahr', 'wohnflaeche', 'grundstueck', 'einheitenAnz', 'kaufpreis', 'istmiete',
@@ -14,10 +13,11 @@ export const KERNFELDER = [
 ] as const;
 export type Kernfeld = (typeof KERNFELDER)[number];
 
-/** Nur in v1 vorhanden; bei v0 `null` (nicht im Schema), nicht 0. */
+/** Nur in v2 vorhanden; bei v0 `null` (nicht im Schema), nicht 0. */
 export const ZUSATZFELDER = [
-  'hausgeld', 'nebenkosten', 'provision', 'denkmalschutz', 'erbpacht', 'objektart', 'sanierungen', 'merkmale',
-  'weitereAngaben', 'weitereKontakte', 'einheitenMitMietbeginn', 'einheitenMitNebenkosten',
+  'hausgeld', 'nebenkosten', 'provision', 'denkmalschutz', 'erbpacht', 'objektart', 'sanierungen',
+  'angaben', 'mitStandardPfad', 'zugeordnet', 'weitereAngaben', 'mitVorschlag', 'freitextZeichen', 'weitereKontakte',
+  'einheitenMitMietbeginn', 'einheitenMitNebenkosten', 'einheitenZusatzspalten',
 ] as const;
 export type Zusatzfeld = (typeof ZUSATZFELDER)[number];
 
@@ -32,8 +32,8 @@ export type Quote = (typeof QUOTEN)[number];
 
 export interface KennzahlenEingabe {
   datei: string;
-  schema: 'v0' | 'v1';
-  v1?: ExposeV1 | null;
+  schema: 'v0' | 'v2';
+  v2?: ExposeV2 | null;
   /** v0-Antwort (`extrahiert` der Analyse): { objekt, makler, kalkulation }. */
   v0?: unknown;
   modell: string;
@@ -45,15 +45,15 @@ export interface KennzahlenEingabe {
   nachfass: boolean;
   wiederholung: boolean;
   warnungen: string[];
-  /** Ergebnis von belegePruefen (nur v1, Textweg). */
-  belegt?: Record<string, boolean>;
+  /** Ergebnis von belegePruefen je Angabe (nur v2, Textweg). */
+  belegt?: (boolean | null)[] | null;
   /** Analyse fehlgeschlagen — dann zählen alle Felder als leer. */
   fehler?: string | null;
 }
 
 export interface KennzahlenJeExpose {
   datei: string;
-  schema: 'v0' | 'v1';
+  schema: 'v0' | 'v2';
   fehler: string | null;
   modell: string;
   modus: string;
@@ -66,7 +66,7 @@ export interface KennzahlenJeExpose {
   inputTokens: number;
   outputTokens: number;
   warnungen: number;
-  /** v1: trägt das Ergebnis für die Übernahme (v1Traegt: Ort, Preis, Einheiten, nicht unvollständig); v0 → null. */
+  /** v2: trägt das Ergebnis (v2Traegt: Ort, Preis, Einheiten); v0 → null. */
   traegt: boolean | null;
   kern: Record<Kernfeld, boolean>;
   zusatz: Record<Zusatzfeld, number | null>;
@@ -74,13 +74,13 @@ export interface KennzahlenJeExpose {
   /** belegt true / geprüfte Felder; null ohne Prüfung. */
   belegQuote: number | null;
   belegtAnzahl: { geprueft: number; belegt: number };
-  /** Einträge in weitere_angaben, die ein Kernfeld doppeln; v0 kennt das nicht → null. */
+  /** Angaben, die ein schon belegtes gg-Feld mit anderem Wert treffen; v0 kennt das nicht → null. */
   dopplungen: number | null;
   konsistenz: Record<KonsistenzRegel, KonsistenzStand>;
 }
 
 export interface KennzahlenZusammenfassung {
-  schema: 'v0' | 'v1' | 'gemischt';
+  schema: 'v0' | 'v2' | 'gemischt';
   anzahl: number;
   fehler: number;
   /** Füllgrad je Kernfeld in % aller Exposés (gerundet). */
@@ -113,7 +113,7 @@ export interface KennzahlenVergleich {
   kostenEurMittel: number | null;
 }
 
-// ── gemeinsame Sicht auf v0 und v1 ───────────────────────────
+// ── gemeinsame Sicht auf v0 und v2 ───────────────────────────
 
 interface EinheitSicht { typ: string | null; flaeche: number | null; kaltmiete: number | null; nebenkosten: number | null; mietbeginn: string | null }
 
@@ -128,32 +128,28 @@ const text = (v: unknown): string | null => (typeof v === 'string' && v.trim() ?
 const gefuellt = (v: unknown): boolean => (typeof v === 'string' ? v.trim() !== '' : typeof v === 'number' ? Number.isFinite(v) : typeof v === 'boolean');
 const leereZusatz = (): Record<Zusatzfeld, number | null> => Object.fromEntries(ZUSATZFELDER.map((f) => [f, null])) as Record<Zusatzfeld, number | null>;
 
-function sichtV1(v1: ExposeV1): Sicht {
-  const k = v1.kontaktperson;
-  return {
-    kern: {
-      strasse: v1.geo.strasse, hausnr: v1.geo.hausnummer, plz: v1.geo.plz, stadt: v1.geo.ort,
-      baujahr: v1.zustand.baujahr, wohnflaeche: v1.flaechen.wohnflaeche, grundstueck: v1.flaechen.grundstuecksflaeche,
-      einheitenAnz: v1.verwaltung.anzahl_wohneinheiten, kaufpreis: v1.preise.kaufpreis, istmiete: v1.preise.mieteinnahmen_ist_monat,
-      heizungsart: v1.ausstattung.heizungsart, energieklasse: v1.energiepass.klasse,
-      maklerName: kontaktName(k), maklerFirma: k.firma, maklerEmail: k.email, maklerTel: text(k.mobil) ?? text(k.tel_durchwahl) ?? text(k.tel_zentrale),
-    },
-    einheiten: v1.einheiten.map((e) => ({ typ: e.typ, flaeche: zahl(e.flaeche), kaltmiete: zahl(e.kaltmiete), nebenkosten: zahl(e.nebenkosten), mietbeginn: text(e.mietbeginn) })),
-    zusatz: {
-      hausgeld: zahl(v1.preise.hausgeld_monat) !== null ? 1 : 0,
-      nebenkosten: zahl(v1.preise.nebenkosten_monat) !== null ? 1 : 0,
-      provision: zahl(v1.preise.provision_prozent) !== null || text(v1.preise.provision_text) !== null ? 1 : 0,
-      denkmalschutz: typeof v1.zustand.denkmalschutz === 'boolean' ? 1 : 0,
-      erbpacht: typeof v1.zustand.erbpacht === 'boolean' ? 1 : 0,
-      objektart: text(v1.objektkategorie.objektart) !== null ? 1 : 0,
-      sanierungen: v1.zustand.sanierungen.length,
-      merkmale: v1.ausstattung.merkmale.length,
-      weitereAngaben: v1.weitere_angaben.length,
-      weitereKontakte: v1.weitere_kontakte.length,
-      einheitenMitMietbeginn: v1.einheiten.filter((e) => text(e.mietbeginn) !== null).length,
-      einheitenMitNebenkosten: v1.einheiten.filter((e) => zahl(e.nebenkosten) !== null).length,
-    },
+function sichtV2(v2: ExposeV2): Sicht {
+  const { pruefdaten, werte, zeilen, einheitenDetails } = zuordnen(v2);
+  const basis = sichtV0(pruefdaten);
+  const hat = (ziel: string) => (werte[ziel] !== undefined && werte[ziel] !== null ? 1 : 0);
+  const liste = (ziel: string) => (Array.isArray(werte[ziel]) ? (werte[ziel] as unknown[]).length : 0);
+  basis.einheiten = basis.einheiten.map((e, i) => ({ ...e, nebenkosten: einheitenDetails[i]?.nebenkosten ?? null, mietbeginn: einheitenDetails[i]?.mietbeginn ?? null }));
+  basis.zusatz = {
+    hausgeld: hat('details.hausgeld_monat'), nebenkosten: hat('details.nebenkosten_monat'), provision: hat('details.provision'),
+    denkmalschutz: hat('details.denkmalschutz'), erbpacht: hat('details.erbbaurecht'), objektart: hat('details.objektart'),
+    sanierungen: liste('details.sanierungen'),
+    angaben: v2.angaben.length,
+    mitStandardPfad: v2.angaben.filter((a) => a.pfad).length,
+    zugeordnet: zeilen.filter((z) => z.grund === 'zugeordnet').length,
+    weitereAngaben: zeilen.filter((z) => z.grund !== 'zugeordnet').length,
+    mitVorschlag: zeilen.filter((z) => z.grund !== 'zugeordnet' && z.vorschlag).length,
+    freitextZeichen: v2.angaben.filter((a) => a.pfad?.startsWith('freitexte.')).reduce((n, a) => n + a.wert.length, 0),
+    weitereKontakte: new Set(v2.angaben.filter((a) => a.kontakt !== null && a.kontakt > 1).map((a) => a.kontakt)).size,
+    einheitenMitMietbeginn: einheitenDetails.filter((d) => d?.mietbeginn).length,
+    einheitenMitNebenkosten: einheitenDetails.filter((d) => d?.nebenkosten !== undefined).length,
+    einheitenZusatzspalten: v2.einheiten_tabellen.reduce((n, t) => n + t.spalten.filter((x) => !x.feld).length, 0),
   };
+  return basis;
 }
 
 function sichtV0(roh: unknown): Sicht {
@@ -177,9 +173,9 @@ function sichtV0(roh: unknown): Sicht {
   };
 }
 
-/** Nichts gefunden (oder Fehler): v1 kennt die Zusatzfelder → 0; v0 kennt sie nicht → null. */
-function sichtLeer(schema: 'v0' | 'v1'): Sicht {
-  const zusatz = schema === 'v1' ? (Object.fromEntries(ZUSATZFELDER.map((f) => [f, 0])) as Record<Zusatzfeld, number | null>) : leereZusatz();
+/** Nichts gefunden (oder Fehler): v2 kennt die Zusatzfelder → 0; v0 kennt sie nicht → null. */
+function sichtLeer(schema: 'v0' | 'v2'): Sicht {
+  const zusatz = schema === 'v2' ? (Object.fromEntries(ZUSATZFELDER.map((f) => [f, 0])) as Record<Zusatzfeld, number | null>) : leereZusatz();
   return { kern: Object.fromEntries(KERNFELDER.map((f) => [f, null])) as Record<Kernfeld, unknown>, einheiten: [], zusatz };
 }
 
@@ -212,12 +208,12 @@ export function konsistenzPruefen(s: Sicht, jahr = new Date().getFullYear()): Re
 
 export function kennzahlenJeExpose(e: KennzahlenEingabe, jahr?: number): KennzahlenJeExpose {
   const fehler = e.fehler ? String(e.fehler) : null;
-  const sicht = fehler ? sichtLeer(e.schema) : e.schema === 'v1' ? (e.v1 ? sichtV1(e.v1) : sichtLeer('v1')) : sichtV0(e.v0);
+  const sicht = fehler ? sichtLeer(e.schema) : e.schema === 'v2' ? (e.v2 ? sichtV2(e.v2) : sichtLeer('v2')) : sichtV0(e.v0);
   const kern = Object.fromEntries(KERNFELDER.map((f) => [f, gefuellt(sicht.kern[f])])) as Record<Kernfeld, boolean>;
-  const belegt = e.belegt ?? {};
-  const geprueft = Object.keys(belegt).length;
-  const belegtAnzahl = Object.values(belegt).filter(Boolean).length;
-  const dopplungen = e.schema === 'v1' && e.v1 && !fehler ? kernfeldDopplung(e.v1).length : e.schema === 'v1' ? 0 : null;
+  const belegt = (e.belegt ?? []).filter((b): b is boolean => b !== null);
+  const geprueft = belegt.length;
+  const belegtAnzahl = belegt.filter(Boolean).length;
+  const dopplungen = e.schema === 'v2' && e.v2 && !fehler ? zuordnen(e.v2).zeilen.filter((z) => z.grund === 'doppelt').length : e.schema === 'v2' ? 0 : null;
   return {
     datei: e.datei, schema: e.schema, fehler,
     modell: e.modell ?? '', modus: e.modus ?? '',
@@ -227,7 +223,7 @@ export function kennzahlenJeExpose(e: KennzahlenEingabe, jahr?: number): Kennzah
     dauerMs: Math.round(e.dauerMs || 0), kostenEur: +(e.kostenEur || 0).toFixed(4),
     inputTokens: e.usage?.inputTokens ?? 0, outputTokens: e.usage?.outputTokens ?? 0,
     warnungen: e.warnungen?.length ?? 0,
-    traegt: e.schema === 'v1' ? (!fehler && !!e.v1 && v1Traegt(e.v1)) : null,
+    traegt: e.schema === 'v2' ? (!fehler && !!e.v2 && v2Traegt(e.v2)) : null,
     kern, zusatz: sicht.zusatz,
     einheitenAnzahl: sicht.einheiten.length,
     belegQuote: geprueft ? Math.round((belegtAnzahl / geprueft) * 100) : null,
@@ -315,8 +311,10 @@ const KERN_LABEL: Record<Kernfeld, string> = {
 };
 const ZUSATZ_LABEL: Record<Zusatzfeld, string> = {
   hausgeld: 'Hausgeld', nebenkosten: 'Nebenkosten', provision: 'Provision', denkmalschutz: 'Denkmalschutz', erbpacht: 'Erbpacht', objektart: 'Objektart',
-  sanierungen: 'Sanierungen', merkmale: 'Merkmale', weitereAngaben: 'Weitere Angaben', weitereKontakte: 'Weitere Kontakte',
-  einheitenMitMietbeginn: 'Einheiten mit Mietbeginn', einheitenMitNebenkosten: 'Einheiten mit Nebenkosten',
+  sanierungen: 'Sanierungen', angaben: 'Erfasste Angaben', mitStandardPfad: 'Angaben mit Standard-Pfad', zugeordnet: 'Automatisch zugeordnet',
+  weitereAngaben: 'Weitere Angaben (ohne Zuordnung)', mitVorschlag: 'davon mit KI-Vorschlag', freitextZeichen: 'Zeichen Freitext',
+  weitereKontakte: 'Weitere Kontakte', einheitenMitMietbeginn: 'Einheiten mit Mietbeginn', einheitenMitNebenkosten: 'Einheiten mit Nebenkosten',
+  einheitenZusatzspalten: 'Zusatzspalten der Mietlisten',
 };
 const QUOTE_LABEL: Record<Quote, string> = {
   traegtQuote: 'Trägt (Ort, Preis, Einheiten)',
@@ -357,7 +355,7 @@ export function kennzahlenAlsMarkdown(z: KennzahlenZusammenfassung, vergleich?: 
   teile.push(`\n## Füllgrad Kernfelder (% der Exposés)\n`, kopf);
   for (const f of KERNFELDER) teile.push(zeile(KERN_LABEL[f], vergleich?.kern[f], z.kern[f], d?.kern[f] ?? null, 0, ' %'));
 
-  teile.push(`\n## Zusatzfelder v1 (% der Exposés mit Wert · ø Anzahl)\n`, kopf);
+  teile.push(`\n## Zusatzfelder v2 (% der Exposés mit Wert · ø Anzahl)\n`, kopf);
   for (const f of ZUSATZFELDER) {
     const anhang = z.zusatzMittel[f] != null ? ` (ø ${de(z.zusatzMittel[f], 2)})` : '';
     teile.push(zeile(`${ZUSATZ_LABEL[f]}${anhang}`, vergleich?.zusatz[f], z.zusatz[f], d?.zusatz[f] ?? null, 0, ' %'));
