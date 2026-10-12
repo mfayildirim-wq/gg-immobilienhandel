@@ -46,6 +46,19 @@ test('Exposé importieren: Objekt, Makler, Deal anlegen; zweiter Import erkennt 
   await expect(page.getByText('Deal bereits vorhanden')).toBeVisible();
   await page.getByRole('button', { name: 'Exposé überspringen' }).click();
   await expect(page.getByRole('heading', { name: `${kennung}strasse 12` })).toBeVisible();
+  const dealId = new URL(page.url()).searchParams.get('deal')!;
+
+  // Dritter Import: dieses PDF ergänzt den bestehenden Deal (kein zweiter Deal, PDF liegt als weiteres Exposé am Deal)
+  await durchWizard(page, datei);
+  await page.getByRole('group', { name: 'Bestehende Deals' }).or(page.getByLabel('Bestehende Deals')).getByRole('button', { name: 'Diesen Deal ergänzen' }).click();
+  await expect(page.getByText('Kein neuer Deal: Fotos kommen ans Objekt')).toBeVisible();
+  await page.getByRole('button', { name: 'Weiter: Fotos →' }).click();
+  await page.getByRole('button', { name: 'Weiter: Makler →' }).click();
+  await page.getByRole('button', { name: 'Weiter: Deal →' }).click();
+  await page.getByRole('button', { name: '✅ Deal anlegen' }).click();
+  await expect(page).toHaveURL(new RegExp(`/deals\\?deal=${dealId}`), { timeout: 15_000 });
+  const doks = (await (await page.request.get(`/api/deals/${dealId}/dokumente`)).json()) as { label: string | null }[];
+  expect(doks.map((d) => d.label)).toContain('Exposé (Import, ergänzt)');
 });
 
 /**

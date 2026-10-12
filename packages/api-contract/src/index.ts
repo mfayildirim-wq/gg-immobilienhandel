@@ -730,6 +730,8 @@ export const ExposeAnalyseAntwort = z.object({
   makler: ExposeMaklerDaten.passthrough(),
   deal: z.object({ status: z.string(), nachfassFreq: z.string(), notizen: z.string(), kalk: WizardKalkSchema }),
   dubletten: z.object({ objekt: Dublette, makler: Dublette }),
+  /** Deals des erkannten Objekts — das PDF kann einen davon ergänzen (Fotos, Makler, Exposé), statt einen zweiten anzulegen */
+  bestehendeDeals: z.array(z.object({ id: z.string(), status: z.string(), makler: z.string().nullable() })).default([]),
   // Fotos aus dem Exposé (Protokoll 30 §4.4): liegen im Eingang, werden beim Anlegen ans Objekt übernommen
   bilder: z.array(z.object({ nr: z.number().int(), seite: z.number().int(), breite: z.number().int(), hoehe: z.number().int(), url: z.string() })).default([]),
 });
@@ -748,11 +750,15 @@ export const ExposeUebernehmen = z.object({
   objekt: z.object({ bestehendeId: z.string().optional(), daten: ExposeObjektDaten }),
   makler: z.object({ bestehendeId: z.string().optional(), daten: ExposeMaklerDaten }),
   deal: z.object({ status: DealStatus, nachfassFreq: z.string().max(40), notizen: z.string().max(10000), kalk: WizardKalkSchema }),
+  /** Statt eines neuen Deals diesen bestehenden ergänzen: Fotos ans Objekt, Makler setzen (falls keiner), PDF als Exposé ablegen */
+  ergaenzeDealId: z.string().optional(),
 });
 export type ExposeUebernehmen = z.infer<typeof ExposeUebernehmen>;
 
 export const ExposeUebernahmeErgebnis = z.object({
   dealId: z.string(), objektId: z.string(), maklerId: z.string().nullable(), pdfGespeichert: z.boolean(), warnung: z.string().optional(),
+  /** Der Deal bestand schon und wurde ergänzt (kein neuer Deal) */
+  ergaenzt: z.boolean().default(false),
   /** Anzahl der aus dem Exposé ans Objekt übernommenen Fotos */
   fotos: z.number().int().default(0),
 });

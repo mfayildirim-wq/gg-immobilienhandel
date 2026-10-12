@@ -493,7 +493,7 @@ export async function exposeUebernehmen(e: ExposeUebernehmen) {
   const body = await res.json().catch(() => null);
   if (res.status === 409) throw new DublettenFehler(body?.details?.dealId, body?.fehler);
   if (!res.ok) throw new ApiFehler(res.status, body?.fehler ?? `Fehler ${res.status}`, body?.details, body?.felder);
-  return body as { dealId: string; objektId: string; maklerId: string | null; pdfGespeichert: boolean; warnung?: string };
+  return body as { dealId: string; objektId: string; maklerId: string | null; pdfGespeichert: boolean; warnung?: string; ergaenzt?: boolean; fotos?: number };
 }
 
 // ── Reiter „Aus dem Exposé“ (Objekt/Makler) ───────────────

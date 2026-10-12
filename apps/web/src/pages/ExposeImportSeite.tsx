@@ -90,6 +90,8 @@ export function ExposeImportSeite() {
   const [maklerBestehend, setMaklerBestehend] = useState<string | null>(null);
   const [deal, setDeal] = useState<{ status: string; nachfassFreq: string; notizen: string; kalk: WizardKalk }>({ status: 'In Prüfung', nachfassFreq: 'Wöchentlich', notizen: '', kalk: {} });
   const [dublette, setDublette] = useState<string | null>(null);
+  /** Dieses PDF ergänzt einen bestehenden Deal (Fotos, Makler, Exposé) statt einen neuen anzulegen */
+  const [ergaenzen, setErgaenzen] = useState<string | null>(null);
   /** Weitere Angaben, die beim Anlegen gespeichert werden (Feld → gg-Ziel oder 'notizen') */
   const [zuordnungen, setZuordnungen] = useState<Record<string, string>>({});
   // Im Schritt „Fotos“ entfernte Bilder (Nummern)
@@ -118,6 +120,7 @@ export function ExposeImportSeite() {
       setMaklerBestehend(r.dubletten.makler?.id ?? null);
       setDeal({ status: r.deal.status, nachfassFreq: r.deal.nachfassFreq, notizen: r.deal.notizen, kalk: r.deal.kalk });
       setDublette(null);
+      setErgaenzen(null);
       setZuordnungen({}); setFotosAus([]);
       setNichtMerken({});
       setUebernommen({});
@@ -157,6 +160,7 @@ export function ExposeImportSeite() {
       setMaklerBestehend(r.dubletten.makler?.id ?? null);
       setDeal({ status: r.deal.status, nachfassFreq: r.deal.nachfassFreq, notizen: r.deal.notizen, kalk: r.deal.kalk });
       setDublette(null);
+      setErgaenzen(null);
       setZuordnungen({}); setFotosAus([]);
       setNichtMerken({});
       setUebernommen({});
@@ -176,7 +180,7 @@ export function ExposeImportSeite() {
     setStatus(null);
   };
 
-  const anlegen = async () => {
+  const anlegen = async (ergaenzeDealId: string | null = ergaenzen) => {
     if (!a || !datei) return;
     setLaeuft(true);
     try {
@@ -190,6 +194,7 @@ export function ExposeImportSeite() {
         objekt: { ...(objektBestehend ? { bestehendeId: objektBestehend } : {}), daten: objekt },
         makler: { ...(maklerBestehend ? { bestehendeId: maklerBestehend } : {}), daten: makler },
         deal: { ...deal, status: deal.status as (typeof DEAL_STATUS)[number] },
+        ...(ergaenzeDealId ? { ergaenzeDealId } : {}),
       });
       void qc.invalidateQueries();
       if (verbleibend > 0) {
@@ -198,6 +203,7 @@ export function ExposeImportSeite() {
         navigate({ to: '/deals', search: { deal: r.dealId } });
       }
       if (r.warnung) setStatus({ text: r.warnung, fehler: true });
+      else if (r.ergaenzt) setStatus({ text: `✅ Bestehender Deal ergänzt${r.fotos ? `: ${r.fotos} Fotos ans Objekt` : ''}${r.maklerId ? ', Makler gesetzt' : ''}, Exposé abgelegt.` });
     } catch (e) {
       if (e instanceof DublettenFehler) {
         if (verbleibend > 0) {
@@ -268,7 +274,7 @@ export function ExposeImportSeite() {
         <FehlerListe fehler={fehlerJeSchritt[phase.schritt]} titel={`${SCHRITT_NAME[phase.schritt]}: bitte prüfen`} />
       )}
       {phase.art === 'pruefen' && a && phase.schritt === 1 && (
-        <ObjektSchritt a={a} objekt={objekt} setObjekt={setObjekt} bestehend={objektBestehend} setBestehend={setObjektBestehend} />
+        <ObjektSchritt a={a} objekt={objekt} setObjekt={setObjekt} bestehend={objektBestehend} setBestehend={setObjektBestehend} ergaenzen={ergaenzen} setErgaenzen={(id) => { setErgaenzen(id); if (id && a.dubletten.objekt) setObjektBestehend(a.dubletten.objekt.id); }} />
       )}
       {phase.art === 'pruefen' && a && phase.schritt === 1 && (
         <ErfassteAngaben
@@ -294,6 +300,7 @@ export function ExposeImportSeite() {
               if (a?.importId) void exposeImportVerwerfen(a.importId).catch(() => {});
               navigate({ to: '/deals', search: { deal: dublette } });
             }}>Exposé überspringen</Button>
+            <Button size="xs" color="teal" onClick={() => { const id = dublette; setDublette(null); setErgaenzen(id); void anlegen(id); }}>Zum bestehenden Deal hinzufügen (Fotos, Makler, Exposé)</Button>
             <Button size="xs" variant="default" onClick={() => setDublette(null)}>Zurück zum Wizard</Button>
           </Group>
         </Alert>
@@ -436,7 +443,7 @@ function FotoSchritt({ bilder, aus, setAus }: { bilder: ExposeAnalyseAntwort['bi
 }
 // <<< Fotos aus dem Exposé
 
-function ObjektSchritt({ a, objekt, setObjekt, bestehend, setBestehend }: { a: ExposeAnalyseAntwort; objekt: ExposeObjektDaten; setObjekt: (o: ExposeObjektDaten) => void; bestehend: string | null; setBestehend: (id: string | null) => void }) {
+function ObjektSchritt({ a, objekt, setObjekt, bestehend, setBestehend, ergaenzen, setErgaenzen }: { a: ExposeAnalyseAntwort; objekt: ExposeObjektDaten; setObjekt: (o: ExposeObjektDaten) => void; bestehend: string | null; setBestehend: (id: string | null) => void; ergaenzen: string | null; setErgaenzen: (id: string | null) => void }) {
   const k = a.konfidenz;
   const t = (feld: keyof ExposeObjektDaten, label: string, konfSchluessel = feld as string) => (
     <TextInput label={feldLabel(label, k[konfSchluessel])} value={(objekt[feld] as string) ?? ''} onChange={(e) => setObjekt({ ...objekt, [feld]: e.currentTarget.value })} />
@@ -461,8 +468,22 @@ function ObjektSchritt({ a, objekt, setObjekt, bestehend, setBestehend }: { a: E
           <Text size="sm" mb="xs">{a.dubletten.objekt.titel}</Text>
           <Group>
             <Button size="xs" variant={bestehend ? 'filled' : 'light'} onClick={() => setBestehend(a.dubletten.objekt!.id)}>Bestehendes Objekt verwenden</Button>
-            <Button size="xs" variant={bestehend ? 'default' : 'filled'} color="gray" onClick={() => setBestehend(null)}>Neu anlegen</Button>
+            <Button size="xs" variant={bestehend ? 'default' : 'filled'} color="gray" onClick={() => { setBestehend(null); setErgaenzen(null); }}>Neu anlegen</Button>
           </Group>
+          {!!a.bestehendeDeals?.length && (
+            <Stack gap={4} mt="sm" aria-label="Bestehende Deals">
+              <Text size="sm" fw={600}>Zu diesem Objekt gibt es schon {a.bestehendeDeals.length === 1 ? 'einen Deal' : `${a.bestehendeDeals.length} Deals`}. Soll dieses PDF ihn ergänzen?</Text>
+              {a.bestehendeDeals.map((d) => (
+                <Group key={d.id} gap="xs">
+                  <Text size="sm">{d.status} · {d.makler ?? 'ohne Makler'}</Text>
+                  <Button size="xs" variant={ergaenzen === d.id ? 'filled' : 'light'} color="teal" onClick={() => setErgaenzen(ergaenzen === d.id ? null : d.id)}>
+                    {ergaenzen === d.id ? '✓ Wird ergänzt' : 'Diesen Deal ergänzen'}
+                  </Button>
+                </Group>
+              ))}
+              {ergaenzen && <Text size="xs" c="dimmed">Kein neuer Deal: Fotos kommen ans Objekt, der Makler wird eingetragen (falls der Deal keinen hat), das PDF liegt als Exposé am Deal. Zahlen aus diesem Exposé übernimmst du danach im Reiter „Aus dem Exposé“.</Text>}
+            </Stack>
+          )}
         </Alert>
       )}
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">

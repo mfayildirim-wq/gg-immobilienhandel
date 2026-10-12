@@ -2,6 +2,7 @@ import { createDb, schema, verlangeLokaleDatenbank } from '@gg/db';
 import { KALK_STANDARD } from '@gg/domain';
 import { KiDienstFehler, KiSchluesselFehler, kiAttrappe, speicherImSpeicher, testExpose, testExposeV2 } from '@gg/integrations';
 import { eq, inArray, like } from 'drizzle-orm';
+import { PDFDocument } from 'pdf-lib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.ts';
 import { mitAusgeliefertenStandards } from './standardwerte.ts';
@@ -218,6 +219,43 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
     expect(r.status).toBe(409);
     expect((await lies(r)).details.dealId).toBe(angelegt.deals[0]);
     expect((await db.select().from(schema.deals)).length).toBe(vorher);
+  });
+
+  it('ein zweites PDF ergänzt den bestehenden Deal: Fotos ans Objekt, fehlender Makler wird gesetzt, PDF als weiteres Exposé — kein zweiter Deal', async () => {
+    const dealId = angelegt.deals[0]!;
+    // Wie bei der Investment-Rechnung: der Deal hat (noch) keinen Makler
+    await db.update(schema.deals).set({ maklerId: null }).where(eq(schema.deals.id, dealId));
+    const { key } = await lies(eingang(testExpose(kennung)));
+    const a = await lies(json('/api/expose/analyse', { key, dateiname: 'exposé-vom-makler.pdf' }));
+    expect(a.bestehendeDeals).toEqual([{ id: dealId, status: 'In Prüfung', makler: null }]);
+    const vorher = (await db.select().from(schema.deals)).length;
+    const r = await json('/api/expose/uebernehmen', {
+      key, dateiname: 'exposé-vom-makler.pdf', extrahiert: a.extrahiert, importId: a.importId, ergaenzeDealId: dealId,
+      objekt: { daten: a.objekt }, makler: { bestehendeId: a.dubletten.makler.id, daten: a.makler }, deal: a.deal,
+    });
+    expect(r.status).toBe(201);
+    const erg = await lies(r);
+    expect(erg).toMatchObject({ dealId, objektId: angelegt.objekte[0], maklerId: a.dubletten.makler.id, ergaenzt: true, pdfGespeichert: true });
+    expect((await db.select().from(schema.deals)).length).toBe(vorher);
+    const [deal] = await db.select().from(schema.deals).where(eq(schema.deals.id, dealId));
+    expect(deal!.maklerId).toBe(a.dubletten.makler.id);
+    const doks = await db.select().from(schema.dealDokumente).where(eq(schema.dealDokumente.dealId, dealId));
+    expect(doks.map((d) => d.label).sort()).toEqual(['Exposé (Import)', 'Exposé (Import, ergänzt)']);
+    expect(speicher.inhalt.has(`pdfs/${key}`)).toBe(false);
+    const [imp] = await db.select().from(schema.exposeImporte).where(eq(schema.exposeImporte.id, a.importId));
+    expect(imp).toMatchObject({ status: 'uebernommen', dealId });
+    // Ein Deal, den es nicht gibt → 404
+    expect((await json('/api/expose/uebernehmen', { key, dateiname: 'x.pdf', extrahiert: a.extrahiert, ergaenzeDealId: 'gibt-es-nicht', objekt: { daten: a.objekt }, makler: { daten: a.makler }, deal: a.deal })).status).toBe(404);
+  });
+
+  it('meldet, wenn die Datei nicht nach einem Exposé aussieht (Tabelle aus Google Sheets)', async () => {
+    const doc = await PDFDocument.load(testExpose(`${kennung}t`));
+    doc.setCreator('Google Sheets');
+    const { key } = await lies(eingang(await doc.save()));
+    const a = await lies(json('/api/expose/analyse', { key, dateiname: 'Investment - Rechnung.pdf' }));
+    expect(a.warnungen[0]).toMatch(/^„Investment - Rechnung\.pdf“ sieht nicht nach einem Exposé aus \(\d+ Seiten?, aus Google Sheets/);
+    expect(a.warnungen[0]).toContain('Lade das Exposé des Maklers dazu hoch');
+    await json(`/api/expose/importe/${a.importId}/verwerfen`, {});
   });
 
   it('Analyse (Erfassung v2) legt eine Import-Zeile mit Messwerten und Belegprüfung an und liefert Angaben und Ziele', async () => {

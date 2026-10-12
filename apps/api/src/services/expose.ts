@@ -1,7 +1,7 @@
 import type { ExposeAnalyseAntwort, ExposeUebernehmen } from '@gg/api-contract';
 import { type Db, schema } from '@gg/db';
 import {
-  type Angabe, angabenAusImport, belegePruefen, berechneAnkauf, dealEinheitenAusExpose, dublettenDeal, dublettenMakler, dublettenObjekt, einheitAlsEingabe,
+  type Angabe, angabenAusImport, belegePruefen, dokumentArtPruefen, berechneAnkauf, dealEinheitenAusExpose, dublettenDeal, dublettenMakler, dublettenObjekt, einheitAlsEingabe,
   EXPOSE_V2_SCHEMA, type ExposeV2, exposeVorbereiten, type Gelernt, GG_ZIELE, type ImportFuerAngaben, maklerHatDaten, normalisiereFrequenz, telefonErsetzen,
   telefonNormalisieren, uebernahmeWert, type WeitereKontakte, weitereKontakte, wizardKalkSpeichern, wizardKalkVorbelegen, type ZielArt, zuordnen,
 } from '@gg/domain';
@@ -10,6 +10,7 @@ import {
   tesseractOcr,
 } from '@gg/integrations';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { PDFDocument } from 'pdf-lib';
 import { auditSchreiben } from './audit.ts';
 import { FachFehler } from '../fehler.ts';
 import { exposeExtraktionLesen, kalkStandardLesen } from './einstellungen.ts';
@@ -62,6 +63,14 @@ async function kostenBuchen(db: Db, model: string, usage: Parameters<typeof kost
   } catch (e) {
     console.error('[ki-kosten] Buchung fehlgeschlagen:', e);
   }
+}
+
+/** Erzeuger aus den PDF-Metadaten (Creator, sonst Producer) — für den Hinweis „sieht nicht nach einem Exposé aus“ */
+export async function pdfErzeuger(pdf: Uint8Array): Promise<string | null> {
+  try {
+    const d = await PDFDocument.load(pdf, { ignoreEncryption: true, updateMetadata: false });
+    return d.getCreator()?.trim() || d.getProducer()?.trim() || null;
+  } catch { return null; }
 }
 
 export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, dateiname: string): Promise<ExposeAnalyseAntwort> {
@@ -133,6 +142,18 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
   const dObj = dublettenObjekt(objekte, v.objekt);
   const dMk = dublettenMakler(makler, v.makler);
 
+  // Keine Exposé-Datei (Investment-Rechnung, Tabelle)? Dann fehlen Fotos und Makler — vorne als Hinweis
+  const art = dokumentArtPruefen({ dateiname, seiten: analyse.seiten, bilder: fotos.liste.length, erzeuger: await pdfErzeuger(pdf), maklerGefunden: maklerHatDaten(v.makler) });
+  if (art.hinweis) warnungen.unshift(art.hinweis);
+
+  // Hat das erkannte Objekt schon Deals? Dann kann dieses PDF einen davon ergänzen (Fotos, Makler, Exposé) statt einen zweiten anzulegen
+  const bestehendeDeals = dObj
+    ? (await db.select({ id: schema.deals.id, status: schema.deals.status, makler: schema.makler.name, firma: schema.makler.firma })
+      .from(schema.deals).leftJoin(schema.makler, eq(schema.makler.id, schema.deals.maklerId))
+      .where(and(eq(schema.deals.objektId, dObj.match.id), isNull(schema.deals.deletedAt))).orderBy(desc(schema.deals.createdAt)))
+      .map((d) => ({ id: d.id, status: d.status, makler: [d.makler, d.firma].filter(Boolean).join(' · ') || null }))
+    : [];
+
   return {
     modus: analyse.modus, modell: analyse.modell, seiten: analyse.seiten, zeichenProSeite: analyse.zeichenProSeite,
     ...(analyse.hinweis ? { hinweis: analyse.hinweis } : {}),
@@ -148,6 +169,7 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
     makler: { ...v.makler, prio: (dMk?.match.prio as 'A' | 'B' | 'C' | null) ?? 'B' },
     deal: { ...v.deal, kalk: wizardKalkVorbelegen(v.deal.kalk, standard) },
     bilder: fotos.liste.map((x, i) => ({ nr: i, seite: x.seite, breite: x.breite, hoehe: x.hoehe, url: `/api/expose/importe/${importId}/bilder/${i}` })),
+    bestehendeDeals,
     dubletten: {
       objekt: dObj ? { id: dObj.match.id, titel: [objektTitel(dObj.match), dObj.match.stadt].filter(Boolean).join(', '), sicherheit: dObj.confidence } : null,
       makler: dMk ? { id: dMk.match.id, titel: [dMk.match.name, dMk.match.firma].filter(Boolean).join(' · ') || 'Makler', sicherheit: dMk.confidence } : null,
@@ -336,7 +358,15 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
     let objektId: string;
     let objektNeu = false;
     let maklerNeu = false;
-    if (e.objekt.bestehendeId) {
+    // Ergänzen: das PDF gehört zu einem bestehenden Deal — dessen Objekt, kein neues Objekt, kein neuer Deal
+    let ergaenzen: { id: string; maklerId: string | null } | null = null;
+    if (e.ergaenzeDealId) {
+      const [d] = await tx.select({ id: schema.deals.id, objektId: schema.deals.objektId, maklerId: schema.deals.maklerId }).from(schema.deals)
+        .where(and(eq(schema.deals.id, e.ergaenzeDealId), isNull(schema.deals.deletedAt)));
+      if (!d) throw new FachFehler(404, 'Der zu ergänzende Deal wurde nicht gefunden');
+      ergaenzen = { id: d.id, maklerId: d.maklerId };
+      objektId = d.objektId;
+    } else if (e.objekt.bestehendeId) {
       const [o] = await tx.select({ id: schema.objekte.id }).from(schema.objekte).where(and(eq(schema.objekte.id, e.objekt.bestehendeId), isNull(schema.objekte.deletedAt)));
       if (!o) throw new FachFehler(404, 'Gewähltes Objekt nicht gefunden');
       objektId = o.id;
@@ -369,7 +399,9 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
     let maklerId: string | null = null;
     const m = e.makler.daten;
     const tel = m.tel ? telefonNormalisieren(m.tel) : '';
-    if (e.makler.bestehendeId) {
+    if (ergaenzen?.maklerId) {
+      maklerId = ergaenzen.maklerId;
+    } else if (e.makler.bestehendeId) {
       const [alt] = await tx.select({ id: schema.makler.id, tel: schema.makler.tel }).from(schema.makler).where(and(eq(schema.makler.id, e.makler.bestehendeId), isNull(schema.makler.deletedAt)));
       if (!alt) throw new FachFehler(404, 'Gewählter Makler nicht gefunden');
       maklerId = alt.id;
@@ -396,6 +428,24 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
       if (text(m.notizen)) {
         await tx.insert(schema.maklerKommunikation).values({ id: `${maklerId}:${crypto.randomUUID()}`, maklerId, zeitpunkt: sql`now()`, kanal: 'notiz', text: text(m.notizen) });
       }
+    }
+
+    if (ergaenzen) {
+      // Der Deal hatte keinen Makler: jetzt den aus dem Exposé eintragen (Version zählt hoch wie bei jeder Änderung)
+      if (!ergaenzen.maklerId && maklerId) {
+        await tx.update(schema.deals).set({ maklerId, updatedAt: sql`now()`, version: sql`${schema.deals.version} + 1` }).where(eq(schema.deals.id, ergaenzen.id));
+      }
+      if (e.importId) {
+        await tx.update(schema.exposeImporte).set({ dealId: ergaenzen.id, objektId, maklerId, status: 'uebernommen', updatedAt: sql`now()` }).where(eq(schema.exposeImporte.id, e.importId));
+      }
+      if (imp) {
+        const alle = new Map([...angabenAusImport(imp, 'objekt', {}, gelernt), ...angabenAusImport(imp, 'makler', {}, gelernt)].map((a) => [a.feld, a]));
+        for (const z of e.zuordnungen ?? []) {
+          const a = alle.get(z.feld);
+          if (a && z.merken !== false && z.feld.startsWith('angaben.') && a.zuordnung !== 'zugeordnet') await lernen(tx, a.bezeichnung, z.ziel);
+        }
+      }
+      return { dealId: ergaenzen.id, objektId, maklerId, ergaenzt: true };
     }
 
     // 3. Deal-Dublette (gleiches Objekt + gleicher Makler)
@@ -434,7 +484,7 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
         if (a && z.merken !== false && z.feld.startsWith('angaben.') && a.zuordnung !== 'zugeordnet') await lernen(tx, a.bezeichnung, z.ziel);
       }
     }
-    return { dealId, objektId, maklerId };
+    return { dealId, objektId, maklerId, ergaenzt: false };
   });
 
   // >>> Fotos aus dem Exposé: nach der Transaktion ans Objekt (Reihenfolge = Seite), danach Eingangsbilder löschen. Fehler → Warnung.
@@ -447,6 +497,20 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
   // 5. PDF an den Deal: pdfs/<dealId>.pdf und Eintrag im Dokumentenreiter. Der Deal besteht auch, wenn das scheitert.
   const adresse = [e.objekt.daten.strasse, e.objekt.daten.hausnr].filter(Boolean).join(' ') || 'Objekt';
   const dateiname = `Exposé_${adresse}.pdf`;
+  if (ids.ergaenzt) {
+    try {
+      const docId = crypto.randomUUID();
+      const docKey = dokumentSchluessel(ids.dealId, docId, dateiname);
+      await k.speicher.kopieren(BUCKETS.pdfs, e.key, BUCKETS.dealDocs, docKey);
+      const groesse = (await k.speicher.holen(BUCKETS.dealDocs, docKey)).byteLength;
+      await db.insert(schema.dealDokumente).values({ id: docId, dealId: ids.dealId, dateiname, mimeType: 'application/pdf', groesseBytes: groesse, label: 'Exposé (Import, ergänzt)', istExpose: true, storageKey: docKey });
+      await k.speicher.loeschen(BUCKETS.pdfs, [e.key]).catch(() => undefined);
+      return mitFotos({ ...ids, pdfGespeichert: true });
+    } catch (err) {
+      console.error('[expose] PDF-Ergänzung fehlgeschlagen:', err);
+      return mitFotos({ ...ids, pdfGespeichert: false, warnung: 'Deal ergänzt, das Exposé-PDF konnte aber nicht gespeichert werden.' });
+    }
+  }
   try {
     const zielKey = `${ids.dealId}.pdf`;
     await k.speicher.verschieben(BUCKETS.pdfs, e.key, zielKey);
