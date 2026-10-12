@@ -1,6 +1,7 @@
 import {
   ExposeAnalyseAntwort,
   ExposeAngabenAntwort,
+  ExposeBezeichnung,
   ExposeUebernahme,
   ExposeUebernahmeErgebnis,
   ExposeUebernehmen,
@@ -131,8 +132,9 @@ import { filterAnlegen, filterListe, filterLoeschen, filterUmbenennen, filterVor
 import { projektAnlegen, projektDealAuswahl, projektDetail, projekteListe, projektLoeschen, projektSpeichern } from './services/projekte.ts';
 import { fotoDatei, fotoHochladen, fotoLoeschen, fotoPort, fotosListe, fotosSortieren } from './services/fotos.ts';
 import { type Dateispeicher, type GraphClient, AnalyseFehler, type KiClient, KiDienstFehler, KiSchluesselFehler, type PropstackClient, nachrichtenSuche, webSuche, anthropicClient, anthropicSchluesselPruefen } from '@gg/integrations';
-import { bekannteExposeDateien, exposeAnalysieren, exposeEingang, exposeEingangUebernehmen, type ExposeKontext, exposeUebernehmen, importVerwerfen, MAX_EXPOSE_BYTES } from './services/expose.ts';
+import { bekannteExposeDateien, exposeAnalysieren, exposeEingang, exposeEingangUebernehmen, type ExposeKontext, exposeUebernehmen, importVerwerfen, MAX_EXPOSE_BYTES, exposeBild } from './services/expose.ts';
 import { maklerAngaben, maklerUebernahme, objektAngaben, objektUebernahme } from './services/exposeAngaben.ts';
+import { bezeichnungenListe, bezeichnungLoeschen } from './services/exposeBezeichnungen.ts';
 import { auth, type AuthOptionen } from './middleware/auth.ts';
 import {
   dealAnlegen,
@@ -1212,8 +1214,16 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/expose/importe/{id}/verwerfen', request: { params: IdParam }, responses: { 200: json(z.object({ id: z.string() }), 'verworfen'), 404: fehler('nicht gefunden') } }),
-    async (c) => c.json(await importVerwerfen(db, c.req.valid('param').id), 200),
+    async (c) => c.json(await importVerwerfen(db, c.req.valid('param').id, ablage()), 200),
   );
+
+  // Vorschaubild eines Imports (Auth wie bei /api/photos: Header oder Cookie gg-auth)
+  app.get('/api/expose/importe/:id/bilder/:nr', async (c) => {
+    const nr = Number(c.req.param('nr'));
+    if (!Number.isInteger(nr) || nr < 0) throw new FachFehler(404, 'Bild nicht gefunden');
+    const bytes = await exposeBild(db, ablage(), c.req.param('id'), nr);
+    return alsStrom(bytes, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
+  });
 
   // ── Reiter „Aus dem Exposé“ (Objekt/Makler) ───────────────
   const uebernahmeAntworten = { 200: Geaendert, ...konflikt, 422: fehler('kein Ziel für diese Angabe') };
@@ -1232,6 +1242,15 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/expose-uebernahme', request: { params: IdParam, ...body(ExposeUebernahme) }, responses: uebernahmeAntworten }),
     async (c) => c.json(await maklerUebernahme(db, c.req.valid('param').id, c.req.valid('json')), 200),
+  );
+  // ── Exposé-Wörterbuch (gelernt) ───────────────────────────
+  app.openapi(
+    createRoute({ method: 'get', path: '/api/expose/bezeichnungen', responses: { 200: json(z.array(ExposeBezeichnung), 'gelernte Bezeichnungen') } }),
+    async (c) => c.json(await bezeichnungenListe(db), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'delete', path: '/api/expose/bezeichnungen/{schluessel}', request: { params: z.object({ schluessel: z.string().min(1).max(300) }) }, responses: { 200: json(z.object({ schluessel: z.string() }), 'gelöscht'), 404: fehler('nicht gefunden') } }),
+    async (c) => c.json(await bezeichnungLoeschen(db, c.req.valid('param').schluessel), 200),
   );
   app.get('/api/expose/bekannte-dateien', async (c) => c.json(await bekannteExposeDateien(db)));
 

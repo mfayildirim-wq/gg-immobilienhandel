@@ -236,4 +236,39 @@ describe('Exposé v2: Mapping Standard → gg (Protokoll 28)', () => {
       expect(pfadBerichtigen('voellig.anders')).toBeNull();
     });
   });
+
+  describe('gelernte Zuordnungen (Wörterbuch)', () => {
+    const gelernt = { besichtigung: 'details.denkmalschutz', erhaltungsreserve: 'objekt.baujahr' };
+
+    it('eine Angabe ohne Ziel bekommt das gelernte Ziel, mit Wertumwandlung', () => {
+      const v2 = exposeV2Beispiel();
+      const ohne = zuordnen(v2);
+      expect(ohne.zeilen[19]).toMatchObject({ ziel: null, grund: 'keinMapping' });
+      const r = zuordnen(v2, null, { besichtigung: 'details.denkmalschutz' });
+      expect(r.zeilen[19]).toMatchObject({ ziel: 'details.denkmalschutz', grund: 'zugeordnet', gelernt: true });
+      expect(r.werte['details.denkmalschutz']).toBe('nach Vereinbarung');
+    });
+
+    it('nicht lesbarer Wert bleibt weitere Angabe', () => {
+      const r = zuordnen(exposeV2Beispiel(), null, gelernt);
+      // „Erhaltungsreserve: 12.000 €“ ist kein Jahr
+      expect(r.zeilen[18]).toMatchObject({ ziel: null, grund: 'keinMapping' });
+      expect(r.zeilen[18]!.gelernt).toBeUndefined();
+    });
+
+    it('ungültiges gelerntes Ziel wird ignoriert; Mapping-Angaben bleiben unberührt', () => {
+      const r = zuordnen(exposeV2Beispiel(), null, { besichtigung: 'gibt.es.nicht', kaufpreis: 'objekt.baujahr' });
+      expect(r.zeilen[19]).toMatchObject({ ziel: null });
+      expect(r.zeilen[2]).toMatchObject({ ziel: 'objekt.angebotspreis' });
+      expect(r.zeilen[2]!.gelernt).toBeUndefined();
+    });
+
+    it('Teil A hat Vorrang vor dem gelernten Ziel', () => {
+      const v2 = exposeV2MitFeldern();
+      v2.angaben[19]!.wert = '1.300.000 €';
+      const r = zuordnen(v2, null, { besichtigung: 'objekt.angebotspreis' });
+      expect(r.zeilen[19]).toMatchObject({ ziel: null, grund: 'doppelt' });
+      expect(r.pruefdaten.objekt.angebotspreis).toBe(1_250_000);
+    });
+  });
 });

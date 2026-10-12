@@ -716,3 +716,19 @@ export const importKorrekturen = fach
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
   })
   .enableRLS();
+
+/**
+ * Exposé-Wörterbuch (Protokoll 30): wächst beim Zuordnen auf der Prüfseite und im Reiter „Aus dem Exposé“.
+ * Schlüssel = normalisierte Bezeichnung (`bezeichnungSchluessel`), Ziel = gg-Ziel-Schlüssel.
+ */
+export const exposeBezeichnungen = fach
+  .table('expose_bezeichnungen', {
+    schluessel: text('schluessel').primaryKey(),
+    /** Schreibweise, wie sie zuletzt im Exposé stand */
+    bezeichnung: text('bezeichnung').notNull(),
+    ziel: text('ziel').notNull(),
+    anzahl: integer('anzahl').notNull().default(1),
+    zuletzt: timestamp('zuletzt', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+    erstelltVon: text('erstellt_von'),
+  })
+  .enableRLS();

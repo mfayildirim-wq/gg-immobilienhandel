@@ -6,9 +6,9 @@ import * as schema from '../src/schema.ts';
 const tabellen: PgTable[] = Object.values(schema as Record<string, unknown>).filter((v): v is PgTable => is(v, PgTable));
 
 describe('Fachschema', () => {
-  it('enthält die 37 Tabellen aus Protokoll 07, den Anlässe-Zwischenspeicher (23.09.2026) und die Exposé-Importe mit Korrekturen (10.10.2026)', () => {
-    expect(tabellen).toHaveLength(40);
-    expect(tabellen.map((t) => getTableConfig(t).name)).toEqual(expect.arrayContaining(['makler_anlaesse', 'expose_importe', 'import_korrekturen']));
+  it('enthält die 37 Tabellen aus Protokoll 07, den Anlässe-Zwischenspeicher (23.09.2026) die Exposé-Importe mit Korrekturen (10.10.2026) und das Exposé-Wörterbuch (12.10.2026)', () => {
+    expect(tabellen).toHaveLength(41);
+    expect(tabellen.map((t) => getTableConfig(t).name)).toEqual(expect.arrayContaining(['makler_anlaesse', 'expose_importe', 'import_korrekturen', 'expose_bezeichnungen']));
   });
 
   it('legt alle Tabellen im Schema „fach“ mit RLS an', () => {

@@ -12,6 +12,7 @@
 import type { EinheitenTabelle, ExposeV2 } from './erfassung.ts';
 import type { EinheitFeld } from './katalog.ts';
 import { jahrAusText, leerraum, type NormWert, plzOrtTrennen, strasseTrennen, wertNormalisieren, zahlAusText } from './normalisieren.ts';
+import { bezeichnungSchluessel } from './rohdaten.ts';
 import { istMobilnummer } from './uebernahme.ts';
 import { GG_ZIELE, type GgZiel } from './ziele.ts';
 
@@ -138,6 +139,8 @@ export interface ZuordnungZeile {
   /** Wert für `ziel ?? vorschlag` im Zieltyp; null, wenn nicht lesbar. */
   wert: NormWert;
   hinweis?: string;
+  /** Ziel stammt aus dem Wörterbuch gelernter Zuordnungen (Bezeichnung → Ziel), nicht aus der Mapping-Tabelle. */
+  gelernt?: true;
 }
 
 export interface EinheitDetails {
@@ -357,7 +360,6 @@ const kontaktVon = (a: ExposeV2['angaben'][number]) => a.kontakt ?? (a.pfad?.sta
 export type Gelernt = Record<string, string>;
 
 export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null, gelernt: Gelernt = {}): ZuordnungsErgebnis {
-  void gelernt;
   const werte: Record<string, NormWert | string[]> = {};
   const quelleIndex: Record<string, number> = {};
   const zeilen: ZuordnungZeile[] = [];
@@ -464,7 +466,21 @@ export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null, geler
     }
 
     const ziele = a.pfad ? MAPPING[a.pfad] : undefined;
-    if (!ziele?.length) { zeilen.push(ohneZiel('keinMapping')); return; }
+    if (!ziele?.length) {
+      // gelernte Zuordnung (Wörterbuch): gilt wie ein Mapping-Ziel; Teil A behält über `belegen` den Vorrang
+      const gz = gelernt[bezeichnungSchluessel(a.bezeichnung)];
+      if (gz && GG_ZIELE[gz]) {
+        const { wert, hinweis } = zielWert(gz, a.wert, a.pfad);
+        if (wert === null) { zeilen.push(ohneZiel('keinMapping')); return; }
+        const eintrag = GG_ZIELE[gz]!.liste && typeof wert === 'string' && !a.pfad?.startsWith('freitexte.') && !wert.toLowerCase().startsWith(a.bezeichnung.toLowerCase())
+          ? `${a.bezeichnung}: ${wert}` : wert;
+        const grund = belegen(gz, eintrag, i, a.wert);
+        zeilen.push(grund === 'zugeordnet' ? { index: i, ziel: gz, grund, vorschlag: null, wert, gelernt: true, ...(hinweis ? { hinweis } : {}) } : ohneZiel(grund, hinweis));
+        return;
+      }
+      zeilen.push(ohneZiel('keinMapping'));
+      return;
+    }
 
     // Sonderregeln: Name, Adresse
     if (a.pfad === 'kontaktperson.vorname' || a.pfad === 'kontaktperson.name') {

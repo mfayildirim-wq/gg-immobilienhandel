@@ -730,6 +730,8 @@ export const ExposeAnalyseAntwort = z.object({
   makler: ExposeMaklerDaten.passthrough(),
   deal: z.object({ status: z.string(), nachfassFreq: z.string(), notizen: z.string(), kalk: WizardKalkSchema }),
   dubletten: z.object({ objekt: Dublette, makler: Dublette }),
+  // Fotos aus dem Exposé (Protokoll 30 §4.4): liegen im Eingang, werden beim Anlegen ans Objekt übernommen
+  bilder: z.array(z.object({ nr: z.number().int(), seite: z.number().int(), breite: z.number().int(), hoehe: z.number().int(), url: z.string() })).default([]),
 });
 export type ExposeAnalyseAntwort = z.infer<typeof ExposeAnalyseAntwort>;
 
@@ -740,7 +742,7 @@ export const ExposeUebernehmen = z.object({
   /** Verweis auf die gespeicherte Analyse (expose_importe); ohne importId wird wie bisher `extrahiert` verwendet */
   importId: z.string().optional(),
   /** Auf der Prüfseite per Dropdown zugeordnete weitere Angaben (Ziel: gg-Ziel-Schlüssel oder 'notizen') */
-  zuordnungen: z.array(z.object({ feld: z.string(), ziel: z.string() })).max(500).optional(),
+  zuordnungen: z.array(z.object({ feld: z.string(), ziel: z.string(), merken: z.boolean().optional() })).max(500).optional(),
   objekt: z.object({ bestehendeId: z.string().optional(), daten: ExposeObjektDaten }),
   makler: z.object({ bestehendeId: z.string().optional(), daten: ExposeMaklerDaten }),
   deal: z.object({ status: DealStatus, nachfassFreq: z.string().max(40), notizen: z.string().max(10000), kalk: WizardKalkSchema }),
@@ -749,6 +751,8 @@ export type ExposeUebernehmen = z.infer<typeof ExposeUebernehmen>;
 
 export const ExposeUebernahmeErgebnis = z.object({
   dealId: z.string(), objektId: z.string(), maklerId: z.string().nullable(), pdfGespeichert: z.boolean(), warnung: z.string().optional(),
+  /** Anzahl der aus dem Exposé ans Objekt übernommenen Fotos */
+  fotos: z.number().int().default(0),
 });
 
 // ── Reiter „Aus dem Exposé“ (Objekt/Makler) ───────────────────
@@ -762,8 +766,14 @@ export type ExposeAngabenAntwort = z.infer<typeof ExposeAngabenAntwort>;
 /** `ziel`: gg-Ziel-Schlüssel (z. B. 'objekt.angebotspreis', 'details.hausgeld_monat') oder 'notizen' */
 export const ExposeUebernahme = z.object({
   version: z.number().int(), importId: z.string(), feld: z.string(), ziel: z.string().min(1).max(80), ersetzen: z.boolean().default(false),
+  /** Bezeichnung → Ziel im Wörterbuch merken (Standard: ja; nur bei Angaben ohne Mapping) */
+  merken: z.boolean().optional(),
 });
 export type ExposeUebernahme = z.input<typeof ExposeUebernahme>;
+
+/** Eintrag im gelernten Exposé-Wörterbuch (Einstellungen). */
+export const ExposeBezeichnung = z.object({ schluessel: z.string(), bezeichnung: z.string(), ziel: z.string(), anzahl: z.number().int(), zuletzt: z.string() });
+export type ExposeBezeichnung = z.infer<typeof ExposeBezeichnung>;
 
 // ── Bank-Präsentation ──────────────────────────────────────
 

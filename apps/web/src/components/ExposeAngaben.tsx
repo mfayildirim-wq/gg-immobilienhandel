@@ -1,5 +1,5 @@
 import type { ExposeAngabe, ExposeAngabenAntwort } from '@gg/api-contract';
-import { Alert, Badge, Button, Group, Loader, Modal, Select, Spoiler, Stack, Table, Text } from '@mantine/core';
+import { Alert, Badge, Button, Checkbox, Group, Loader, Modal, Select, Spoiler, Stack, Table, Text } from '@mantine/core';
 import { useState } from 'react';
 import { ApiFehler, ExposeKonflikt, useExposeAngaben, useExposeUebernahme } from '../lib/api.ts';
 import { datumDe } from '../lib/format.ts';
@@ -108,6 +108,8 @@ export function ExposeAngaben({ art, id, version }: { art: Art; id: string; vers
   const [auswahl, setAuswahl] = useState<Record<string, string | null>>({});
   const [ersetzen, setErsetzen] = useState<Ersetzen | null>(null);
   const [meldung, setMeldung] = useState<string | null>(null);
+  /** Zeilen, deren Zuordnung nicht im Wörterbuch gemerkt werden soll (Standard: merken) */
+  const [nichtMerken, setNichtMerken] = useState<Record<string, boolean>>({});
 
   if (isLoading) return <Loader size="sm" />;
   if (error || !data) return <Alert color="red">{error?.message ?? 'Exposé-Angaben nicht geladen'}</Alert>;
@@ -121,7 +123,7 @@ export function ExposeAngaben({ art, id, version }: { art: Art; id: string; vers
 
   const senden = (a: ExposeAngabe, ziel: string, ersetzt = false) => {
     setMeldung(null);
-    uebernahme.mutate({ version, importId: a.importId, feld: a.feld, ziel, ersetzen: ersetzt }, {
+    uebernahme.mutate({ version, importId: a.importId, feld: a.feld, ziel, ersetzen: ersetzt, ...(nichtMerken[`${a.importId}:${a.feld}`] ? { merken: false } : {}) }, {
       onSuccess: () => setErsetzen(null),
       onError: (e) => {
         if (e instanceof ExposeKonflikt && e.aktuell !== undefined) {
@@ -173,6 +175,8 @@ export function ExposeAngaben({ art, id, version }: { art: Art; id: string; vers
                   data={zielOptionen(data.ziele, vorschlag)} value={wahl} onChange={(v) => setAuswahl((s) => ({ ...s, [schluessel]: v }))} />
                 <Button size="compact-xs" variant="light" disabled={!wahl || uebernahme.isPending} onClick={() => wahl && senden(a, wahl)}>Übernehmen</Button>
               </Group>
+              <Checkbox size="xs" data-merken={a.feld} label="für künftige Importe merken" checked={!nichtMerken[schluessel]}
+                onChange={(e) => setNichtMerken((m) => ({ ...m, [schluessel]: !e.currentTarget.checked }))} />
               {a.ziel.hinweis && <Text fz={11} c="dimmed">{a.ziel.hinweis}</Text>}
             </Stack>
           )}

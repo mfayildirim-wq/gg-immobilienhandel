@@ -4,6 +4,7 @@ import type {
   ExposeAnalyseAntwort,
   ExposeAngabe,
   ExposeAngabenAntwort,
+  ExposeBezeichnung,
   ExposeUebernahme,
   ExposeUebernehmen,
   Kundenkalkulation,
@@ -529,6 +530,16 @@ export function useExposeUebernahme(art: ExposeArt, id: string) {
     ]),
   });
 }
+// >>> Exposé-Wörterbuch (gelernt)
+export const useExposeBezeichnungen = () => useQuery({ queryKey: ['expose', 'bezeichnungen'], queryFn: () => anfrage<ExposeBezeichnung[]>('/api/expose/bezeichnungen') });
+export function useExposeBezeichnungLoeschen() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (schluessel: string) => anfrage<{ schluessel: string }>(`/api/expose/bezeichnungen/${encodeURIComponent(schluessel)}`, { method: 'DELETE' }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['expose', 'bezeichnungen'] }),
+  });
+}
+// <<< Exposé-Wörterbuch (gelernt)
 /** „Exposé überspringen“: die gespeicherte Analyse gilt als verworfen. */
 export const exposeImportVerwerfen = (importId: string) => anfrage<{ id: string }>(`/api/expose/importe/${importId}/verwerfen`, senden('POST', {}));
 

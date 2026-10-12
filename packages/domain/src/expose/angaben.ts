@@ -139,7 +139,7 @@ export function angabenAusImport(imp: ImportFuerAngaben, art: 'objekt' | 'makler
     aus.push({
       ...kopf, gruppe: gruppeVonPfad(a.pfad), feld: `angaben.${i}`, pfad: a.pfad, bezeichnung: a.bezeichnung,
       standard: a.pfad ? KATALOG[a.pfad]?.label ?? null : null, wert: a.wert, seite: a.seite, belegt: imp.belegt?.[i] ?? null, zuordnung: z.grund,
-      ziel: zielZeile(passend, wert, passend ? (z.ziel ? 'mapping' : 'vorschlag') : null, d, a.pfad, a.wert, z.hinweis),
+      ziel: zielZeile(passend, wert, passend ? (z.ziel ? 'mapping' : 'vorschlag') : null, d, a.pfad, a.wert, z.gelernt ? (z.hinweis ? `gelernt · ${z.hinweis}` : 'gelernt') : z.hinweis),
     });
   });
   if (art === 'objekt') {

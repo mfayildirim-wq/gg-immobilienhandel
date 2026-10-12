@@ -92,6 +92,8 @@ export function ExposeImportSeite() {
   const [zuordnungen, setZuordnungen] = useState<Record<string, string>>({});
   /** Weitere Angaben, die schon ins Formular geschrieben wurden (Feld → gg-Ziel) */
   const [uebernommen, setUebernommen] = useState<Record<string, string>>({});
+  /** Angaben, deren Zuordnung nicht im Wörterbuch gemerkt werden soll (Standard: merken) */
+  const [nichtMerken, setNichtMerken] = useState<Record<string, boolean>>({});
 
   const schaetzung = useMemo(() => stapel.map((f) => exposeKostenSchaetzung(f.size)), [stapel]);
   const summe = schaetzung.reduce((s, e) => s + e.eur, 0);
@@ -113,6 +115,7 @@ export function ExposeImportSeite() {
       setDeal({ status: r.deal.status, nachfassFreq: r.deal.nachfassFreq, notizen: r.deal.notizen, kalk: r.deal.kalk });
       setDublette(null);
       setZuordnungen({});
+      setNichtMerken({});
       setUebernommen({});
       setStatus({ text: `✅ Analyse abgeschlossen${r.hinweis ? ` · ${r.hinweis}` : ''}` });
       setPhase({ art: 'pruefen', schritt: 1 });
@@ -151,6 +154,7 @@ export function ExposeImportSeite() {
       setDeal({ status: r.deal.status, nachfassFreq: r.deal.nachfassFreq, notizen: r.deal.notizen, kalk: r.deal.kalk });
       setDublette(null);
       setZuordnungen({});
+      setNichtMerken({});
       setUebernommen({});
       setStatus({ text: `✅ Analyse abgeschlossen${label}${r.hinweis ? ` · ${r.hinweis}` : ''}` });
       setPhase({ art: 'pruefen', schritt: 1 });
@@ -174,7 +178,10 @@ export function ExposeImportSeite() {
     try {
       const r = await exposeUebernehmen({
         key: a.key, dateiname: datei.name, extrahiert: a.extrahiert, importId: a.importId,
-        ...(Object.keys(zuordnungen).length ? { zuordnungen: Object.entries(zuordnungen).map(([feld, ziel]) => ({ feld, ziel })) } : {}),
+        ...(Object.keys({ ...uebernommen, ...zuordnungen }).length
+          // Ins Formular übernommene Angaben gehen mit, damit das Wörterbuch sie lernt; geschrieben wird dort nichts doppelt
+          ? { zuordnungen: Object.entries({ ...uebernommen, ...zuordnungen }).map(([feld, ziel]) => ({ feld, ziel, ...(nichtMerken[feld] ? { merken: false } : {}) })) }
+          : {}),
         objekt: { ...(objektBestehend ? { bestehendeId: objektBestehend } : {}), daten: objekt },
         makler: { ...(maklerBestehend ? { bestehendeId: maklerBestehend } : {}), daten: makler },
         deal: { ...deal, status: deal.status as (typeof DEAL_STATUS)[number] },
@@ -260,7 +267,7 @@ export function ExposeImportSeite() {
         <ErfassteAngaben
           a={a} formular={{ objekt, makler, kalkulation: deal.kalk }}
           schreiben={(f) => { setObjekt(f.objekt); setMakler(f.makler); setDeal((d) => ({ ...d, kalk: f.kalkulation })); }}
-          zuordnungen={zuordnungen} setZuordnungen={setZuordnungen} uebernommen={uebernommen} setUebernommen={setUebernommen}
+          zuordnungen={zuordnungen} setZuordnungen={setZuordnungen} uebernommen={uebernommen} setUebernommen={setUebernommen} nichtMerken={nichtMerken} setNichtMerken={setNichtMerken}
         />
       )}
       {phase.art === 'pruefen' && a && phase.schritt === 2 && (
@@ -378,6 +385,32 @@ function UploadSchritt(p: {
 
 const feldLabel = (text: string, konf?: string): ReactNode => <span>{text}<KonfidenzPunkt konf={konf} /></span>;
 
+// >>> Fotos aus dem Exposé: alle gefilterten Bilder gehen beim Anlegen automatisch ans Objekt, keine Auswahl
+function ExposeFotos({ bilder }: { bilder: ExposeAnalyseAntwort['bilder'] }) {
+  const [offen, setOffen] = useState(false);
+  if (!bilder.length) return <Text size="xs" c="dimmed" aria-label="Fotos aus dem Exposé">Keine Fotos gefunden</Text>;
+  const eingeklappt = bilder.length > 12 && !offen;
+  return (
+    <Paper withBorder p="sm" aria-label="Fotos aus dem Exposé">
+      <Group justify="space-between" mb={eingeklappt ? 0 : 'xs'}>
+        <Text size="xs" fw={700} c="dimmed" tt="uppercase">Fotos aus dem Exposé ({bilder.length}) — werden beim Anlegen übernommen</Text>
+        {bilder.length > 12 && <Button size="compact-xs" variant="subtle" onClick={() => setOffen(!offen)}>{offen ? 'Einklappen' : 'Anzeigen'}</Button>}
+      </Group>
+      {!eingeklappt && (
+        <SimpleGrid cols={{ base: 3, sm: 4, md: 6 }} spacing="xs">
+          {bilder.map((b) => (
+            <Stack key={b.nr} gap={2} align="center">
+              <img src={b.url} alt={`Foto von Seite ${b.seite}`} loading="lazy" style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 4, display: 'block' }} />
+              <Text size="xs" c="dimmed">S. {b.seite}</Text>
+            </Stack>
+          ))}
+        </SimpleGrid>
+      )}
+    </Paper>
+  );
+}
+// <<< Fotos aus dem Exposé
+
 function ObjektSchritt({ a, objekt, setObjekt, bestehend, setBestehend }: { a: ExposeAnalyseAntwort; objekt: ExposeObjektDaten; setObjekt: (o: ExposeObjektDaten) => void; bestehend: string | null; setBestehend: (id: string | null) => void }) {
   const k = a.konfidenz;
   const t = (feld: keyof ExposeObjektDaten, label: string, konfSchluessel = feld as string) => (
@@ -407,6 +440,7 @@ function ObjektSchritt({ a, objekt, setObjekt, bestehend, setBestehend }: { a: E
           </Group>
         </Alert>
       )}
+      <ExposeFotos bilder={a.bilder ?? []} />
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
         {t('strasse', 'Straße')}{t('hausnr', 'Hausnummer')}{t('plz', 'PLZ')}{t('stadt', 'Stadt')}{t('bundesland', 'Bundesland')}{n('baujahr', 'Baujahr')}
         {n('wohnflaeche', 'Wohnfläche m²')}{n('grundstueck', 'Grundstück m²')}{n('einheitenAnz', 'Einheiten gesamt')}{n('angebotspreis', 'Angebotspreis €')}
@@ -553,10 +587,11 @@ function formSchreiben(f: Formular, pfad: string, wert: unknown): Formular {
 }
 const istLeer = (v: unknown) => v === null || v === undefined || (typeof v === 'string' && !v.trim());
 
-function ErfassteAngaben({ a, formular, schreiben, zuordnungen, setZuordnungen, uebernommen, setUebernommen }: {
+function ErfassteAngaben({ a, formular, schreiben, zuordnungen, setZuordnungen, uebernommen, setUebernommen, nichtMerken, setNichtMerken }: {
   a: ExposeAnalyseAntwort; formular: Formular; schreiben: (f: Formular) => void;
   zuordnungen: Record<string, string>; setZuordnungen: (z: Record<string, string>) => void;
   uebernommen: Record<string, string>; setUebernommen: (u: Record<string, string>) => void;
+  nichtMerken: Record<string, boolean>; setNichtMerken: (m: Record<string, boolean>) => void;
 }) {
   const [auswahl, setAuswahl] = useState<Record<string, string | null>>({});
   const [fehler, setFehler] = useState<Record<string, string>>({});
@@ -643,6 +678,8 @@ function ErfassteAngaben({ a, formular, schreiben, zuordnungen, setZuordnungen, 
                                 data={optionen(art, x)} value={wahl} onChange={(v) => setAuswahl((s) => ({ ...s, [x.feld]: v }))} />
                               <Button size="compact-xs" variant="light" disabled={!wahl} onClick={() => wahl && uebernehmen(art, x, wahl)}>Übernehmen</Button>
                             </Group>
+                            <Checkbox size="xs" data-merken={x.feld} label="für künftige Importe merken" checked={!nichtMerken[x.feld]}
+                              onChange={(e) => setNichtMerken({ ...nichtMerken, [x.feld]: !e.currentTarget.checked })} />
                             {fehler[x.feld] && <Text fz={11} c="red">{fehler[x.feld]}</Text>}
                             {!fehler[x.feld] && x.ziel.hinweis && <Text fz={11} c="dimmed">{x.ziel.hinweis}</Text>}
                           </Stack>

@@ -64,6 +64,13 @@
       "when": 1791651817005,
       "tag": "20261010170337_expose_importe",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791817830089,
+      "tag": "20261012151030_expose_bezeichnungen",
+      "breakpoints": true
     }
   ]
 }

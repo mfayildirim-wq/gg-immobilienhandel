@@ -78,6 +78,9 @@ function testExposeV2(kennung: string): Uint8Array {
 }
 
 test('Exposé v2: weitere Angaben per Dropdown auf der Prüfseite und im Reiter „Aus dem Exposé“', async ({ page }, info) => {
+  // Was frühere Läufe ins Wörterbuch gelernt haben, würde die Zeilen hier automatisch zuordnen
+  const gelernt = (await (await page.request.get('/api/expose/bezeichnungen')).json()) as { schluessel: string }[];
+  for (const g of gelernt) await page.request.delete(`/api/expose/bezeichnungen/${encodeURIComponent(g.schluessel)}`);
   const kennung = `V${Date.now()}${info.project.name.slice(0, 1)}`;
   const datei = join(tmpdir(), `${kennung}.pdf`);
   writeFileSync(datei, testExposeV2(kennung));
@@ -166,3 +169,37 @@ test('Exposé v2: weitere Angaben per Dropdown auf der Prüfseite und im Reiter 
   await m.getByRole('tab', { name: '📄 Aus dem Exposé' }).click();
   await expect(m.getByRole('region', { name: 'Exposé-Angaben' })).toContainText('max@beispiel.test');
 });
+
+// >>> Fotos aus dem Exposé (Protokoll 30 §4.4, §10): alle gefilterten Bilder gehen automatisch ans Objekt, keine Auswahl
+test('Exposé mit 2 Bildern: Prüfseite zeigt „Fotos aus dem Exposé (2)“, nach dem Anlegen hat das Objekt 2 Fotos', async ({ page }, info) => {
+  // Das Test-PDF mit Bildern baut `pdfMitBildern` (packages/integrations/src/test/pdf-basteln.ts); fehlt es noch, entfällt der Test.
+  const basteln = (await import('@gg/integrations/test-pdf')) as Record<string, unknown>;
+  test.skip(typeof basteln.pdfMitBildern !== 'function', 'pdfMitBildern ist noch nicht vorhanden');
+  const kennung = `F${Date.now()}${info.project.name.slice(0, 1)}`;
+  const datei = join(tmpdir(), `${kennung}.pdf`);
+  const zeilen = [
+    `Expose ${kennung} - Mehrfamilienhaus in guter Lage mit solidem Mietertrag und Entwicklungspotenzial`,
+    `Adresse: ${kennung}strasse 12, 89073 Ulm`, 'Kaufpreis: 1.250.000 EUR', 'Wohnflaeche: 240 m2', 'Baujahr: 1965',
+    `Makler: Anna ${kennung} | Beispiel Immobilien GmbH | 0171 ${kennung.replace(/\D/g, '').slice(-7).padStart(7, '0')} | anna.${kennung.toLowerCase()}@beispiel.test`,
+  ];
+  // zwei verschieden große Fotos auf Seite 1
+  writeFileSync(datei, (basteln.pdfMitBildern as (seiten: { zeilen: string[]; bilder?: { breite: number; hoehe: number }[] }[]) => Uint8Array)(
+    [{ zeilen, bilder: [{ breite: 800, hoehe: 600 }, { breite: 900, hoehe: 640 }] }]));
+
+  await durchWizard(page, datei);
+  const fotos = page.getByLabel('Fotos aus dem Exposé');
+  await expect(fotos).toContainText('Fotos aus dem Exposé (2)');
+  await expect(fotos.getByRole('img')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Weiter: Makler →' }).click();
+  await page.getByRole('button', { name: 'Weiter: Deal →' }).click();
+  await page.getByRole('textbox', { name: 'Maklerprov. %' }).fill('0');
+  await page.getByRole('button', { name: '✅ Deal anlegen' }).click();
+  await expect(page).toHaveURL(/\/deals\?deal=/, { timeout: 15_000 });
+
+  const dealId = new URL(page.url()).searchParams.get('deal')!;
+  const deal = await (await page.request.get(`/api/deals/${dealId}`)).json();
+  const liste = await (await page.request.get(`/api/objekte/${deal.objekt.id}/fotos`)).json();
+  expect(liste).toHaveLength(2);
+  expect(liste.map((f: { dateiname: string }) => f.dateiname).every((n: string) => /^Exposé S\.\d+-\d+\.jpg$/.test(n))).toBe(true);
+});
+// <<< Fotos aus dem Exposé

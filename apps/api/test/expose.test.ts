@@ -2,7 +2,7 @@ import { createDb, schema, verlangeLokaleDatenbank } from '@gg/db';
 import { KALK_STANDARD } from '@gg/domain';
 import { KiDienstFehler, KiSchluesselFehler, kiAttrappe, speicherImSpeicher, testExpose, testExposeV2 } from '@gg/integrations';
 import { eq, inArray, like } from 'drizzle-orm';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.ts';
 import { mitAusgeliefertenStandards } from './standardwerte.ts';
 
@@ -17,7 +17,11 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
   const angelegt = { deals: [] as string[], objekte: [] as string[], makler: [] as string[], importe: [] as string[] };
   mitAusgeliefertenStandards(url!);
 
+  // Gelernte Bezeichnungen aus früheren Läufen würden „Vorschlag“ zu „Mapping“ machen
+  beforeAll(async () => { await db.delete(schema.exposeBezeichnungen); });
+
   afterAll(async () => {
+    await db.delete(schema.exposeBezeichnungen);
     if (angelegt.importe.length) {
       await db.delete(schema.importKorrekturen).where(inArray(schema.importKorrekturen.importId, angelegt.importe));
       await db.delete(schema.exposeImporte).where(inArray(schema.exposeImporte.id, angelegt.importe));
@@ -277,7 +281,7 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
     const r = await json('/api/expose/uebernehmen', {
       key, dateiname: `${eigene}.pdf`, extrahiert: a.extrahiert, importId: a.importId,
       zuordnungen: [
-        { feld: ruecklage, ziel: 'details.instandhaltungsruecklage' },
+        { feld: ruecklage, ziel: 'details.instandhaltungsruecklage', merken: false },
         { feld: besichtigung, ziel: 'notizen' },
         { feld: besichtigung, ziel: 'details.sanierungen' },
         { feld: telefonZwei, ziel: 'makler.weitereKontakte' },

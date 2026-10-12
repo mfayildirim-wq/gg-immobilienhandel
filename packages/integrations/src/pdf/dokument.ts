@@ -9,6 +9,8 @@ const pdfjsLaden = () => (geladen ??= import('pdfjs-dist/legacy/build/pdf.mjs'))
 
 const MAX_SEITEN = 50;
 const ZEILEN_TOLERANZ = 3;
+/** Standard-Zeitbudget für OCR je Dokument. */
+const OCR_BUDGET_MS = 120_000;
 /** Unter so vielen Zeichen gilt eine Seite als Bild-Seite. */
 export const BILDSEITE_ZEICHEN = 100;
 
@@ -73,9 +75,10 @@ async function seiteRendern(page: any, dpi = 200): Promise<Uint8Array> {
 
 /**
  * Liest das PDF ohne KI. Wirft nicht: Unlesbares ergibt Seiten vom Typ „leer“ (der Aufrufer geht dann den PDF-Weg).
- * `ocr` fehlt → Bild-Seiten bleiben ohne Text.
+ * `ocr` fehlt → Bild-Seiten bleiben ohne Text. `ocrBudgetMs` (Standard 120 s): ist die bisher für OCR verbrauchte Zeit größer,
+ * folgen keine weiteren OCR-Seiten (Seite bleibt `bild` ohne OCR; Hinweis per console.warn).
  */
-export async function pdfDokument(pdf: Uint8Array, optionen: { ocr?: Ocr; maxSeiten?: number } = {}): Promise<Dokument> {
+export async function pdfDokument(pdf: Uint8Array, optionen: { ocr?: Ocr; maxSeiten?: number; ocrBudgetMs?: number } = {}): Promise<Dokument> {
   const seiten: DokumentSeite[] = [];
   let doc: any;
   try {
@@ -84,6 +87,9 @@ export async function pdfDokument(pdf: Uint8Array, optionen: { ocr?: Ocr; maxSei
     console.error('[pdf-dokument] PDF nicht lesbar:', e instanceof Error ? e.message.slice(0, 200) : e);
     return { version: DOKUMENT_VERSION, seitenGesamt: 0, seiten: [] };
   }
+  const ocrBudget = optionen.ocrBudgetMs ?? OCR_BUDGET_MS;
+  let ocrZeit = 0;
+  let budgetGemeldet = false;
   try {
     const limit = Math.min(doc.numPages, optionen.maxSeiten ?? MAX_SEITEN);
     for (let nr = 1; nr <= limit; nr++) {
@@ -101,6 +107,12 @@ export async function pdfDokument(pdf: Uint8Array, optionen: { ocr?: Ocr; maxSei
         const zeichen = zeilen.flat().join('').replace(/\s/g, '').length;
         if (zeichen >= BILDSEITE_ZEICHEN) { seiten.push({ nr, typ: 'text', zeilen, ocr: null }); continue; }
         if (!optionen.ocr) { seiten.push({ nr, typ: zeichen ? 'text' : 'bild', zeilen, ocr: null }); continue; }
+        if (ocrZeit > ocrBudget) {
+          if (!budgetGemeldet) { budgetGemeldet = true; console.warn(`[pdf-dokument] OCR-Zeitbudget (${ocrBudget} ms) überschritten — ab Seite ${nr} keine OCR mehr`); }
+          seiten.push({ nr, typ: 'bild', zeilen, ocr: null });
+          continue;
+        }
+        const ocrStart = Date.now();
         try {
           const o = await optionen.ocr(await seiteRendern(page));
           // vorhandener Textlayer bleibt vorne, OCR-Zeilen danach
@@ -108,6 +120,8 @@ export async function pdfDokument(pdf: Uint8Array, optionen: { ocr?: Ocr; maxSei
         } catch (e) {
           console.warn('[pdf-dokument] OCR Seite', nr, 'fehlgeschlagen:', e instanceof Error ? e.message : e);
           seiten.push({ nr, typ: 'bild', zeilen, ocr: null });
+        } finally {
+          ocrZeit += Date.now() - ocrStart;
         }
       } catch {
         seiten.push({ nr, typ: 'leer', zeilen: [], ocr: null });

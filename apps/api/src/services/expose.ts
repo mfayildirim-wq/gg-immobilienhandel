@@ -2,11 +2,11 @@ import type { ExposeAnalyseAntwort, ExposeUebernehmen } from '@gg/api-contract';
 import { type Db, schema } from '@gg/db';
 import {
   type Angabe, angabenAusImport, belegePruefen, berechneAnkauf, dealEinheitenAusExpose, dublettenDeal, dublettenMakler, dublettenObjekt, einheitAlsEingabe,
-  EXPOSE_V2_SCHEMA, type ExposeV2, exposeVorbereiten, GG_ZIELE, type ImportFuerAngaben, maklerHatDaten, normalisiereFrequenz, telefonErsetzen,
+  EXPOSE_V2_SCHEMA, type ExposeV2, exposeVorbereiten, type Gelernt, GG_ZIELE, type ImportFuerAngaben, maklerHatDaten, normalisiereFrequenz, telefonErsetzen,
   telefonNormalisieren, uebernahmeWert, type WeitereKontakte, weitereKontakte, wizardKalkSpeichern, wizardKalkVorbelegen, type ZielArt, zuordnen,
 } from '@gg/domain';
 import {
-  analysiereExpose, BUCKETS, type Dateispeicher, dokumentSchluessel, EINGANG, istEingangsSchluessel, istPdf, type KiClient, kostenBuchung, pdfDokument, pdfText,
+  analysiereExpose, BUCKETS, bilderAusPdf, type ExposeBild, type Dateispeicher, dokumentSchluessel, EINGANG, istEingangsSchluessel, istPdf, type KiClient, kostenBuchung, pdfDokument, pdfText,
   tesseractOcr,
 } from '@gg/integrations';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
@@ -14,12 +14,16 @@ import { auditSchreiben } from './audit.ts';
 import { FachFehler } from '../fehler.ts';
 import { exposeExtraktionLesen, kalkStandardLesen } from './einstellungen.ts';
 import { detailsLesen, detailsSetzen, fuerAngaben, listeAnhaengen } from './exposeAngaben.ts';
+import { gelerntLesen, lernen } from './exposeBezeichnungen.ts';
+import { fotoHochladen } from './fotos.ts';
 import { objektTitel } from './objekte.ts';
 
 export interface ExposeKontext {
   speicher: Dateispeicher;
   ki: KiClient | null;
   attrappe: boolean;
+  /** Fotos aus dem PDF herauslösen; Standard `bilderAusPdf`, im Test austauschbar */
+  bilder?: (pdf: Uint8Array) => Promise<ExposeBild[]>;
 }
 
 export const MAX_EXPOSE_BYTES = 200 * 1024 * 1024;
@@ -71,6 +75,8 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
   }
   if (!istPdf(pdf)) throw new FachFehler(422, `„${dateiname}“ ist kein PDF.`);
 
+  // Fotos parallel zur Analyse herauslösen (Zeit sparen); ein Fehler dort stoppt die Analyse nicht
+  const bilderLauf = (k.bilder ?? bilderAusPdf)(pdf).then((b) => ({ b, fehler: null as unknown }), (fehler: unknown) => ({ b: [] as ExposeBild[], fehler }));
   const einstellung = await exposeExtraktionLesen(db);
   // Rohdaten ohne KI: Textlayer + Texterkennung der Bild-Seiten (Protokoll 30, P1); der OCR-Worker lebt nur für diese Analyse
   const texterkennung = tesseractOcr();
@@ -86,6 +92,7 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
   let v2: ExposeV2 | null = null;
   let belegt: (boolean | null)[] = [];
   let belegQuote: number | null = null;
+  let gelerntAnalyse: Gelernt = {};
   const warnungen = [...analyse.warnungen];
   let v0: any = analyse.extrahiert;
   if (analyse.v2) {
@@ -97,18 +104,23 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
       belegQuote = b.quote;
       v2 = { ...v2, angaben: v2.angaben.map((x, i) => (b.seiteBerichtigt[i] !== undefined ? { ...x, seite: b.seiteBerichtigt[i]! } : x)) };
     }
-    const z = zuordnen(v2, belegt);
+    gelerntAnalyse = await gelerntLesen(db);
+    const z = zuordnen(v2, belegt, gelerntAnalyse);
     warnungen.push(...z.warnungen);
     v0 = z.pruefdaten;
   }
 
   const importId = crypto.randomUUID();
+  // >>> Fotos aus dem Exposé: in den Eingang, nur die Liste (ohne Bilddaten) in die Analyse
+  const fotos = await bilderAblegen(k.speicher, importId, await bilderLauf);
+  warnungen.push(...fotos.warnungen);
+  // <<< Fotos aus dem Exposé
   const [zeile] = await db.insert(schema.exposeImporte).values({
     id: importId, eingangKey: key, dateiname, schemaVersion: analyse.schemaVersion, promptVersion: analyse.promptVersion, modell: analyse.modell,
     weg: analyse.modus, seitenGelesen: analyse.seitenTexte.length || null, seitenGesamt: analyse.seiten, stopReason: analyse.stopReason,
     inputTokens: analyse.usage.inputTokens, outputTokens: analyse.usage.outputTokens, dauerMs: analyse.dauerMs, kostenEur: analyse.kostenEur,
     status: 'analysiert', rohdaten: v2 ?? v0,
-    analyse: { belegt, belegQuote, warnungen, nachfass: analyse.nachfass, wiederholung: analyse.wiederholung },
+    analyse: { belegt, belegQuote, warnungen, nachfass: analyse.nachfass, wiederholung: analyse.wiederholung, bilder: fotos.liste },
   }).returning({ createdAt: schema.exposeImporte.createdAt });
 
   const imp = v2 ? { id: importId, datum: zeile!.createdAt, rohdaten: v2, belegt } : null;
@@ -128,19 +140,91 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
     extrahiert: v0,
     importId, schemaVersion: analyse.schemaVersion,
     // Leerer Datensatz: auf der Prüfseite gibt es noch nichts Gespeichertes → Status „leer“
-    angaben: { objekt: imp ? angabenAusImport(imp, 'objekt', {}) : [], makler: imp ? angabenAusImport(imp, 'makler', {}) : [] },
+    angaben: { objekt: imp ? angabenAusImport(imp, 'objekt', {}, gelerntAnalyse) : [], makler: imp ? angabenAusImport(imp, 'makler', {}, gelerntAnalyse) : [] },
     ziele: { objekt: zieleListe(['objekt', 'kalkulation']), makler: zieleListe(['makler']) },
     belegQuote, warnungen,
     konfidenz: v0?._konfidenz ?? {},
     objekt: v.objekt,
     makler: { ...v.makler, prio: (dMk?.match.prio as 'A' | 'B' | 'C' | null) ?? 'B' },
     deal: { ...v.deal, kalk: wizardKalkVorbelegen(v.deal.kalk, standard) },
+    bilder: fotos.liste.map((x, i) => ({ nr: i, seite: x.seite, breite: x.breite, hoehe: x.hoehe, url: `/api/expose/importe/${importId}/bilder/${i}` })),
     dubletten: {
       objekt: dObj ? { id: dObj.match.id, titel: [objektTitel(dObj.match), dObj.match.stadt].filter(Boolean).join(', '), sicherheit: dObj.confidence } : null,
       makler: dMk ? { id: dMk.match.id, titel: [dMk.match.name, dMk.match.firma].filter(Boolean).join(' · ') || 'Makler', sicherheit: dMk.confidence } : null,
     },
   };
 }
+
+// >>> Fotos aus dem Exposé (Protokoll 30 §4.4, §10): alle gefilterten Bilder automatisch ans Objekt, keine Auswahl
+export interface EingangsBild { key: string; seite: number; breite: number; hoehe: number; bytes: number; hash: string }
+
+const bildSchluessel = (importId: string, nr: number) => `${EINGANG}/${importId}/bild-${nr}.jpg`;
+
+async function bilderAblegen(speicher: Dateispeicher, importId: string, lauf: { b: ExposeBild[]; fehler: unknown }) {
+  const warnungen: string[] = [];
+  const liste: EingangsBild[] = [];
+  if (lauf.fehler) {
+    console.error('[expose] Fotos nicht herausgelöst:', lauf.fehler);
+    warnungen.push('Die Fotos konnten nicht aus dem Exposé herausgelöst werden.');
+  }
+  const sortiert = [...lauf.b].sort((a, b) => a.seite - b.seite);
+  let fehlgeschlagen = 0;
+  for (const x of sortiert) {
+    const key = bildSchluessel(importId, liste.length);
+    try {
+      await speicher.ablegen(BUCKETS.pdfs, key, x.bytes, x.mime);
+      liste.push({ key, seite: x.seite, breite: x.breite, hoehe: x.hoehe, bytes: x.bytes.byteLength, hash: x.hash });
+    } catch (e) {
+      console.error('[expose] Foto nicht abgelegt:', e);
+      fehlgeschlagen++;
+    }
+  }
+  if (fehlgeschlagen) warnungen.push(`${fehlgeschlagen} Foto(s) konnten nicht zwischengespeichert werden.`);
+  return { liste, warnungen };
+}
+
+const eingangsBilder = (analyse: unknown): EingangsBild[] => {
+  const l = (analyse as { bilder?: unknown } | null)?.bilder;
+  return Array.isArray(l) ? l.filter((x): x is EingangsBild => !!x && typeof x.key === 'string' && typeof x.seite === 'number') : [];
+};
+
+/** Eingangsbilder eines Imports löschen (nach der Übernahme oder beim Verwerfen). */
+async function bilderLoeschen(speicher: Dateispeicher, bilder: EingangsBild[]) {
+  if (bilder.length) await speicher.loeschen(BUCKETS.pdfs, bilder.map((x) => x.key)).catch((e) => console.error('[expose] Eingangsbilder nicht gelöscht:', e));
+}
+
+/** Ein Eingangsbild eines Imports für die Vorschau auf der Prüfseite. */
+export async function exposeBild(db: Db, speicher: Dateispeicher, importId: string, nr: number) {
+  const [z] = await db.select({ analyse: schema.exposeImporte.analyse }).from(schema.exposeImporte).where(eq(schema.exposeImporte.id, importId));
+  const b = z ? eingangsBilder(z.analyse)[nr] : undefined;
+  if (!b) throw new FachFehler(404, 'Bild nicht gefunden');
+  try {
+    return await speicher.holen(BUCKETS.pdfs, b.key);
+  } catch {
+    throw new FachFehler(404, 'Bild nicht mehr vorhanden');
+  }
+}
+
+/** Bilder eines Imports ans Objekt hängen. Bei bestehendem Objekt keine Doppelten (gleicher Dateiname und gleiche Größe). Wirft nicht. */
+async function bilderUebernehmen(db: Db, speicher: Dateispeicher, objektId: string, bilder: EingangsBild[], warnungen: string[]): Promise<number> {
+  const vorhanden = new Set((await db.select({ n: schema.objektFotos.dateiname, g: schema.objektFotos.groesseBytes }).from(schema.objektFotos).where(eq(schema.objektFotos.objektId, objektId))).map((f) => `${f.n}|${f.g}`));
+  let n = 0;
+  let fehler = 0;
+  for (const [nr, b] of bilder.entries()) {
+    const dateiname = `Exposé S.${b.seite}-${nr + 1}.jpg`;
+    if (vorhanden.has(`${dateiname}|${b.bytes}`)) continue;
+    try {
+      await fotoHochladen(db, speicher, objektId, await speicher.holen(BUCKETS.pdfs, b.key), dateiname);
+      n++;
+    } catch (e) {
+      console.error('[expose] Foto nicht übernommen:', e);
+      fehler++;
+    }
+  }
+  if (fehler) warnungen.push(`${fehler} Foto(s) konnten nicht ans Objekt übernommen werden.`);
+  return n;
+}
+// <<< Fotos aus dem Exposé
 
 /** gg-Ziele für das Dropdown der Prüfseite; Objekt und Kalkulation stehen dort gemeinsam. */
 const zieleListe = (arten: ZielArt[]) =>
@@ -184,10 +268,10 @@ interface Zuordnungen {
  * Manuelle Zuordnungen der Prüfseite (`angaben.N` → gg-Ziel oder 'notizen') in Schreibaufträge übersetzen. Ziele mit
  * Prüfseitenfeld (`pruef`) setzt die Oberfläche selbst ins Formular; Kalkulation ebenso. Ungültiges wird übergangen.
  */
-function zuordnungenAuswerten(imp: ImportFuerAngaben, liste: ExposeUebernehmen['zuordnungen'], details: Record<string, unknown>): Zuordnungen {
+function zuordnungenAuswerten(imp: ImportFuerAngaben, liste: ExposeUebernehmen['zuordnungen'], gelernt: Gelernt, details: Record<string, unknown>): Zuordnungen {
   const aus: Zuordnungen = { objekt: { details, notizen: [], spalten: {} }, makler: { spalten: {}, weitere: { namen: [], telefonnummern: [], emails: [] } }, korrekturen: [] };
   if (!liste?.length) return aus;
-  const angaben = new Map<string, Angabe>([...angabenAusImport(imp, 'objekt', {}), ...angabenAusImport(imp, 'makler', {})].map((a) => [a.feld, a]));
+  const angaben = new Map<string, Angabe>([...angabenAusImport(imp, 'objekt', {}, gelernt), ...angabenAusImport(imp, 'makler', {}, gelernt)].map((a) => [a.feld, a]));
   for (const { feld, ziel } of liste) {
     const a = angaben.get(feld);
     if (!a || !feld.startsWith('angaben.')) continue;
@@ -212,12 +296,14 @@ function zuordnungenAuswerten(imp: ImportFuerAngaben, liste: ExposeUebernehmen['
 }
 
 /** „Exposé überspringen“: die gespeicherte Analyse gilt als verworfen (nur solange sie nicht übernommen ist). */
-export async function importVerwerfen(db: Db, id: string) {
-  const [imp] = await db.select({ status: schema.exposeImporte.status }).from(schema.exposeImporte).where(eq(schema.exposeImporte.id, id));
+export async function importVerwerfen(db: Db, id: string, speicher?: Dateispeicher) {
+  const [imp] = await db.select({ status: schema.exposeImporte.status, analyse: schema.exposeImporte.analyse }).from(schema.exposeImporte).where(eq(schema.exposeImporte.id, id));
   if (!imp) throw new FachFehler(404, 'Exposé-Import nicht gefunden');
   if (imp.status === 'analysiert') {
     await db.update(schema.exposeImporte).set({ status: 'verworfen', updatedAt: sql`now()` })
       .where(and(eq(schema.exposeImporte.id, id), eq(schema.exposeImporte.status, 'analysiert')));
+    // Eingangsbilder werden nicht mehr gebraucht
+    if (speicher) await bilderLoeschen(speicher, eingangsBilder(imp.analyse));
   }
   return { id };
 }
@@ -232,14 +318,17 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
 
   // Gespeicherte Analyse (expose_importe); ohne importId wie bisher das mitgeschickte `extrahiert`
   let imp: (ImportFuerAngaben & { promptVersion: string | null }) | null = null;
+  let importBilder: EingangsBild[] = [];
   if (e.importId) {
     const [z] = await db.select().from(schema.exposeImporte).where(eq(schema.exposeImporte.id, e.importId));
     if (!z) throw new FachFehler(404, 'Exposé-Import nicht gefunden');
+    importBilder = eingangsBilder(z.analyse);
     if (z.schemaVersion === EXPOSE_V2_SCHEMA) imp = { ...fuerAngaben(z), promptVersion: z.promptVersion };
   }
-  const zuordnung = imp ? zuordnen(imp.rohdaten, imp.belegt) : null;
+  const gelernt = await gelerntLesen(db);
+  const zuordnung = imp ? zuordnen(imp.rohdaten, imp.belegt, gelernt) : null;
   const v0 = zuordnung ? zuordnung.pruefdaten : e.extrahiert;
-  const manuell = imp ? zuordnungenAuswerten(imp, e.zuordnungen, objektDetails(e.objekt.daten, zuordnung!.details, e.importId)) : null;
+  const manuell = imp ? zuordnungenAuswerten(imp, e.zuordnungen, gelernt, objektDetails(e.objekt.daten, zuordnung!.details, e.importId)) : null;
 
   const ids = await db.transaction(async (tx) => {
     // 1. Objekt
@@ -336,8 +425,23 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
         aktion: 'zugeordnet', konfidenz: null, promptVersion: imp!.promptVersion,
       });
     }
+    // Wörterbuch lernt mit: Angaben ohne Mapping, die der Nutzer einem gg-Ziel zugeordnet hat (auch ins Formular; „merken“ = Standard ja)
+    if (imp) {
+      const alle = new Map([...angabenAusImport(imp, 'objekt', {}, gelernt), ...angabenAusImport(imp, 'makler', {}, gelernt)].map((a) => [a.feld, a]));
+      for (const z of e.zuordnungen ?? []) {
+        const a = alle.get(z.feld);
+        if (a && z.merken !== false && z.feld.startsWith('angaben.') && a.zuordnung !== 'zugeordnet') await lernen(tx, a.bezeichnung, z.ziel);
+      }
+    }
     return { dealId, objektId, maklerId };
   });
+
+  // >>> Fotos aus dem Exposé: nach der Transaktion ans Objekt (Reihenfolge = Seite), danach Eingangsbilder löschen. Fehler → Warnung.
+  const fotoWarnungen: string[] = [];
+  const fotos = importBilder.length ? await bilderUebernehmen(db, k.speicher, ids.objektId, importBilder, fotoWarnungen) : 0;
+  await bilderLoeschen(k.speicher, importBilder);
+  const mitFotos = <T extends object>(r: T & { warnung?: string }) => ({ ...r, fotos, ...(fotoWarnungen.length ? { warnung: [r.warnung, ...fotoWarnungen].filter(Boolean).join(' ') } : {}) });
+  // <<< Fotos aus dem Exposé
 
   // 5. PDF an den Deal: pdfs/<dealId>.pdf und Eintrag im Dokumentenreiter. Der Deal besteht auch, wenn das scheitert.
   const adresse = [e.objekt.daten.strasse, e.objekt.daten.hausnr].filter(Boolean).join(' ') || 'Objekt';
@@ -350,10 +454,10 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
     await k.speicher.kopieren(BUCKETS.pdfs, zielKey, BUCKETS.dealDocs, docKey);
     const groesse = (await k.speicher.holen(BUCKETS.dealDocs, docKey)).byteLength;
     await db.insert(schema.dealDokumente).values({ id: docId, dealId: ids.dealId, dateiname, mimeType: 'application/pdf', groesseBytes: groesse, label: 'Exposé (Import)', istExpose: true, storageKey: docKey });
-    return { ...ids, pdfGespeichert: true };
+    return mitFotos({ ...ids, pdfGespeichert: true });
   } catch (err) {
     console.error('[expose] PDF-Übernahme fehlgeschlagen:', err);
-    return { ...ids, pdfGespeichert: false, warnung: 'Deal angelegt, das Exposé-PDF konnte aber nicht gespeichert werden.' };
+    return mitFotos({ ...ids, pdfGespeichert: false, warnung: 'Deal angelegt, das Exposé-PDF konnte aber nicht gespeichert werden.' });
   }
 }
 
