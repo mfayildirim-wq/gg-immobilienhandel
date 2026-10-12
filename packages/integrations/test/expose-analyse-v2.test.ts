@@ -1,13 +1,13 @@
-// Erfassung v2 (Protokoll 28): Wegwahl, Haiku → Sonnet, Kostengrenze, Wiederholung bei max_tokens, Nachfass nur der
-// Einheiten-Tabellen, Bereinigung, Messwerte, Prompt/Werkzeug und die Attrappe gegen ein echtes Zwei-Seiten-PDF.
+// Erfassung v2.2 (Protokoll 28/30): Teil A = bisheriger Aufruf (unverändert, Haiku → Sonnet wie main) parallel zu Teil B
+// (Vollerfassung, eigener Aufruf); Wiederholung bei max_tokens und Nachfass nur in Teil B; Teil B darf scheitern.
 import { EXPOSE_V2_TOOL_NAME, ExposeV2, einheitenAusTabellen, exposeV2Leer, KATALOG, v2Traegt, zuordnen } from '@gg/domain';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  AnalyseFehler, analysiereExpose, type AnalyseAbhaengigkeiten, KiDienstFehler, anfrageV2, attrappeErfassung, EXPOSE_EINHEITEN_TOOL_V2, EXPOSE_SYSTEM_PROMPT_V2, EXPOSE_TOOL_V2,
+  AnalyseFehler, analysiereExpose, einheitenAusNachfass, type AnalyseAbhaengigkeiten, KiDienstFehler, anfrageV2, attrappeErfassung, EXPOSE_EINHEITEN_TOOL_V2, EXPOSE_SYSTEM_PROMPT_V2, EXPOSE_TOOL_V2,
   HINWEIS_NACHFASS_V2, HINWEIS_WIEDERHOLUNG_V2, kiAttrappe, kostenEur, kostenSchaetzung, MAX_TOKENS_V2, MODELL_GRUENDLICH, MODELL_SCHNELL, pdfText,
   PROMPT_VERSION_V2, SCHAETZUNG_AUSGABE_TOKENS, seitenAufteilen, testExpose, testExposeV2, ZEITLIMIT_V2_MS,
 } from '../src/index.ts';
-import { EXTRACT_TOOL, SYSTEM_PROMPT } from '../src/expose/prompt.ts';
+import { SYSTEM_PROMPT } from '../src/expose/prompt.ts';
 import type { PdfTextResult } from '../src/pdf/text.ts';
 
 let aufrufe: { body: any; zeitlimit: number | undefined }[] = [];
@@ -26,7 +26,7 @@ const SPALTEN = [{ ueberschrift: 'Lage', feld: 'lage' }, { ueberschrift: 'Wfl.',
 const tabelle = (n: number) => ({ seite: 2, titel: 'Mieterliste', spalten: SPALTEN, zeilen: Array.from({ length: n }, (_, i) => [`Whg ${i + 1}`, '60 m²', '500 €']) });
 const KERN = [angabe('Adresse', 'Musterweg 1, 89073 Ulm', 'geo.strasse'), angabe('Kaufpreis', '500.000 €', 'preise.kaufpreis')];
 const TREFFER = { angaben: KERN, einheiten_tabellen: [tabelle(1)], einheiten_im_dokument: 1, einheiten_vollstaendig: true };
-const nurEinheiten = (b: any) => !b.tools?.[0]?.input_schema?.properties?.angaben;
+const nurEinheiten = (b: any) => b.tools?.[0]?.name === EXPOSE_V2_TOOL_NAME && !b.tools?.[0]?.input_schema?.properties?.angaben;
 const letzterText = (b: any) => b.messages[0].content.at(-1).text as string;
 
 const abh = (): AnalyseAbhaengigkeiten => ({
@@ -51,247 +51,151 @@ beforeEach(() => {
   gelesen = seitenText(10);
 });
 
-describe('Prompt und Werkzeug v2', () => {
+const TEIL_A = { objekt: { strasse: 'Musterweg', hausnr: '1', plz: '89073', stadt: 'Ulm', angebotspreis: 500000, einheiten: [{ typ: 'Wohnung', lage: 'EG', flaeche: 60, kaltmiete: 500 }] }, makler: { name: 'Anna' }, kalkulation: { kaufpreis: 500000 }, _konfidenz: {} };
+const aAntwort = (input: unknown = TEIL_A, usage = USAGE) => ({ content: [{ type: 'tool_use', name: 'extract_expose_data', input }], stop_reason: 'tool_use', usage });
+const istA = (b: any) => b.tools?.[0]?.name === 'extract_expose_data';
+/** Standard: Teil A trägt, Teil B liefert die Vollerfassung. */
+const standard = (teilB: Record<string, any> = TREFFER) => (b: any) => (istA(b) ? aAntwort() : v2Antwort(teilB));
+
+describe('Prompt und Werkzeug v2.2 (Teil B)', () => {
   it('verlangt Vollerfassung, Wortlaut, Seiten, Kontakte, Mietlisten als Tabellen und bettet Katalog und gg-Ziele ein', () => {
     for (const satz of ['VOLLERFASSUNG', 'Seite für Seite', 'Lieber zu viel als zu wenig', 'WÖRTLICH', 'NICHTS umrechnen', 'UNGEKÜRZT', '──────── Seite N',
-      'geo.strasse mit dem ganzen Wortlaut', 'gg.sanierung', 'ausstattung.merkmal', '1 = Hauptansprechpartner', 'einheiten_tabellen', 'Mieternamen WEGLASSEN',
-      'Summenzeilen', 'NIE Warmmiete als Kaltmiete', 'NKM', 'einheiten_im_dokument', 'einheiten_vollstaendig']) {
+      'geo.strasse mit dem ganzen Wortlaut', 'gg.sanierung', '1 = Hauptansprechpartner', 'einheiten_tabellen', 'Mieternamen WEGLASSEN', 'NIE Warmmiete als Kaltmiete']) {
       expect(EXPOSE_SYSTEM_PROMPT_V2).toContain(satz);
     }
     expect(EXPOSE_SYSTEM_PROMPT_V2).toContain('preise.kaufpreis — Kaufpreis');
-    expect(EXPOSE_SYSTEM_PROMPT_V2).toContain('kontaktperson.tel_handy — Mobil');
-    expect(EXPOSE_SYSTEM_PROMPT_V2).toContain('details.instandhaltungsruecklage — Instandhaltungsrücklage');
-    expect(EXPOSE_SYSTEM_PROMPT_V2).toContain('makler.email — E-Mail');
-    for (const pfad of Object.keys(KATALOG)) expect(EXPOSE_SYSTEM_PROMPT_V2).toContain(`${pfad} — `);
-    // Teil A: der bisherige Prompt steht wortgleich darin („mindestens wie früher“)
-    expect(EXPOSE_SYSTEM_PROMPT_V2).toContain(SYSTEM_PROMPT);
-    expect(EXPOSE_SYSTEM_PROMPT_V2.indexOf('TEIL A')).toBeLessThan(EXPOSE_SYSTEM_PROMPT_V2.indexOf('TEIL B'));
-    expect(PROMPT_VERSION_V2).toBe('v2.1');
+    expect(EXPOSE_SYSTEM_PROMPT_V2).not.toContain(SYSTEM_PROMPT);
+    expect(PROMPT_VERSION_V2).toBe('v2.2');
   });
 
-  it('das Werkzeug trägt Teil A (bisheriges Schema, wortgleich) und Teil B aus @gg/domain; der Nachfass nur die Einheiten-Tabellen', () => {
+  it('das Werkzeug trägt nur Teil B; der Nachfass nur die Einheiten-Tabellen', () => {
     expect(EXPOSE_TOOL_V2.name).toBe(EXPOSE_V2_TOOL_NAME);
-    expect(EXPOSE_EINHEITEN_TOOL_V2.name).toBe(EXPOSE_V2_TOOL_NAME);
-    const props = (EXPOSE_TOOL_V2.input_schema as any).properties;
-    expect(Object.keys(props)).toEqual(['objekt', 'makler', 'kalkulation', '_konfidenz', 'angaben', 'einheiten_tabellen', 'einheiten_im_dokument', 'einheiten_vollstaendig']);
-    expect(props.objekt).toBe((EXTRACT_TOOL.input_schema as any).properties.objekt);
-    expect(props.angaben.items.properties.pfad.enum ?? props.angaben.items.properties.pfad.anyOf).toBeDefined();
+    expect(Object.keys((EXPOSE_TOOL_V2.input_schema as any).properties)).toEqual(['angaben', 'einheiten_tabellen', 'einheiten_im_dokument', 'einheiten_vollstaendig']);
     expect(Object.keys((EXPOSE_EINHEITEN_TOOL_V2.input_schema as any).properties).sort()).toEqual(['einheiten_im_dokument', 'einheiten_tabellen', 'einheiten_vollstaendig']);
-  });
-
-  it('die Anfrage erzwingt das Werkzeug, erlaubt 32000 Ausgabe-Tokens und markiert Anweisung und Schema als zwischenspeicherbar', () => {
     const a = anfrageV2('m', []);
     expect(a.max_tokens).toBe(MAX_TOKENS_V2);
-    expect(MAX_TOKENS_V2).toBe(32_000);
     expect(a.tool_choice).toEqual({ type: 'tool', name: EXPOSE_V2_TOOL_NAME });
     expect(a.system[0]).toMatchObject({ text: EXPOSE_SYSTEM_PROMPT_V2, cache_control: { type: 'ephemeral' } });
-    expect(a.tools[0].cache_control).toEqual({ type: 'ephemeral' });
-    expect(anfrageV2('m', [], EXPOSE_EINHEITEN_TOOL_V2).tools[0].input_schema).toBe(EXPOSE_EINHEITEN_TOOL_V2.input_schema);
   });
 });
 
-describe('Wegwahl v2', () => {
-  it('Standard ist v2: Text an Haiku mit 280 s Zeitlimit, Ergebnis mit Messwerten und Seitentexten', async () => {
+describe('Teil A ∥ Teil B', () => {
+  it('Text: Teil A wie main (bisheriges Werkzeug, Haiku) und Teil B (Haiku) parallel; Teil A wird `felder`', async () => {
+    antwort = standard();
     const r = await analysiereExpose(pdf(), 'e.pdf', abh());
-    expect(r).toMatchObject({ modus: 'text', modell: MODELL_SCHNELL, schemaVersion: 'gg-expose-v2', promptVersion: 'v2.1', stopReason: 'end_turn', nachfass: false, wiederholung: false });
-    expect(aufrufe).toHaveLength(1);
-    expect(aufrufe[0]!.zeitlimit).toBe(ZEITLIMIT_V2_MS);
-    expect(aufrufe[0]!.body.max_tokens).toBe(MAX_TOKENS_V2);
-    expect(aufrufe[0]!.body.messages[0].content[0].text).toContain('──────── Seite 1');
+    expect(aufrufe).toHaveLength(2);
+    const a = aufrufe.find((x) => istA(x.body))!; const b = aufrufe.find((x) => !istA(x.body))!;
+    expect(a.body).toMatchObject({ model: MODELL_SCHNELL, max_tokens: 4096, system: [{ text: SYSTEM_PROMPT }], tools: [{ name: 'extract_expose_data' }] });
+    expect(b.body).toMatchObject({ model: MODELL_SCHNELL, max_tokens: MAX_TOKENS_V2 });
+    expect(b.zeitlimit).toBe(ZEITLIMIT_V2_MS);
+    expect(r).toMatchObject({ modus: 'text', modell: MODELL_SCHNELL, schemaVersion: 'gg-expose-v2', promptVersion: 'v2.2', stopReason: 'tool_use', nachfass: false, wiederholung: false });
+    expect(r.v2?.felder).toMatchObject({ objekt: { stadt: 'Ulm' }, makler: { name: 'Anna' } });
     expect(r.v2?.angaben).toHaveLength(2);
-    expect(r.v2?.schema).toBe('gg-expose-v2');
-    expect(r.extrahiert).toBe(r.v2);
     expect(r.seitenTexte).toHaveLength(10);
-    expect(r.usage).toEqual({ inputTokens: 1000, outputTokens: 200 });
-    expect(r.kostenEur).toBe(kostenEur(MODELL_SCHNELL, USAGE));
-    expect(gebucht).toEqual([{ model: MODELL_SCHNELL, quelle: 'expose-analyse/v2-text-schnell' }]);
+    expect(r.usage).toEqual({ inputTokens: 2000, outputTokens: 400 });
+    expect(r.kostenEur).toBe(+(2 * kostenEur(MODELL_SCHNELL, USAGE)).toFixed(4));
+    expect(zuordnen(r.v2!).pruefdaten.objekt.einheiten).toHaveLength(1);
   });
 
-  it('ein Scan geht als PDF direkt an Sonnet mit demselben Werkzeug; Seitentexte bleiben leer', async () => {
-    gelesen = { text: '', pageCount: 30, seitenGesamt: 30, charsTotal: 0 };
+  it('trägt Teil A nicht (wie in main: 2 von 3 Signalen), schlägt nur Teil A auf Sonnet nach', async () => {
+    antwort = (b) => (istA(b) ? (b.model === MODELL_SCHNELL ? aAntwort({ objekt: {} }) : aAntwort()) : v2Antwort(TREFFER));
     const r = await analysiereExpose(pdf(), 'e.pdf', abh());
-    expect(r).toMatchObject({ modus: 'pdf', modell: MODELL_GRUENDLICH, seiten: 30, seitenTexte: [] });
-    expect(aufrufe[0]!.body.messages[0].content[0]).toMatchObject({ type: 'document', source: { type: 'base64', media_type: 'application/pdf' } });
-    expect(aufrufe[0]!.body.tools[0].name).toBe(EXPOSE_V2_TOOL_NAME);
-    expect(aufrufe[0]!.body.model).toBe(MODELL_GRUENDLICH);
-    expect(gebucht).toEqual([{ model: MODELL_GRUENDLICH, quelle: 'expose-analyse/v2-pdf' }]);
+    expect(r.modell).toBe(MODELL_GRUENDLICH);
+    expect(aufrufe.filter((x) => !istA(x.body)).map((x) => x.body.model)).toEqual([MODELL_SCHNELL]);
+  });
+
+  it('Scan: Teil A und Teil B lesen das PDF mit dem gründlichen Modell; Seitentexte leer', async () => {
+    gelesen = { text: '', pageCount: 3, seitenGesamt: 3, charsTotal: 0 };
+    antwort = standard();
+    const r = await analysiereExpose(pdf(), 'scan.pdf', abh());
+    expect(r).toMatchObject({ modus: 'pdf', modell: MODELL_GRUENDLICH, seitenTexte: [] });
+    expect(aufrufe.every((x) => x.body.model === MODELL_GRUENDLICH && x.body.messages[0].content[0].type === 'document')).toBe(true);
   });
 
   it('sagt es, wenn nicht alle Seiten gelesen wurden', async () => {
-    gelesen = { ...seitenText(50), seitenGesamt: 80 };
-    expect((await analysiereExpose(pdf(), 'e.pdf', abh())).hinweis).toBe('Ausgewertet wurden die ersten 50 von 80 Seiten.');
+    gelesen = { ...seitenText(10), seitenGesamt: 250 };
+    antwort = standard();
+    expect((await analysiereExpose(pdf(), 'e.pdf', abh())).hinweis).toBe('Ausgewertet wurden die ersten 10 von 250 Seiten.');
   });
 
-  it('schlägt auf Sonnet nach, wenn Haiku nicht trägt (kein Preis) oder scheitert', async () => {
-    antwort = (b) => (b.model === MODELL_SCHNELL ? v2Antwort({ ...TREFFER, angaben: [KERN[0]] }) : v2Antwort(TREFFER));
-    const r = await analysiereExpose(pdf(), 'e.pdf', abh());
-    expect(aufrufe.map((a) => a.body.model)).toEqual([MODELL_SCHNELL, MODELL_GRUENDLICH]);
-    expect(r.modell).toBe(MODELL_GRUENDLICH);
-    expect(gebucht.map((g) => g.quelle)).toEqual(['expose-analyse/v2-text-schnell', 'expose-analyse/v2-text-gruendlich']);
-
-    aufrufe = [];
-    antwort = (b) => { if (b.model === MODELL_SCHNELL) throw new Error('529'); return v2Antwort(TREFFER); };
-    const r2 = await analysiereExpose(pdf(), 'e.pdf', abh());
-    expect(r2.modell).toBe(MODELL_GRUENDLICH);
-    expect(r2.warnungen.join(' ')).toContain('529');
-  });
-
-  it('ohne Einheiten trägt Haiku nicht — es sei denn, das Dokument nennt genau eine', async () => {
-    antwort = (b) => (b.model === MODELL_SCHNELL ? v2Antwort({ angaben: KERN }) : v2Antwort(TREFFER));
-    expect((await analysiereExpose(pdf(), 'e.pdf', abh())).modell).toBe(MODELL_GRUENDLICH);
-    antwort = () => v2Antwort({ angaben: KERN, einheiten_im_dokument: 1 });
-    expect((await analysiereExpose(pdf(), 'e.pdf', abh())).modell).toBe(MODELL_SCHNELL);
-  });
-
-  it('wirft, wenn auch Sonnet nichts liefert — als AnalyseFehler mit Meldung für die Oberfläche', async () => {
-    antwort = () => ({ content: [], stop_reason: 'end_turn', usage: USAGE });
-    const f = await analysiereExpose(pdf(), 'e.pdf', abh()).catch((e) => e);
-    expect(f).toBeInstanceOf(AnalyseFehler);
-    expect(f.message).toContain('nichts auslesen');
-  });
-
-  it('Nutzungslimit bei Haiku: sofort durchreichen, kein zweiter Versuch mit Sonnet', async () => {
+  it('Nutzungslimit: sofort durchreichen', async () => {
     antwort = () => { throw new KiDienstFehler(400, 'limit', 'Das Nutzungslimit des Anthropic-Kontos ist erreicht'); };
     await expect(analysiereExpose(pdf(), 'e.pdf', abh())).rejects.toMatchObject({ art: 'limit' });
-    expect(aufrufe).toHaveLength(1);
   });
 
-  it('Überlast bei Haiku: Sonnet versucht es noch einmal', async () => {
-    antwort = (b) => { if (b.model === MODELL_SCHNELL) throw new KiDienstFehler(529, 'ueberlastet', 'überlastet'); return v2Antwort(TREFFER); };
-    expect((await analysiereExpose(pdf(), 'e.pdf', abh())).modell).toBe(MODELL_GRUENDLICH);
+  it('Teil B scheitert: Teil A bleibt, Warnung, keine Angaben', async () => {
+    antwort = (b) => { if (!istA(b)) throw new Error('kaputt'); return aAntwort(); };
+    const r = await analysiereExpose(pdf(), 'e.pdf', abh());
+    expect(r.v2?.felder).toBeTruthy();
+    expect(r.v2?.angaben).toEqual([]);
+    expect(r.warnungen).toContain('Vollerfassung fehlgeschlagen: kaputt — nur Teil A');
+  });
+
+  it('Teil A liefert nichts: AnalyseFehler, auch wenn Teil B etwas hat', async () => {
+    antwort = (b) => (istA(b) ? { content: [], stop_reason: 'end_turn', usage: USAGE } : v2Antwort(TREFFER));
+    const f = await analysiereExpose(pdf(), 'e.pdf', abh()).catch((e) => e);
+    expect(f).toBeInstanceOf(AnalyseFehler);
   });
 });
 
-describe('Abgeschnittene Antwort (max_tokens)', () => {
-  it('wiederholt mit Hinweis ohne Mietliste, holt die Tabellen im Nachfass und bleibt bei Haiku, wenn das Ergebnis trägt', async () => {
-    antwort = (b) => {
-      if (nurEinheiten(b)) return v2Antwort({ einheiten_tabellen: [tabelle(3)], einheiten_im_dokument: 3, einheiten_vollstaendig: true }, 'end_turn', { input_tokens: 3000, output_tokens: 300 });
-      if (letzterText(b) === HINWEIS_WIEDERHOLUNG_V2) return v2Antwort({ angaben: [...KERN, angabe('Lage', 'Ein sehr langer Freitext', 'freitexte.lage')], einheiten_tabellen: [tabelle(2)], einheiten_vollstaendig: false });
-      return v2Antwort({ angaben: KERN }, 'max_tokens');
-    };
+describe('Teil B: Wiederholung und Nachfass', () => {
+  it('abgeschnitten → einmal ohne Mietliste wiederholen', async () => {
+    let n = 0;
+    antwort = (b) => (istA(b) ? aAntwort() : nurEinheiten(b) ? v2Antwort({ einheiten_tabellen: [] }) : ++n === 1 ? v2Antwort(TREFFER, 'max_tokens') : v2Antwort({ angaben: KERN }));
     const r = await analysiereExpose(pdf(), 'e.pdf', abh());
-    expect(r).toMatchObject({ modell: MODELL_SCHNELL, wiederholung: true, nachfass: true, stopReason: 'end_turn' });
-    expect(aufrufe.map((a) => nurEinheiten(a.body))).toEqual([false, false, true]);
-    expect(aufrufe[1]!.body.messages[0].content).toHaveLength(2);
-    expect(letzterText(aufrufe[2]!.body)).toBe(HINWEIS_NACHFASS_V2);
-    expect(aufrufe[2]!.body.messages[0].content[0].text).toContain('──────── Seite 1'); // Nachfass bekommt denselben Inhalt
-    expect(r.v2?.einheiten_tabellen).toHaveLength(1);
-    expect(r.v2?.einheiten_tabellen[0]!.zeilen).toHaveLength(3); // die Tabelle der Wiederholung wurde verworfen
-    expect(r.v2?.angaben.map((x) => x.bezeichnung)).toEqual(['Adresse', 'Kaufpreis', 'Lage']);
-    expect(gebucht.map((g) => g.quelle)).toEqual(['expose-analyse/v2-text-schnell', 'expose-analyse/v2-text-schnell-wiederholung', 'expose-analyse/v2-text-schnell-einheiten']);
-    expect(r.usage).toEqual({ inputTokens: 5000, outputTokens: 700 });
-    expect(r.kostenEur).toBe(+(kostenEur(MODELL_SCHNELL, USAGE) * 2 + kostenEur(MODELL_SCHNELL, { input_tokens: 3000, output_tokens: 300 })).toFixed(4));
-    expect(r.warnungen.join(' ')).toContain('max_tokens');
+    expect(r.wiederholung).toBe(true);
+    expect(letzterText(aufrufe.filter((x) => !istA(x.body))[1]!.body)).toBe(HINWEIS_WIEDERHOLUNG_V2);
+    expect(r.v2?.einheiten_tabellen).toEqual([]);
+    expect(r.v2?.angaben).toHaveLength(2);
   });
 
-  it('ist auch die Wiederholung abgeschnitten, geht es zu Sonnet — nie stille Teilübernahme', async () => {
-    antwort = (b) => (b.model === MODELL_SCHNELL ? v2Antwort(TREFFER, 'max_tokens') : v2Antwort(TREFFER));
+  it('auch die Wiederholung abgeschnitten → nur Teil A, mit Warnung', async () => {
+    antwort = (b) => (istA(b) ? aAntwort() : v2Antwort(TREFFER, 'max_tokens'));
     const r = await analysiereExpose(pdf(), 'e.pdf', abh());
-    expect(aufrufe.map((a) => a.body.model)).toEqual([MODELL_SCHNELL, MODELL_SCHNELL, MODELL_GRUENDLICH]);
-    expect(r).toMatchObject({ modell: MODELL_GRUENDLICH, stopReason: 'end_turn', wiederholung: true, nachfass: false });
+    expect(r.v2?.angaben).toEqual([]);
+    expect(r.warnungen.some((w) => w.includes('auch nach der Wiederholung abgeschnitten'))).toBe(true);
   });
 
-  it('eine abgeschnittene Antwort trägt nicht, auch wenn sie Ort, Preis und Einheiten enthält', async () => {
-    antwort = (b) => {
-      if (b.model === MODELL_GRUENDLICH) return v2Antwort(TREFFER);
-      if (nurEinheiten(b)) throw new Error('Nachfass kaputt');
-      return letzterText(b) === HINWEIS_WIEDERHOLUNG_V2 ? v2Antwort({ angaben: KERN, einheiten_vollstaendig: false }) : v2Antwort(TREFFER, 'max_tokens');
-    };
-    const r = await analysiereExpose(pdf(), 'e.pdf', abh());
-    expect(r.modell).toBe(MODELL_GRUENDLICH);
-    expect(r.warnungen.join(' ')).toContain('Einheiten-Nachfass fehlgeschlagen: Nachfass kaputt');
-  });
-});
+  const nachfassAntwort = (n: number) => ({ content: [{ type: 'tool_use', name: 'extract_einheiten', input: { einheiten: Array.from({ length: n }, (_, i) => ({ typ: 'Wohnung', lage: `W${i + 1}`, flaeche: 60, kaltmiete: 500 })) } }], usage: USAGE });
+  const istNachfass = (b: any) => b.tools?.[0]?.name === 'extract_einheiten';
 
-describe('Nachfass bei unvollständiger Einheitenliste', () => {
-  it('meldet die KI weniger Zeilen als das Dokument nennt, ersetzt der Nachfass die Tabellen, wenn er mehr Zeilen liefert', async () => {
-    antwort = (b) => (nurEinheiten(b) ? v2Antwort({ einheiten_tabellen: [tabelle(34)], einheiten_im_dokument: 34, einheiten_vollstaendig: true }) : v2Antwort({ ...TREFFER, einheiten_im_dokument: 34, einheiten_vollstaendig: true }));
+  it('nennt das Dokument mehr Einheiten als Teil A und Teil B haben: Nachfass wie in der alten App (extract_einheiten), längere Liste gilt', async () => {
+    antwort = (b) => (istNachfass(b) ? nachfassAntwort(5) : istA(b) ? aAntwort() : v2Antwort({ ...TREFFER, einheiten_im_dokument: 5 }));
     const r = await analysiereExpose(pdf(), 'e.pdf', abh());
-    expect(aufrufe.map((a) => nurEinheiten(a.body))).toEqual([false, true]);
-    expect(r).toMatchObject({ modell: MODELL_SCHNELL, nachfass: true, wiederholung: false });
-    expect(einheitenAusTabellen(r.v2!.einheiten_tabellen).einheiten).toHaveLength(34);
-    expect(r.v2?.angaben).toHaveLength(2); // die Angaben bleiben aus dem ersten Aufruf
-    expect(r.warnungen.join(' ')).toContain('Einheitenliste unvollständig (1 von 34)');
+    expect(r.nachfass).toBe(true);
+    expect(aufrufe.filter((x) => istNachfass(x.body))).toHaveLength(1);
+    expect((r.v2!.felder as any).objekt.einheiten).toHaveLength(5);
+    expect(zuordnen(r.v2!).pruefdaten.objekt.einheiten).toHaveLength(5);
+    expect(gebucht.map((g) => g.quelle)).toContain('expose-analyse/v2-einheiten');
+    expect(r.warnungen).toContain('Einheitenliste unvollständig (1 von 5) — Nachfass');
   });
 
-  it('einheiten_vollstaendig = false löst den Nachfass aus; liefert er nicht mehr Zeilen, bleibt die erste Liste', async () => {
-    antwort = (b) => (nurEinheiten(b) ? v2Antwort({ einheiten_tabellen: [tabelle(1)] }) : v2Antwort({ ...TREFFER, einheiten_im_dokument: null, einheiten_vollstaendig: false }));
-    const r = await analysiereExpose(pdf(), 'e.pdf', abh());
-    expect(aufrufe).toHaveLength(2);
+  it('Nachfass mit nicht längerer Liste wird nicht übernommen; kein Nachfass, wenn die Einheiten vollständig sind', async () => {
+    antwort = (b) => (istNachfass(b) ? nachfassAntwort(1) : istA(b) ? aAntwort() : v2Antwort({ ...TREFFER, einheiten_im_dokument: 9 }));
+    let r = await analysiereExpose(pdf(), 'e.pdf', abh());
     expect(r.nachfass).toBe(false);
-    expect(r.v2?.einheiten_tabellen[0]!.zeilen).toHaveLength(1);
-    expect(r.v2?.einheiten_vollstaendig).toBe(false);
+    expect((r.v2!.felder as any).objekt.einheiten).toHaveLength(1);
+    aufrufe = [];
+    antwort = standard();
+    r = await analysiereExpose(pdf(), 'e.pdf', abh());
+    expect(aufrufe.some((x) => istNachfass(x.body) || nurEinheiten(x.body))).toBe(false);
   });
 
-  it('Summenzeilen zählen nicht als Einheiten', async () => {
-    const mitSumme = { ...tabelle(2), zeilen: [...tabelle(2).zeilen, ['Summe', '120 m²', '1.000 €']] };
-    antwort = (b) => (nurEinheiten(b) ? v2Antwort({ einheiten_tabellen: [tabelle(3)] }) : v2Antwort({ ...TREFFER, einheiten_tabellen: [mitSumme], einheiten_im_dokument: 3 }));
+  it('Stellplatz-Zeilen mit Stückzahl werden einzelne Einheiten', () => {
+    expect(einheitenAusNachfass([{ typ: 'Stellplatz', lage: 'TG', stk: 3, kaltmiete: 60 }, { typ: 'Wohnung', lage: 'EG', kaltmiete: 0 }])).toEqual([
+      ...Array.from({ length: 3 }, () => ({ typ: 'Stellplatz', lage: 'TG', zimmer: null, flaeche: null, kaltmiete: 60, vermiet: 'Vermietet' })),
+      { typ: 'Wohnung', lage: 'EG', zimmer: null, flaeche: null, kaltmiete: 0, vermiet: 'Leerstand' },
+    ]);
+  });
+
+  it('Bereinigen: unbekannte Pfade und Ziele werden null (mit Warnung), nichts wird gekürzt', async () => {
+    const lang = 'L'.repeat(20_000);
+    antwort = standard({ angaben: [angabe('Lage', lang, 'freitexte.lage'), angabe('X', 'y', 'gibt.es.nicht', 1, 'gibt.es.auch.nicht'), angabe('Leer', '  ', null)] });
     const r = await analysiereExpose(pdf(), 'e.pdf', abh());
-    expect(r.nachfass).toBe(true); // 2 echte Zeilen < 3 laut Dokument
-  });
-
-  it('ein abgeschnittener Nachfass wird nicht übernommen', async () => {
-    antwort = (b) => (nurEinheiten(b) ? v2Antwort({ einheiten_tabellen: [tabelle(20)] }, 'max_tokens') : v2Antwort({ ...TREFFER, einheiten_im_dokument: 34 }));
-    const r = await analysiereExpose(pdf(), 'e.pdf', abh());
-    expect(r.nachfass).toBe(false);
-    expect(r.v2?.einheiten_tabellen[0]!.zeilen).toHaveLength(1);
-    expect(r.warnungen.join(' ')).toContain('Einheiten-Nachfass abgeschnitten');
-  });
-
-  it('kein Nachfass, wenn die Liste vollständig ist', async () => {
-    const r = await analysiereExpose(pdf(), 'e.pdf', abh());
-    expect(aufrufe).toHaveLength(1);
-    expect(r.nachfass).toBe(false);
-  });
-});
-
-describe('Kostengrenze', () => {
-  it('bricht vor dem Sonnet-Aufruf ab, wenn die Schätzung die Grenze überschreitet', async () => {
-    antwort = () => v2Antwort({});
-    await expect(analysiereExpose(pdf(), 'e.pdf', abh(), { kostenGrenzeEur: 0.01 })).rejects.toThrow(/Kostengrenze 0\.01 € überschritten/);
-    expect(aufrufe.map((a) => a.body.model)).toEqual([MODELL_SCHNELL]);
-  });
-
-  it('die Standardgrenze von 1 € lässt ein normales Exposé durch; die Schätzung rechnet mit 16000 Ausgabe-Tokens', async () => {
-    antwort = (b) => (b.model === MODELL_SCHNELL ? v2Antwort({}) : v2Antwort(TREFFER));
-    expect((await analysiereExpose(pdf(), 'e.pdf', abh())).modell).toBe(MODELL_GRUENDLICH);
-    expect(SCHAETZUNG_AUSGABE_TOKENS).toBe(16_000);
-    expect(kostenSchaetzung(MODELL_GRUENDLICH, 400_000)).toBe(kostenEur(MODELL_GRUENDLICH, { input_tokens: 100_000, output_tokens: 16_000 }));
-  });
-});
-
-describe('Bereinigung', () => {
-  it('unbekannte Pfade und Ziele werden null (mit Warnung), leere Angaben fallen weg, nichts wird gekürzt', async () => {
-    const lang = 'Lage '.repeat(400).trim();
-    antwort = () => v2Antwort({ ...TREFFER, angaben: [...KERN, angabe('X', 'y', 'erfunden.pfad', 1, 'gibts.nicht'), angabe('Leer', '  ', null), angabe('Lage', lang, 'freitexte.lage')], unbekannt: 1 });
-    const r = await analysiereExpose(pdf(), 'e.pdf', abh());
-    expect(ExposeV2.safeParse(r.v2).success).toBe(true);
-    expect(r.v2?.angaben).toHaveLength(4);
-    expect(r.v2?.angaben[2]).toMatchObject({ pfad: null, gg: null });
-    expect(r.v2?.angaben[3]!.wert).toBe(lang);
-    expect((r.v2 as any).unbekannt).toBeUndefined();
-    expect(r.warnungen.join(' ')).toContain('Unbekannter Standard-Pfad „erfunden.pfad“');
-  });
-});
-
-describe('v0 per Option', () => {
-  it('liefert das v0-Werkzeug mit denselben Messwerten', async () => {
-    antwort = () => ({ content: [{ type: 'tool_use', name: 'extract_expose_data', input: { objekt: { strasse: 'A', angebotspreis: 1 } } }], stop_reason: 'end_turn', usage: USAGE });
-    const r = await analysiereExpose(pdf(), 'e.pdf', abh(), { schema: 'v0' });
-    expect(r).toMatchObject({ schemaVersion: 'gg-expose-v0', promptVersion: 'v0', stopReason: 'end_turn', modell: MODELL_SCHNELL, nachfass: false, wiederholung: false, warnungen: [] });
-    expect(r.v2).toBeUndefined();
-    expect(r.extrahiert.objekt.strasse).toBe('A');
-    expect(r.seitenTexte).toHaveLength(10);
-    expect(aufrufe[0]!.body.max_tokens).toBe(4096);
-  });
-});
-
-describe('seitenAufteilen', () => {
-  it('teilt an den Markern, Index 0 = Seite 1; ohne Marker bleibt der Text eine Seite', () => {
-    expect(seitenAufteilen('──────── Seite 1\nA\n\n──────── Seite 2\nB\nC')).toEqual(['A', 'B\nC']);
-    expect(seitenAufteilen('──────── Seite 1\n\n\n──────── Seite 3\nC')).toEqual(['', '', 'C']);
-    expect(seitenAufteilen('nur Text')).toEqual(['nur Text']);
-    expect(seitenAufteilen('')).toEqual([]);
+    expect(r.v2!.angaben).toHaveLength(2);
+    expect(r.v2!.angaben[0]!.wert).toHaveLength(20_000);
+    expect(r.v2!.angaben[1]).toMatchObject({ pfad: null, gg: null });
+    expect(r.warnungen).toContain('Unbekannter Standard-Pfad „gibt.es.nicht“ → ohne Pfad');
   });
 });
 
@@ -300,7 +204,8 @@ describe('Attrappe v2 gegen das Test-Exposé', () => {
 
   it('die Erfassung besteht das Schema, trägt und ordnet Objekt, Makler, Einheiten und die offenen Angaben zu', async () => {
     const r = await analysiereExpose(testExposeV2('T1'), 't1.pdf', echt());
-    expect(r).toMatchObject({ modus: 'text', modell: MODELL_SCHNELL, seiten: 2, wiederholung: false, nachfass: false, stopReason: 'end_turn', warnungen: [] });
+    expect(r).toMatchObject({ modus: 'text', modell: MODELL_SCHNELL, seiten: 2, wiederholung: false, nachfass: false });
+    expect(r.v2?.felder).toMatchObject({ objekt: { stadt: 'Ulm' } });
     const v2 = r.v2!;
     expect(ExposeV2.safeParse(v2).success).toBe(true);
     expect(v2Traegt(v2)).toBe(true);
@@ -335,10 +240,10 @@ describe('Attrappe v2 gegen das Test-Exposé', () => {
     expect(z.pruefdaten.makler.name).toBe('Anna E1');
   });
 
-  it('„Attrappe: abgeschnitten“: erste Antwort max_tokens, Wiederholung ohne Mietliste; Teil A hat die Einheiten schon, der Nachfass bringt keine längere Liste', async () => {
+  it('„Attrappe: abgeschnitten“: Teil B wird ohne Mietliste wiederholt; die Einheiten kommen aus Teil A', async () => {
     const r = await analysiereExpose(testExposeV2('T2', { abgeschnitten: true }), 't2.pdf', echt());
-    expect(r).toMatchObject({ modell: MODELL_SCHNELL, wiederholung: true, nachfass: false, stopReason: 'end_turn' });
-    expect(gebucht.map((g) => g.quelle)).toEqual(['expose-analyse/v2-text-schnell', 'expose-analyse/v2-text-schnell-wiederholung', 'expose-analyse/v2-text-schnell-einheiten']);
+    expect(r).toMatchObject({ modell: MODELL_SCHNELL, wiederholung: true, nachfass: false });
+    expect(gebucht.map((g) => g.quelle).sort()).toEqual(['expose-analyse/text-schnell', 'expose-analyse/v2-text', 'expose-analyse/v2-text-wiederholung']);
     expect(ExposeV2.safeParse(r.v2).success).toBe(true);
     expect(r.v2?.einheiten_tabellen).toEqual([]);
     expect(zuordnen(r.v2!).pruefdaten.objekt.einheiten).toHaveLength(3);

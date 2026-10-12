@@ -9,6 +9,7 @@
  */
 import { z } from 'zod';
 import { EINHEIT_FELD_NAMEN, KATALOG, KATALOG_PFADE } from './katalog.ts';
+import { levenshtein } from './uebernahme.ts';
 import { GG_ZIEL_SCHLUESSEL, GG_ZIELE } from './ziele.ts';
 
 export const EXPOSE_V2_SCHEMA = 'gg-expose-v2' as const;
@@ -68,6 +69,17 @@ export const katalogFuerPrompt = () => Object.entries(KATALOG).map(([p, e]) => `
 export const zieleFuerPrompt = () => Object.entries(GG_ZIELE).map(([s, z]) => `${s} — ${z.label}`).join('\n');
 
 const istText = (v: unknown): v is string => typeof v === 'string';
+
+/** Tippfehler der KI im Pfad („preises.x_fache“): nächster Katalog-Pfad mit höchstens 2 Zeichen Abstand, sonst null. */
+export function pfadBerichtigen(pfad: string): string | null {
+  let bester: string | null = null; let abstand = 3;
+  for (const k of KATALOG_PFADE) {
+    if (Math.abs(k.length - pfad.length) > 2) continue;
+    const d = levenshtein(k, pfad);
+    if (d < abstand) { abstand = d; bester = k; }
+  }
+  return bester;
+}
 const ganz = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) ? v : null);
 
 /**
@@ -84,7 +96,11 @@ export function exposeV2Bereinigen(roh: unknown): { v2: ExposeV2; warnungen: str
     const wert = istText(x.wert) ? x.wert.trim() : typeof x.wert === 'number' ? String(x.wert) : '';
     if (!wert) continue;
     let pfad = istText(x.pfad) ? x.pfad : null;
-    if (pfad && !(pfad in KATALOG)) { warnungen.push(`Unbekannter Standard-Pfad „${pfad}“ → ohne Pfad`); pfad = null; }
+    if (pfad && !(pfad in KATALOG)) {
+      const ersatz = pfadBerichtigen(pfad);
+      if (ersatz) { warnungen.push(`Standard-Pfad „${pfad}“ berichtigt zu „${ersatz}“`); pfad = ersatz; }
+      else { warnungen.push(`Unbekannter Standard-Pfad „${pfad}“ → ohne Pfad`); pfad = null; }
+    }
     let gg = istText(x.gg) ? x.gg : null;
     if (gg && !(gg in GG_ZIELE)) gg = null;
     const kontakt = ganz(x.kontakt);

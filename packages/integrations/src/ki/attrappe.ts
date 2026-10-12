@@ -210,8 +210,8 @@ function antwortV2(text: string, tool: any) {
   const sauber = text.replace(HINWEIS_WIEDERHOLUNG_V2, '').replace(HINWEIS_NACHFASS_V2, '');
   const v2 = attrappeErfassung(sauber);
   const { schema: _s, felder: _f, ...teilB } = v2;
-  // Teil A (wie früher) und Teil B (Vollerfassung) in einer Antwort, wie das echte Werkzeug
-  const voll: Record<string, unknown> = { ...teilA(sauber), ...teilB };
+  // nur Teil B — Teil A beantwortet die Attrappe über das bisherige Werkzeug (eigener Aufruf)
+  const voll: Record<string, unknown> = { ...teilB };
   const nurEinheiten = !tool?.input_schema?.properties?.angaben;
   let input: Record<string, unknown> = voll;
   let stop_reason = 'end_turn';

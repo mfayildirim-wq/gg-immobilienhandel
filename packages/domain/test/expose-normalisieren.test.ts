@@ -12,6 +12,8 @@ describe('Exposé v2: wörtliche Werte lesen (Protokoll 28)', () => {
     expect(zahlAusText('k. A.')).toBeNull();
     expect(zahlAusText('–')).toBeNull();
     expect(zahlAusText('80 bis 95 m²', false)).toBeNull();
+    expect(zahlAusText('480 m2', false)).toBe(480);
+    expect(zahlAusText('128,4 kWh/(m2a)', false)).toBe(128.4);
   });
 
   it('Jahr, Ja/Nein, Typen', () => {

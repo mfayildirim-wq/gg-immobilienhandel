@@ -33,7 +33,8 @@ function tokenLesen(roh: string): number | null {
  * `erste` gesetzt ist.
  */
 export function zahlAusText(text: string, erste = true): number | null {
-  const s = leerraum(text);
+  // Einheiten mit Ziffer („m2“, „m³“) sind keine Zahl
+  const s = leerraum(text).replace(/\b(k?m|qm)[²³23]/gi, '$1');
   if (/auf anfrage|k\.\s?a\.|keine angabe|^-+$|^–$/i.test(s)) return null;
   const treffer = [...s.matchAll(/-?\d[\d.,]*(?:\s?(Mio\.?|Millionen|Tsd\.?|T€))?/gi)];
   if (!treffer.length) return null;

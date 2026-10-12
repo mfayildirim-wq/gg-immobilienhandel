@@ -8,8 +8,9 @@
 //   Nachfass nur für die Einheiten-Tabellen. Vor dem gründlichen Modell eine Kostenabschätzung gegen die Kostengrenze.
 // - v0: der bisherige Weg (Mail-Weg, Prüfsatz-Vergleich), inhaltlich unverändert, aber mit denselben Messwerten.
 
-import { EXPOSE_V0_SCHEMA, EXPOSE_V2_SCHEMA, EXPOSE_V2_TOOL_NAME, type ExposeV2, einheitenAusTabellen, exposeV2Bereinigen, v2Traegt } from '@gg/domain';
+import { EXPOSE_V0_SCHEMA, EXPOSE_V2_SCHEMA, EXPOSE_V2_TOOL_NAME, type ExposeV2, einheitenAusTabellen, exposeV2Bereinigen } from '@gg/domain';
 import { type KiClient, KiDienstFehler, KiSchluesselFehler } from '../ki/anthropic.ts';
+import { einheitenExtrahieren } from '../ki/einheiten.ts';
 import { kostenEur, type Verbrauch } from '../ki/kosten.ts';
 import type { PdfTextResult } from '../pdf/text.ts';
 import { EXTRACT_TOOL, SYSTEM_PROMPT } from './prompt.ts';
@@ -150,8 +151,6 @@ export function kostenSchaetzung(model: string, zeichen: number): number {
 
 /** Erfasste Einheiten (ohne Summenzeilen) einer rohen Antwort. */
 const zeilenAnzahl = (roh: any) => einheitenAusTabellen(exposeV2Bereinigen({ einheiten_tabellen: roh?.einheiten_tabellen }).v2.einheiten_tabellen).einheiten.length;
-/** Erfasste Einheiten: die längere Liste aus Teil A (`objekt.einheiten` wie früher) und den wörtlichen Tabellen. */
-const einheitenAnzahl = (roh: any) => Math.max(zeilenAnzahl(roh), Array.isArray(roh?.objekt?.einheiten) ? roh.objekt.einheiten.length : 0);
 
 const zuBase64 = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64');
 const NICHTS = 'Aus dem Exposé ließ sich nichts auslesen — bitte erneut versuchen.';
@@ -190,8 +189,9 @@ export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: An
     }
   };
 
-  // ───────────── v0 (Ist-Verhalten der alten App) ─────────────
-  if (schema === 'v0') {
+  // ───────────── Teil A = v0 (Ist-Verhalten der alten App, unverändert) ─────────────
+  interface TeilA { extrahiert: any; modus: 'text' | 'pdf'; modell: string; stopReason: string | null }
+  const teilA = async (): Promise<TeilA> => {
     let stopReason: string | null = null;
     const rufe = async (model: string, inhalt: unknown[], quelle: string, zeitlimitMs?: number) => {
       const data = await a.ki.nachricht(anfrage(model, inhalt), zeitlimitMs);
@@ -199,12 +199,6 @@ export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: An
       stopReason = data?.stop_reason ?? null;
       return toolErgebnis(data);
     };
-    const fertig = (extrahiert: any, modus: 'text' | 'pdf', modell: string): AnalyseErgebnis => ({
-      extrahiert, modus, modell, seiten, zeichenProSeite, ...(modus === 'text' && hinweis ? { hinweis } : {}),
-      schemaVersion: EXPOSE_V0_SCHEMA, promptVersion: PROMPT_VERSION_V0, stopReason, ...messwerte(),
-      nachfass: false, wiederholung: false, warnungen: [], seitenTexte: modus === 'text' ? seitenAufteilen(gelesen.text) : [],
-    });
-
     if (textTraegt) {
       const inhalt = [{ type: 'text', text: `Analysiere dieses Immobilien-Exposé (extrahierter Text-Layer) und extrahiere ALLE relevanten Daten vollständig:\n\n${gelesen.text}` }];
       let extrahiert: any = null;
@@ -220,29 +214,39 @@ export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: An
         modell = MODELL_GRUENDLICH;
       }
       if (!extrahiert) throw new AnalyseFehler(NICHTS);
-      return fertig(extrahiert, 'text', modell);
+      return { extrahiert, modus: 'text', modell, stopReason };
     }
-
     pdfWegPruefen();
     const frage = { type: 'text', text: 'Analysiere dieses Immobilien-Exposé und extrahiere alle relevanten Daten vollständig.' };
     if (pdf.byteLength <= INLINE_MAX_BYTES) {
       const inhalt = [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: zuBase64(pdf) } }, frage];
       const extrahiert = await rufe(MODELL_GRUENDLICH, inhalt, 'expose-analyse/pdf', ZEITLIMIT_PDF_MS);
       if (!extrahiert) throw new AnalyseFehler(NICHTS);
-      return fertig(extrahiert, 'pdf', MODELL_GRUENDLICH);
+      return { extrahiert, modus: 'pdf', modell: MODELL_GRUENDLICH, stopReason };
     }
     const fileId = await a.ki.dateiHochladen(pdf, dateiname, 'application/pdf', ZEITLIMIT_PDF_MS);
     try {
       const inhalt = [{ type: 'document', source: { type: 'file', file_id: fileId } }, frage];
       const extrahiert = await rufe(MODELL_GRUENDLICH, inhalt, 'expose-analyse/pdf-datei', ZEITLIMIT_PDF_MS);
       if (!extrahiert) throw new AnalyseFehler(NICHTS);
-      return fertig(extrahiert, 'pdf', MODELL_GRUENDLICH);
+      return { extrahiert, modus: 'pdf', modell: MODELL_GRUENDLICH, stopReason };
     } finally {
       await a.ki.dateiLoeschen(fileId);
     }
+  };
+
+  if (schema === 'v0') {
+    const r = await teilA();
+    return {
+      extrahiert: r.extrahiert, modus: r.modus, modell: r.modell, seiten, zeichenProSeite, ...(r.modus === 'text' && hinweis ? { hinweis } : {}),
+      schemaVersion: EXPOSE_V0_SCHEMA, promptVersion: PROMPT_VERSION_V0, stopReason: r.stopReason, ...messwerte(),
+      nachfass: false, wiederholung: false, warnungen: [], seitenTexte: r.modus === 'text' ? seitenAufteilen(gelesen.text) : [],
+    };
   }
 
-  // ───────────── v2 ─────────────
+  // ───────────── v2 = Teil A (wie oben, unverändert) ∥ Teil B (Vollerfassung, eigener Aufruf) ─────────────
+  // Prüfung 12.10.2026 (5 Exposés, main gegen Branch): in EINEM Aufruf lieferte Teil A weniger Einheiten und Stellplätze
+  // als allein. Darum laufen beide Teile getrennt und parallel; Teil A bleibt Wort für Wort der Aufruf von main.
   const warnungen: string[] = [];
   let nachfass = false;
   let wiederholung = false;
@@ -254,103 +258,83 @@ export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: An
     return { roh: toolErgebnis(data, EXPOSE_V2_TOOL_NAME), stopReason: data?.stop_reason ?? null };
   };
 
-  /**
-   * Nachfass nur für die Einheiten-Tabellen: derselbe Inhalt, das Werkzeug ohne `angaben`. Übernommen wird nur eine
-   * längere Liste aus einer nicht abgeschnittenen Antwort (Prüfsatz 10.10.2026: 1 von 34 Einheiten).
-   */
-  const nachfassen = async (r: Ruf, model: string, inhalt: unknown[], quelle: string) => {
-    const bisher = einheitenAnzahl(r.roh);
+  /** Teil B: Vollerfassung. Abgeschnitten (max_tokens) → einmal ohne Mietliste wiederholen. Scheitert Teil B, bleibt Teil A. */
+  const teilB = async (model: string, inhalt: unknown[], quelle: string): Promise<Ruf | null> => {
     try {
-      const n = await rufeV2(model, [...inhalt, { type: 'text', text: HINWEIS_NACHFASS_V2 }], EINHEITEN_TOOL_V2, `${quelle}-einheiten`);
-      if (n.stopReason === 'max_tokens') { warnungen.push(`${model}: Einheiten-Nachfass abgeschnitten (max_tokens) — nicht übernommen`); return; }
-      const neu = zeilenAnzahl(n.roh);
-      if (!n.roh || neu <= bisher) return;
-      r.roh.einheiten_tabellen = n.roh.einheiten_tabellen;
-      if (typeof n.roh.einheiten_im_dokument === 'number') r.roh.einheiten_im_dokument = n.roh.einheiten_im_dokument;
-      if (typeof n.roh.einheiten_vollstaendig === 'boolean') r.roh.einheiten_vollstaendig = n.roh.einheiten_vollstaendig;
-      nachfass = true;
-    } catch (e) {
-      warnungen.push(`Einheiten-Nachfass fehlgeschlagen: ${fehlerText(e)}`);
-    }
-  };
-
-  /**
-   * Ein Versuch mit der Vollerfassung. Meldet die KI eine unvollständige Liste (oder weniger Zeilen als das Dokument
-   * nennt), holt der Nachfass die Tabellen. Abgeschnitten (max_tokens) → einmal ohne Mietliste wiederholen, dann Nachfass.
-   * Nie stille Teilübernahme: eine abgeschnittene Antwort trägt nicht.
-   */
-  const versuchV2 = async (model: string, inhalt: unknown[], quelle: string): Promise<Ruf> => {
-    let r = await rufeV2(model, inhalt, EXTRACT_TOOL_V2, quelle);
-    if (r.stopReason !== 'max_tokens') {
-      if (!r.roh) return r;
-      const bisher = einheitenAnzahl(r.roh);
-      const imDokument = typeof r.roh.einheiten_im_dokument === 'number' ? r.roh.einheiten_im_dokument : null;
-      if (r.roh.einheiten_vollstaendig === false || (imDokument !== null && imDokument > bisher)) {
-        warnungen.push(`Einheitenliste unvollständig (${bisher} von ${imDokument ?? '?'}) — Nachfass`);
-        await nachfassen(r, model, inhalt, quelle);
+      let r = await rufeV2(model, inhalt, EXTRACT_TOOL_V2, quelle);
+      if (r.stopReason === 'max_tokens') {
+        wiederholung = true;
+        warnungen.push(`${model}: Vollerfassung abgeschnitten (max_tokens) — Wiederholung ohne Mietliste`);
+        r = await rufeV2(model, [...inhalt, { type: 'text', text: HINWEIS_WIEDERHOLUNG_V2 }], EXTRACT_TOOL_V2, `${quelle}-wiederholung`);
+        if (r.stopReason === 'max_tokens' || !r.roh) { warnungen.push(`${model}: Vollerfassung auch nach der Wiederholung abgeschnitten — nur Teil A`); return null; }
+        r.roh.einheiten_tabellen = [];
       }
-      return r;
-    }
-    wiederholung = true;
-    warnungen.push(`${model}: Antwort abgeschnitten (max_tokens) — Wiederholung ohne Mietliste`);
-    r = await rufeV2(model, [...inhalt, { type: 'text', text: HINWEIS_WIEDERHOLUNG_V2 }], EXTRACT_TOOL_V2, `${quelle}-wiederholung`);
-    if (r.stopReason === 'max_tokens' || !r.roh) return r;
-    r.roh.einheiten_tabellen = [];
-    await nachfassen(r, model, inhalt, quelle);
-    return r;
-  };
-
-  /** Trägt der Versuch? Nicht abgeschnitten, und die bereinigte Erfassung nennt Ort, Preis und Einheiten. */
-  const traegt = (r: Ruf | null) => !!r?.roh && r.stopReason !== 'max_tokens' && v2Traegt(exposeV2Bereinigen(r.roh).v2);
-
-  const fertig = (ruf: Ruf, modus: 'text' | 'pdf', modell: string): AnalyseErgebnis => {
-    if (!ruf.roh) throw new AnalyseFehler(NICHTS);
-    if (ruf.stopReason === 'max_tokens') warnungen.push(`${modell}: Antwort auch nach der Wiederholung abgeschnitten — Erfassung unvollständig`);
-    const { v2, warnungen: w } = exposeV2Bereinigen(ruf.roh);
-    warnungen.push(...w);
-    return {
-      extrahiert: v2, v2, modus, modell, seiten, zeichenProSeite, ...(modus === 'text' && hinweis ? { hinweis } : {}),
-      schemaVersion: EXPOSE_V2_SCHEMA, promptVersion: PROMPT_VERSION_V2, stopReason: ruf.stopReason, ...messwerte(),
-      nachfass, wiederholung, warnungen, seitenTexte: modus === 'text' ? seitenAufteilen(gelesen.text) : [],
-    };
-  };
-
-  if (textTraegt) {
-    const text = `Erfasse dieses Immobilien-Exposé vollständig und wörtlich (extrahierter Text-Layer, Seiten durch "──────── Seite N" getrennt):\n\n${gelesen.text}`;
-    const inhalt = [{ type: 'text', text }];
-    let ruf: Ruf | null = null;
-    try {
-      ruf = await versuchV2(MODELL_SCHNELL, inhalt, 'expose-analyse/v2-text-schnell');
+      return r.roh ? r : null;
     } catch (e) {
       if (endgueltig(e)) throw e;
-      console.warn('[expose-analyse] schneller Versuch (v2) fehlgeschlagen:', e);
-      warnungen.push(`${MODELL_SCHNELL}: ${fehlerText(e)}`);
+      warnungen.push(`Vollerfassung fehlgeschlagen: ${fehlerText(e)} — nur Teil A`);
+      return null;
     }
-    if (traegt(ruf)) return fertig(ruf!, 'text', MODELL_SCHNELL);
+  };
 
-    const zeichen = text.length + SYSTEM_PROMPT_V2.length + JSON.stringify(EXTRACT_TOOL_V2.input_schema).length;
-    const geschaetzt = kostenSchaetzung(MODELL_GRUENDLICH, zeichen);
-    if (geschaetzt > kostenGrenze) {
-      throw new AnalyseFehler(`Kostengrenze ${kostenGrenze.toFixed(2)} € überschritten: der gründliche Versuch würde etwa ${geschaetzt.toFixed(2)} € kosten (${Math.ceil(zeichen / 4)} Eingabe-Tokens).`);
+  // Teil B liest dasselbe wie Teil A: Textlayer (Haiku) oder bei Scans das PDF (gründliches Modell)
+  const inhaltB = textTraegt
+    ? { model: MODELL_SCHNELL, quelle: 'expose-analyse/v2-text', inhalt: [{ type: 'text', text: `Erfasse dieses Immobilien-Exposé vollständig und wörtlich (extrahierter Text-Layer, Seiten durch "──────── Seite N" getrennt):\n\n${gelesen.text}` }] }
+    : pdf.byteLength <= INLINE_MAX_BYTES
+      ? { model: MODELL_GRUENDLICH, quelle: 'expose-analyse/v2-pdf', inhalt: [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: zuBase64(pdf) } }, { type: 'text', text: 'Erfasse dieses Immobilien-Exposé vollständig und wörtlich. Seitennummern sind die PDF-Seiten.' }] }
+      : null;
+  if (!inhaltB) warnungen.push('PDF zu groß für die Vollerfassung — nur Teil A');
+
+  const [a0, b0] = await Promise.all([teilA(), inhaltB ? teilB(inhaltB.model, inhaltB.inhalt, inhaltB.quelle) : Promise.resolve(null)]);
+  const roh: Record<string, any> = { ...(b0?.roh ?? {}), ...pickeTeilA(a0.extrahiert) };
+
+  // Einheiten-Nachfass wie in der alten App (extract_einheiten): erst wenn beide Teile da sind und das Dokument mehr
+  // Einheiten nennt als Teil A und die Tabellen aus Teil B. Die Antwort von Teil A schwankt zwischen Läufen (Prüfung
+  // 12.10.2026: dasselbe Exposé einmal 2, einmal 34 Einheiten) — der Nachfass fängt das ab.
+  const einheitenA = Array.isArray(roh.objekt?.einheiten) ? roh.objekt.einheiten.length : 0;
+  const bisher = Math.max(einheitenA, zeilenAnzahl(roh));
+  const soll = typeof roh.einheiten_im_dokument === 'number' ? roh.einheiten_im_dokument : null;
+  if (soll !== null && soll > bisher) {
+    warnungen.push(`Einheitenliste unvollständig (${bisher} von ${soll}) — Nachfass`);
+    try {
+      const e = await einheitenExtrahieren(a.ki, pdf, seiten);
+      await vermerke(e.model, e.usage, 'expose-analyse/v2-einheiten');
+      const liste = einheitenAusNachfass(e.wert);
+      if (liste.length > bisher) {
+        roh.objekt = { ...(roh.objekt ?? {}), einheiten: liste };
+        nachfass = true;
+      }
+    } catch (e) {
+      if (endgueltig(e)) throw e;
+      warnungen.push(`Einheiten-Nachfass fehlgeschlagen: ${fehlerText(e)}`);
     }
-    nachfass = false; // `wiederholung` bleibt: sie ist in dieser Analyse geschehen, auch wenn Sonnet jetzt neu beginnt
-    const gruendlich = await versuchV2(MODELL_GRUENDLICH, inhalt, 'expose-analyse/v2-text-gruendlich');
-    return fertig(gruendlich, 'text', MODELL_GRUENDLICH);
   }
+  const { v2, warnungen: w } = exposeV2Bereinigen(roh);
+  warnungen.push(...w);
+  return {
+    extrahiert: v2, v2, modus: a0.modus, modell: a0.modell, seiten, zeichenProSeite, ...(a0.modus === 'text' && hinweis ? { hinweis } : {}),
+    schemaVersion: EXPOSE_V2_SCHEMA, promptVersion: PROMPT_VERSION_V2, stopReason: a0.stopReason, ...messwerte(),
+    nachfass, wiederholung, warnungen, seitenTexte: a0.modus === 'text' ? seitenAufteilen(gelesen.text) : [],
+  };
+}
 
-  pdfWegPruefen();
-  const frage = { type: 'text', text: 'Erfasse dieses Immobilien-Exposé vollständig und wörtlich. Seitennummern sind die PDF-Seiten.' };
-  if (pdf.byteLength <= INLINE_MAX_BYTES) {
-    const inhalt = [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: zuBase64(pdf) } }, frage];
-    return fertig(await versuchV2(MODELL_GRUENDLICH, inhalt, 'expose-analyse/v2-pdf'), 'pdf', MODELL_GRUENDLICH);
+/** Antwort von extract_einheiten im Format von Teil A; Stellplatz-Zeilen mit `stk` > 1 werden einzelne Einheiten. */
+export function einheitenAusNachfass(wert: { typ: string; lage?: string; zimmer?: number | null; flaeche?: number | null; kaltmiete?: number | null; stk?: number | null }[]) {
+  const aus: { typ: string; lage: string | null; zimmer: number | null; flaeche: number | null; kaltmiete: number | null; vermiet: string | null }[] = [];
+  for (const e of wert) {
+    const typ = ['Wohnung', 'Gewerbe', 'Stellplatz', 'Sonstiges'].includes(e.typ) ? e.typ : 'Sonstiges';
+    const n = typ === 'Stellplatz' && typeof e.stk === 'number' && e.stk > 1 ? Math.min(Math.round(e.stk), 200) : 1;
+    const vermiet = e.kaltmiete === 0 ? 'Leerstand' : typeof e.kaltmiete === 'number' && e.kaltmiete > 0 ? 'Vermietet' : null;
+    for (let i = 0; i < n; i++) aus.push({ typ, lage: e.lage ?? null, zimmer: e.zimmer ?? null, flaeche: e.flaeche ?? null, kaltmiete: e.kaltmiete ?? null, vermiet });
   }
-  const fileId = await a.ki.dateiHochladen(pdf, dateiname, 'application/pdf', ZEITLIMIT_V2_MS);
-  try {
-    const inhalt = [{ type: 'document', source: { type: 'file', file_id: fileId } }, frage];
-    return fertig(await versuchV2(MODELL_GRUENDLICH, inhalt, 'expose-analyse/v2-pdf-datei'), 'pdf', MODELL_GRUENDLICH);
-  } finally {
-    await a.ki.dateiLoeschen(fileId);
-  }
+  return aus;
+}
+
+/** Teil A in die Rohdaten: die Gruppen des bisherigen Werkzeugs. */
+function pickeTeilA(ex: any): Record<string, unknown> {
+  const aus: Record<string, unknown> = {};
+  for (const k of ['objekt', 'makler', 'kalkulation', '_konfidenz']) if (ex?.[k] && typeof ex[k] === 'object') aus[k] = ex[k];
+  return aus;
 }
 
 /** Signaturprüfung: „%PDF-“ am Anfang. Ein als PDF benanntes Archiv geht nicht an das Modell. */

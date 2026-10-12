@@ -12,6 +12,7 @@
 import type { EinheitenTabelle, ExposeV2 } from './erfassung.ts';
 import type { EinheitFeld } from './katalog.ts';
 import { jahrAusText, leerraum, type NormWert, plzOrtTrennen, strasseTrennen, wertNormalisieren, zahlAusText } from './normalisieren.ts';
+import { istMobilnummer } from './uebernahme.ts';
 import { GG_ZIELE, type GgZiel } from './ziele.ts';
 
 // ── Mapping-Tabelle ────────────────────────────────────────────
@@ -175,8 +176,10 @@ function gleich(a: NormWert | string[] | undefined, b: NormWert): boolean {
 export function zielWert(ziel: string, wort: string, pfad: string | null): { wert: NormWert; hinweis?: string } {
   const z = GG_ZIELE[ziel];
   if (!z) return { wert: null };
-  if (pfad?.endsWith('_jahr') && (ziel === 'objekt.istmiete' || ziel === 'objekt.sollmiete')) {
-    const n = zahlAusText(wort);
+  // Jahreswert: am Pfad oder am Wortlaut („72.200 € p.a.“, „Jahresnettokaltmiete“) — Prüfung 12.10.2026
+  const jahr = pfad?.endsWith('_jahr') || /p\.\s?a\.|pro jahr|jährl|jahres|\/\s?jahr|im jahr/i.test(wort);
+  if (jahr && (ziel === 'objekt.istmiete' || ziel === 'objekt.sollmiete')) {
+    const n = zahlAusText(wort, false);
     return n === null ? { wert: null } : { wert: +(n / 12).toFixed(2), hinweis: 'Jahreswert ÷ 12' };
   }
   if (ziel === 'kalkulation.makler') {
@@ -184,7 +187,12 @@ export function zielWert(ziel: string, wort: string, pfad: string | null): { wer
     if (!/%/.test(wort)) return { wert: null };
   }
   if (ziel === 'objekt.heizungsbaujahr' || ziel === 'objekt.baujahr') return { wert: jahrAusText(wort) };
-  return { wert: wertNormalisieren(wort, z.typ) };
+  // Zahlen nur aus eindeutigen Angaben: „7 WE · 500 m² · 5.737 €“ ist kein Zahlwert (Prüfung 12.10.2026)
+  if (z.typ === 'zahl' || z.typ === 'ganzzahl') {
+    const n = zahlAusText(wort, ziel === 'kalkulation.makler');
+    return { wert: n === null ? null : z.typ === 'ganzzahl' ? Math.round(n) : n };
+  }
+  return { wert: istPlatzhalter(wort) ? null : wertNormalisieren(wort, z.typ) };
 }
 
 function setzePfad(o: Record<string, unknown>, pfad: string, wert: unknown) {
@@ -195,6 +203,25 @@ function setzePfad(o: Record<string, unknown>, pfad: string, wert: unknown) {
     akt = akt[t] as Record<string, unknown>;
   }
   akt[teile.at(-1)!] = wert;
+}
+
+// ── Adresse ────────────────────────────────────────────────────
+
+const STRASSE = /(str\.|straße|strasse|weg|platz|allee|gasse|ring|damm|ufer|steige|staffel|berg|hof|markt|chaussee|pfad|promenade|graben|anlage|park|kai|zeile|feld)\b/i;
+
+/**
+ * Adresse in einer Angabe in Straßen-Abschnitt und „PLZ Ort“ zerlegen. Gesucht wird der Abschnitt, der wie eine Straße
+ * aussieht (Straßenwort oder Hausnummer) — nicht einfach der erste („Baden-Württembergische Bank, Am Hauptbahnhof 2,
+ * 70173 Stuttgart“, Prüfung 12.10.2026).
+ */
+export function adresseZerlegen(wert: string): [string | null, string | undefined] {
+  const teile = wert.split(/\s*[,·|]\s*|\s{2,}/).map((t) => t.trim()).filter(Boolean);
+  const plzOrt = teile.find((t) => /^(D-)?\d{5}\s+\S/.test(t));
+  const strasse = teile.find((t) => t !== plzOrt && STRASSE.test(t) && /\d/.test(t))
+    ?? teile.find((t) => t !== plzOrt && STRASSE.test(t))
+    ?? teile.find((t) => t !== plzOrt && /\s\d+\s?[a-zA-Z]?$/.test(t))
+    ?? null;
+  return [strasse, plzOrt];
 }
 
 // ── Einheiten ──────────────────────────────────────────────────
@@ -262,15 +289,19 @@ function feldWert(v: unknown, typ: GgZiel['typ']): NormWert {
   if (v === null || v === undefined) return null;
   if (typeof v === 'number') return Number.isFinite(v) ? (typ === 'text' ? String(v) : v) : null;
   if (typeof v === 'boolean') return v;
-  if (typeof v === 'string') return v.trim() ? wertNormalisieren(v, typ) : null;
+  if (typeof v === 'string') return v.trim() && !istPlatzhalter(v) ? wertNormalisieren(v, typ) : null;
   return null;
 }
+
+/** Platzhalter der KI statt eines Werts („nicht angegeben“, „Adresse auf Anfrage“) gelten als leer. */
+export const istPlatzhalter = (v: unknown) => typeof v === 'string' && v.trim().length <= 40
+  && /^(nicht (angegeben|genannt|bekannt)|k\.?\s?a\.?|keine angabe|unbekannt|n\/a|-+|–)(\b|$)|\bauf anfrage\b/i.test(v.trim());
 
 /** Teil A über das leere Gerüst legen: bekannte Gruppen flach zusammenführen, Energieausweis verschachtelt. */
 function mitFeldern(p: ExtrahiertV0, felder: Record<string, unknown> | null): ExtrahiertV0 {
   if (!felder) return p;
   const gruppe = (k: string) => (felder[k] && typeof felder[k] === 'object' ? felder[k] as Record<string, unknown> : {});
-  const leerWeg = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, w]) => w !== null && w !== undefined && w !== ''));
+  const leerWeg = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, w]) => w !== null && w !== undefined && w !== '' && !istPlatzhalter(w)));
   const o = leerWeg(gruppe('objekt'));
   const ea = o.energieausweis && typeof o.energieausweis === 'object' ? leerWeg(o.energieausweis as Record<string, unknown>) : {};
   return {
@@ -331,7 +362,12 @@ export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null): Zuor
     if (a.pfad === 'kontaktperson.vorname') n.vorname ??= a.wert; else n.name ??= a.wert;
     namen.set(k, n);
   });
-  const vollerName = (k: number) => { const n = namen.get(k); return text([n?.vorname, n?.name].filter(Boolean).join(' ')); };
+  const vollerName = (k: number) => {
+    const n = namen.get(k);
+    // „Bülent Genc Güner“ + „Güner“: der Vorname enthält den Nachnamen schon
+    if (n?.vorname && n.name && n.vorname.trim().toLowerCase().endsWith(n.name.trim().toLowerCase())) return text(n.vorname);
+    return text([n?.vorname, n?.name].filter(Boolean).join(' '));
+  };
 
   const weitere = { namen: [] as string[], tel: [] as string[], email: [] as string[] };
 
@@ -361,6 +397,12 @@ export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null): Zuor
       }
       if (gleich(da, wert)) return 'zugeordnet';
       const a = angaben[i]!;
+      // Teil A hat eine Jahresmiete als Monatsmiete eingetragen (das Exposé sagt ausdrücklich „Jahr“): Monatswert gilt
+      if ((ziel === 'objekt.istmiete' || ziel === 'objekt.sollmiete') && typeof wert === 'number' && wert !== zahlAusText(a.wert, false) && gleich(da, +(wert * 12).toFixed(2))) {
+        werte[ziel] = wert; quelleIndex[ziel] = i; ausFeldern.delete(ziel);
+        warnungen.push(`${z.label}: KI-Feld war der Jahreswert („${a.wert}“, S. ${a.seite ?? '?'}) — auf Monat umgerechnet`);
+        return 'zugeordnet';
+      }
       // Freitext: der vollständige wörtliche Text ersetzt eine kürzere Fassung aus Teil A
       if (a.pfad?.startsWith('freitexte.') && typeof wert === 'string' && typeof da === 'string' && wert.length > da.length) {
         werte[ziel] = wert; quelleIndex[ziel] = i; ausFeldern.delete(ziel);
@@ -385,7 +427,11 @@ export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null): Zuor
     return 'doppelt';
   };
 
-  angaben.forEach((a, i) => {
+  angaben.forEach((a0, i) => {
+    // Adressangabe mit Kontaktnummer ist die Adresse des Kontakts, nicht des Objekts (KI wählt dafür oft geo.*)
+    const a = a0.kontakt !== null && a0.pfad && /^geo\.(strasse|hausnummer|plz|ort)$/.test(a0.pfad)
+      ? { ...a0, pfad: a0.pfad === 'geo.ort' ? 'kontaktperson.ort' : a0.pfad === 'geo.hausnummer' ? 'kontaktperson.hausnummer' : a0.pfad.replace('geo.', 'kontaktperson.') }
+      : a0;
     const kontakt = kontaktVon(a);
     const vorschlagGueltig = a.gg && GG_ZIELE[a.gg] ? a.gg : null;
     listenVorschlag = null;
@@ -417,7 +463,8 @@ export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null): Zuor
       return;
     }
     if (a.pfad === 'geo.strasse' || a.pfad === 'kontaktperson.strasse') {
-      const [vorne, hinten] = a.wert.split(/,\s*/, 2) as [string, string | undefined];
+      const [vorne, hinten] = adresseZerlegen(a.wert);
+      if (!vorne) { zeilen.push(ohneZiel('keinWert')); return; }
       const { strasse, hausnr } = strasseTrennen(vorne);
       const objekt = a.pfad === 'geo.strasse';
       const grund = belegen(objekt ? 'objekt.strasse' : 'makler.strasse', strasse, i, a.wert);
@@ -439,6 +486,15 @@ export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null): Zuor
       const grund = belegen(objekt ? 'objekt.plz' : 'makler.plz', po.plz, i, a.wert);
       if (grund === 'zugeordnet' && !angaben.some((x) => x.pfad === (objekt ? 'geo.ort' : 'kontaktperson.ort'))) belegen(objekt ? 'objekt.stadt' : 'makler.ort', po.ort, i, a.wert);
       zeilen.push(grund === 'zugeordnet' ? { index: i, ziel: objekt ? 'objekt.plz' : 'makler.plz', grund, vorschlag: null, wert: po.plz } : ohneZiel(grund));
+      return;
+    }
+
+    // Telefon: Mobil nur bei Mobilnummer (01…, +49 1…), sonst Festnetz — egal, was die KI als Pfad wählt
+    if (ziele[0] === 'makler.mobiltel' || ziele[0] === 'makler.festnetztel') {
+      const ziel = istMobilnummer(a.wert) ? 'makler.mobiltel' : 'makler.festnetztel';
+      const wert = leerraum(a.wert);
+      const grund = belegen(ziel, wert, i, a.wert);
+      zeilen.push(grund === 'zugeordnet' ? { index: i, ziel, grund, vorschlag: null, wert } : ohneZiel(grund));
       return;
     }
 
@@ -467,6 +523,16 @@ export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null): Zuor
     const wert = Array.isArray(w) ? w.join('\n') : w;
     setzePfad(p as unknown as Record<string, unknown>, z.pruef, wert);
   }
+  // Plausibilität: Miete je m² über 40 € und der Zwölftel-Wert liegt bei 2–40 € → es war eine Jahresmiete (Prüfung 12.10.2026)
+  const wfl = p.objekt.wohnflaeche;
+  if (typeof p.objekt.istmiete === 'number' && typeof wfl === 'number' && wfl > 0) {
+    const jeQm = p.objekt.istmiete / wfl;
+    if (jeQm > 40 && jeQm / 12 >= 2 && jeQm / 12 <= 40) {
+      warnungen.push(`Ist-Miete ${p.objekt.istmiete} € wären ${jeQm.toFixed(0)} €/m² im Monat — als Jahresmiete gelesen, auf Monat umgerechnet`);
+      p.objekt.istmiete = +(p.objekt.istmiete / 12).toFixed(2);
+      werte['objekt.istmiete'] = p.objekt.istmiete;
+    }
+  }
   const ausTabellen = einheitenAusTabellen(v2.einheiten_tabellen);
   const einheitenA = einheitenAusFeldern(felder);
   // Teil A wie früher; nur wenn die wörtlichen Tabellen mehr Einheiten haben (z. B. nach dem Nachfass), gelten sie
@@ -482,6 +548,12 @@ export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null): Zuor
   const einheitenDetails = ausA && ausTabellen.einheiten.length !== einheitenA.length ? einheitenA.map(() => null) : ausTabellen.details;
   p.objekt.einheiten = einheiten;
   const m = p.makler;
+  // Mobil nur bei Mobilnummer — gilt auch für Teil A (Prüfung 12.10.2026: Festnetz im Feld Mobil)
+  if (m.mobiltel && !istMobilnummer(m.mobiltel)) {
+    if (!m.festnetztel) m.festnetztel = m.mobiltel;
+    warnungen.push('Makler: angebliche Mobilnummer ist Festnetz — als Festnetz geführt');
+    m.mobiltel = null;
+  }
   m.tel ??= m.mobiltel ?? m.festnetztel;
   m.alleNamen = ohneDoppel([m.name, ...m.alleNamen, ...weitere.namen]);
   m.alleTelefonnummern = ohneDoppel([m.mobiltel, m.festnetztel, m.tel, ...m.alleTelefonnummern, ...weitere.tel]);
@@ -507,7 +579,7 @@ export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null): Zuor
     if (z?.details && z.art === 'objekt') setzePfad(details, z.details, w);
   }
 
-  if (!v2.einheiten_vollstaendig || (v2.einheiten_im_dokument !== null && v2.einheiten_im_dokument > einheiten.length)) {
+  if (v2.einheiten_im_dokument !== null ? v2.einheiten_im_dokument > einheiten.length : !v2.einheiten_vollstaendig && !einheiten.length) {
     warnungen.push(`Einheitenliste unvollständig: ${einheiten.length} erfasst, ${v2.einheiten_im_dokument ?? '?'} im Dokument`);
   }
   return { pruefdaten: p, werte, details, einheitenDetails, zeilen, warnungen };
