@@ -8,13 +8,16 @@
 //   Nachfass nur für die Einheiten-Tabellen. Vor dem gründlichen Modell eine Kostenabschätzung gegen die Kostengrenze.
 // - v0: der bisherige Weg (Mail-Weg, Prüfsatz-Vergleich), inhaltlich unverändert, aber mit denselben Messwerten.
 
-import { EXPOSE_V0_SCHEMA, EXPOSE_V2_SCHEMA, EXPOSE_V2_TOOL_NAME, type ExposeV2, einheitenAusTabellen, exposeV2Bereinigen } from '@gg/domain';
+import {
+  type Dokument, dokumentText, dokumentZeichen, EXPOSE_V0_SCHEMA, EXPOSE_V2_SCHEMA, type ExposeV2, einheitenAusTabellen, exposeV2Bereinigen, rohdatenAusDokument, seitenText,
+} from '@gg/domain';
 import { type KiClient, KiDienstFehler, KiSchluesselFehler } from '../ki/anthropic.ts';
 import { einheitenExtrahieren } from '../ki/einheiten.ts';
 import { kostenEur, type Verbrauch } from '../ki/kosten.ts';
 import type { PdfTextResult } from '../pdf/text.ts';
 import { EXTRACT_TOOL, SYSTEM_PROMPT } from './prompt.ts';
-import { EINHEITEN_TOOL_V2, EXTRACT_TOOL_V2, HINWEIS_NACHFASS_V2, HINWEIS_WIEDERHOLUNG_V2, PROMPT_VERSION_V2, SYSTEM_PROMPT_V2 } from './prompt-v2.ts';
+import { pdfDokument } from '../pdf/dokument.ts';
+import { bezeichnungenZuordnen, PROMPT_VERSION_V2 } from './bezeichnungen.ts';
 
 const MB = 1024 * 1024;
 export const MODELL_SCHNELL = 'claude-haiku-4-5-20251001';
@@ -25,10 +28,6 @@ export const MAX_PDF_SEITEN = 200;
 export const INLINE_MAX_BYTES = 20 * MB;
 const ZEITLIMIT_PDF_MS = 300_000;
 
-/** v2: 280 s für jeden Aufruf — unter den 300 s der Function, in der die Analyse läuft (Protokoll 26, 8.1). */
-export const ZEITLIMIT_V2_MS = 280_000;
-/** Vollerfassung mit ungekürzten Freitexten braucht Platz. */
-export const MAX_TOKENS_V2 = 32_000;
 /** Angenommene Ausgabe für die Kostenabschätzung vor dem gründlichen Modell. */
 export const SCHAETZUNG_AUSGABE_TOKENS = 16_000;
 export const KOSTENGRENZE_STANDARD_EUR = 1;
@@ -74,6 +73,8 @@ export interface AnalyseErgebnis {
 export interface AnalyseAbhaengigkeiten {
   ki: KiClient;
   pdfText: (pdf: Uint8Array) => Promise<PdfTextResult>;
+  /** v2: Dokument ohne KI (Textlayer + OCR); fehlt es, wird es ohne OCR gelesen. */
+  dokument?: (pdf: Uint8Array) => Promise<Dokument>;
   buchen: (model: string, usage: Verbrauch | undefined, quelle: string) => Promise<void>;
 }
 
@@ -115,17 +116,6 @@ export function anfrage(model: string, inhalt: unknown[]): any {
   };
 }
 
-/** Anfrage v2: Vollerfassung (oder Nachfass nur Einheiten), max_tokens 32000, Anweisung und Werkzeug zwischenspeicherbar. */
-export function anfrageV2(model: string, inhalt: unknown[], tool: typeof EXTRACT_TOOL_V2 = EXTRACT_TOOL_V2): any {
-  return {
-    model,
-    max_tokens: MAX_TOKENS_V2,
-    system: [{ type: 'text', text: SYSTEM_PROMPT_V2, cache_control: { type: 'ephemeral' } }],
-    tools: [{ ...tool, cache_control: { type: 'ephemeral' } }],
-    tool_choice: { type: 'tool', name: tool.name },
-    messages: [{ role: 'user', content: inhalt }],
-  };
-}
 
 /** Text an den Seitenmarkern „──────── Seite N“ aufteilen; Index 0 = Seite 1. Ohne Marker: der ganze Text als Seite 1. */
 export function seitenAufteilen(text: string): string[] {
@@ -160,7 +150,6 @@ const fehlerText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: AnalyseAbhaengigkeiten, optionen: AnalyseOptionen = {}): Promise<AnalyseErgebnis> {
   const start = Date.now();
   const schema: SchemaWahl = optionen.schema ?? 'v2';
-  const kostenGrenze = optionen.kostenGrenzeEur ?? KOSTENGRENZE_STANDARD_EUR;
 
   // Messwerte über alle Aufrufe dieser Analyse
   const usage = { inputTokens: 0, outputTokens: 0 };
@@ -191,7 +180,7 @@ export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: An
 
   // ───────────── Teil A = v0 (Ist-Verhalten der alten App, unverändert) ─────────────
   interface TeilA { extrahiert: any; modus: 'text' | 'pdf'; modell: string; stopReason: string | null }
-  const teilA = async (): Promise<TeilA> => {
+  const teilA = async (quelleText = gelesen.text, textOk = textTraegt): Promise<TeilA> => {
     let stopReason: string | null = null;
     const rufe = async (model: string, inhalt: unknown[], quelle: string, zeitlimitMs?: number) => {
       const data = await a.ki.nachricht(anfrage(model, inhalt), zeitlimitMs);
@@ -199,8 +188,8 @@ export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: An
       stopReason = data?.stop_reason ?? null;
       return toolErgebnis(data);
     };
-    if (textTraegt) {
-      const inhalt = [{ type: 'text', text: `Analysiere dieses Immobilien-Exposé (extrahierter Text-Layer) und extrahiere ALLE relevanten Daten vollständig:\n\n${gelesen.text}` }];
+    if (textOk) {
+      const inhalt = [{ type: 'text', text: `Analysiere dieses Immobilien-Exposé (extrahierter Text-Layer) und extrahiere ALLE relevanten Daten vollständig:\n\n${quelleText}` }];
       let extrahiert: any = null;
       let modell = MODELL_SCHNELL;
       try {
@@ -244,53 +233,35 @@ export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: An
     };
   }
 
-  // ───────────── v2 = Teil A (wie oben, unverändert) ∥ Teil B (Vollerfassung, eigener Aufruf) ─────────────
-  // Prüfung 12.10.2026 (5 Exposés, main gegen Branch): in EINEM Aufruf lieferte Teil A weniger Einheiten und Stellplätze
-  // als allein. Darum laufen beide Teile getrennt und parallel; Teil A bleibt Wort für Wort der Aufruf von main.
+  // ───────────── v2 (Protokoll 30, P1): Dokument ohne KI → Rohdaten im Code; KI nur für Teil A und unbekannte Bezeichnungen ─────────────
   const warnungen: string[] = [];
   let nachfass = false;
-  let wiederholung = false;
 
-  interface Ruf { roh: any; stopReason: string | null }
-  const rufeV2 = async (model: string, inhalt: unknown[], tool: typeof EXTRACT_TOOL_V2, quelle: string): Promise<Ruf> => {
-    const data = await a.ki.nachricht(anfrageV2(model, inhalt, tool), ZEITLIMIT_V2_MS);
-    await vermerke(model, data?.usage, quelle);
-    return { roh: toolErgebnis(data, EXPOSE_V2_TOOL_NAME), stopReason: data?.stop_reason ?? null };
-  };
+  // 1 · Erfassen ohne KI: Textlayer + OCR der Bild-Seiten. Das Dokument wird unverändert gespeichert.
+  const dok = await (a.dokument ?? ((p: Uint8Array) => pdfDokument(p)))(pdf);
+  const dokText = dokumentText(dok);
+  const dokSeiten = dok.seiten.length;
+  const dokTraegt = dokSeiten > 0 && dokumentZeichen(dok) / dokSeiten >= TEXT_SCHWELLE_PRO_SEITE && dokText.length > TEXT_MIN_GESAMT;
+  const ocrSeiten = dok.seiten.filter((x) => x.ocr).length;
+  if (ocrSeiten) warnungen.push(`${ocrSeiten} Bild-Seite(n) per Texterkennung gelesen`);
 
-  /** Teil B: Vollerfassung. Abgeschnitten (max_tokens) → einmal ohne Mietliste wiederholen. Scheitert Teil B, bleibt Teil A. */
-  const teilB = async (model: string, inhalt: unknown[], quelle: string): Promise<Ruf | null> => {
-    try {
-      let r = await rufeV2(model, inhalt, EXTRACT_TOOL_V2, quelle);
-      if (r.stopReason === 'max_tokens') {
-        wiederholung = true;
-        warnungen.push(`${model}: Vollerfassung abgeschnitten (max_tokens) — Wiederholung ohne Mietliste`);
-        r = await rufeV2(model, [...inhalt, { type: 'text', text: HINWEIS_WIEDERHOLUNG_V2 }], EXTRACT_TOOL_V2, `${quelle}-wiederholung`);
-        if (r.stopReason === 'max_tokens' || !r.roh) { warnungen.push(`${model}: Vollerfassung auch nach der Wiederholung abgeschnitten — nur Teil A`); return null; }
-        r.roh.einheiten_tabellen = [];
-      }
-      return r.roh ? r : null;
-    } catch (e) {
+  // 2 · Rohdaten im Code
+  const roh0 = rohdatenAusDokument(dok);
+
+  // 3 · Deuten: Teil A (Aufruf von main, auf dem Dokument-Text) ∥ Zuordnung unbekannter Bezeichnungen (kleiner Aufruf)
+  const [a0, zuordnung] = await Promise.all([
+    teilA(dokText, dokTraegt),
+    bezeichnungenZuordnen(a.ki, roh0.angaben, vermerke).catch((e) => {
       if (endgueltig(e)) throw e;
-      warnungen.push(`Vollerfassung fehlgeschlagen: ${fehlerText(e)} — nur Teil A`);
+      warnungen.push(`Zuordnung unbekannter Bezeichnungen fehlgeschlagen: ${fehlerText(e)}`);
       return null;
-    }
-  };
+    }),
+  ]);
+  if (zuordnung) for (const [i, z] of zuordnung) { const x = roh0.angaben[i]; if (x) { x.pfad ??= z.pfad; x.gg ??= z.gg; } }
 
-  // Teil B liest dasselbe wie Teil A: Textlayer (Haiku) oder bei Scans das PDF (gründliches Modell)
-  const inhaltB = textTraegt
-    ? { model: MODELL_SCHNELL, quelle: 'expose-analyse/v2-text', inhalt: [{ type: 'text', text: `Erfasse dieses Immobilien-Exposé vollständig und wörtlich (extrahierter Text-Layer, Seiten durch "──────── Seite N" getrennt):\n\n${gelesen.text}` }] }
-    : pdf.byteLength <= INLINE_MAX_BYTES
-      ? { model: MODELL_GRUENDLICH, quelle: 'expose-analyse/v2-pdf', inhalt: [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: zuBase64(pdf) } }, { type: 'text', text: 'Erfasse dieses Immobilien-Exposé vollständig und wörtlich. Seitennummern sind die PDF-Seiten.' }] }
-      : null;
-  if (!inhaltB) warnungen.push('PDF zu groß für die Vollerfassung — nur Teil A');
+  const roh: Record<string, any> = { ...roh0, einheiten_vollstaendig: true, ...pickeTeilA(a0.extrahiert), dokument: dok };
 
-  const [a0, b0] = await Promise.all([teilA(), inhaltB ? teilB(inhaltB.model, inhaltB.inhalt, inhaltB.quelle) : Promise.resolve(null)]);
-  const roh: Record<string, any> = { ...(b0?.roh ?? {}), ...pickeTeilA(a0.extrahiert) };
-
-  // Einheiten-Nachfass wie in der alten App (extract_einheiten): erst wenn beide Teile da sind und das Dokument mehr
-  // Einheiten nennt als Teil A und die Tabellen aus Teil B. Die Antwort von Teil A schwankt zwischen Läufen (Prüfung
-  // 12.10.2026: dasselbe Exposé einmal 2, einmal 34 Einheiten) — der Nachfass fängt das ab.
+  // Einheiten-Nachfass wie in der alten App (extract_einheiten): nur wenn das Dokument mehr Einheiten nennt als erfasst
   const einheitenA = Array.isArray(roh.objekt?.einheiten) ? roh.objekt.einheiten.length : 0;
   const bisher = Math.max(einheitenA, zeilenAnzahl(roh));
   const soll = typeof roh.einheiten_im_dokument === 'number' ? roh.einheiten_im_dokument : null;
@@ -300,21 +271,20 @@ export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: An
       const e = await einheitenExtrahieren(a.ki, pdf, seiten);
       await vermerke(e.model, e.usage, 'expose-analyse/v2-einheiten');
       const liste = einheitenAusNachfass(e.wert);
-      if (liste.length > bisher) {
-        roh.objekt = { ...(roh.objekt ?? {}), einheiten: liste };
-        nachfass = true;
-      }
+      if (liste.length > bisher) { roh.objekt = { ...(roh.objekt ?? {}), einheiten: liste }; nachfass = true; }
     } catch (e) {
       if (endgueltig(e)) throw e;
       warnungen.push(`Einheiten-Nachfass fehlgeschlagen: ${fehlerText(e)}`);
     }
   }
+
   const { v2, warnungen: w } = exposeV2Bereinigen(roh);
   warnungen.push(...w);
   return {
-    extrahiert: v2, v2, modus: a0.modus, modell: a0.modell, seiten, zeichenProSeite, ...(a0.modus === 'text' && hinweis ? { hinweis } : {}),
+    extrahiert: v2, v2, modus: a0.modus, modell: a0.modell, seiten, zeichenProSeite: dokSeiten ? Math.round(dokumentZeichen(dok) / dokSeiten) : 0,
+    ...(dok.seitenGesamt > dokSeiten ? { hinweis: `Ausgewertet wurden die ersten ${dokSeiten} von ${dok.seitenGesamt} Seiten.` } : {}),
     schemaVersion: EXPOSE_V2_SCHEMA, promptVersion: PROMPT_VERSION_V2, stopReason: a0.stopReason, ...messwerte(),
-    nachfass, wiederholung, warnungen, seitenTexte: a0.modus === 'text' ? seitenAufteilen(gelesen.text) : [],
+    nachfass, wiederholung: false, warnungen, seitenTexte: dok.seiten.map((x) => seitenText(x)),
   };
 }
 

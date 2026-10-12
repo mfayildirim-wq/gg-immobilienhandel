@@ -1,5 +1,3 @@
-import { EXPOSE_V2_TOOL_NAME, type ExposeV2, exposeV2Leer } from '@gg/domain';
-import { HINWEIS_NACHFASS_V2, HINWEIS_WIEDERHOLUNG_V2 } from '../expose/prompt-v2.ts';
 import type { KiClient } from './anthropic.ts';
 
 /**
@@ -32,8 +30,11 @@ export function kiAttrappe(): KiClient {
         // Einheiten-Zeilen „Einheit: Typ | Lage | Zimmer | Fläche | Kaltmiete“ direkt aus dem (unkomprimierten) Test-PDF
         const dok = body.messages?.[0]?.content?.find?.((c: any) => c.type === 'document')?.source?.data ?? '';
         const roh = Buffer.from(dok, 'base64').toString('latin1');
-        const einheiten = [...roh.matchAll(/\(Einheit:\s*([^)]*)\)/g)].map((m) => {
-          const [typ, lage, zimmer, flaeche, kaltmiete] = m[1]!.split('|').map((s) => s.trim());
+        // Textobjekte je Zeile (gleiche y-Lage) zusammensetzen — Tabellenzeilen stehen in mehreren Spalten
+        const zeilen = new Map<string, string[]>();
+        for (const m of roh.matchAll(/Tf\s+[\d.]+\s+([\d.]+)\s+Td\s+\(((?:[^()\\]|\\.)*)\)\s*Tj/g)) zeilen.set(m[1]!, [...(zeilen.get(m[1]!) ?? []), m[2]!]);
+        const einheiten = [...zeilen.values()].map((z) => z.join(' | ')).map((z) => /^Einheit:\s*(.*)$/.exec(z)).filter(Boolean).map((m) => {
+          const [typ, lage, zimmer, flaeche, kaltmiete] = m![1]!.split(/\s*\|\s*|\s{2,}/).map((s) => s.trim());
           return { typ: typ || 'Wohnung', lage: lage ?? '', zimmer: zahl(zimmer), flaeche: zahl(flaeche), kaltmiete: zahl(kaltmiete) };
         });
         return { content: [{ type: 'tool_use', name: 'extract_einheiten', input: { einheiten } }], usage: { input_tokens: 0, output_tokens: 0 } };
@@ -68,7 +69,7 @@ export function kiAttrappe(): KiClient {
       }
 
       const text = JSON.stringify(body?.messages ?? []).replace(/\\n/g, '\n');
-      if (werkzeug === EXPOSE_V2_TOOL_NAME) return antwortV2(textBloecke(body), body.tools[0]);
+      if (werkzeug === 'bezeichnungen_zuordnen') return antwortBezeichnungen(body);
       const input = teilA(text);
       return { content: [{ type: 'tool_use', name: 'extract_expose_data', input }], usage: { input_tokens: 0, output_tokens: 0 } };
     },
@@ -81,9 +82,9 @@ export function kiAttrappe(): KiClient {
 function teilA(text: string) {
   const feld = (name: string) => new RegExp(`${name}:\\s*([^\\n"]+)`).exec(text)?.[1]?.trim();
   const adresse = /^(.+?)\s+(\d+\s*\w?),\s*(\d{5})\s+(.+)$/.exec(feld('Adresse') ?? '');
-  const makler = (feld('Makler') ?? '').split('|').map((s) => s.trim());
+  const makler = (feld('Makler') ?? '').split(/\s*\|\s*|\s{2,}/).map((s) => s.trim());
   const einheiten = [...text.matchAll(/Einheit:\s*([^\n"]+)/g)].map((m) => {
-    const [typ, lage, zimmer, flaeche, kaltmiete] = m[1]!.split('|').map((s) => s.trim());
+    const [typ, lage, zimmer, flaeche, kaltmiete] = m[1]!.split(/\s*\|\s*|\s{2,}/).map((s) => s.trim());
     return { typ: typ || 'Wohnung', lage, zimmer: zahl(zimmer), flaeche: zahl(flaeche), kaltmiete: zahl(kaltmiete), vermiet: 'Vermietet' };
   });
   return {
@@ -116,113 +117,14 @@ function textAntwort(prompt: string): string {
   return 'Test-Modus: Zusammenfassung der Kommunikation.';
 }
 
-/** Die Textblöcke der user-Nachricht (ohne JSON-Hülle), damit Zeilen und Seitenmarker sauber lesbar sind. */
-function textBloecke(body: any): string {
-  const inhalt = body?.messages?.[0]?.content;
-  if (typeof inhalt === 'string') return inhalt;
-  return (Array.isArray(inhalt) ? inhalt : []).filter((c: any) => c?.type === 'text').map((c: any) => String(c.text ?? '')).join('\n');
-}
-
-type Angabe = ExposeV2['angaben'][number];
-
-/** Bekannte „Feld: Wert“-Zeilen → Standard-Pfad und gg-Vorschlag (wie die echte KI sie zuordnen würde). */
-const FELDER_V2: Record<string, { pfad: Angabe['pfad']; gg: Angabe['gg'] }> = {
-  Adresse: { pfad: 'geo.strasse', gg: 'objekt.strasse' },
-  Kaufpreis: { pfad: 'preise.kaufpreis', gg: 'objekt.angebotspreis' },
-  Wohnfläche: { pfad: 'flaechen.wohnflaeche', gg: 'objekt.wohnflaeche' },
-  Wohnflaeche: { pfad: 'flaechen.wohnflaeche', gg: 'objekt.wohnflaeche' },
-  Grundstück: { pfad: 'flaechen.grundstuecksflaeche', gg: 'objekt.grundstueck' },
-  Grundstueck: { pfad: 'flaechen.grundstuecksflaeche', gg: 'objekt.grundstueck' },
-  Baujahr: { pfad: 'zustand_angaben.baujahr', gg: 'objekt.baujahr' },
-  Hausgeld: { pfad: 'preise.hausgeld', gg: 'details.hausgeld_monat' },
-  Denkmalschutz: { pfad: 'verwaltung_objekt.denkmalgeschuetzt', gg: 'details.denkmalschutz' },
-  // bewusst ohne Pfad: Angabe ohne Mapping, nur mit Vorschlag
-  Instandhaltungsrücklage: { pfad: null, gg: 'details.instandhaltungsruecklage' },
-  Instandhaltungsruecklage: { pfad: null, gg: 'details.instandhaltungsruecklage' },
+/** Zuordnung unbekannter Bezeichnungen (Test-Modus): nur die bekannte Testangabe bekommt einen Vorschlag. */
+const BEZEICHNUNGEN_ATTRAPPE: Record<string, { pfad: string | null; gg: string | null }> = {
+  'erhaltungsreserve': { pfad: null, gg: 'details.instandhaltungsruecklage' },
 };
 
-const mobil = (tel: string | undefined) => /^(\+49\s?|0)1/.test(tel ?? '');
-
-/** Spalten der Mietliste aus den „Einheit:“-Zeilen. */
-const SPALTEN_V2: ExposeV2['einheiten_tabellen'][number]['spalten'] = [
-  { ueberschrift: 'Art', feld: 'typ' }, { ueberschrift: 'Lage', feld: 'lage' }, { ueberschrift: 'Zimmer', feld: 'zimmer' },
-  { ueberschrift: 'Fläche', feld: 'flaeche' }, { ueberschrift: 'Kaltmiete', feld: 'kaltmiete' },
-];
-
-/** Die Zeilen der Attrappe als Erfassung v2: Angaben wörtlich mit Seite, Einheit-Zeilen als eine Mietliste. */
-export function attrappeErfassung(text: string): ExposeV2 {
-  const v2 = exposeV2Leer();
-  const neu = (bezeichnung: string, wert: string, seite: number, pfad: Angabe['pfad'], gg: Angabe['gg'] = null, kontakt: number | null = null) => {
-    if (wert) v2.angaben.push({ bezeichnung, wert, seite, pfad, kontakt, gg });
-  };
-  const zeilen: string[][] = [];
-  let tabellenSeite: number | null = null;
-  let seite = 0; // vor dem ersten Seitenmarker steht nur die Anweisung
-  let kontakte = 1;
-  for (const roh of text.split('\n')) {
-    const zeile = roh.trim();
-    const marker = /^──────── Seite (\d+)/.exec(zeile);
-    if (marker) { seite = Number(marker[1]); continue; }
-    if (!seite || !zeile || /^Attrappe:/.test(zeile)) continue;
-    const m = /^([A-Za-zÄÖÜäöüß\-]+):\s*(.+)$/.exec(zeile);
-    if (!m) {
-      if (/^Expose\b/i.test(zeile)) neu('Titel', zeile, seite, 'freitexte.objekttitel', 'details.titel');
-      else if (zeile.length >= 60) neu('Lage', zeile, seite, 'freitexte.lage', 'objekt.lagebeschreibung');
-      continue;
-    }
-    const [, name, wert] = m as unknown as [string, string, string];
-    const teile = wert.split('|').map((t) => t.trim());
-    if (name === 'Einheit') { zeilen.push(teile.slice(0, 5)); tabellenSeite ??= seite; continue; }
-    if (name === 'Makler' || name === 'Kontakt') {
-      const nr = name === 'Makler' ? 1 : ++kontakte;
-      const [person, zweites, tel, email] = teile;
-      if (name === 'Makler') {
-        const namen = (person ?? '').split(/\s+/);
-        if (namen.length > 1) { neu('Vorname', namen[0]!, seite, 'kontaktperson.vorname', 'makler.name', nr); neu('Name', namen.slice(1).join(' '), seite, 'kontaktperson.name', 'makler.name', nr); }
-        else neu('Name', person ?? '', seite, 'kontaktperson.name', 'makler.name', nr);
-        neu('Firma', zweites ?? '', seite, 'kontaktperson.firma', 'makler.firma', nr);
-        neu('Telefon', tel ?? '', seite, mobil(tel) ? 'kontaktperson.tel_handy' : 'kontaktperson.tel_durchw', mobil(tel) ? 'makler.mobiltel' : 'makler.festnetztel', nr);
-        neu('E-Mail', email ?? '', seite, 'kontaktperson.email_direkt', 'makler.email', nr);
-      } else {
-        neu('Ansprechpartner', person ?? '', seite, 'kontaktperson.name', null, nr);
-        neu('Position', zweites ?? '', seite, 'kontaktperson.position', null, nr);
-        neu('Telefon', tel ?? '', seite, mobil(tel) ? 'kontaktperson.tel_handy' : 'kontaktperson.tel_durchw', null, nr);
-        neu('E-Mail', email ?? '', seite, 'kontaktperson.email_direkt', null, nr);
-      }
-      continue;
-    }
-    const f = FELDER_V2[name];
-    neu(name, wert, seite, f?.pfad ?? null, f?.gg ?? null);
-  }
-  if (zeilen.length) v2.einheiten_tabellen.push({ seite: tabellenSeite, titel: 'Mietaufstellung', spalten: SPALTEN_V2, zeilen: zeilen.map((z) => SPALTEN_V2.map((_, i) => z[i] ?? '')) });
-  v2.einheiten_im_dokument = zeilen.length || null;
-  v2.einheiten_vollstaendig = true;
-  return v2;
-}
-
-/**
- * Antwort der Attrappe für die Erfassung v2. Das Nachfass-Werkzeug (ohne `angaben`) bekommt nur die Tabellen.
- * Steuerzeile „Attrappe: abgeschnitten“: die erste Antwort enthält nur die ersten Angaben und endet mit max_tokens; die
- * Wiederholung (Hinweis in der user-Nachricht) liefert alle Angaben ohne Mietliste — die holt dann der Nachfass.
- */
-function antwortV2(text: string, tool: any) {
-  const wiederholt = text.includes(HINWEIS_WIEDERHOLUNG_V2);
-  const sauber = text.replace(HINWEIS_WIEDERHOLUNG_V2, '').replace(HINWEIS_NACHFASS_V2, '');
-  const v2 = attrappeErfassung(sauber);
-  const { schema: _s, felder: _f, ...teilB } = v2;
-  // nur Teil B — Teil A beantwortet die Attrappe über das bisherige Werkzeug (eigener Aufruf)
-  const voll: Record<string, unknown> = { ...teilB };
-  const nurEinheiten = !tool?.input_schema?.properties?.angaben;
-  let input: Record<string, unknown> = voll;
-  let stop_reason = 'end_turn';
-  if (nurEinheiten) {
-    input = { einheiten_tabellen: v2.einheiten_tabellen, einheiten_im_dokument: v2.einheiten_im_dokument, einheiten_vollstaendig: true };
-  } else if (wiederholt) {
-    input = { ...voll, einheiten_tabellen: [], einheiten_vollstaendig: false };
-  } else if (/Attrappe:\s*abgeschnitten/.test(text)) {
-    input = { ...voll, angaben: v2.angaben.slice(0, 2), einheiten_tabellen: [] };
-    stop_reason = 'max_tokens';
-  }
-  const json = JSON.stringify(input);
-  return { content: [{ type: 'tool_use', name: EXPOSE_V2_TOOL_NAME, input }], stop_reason, usage: { input_tokens: Math.floor(text.length / 4), output_tokens: Math.floor(json.length / 3) } };
+function antwortBezeichnungen(body: any) {
+  const text: string = (body?.messages?.[0]?.content ?? []).map((c: any) => c?.text ?? '').join('\n');
+  const zuordnungen = text.split('\n').map((z) => /^(\d+)\.\s+(.*?)\s+=\s/.exec(z)).filter(Boolean)
+    .map((m) => ({ nr: Number(m![1]), ...(BEZEICHNUNGEN_ATTRAPPE[m![2]!.trim().toLowerCase().replace(/:$/, '')] ?? { pfad: null, gg: null }) }));
+  return { content: [{ type: 'tool_use', name: 'bezeichnungen_zuordnen', input: { zuordnungen } }], usage: { input_tokens: 0, output_tokens: 0 } };
 }

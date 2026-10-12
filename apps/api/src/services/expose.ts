@@ -6,7 +6,8 @@ import {
   telefonNormalisieren, uebernahmeWert, type WeitereKontakte, weitereKontakte, wizardKalkSpeichern, wizardKalkVorbelegen, type ZielArt, zuordnen,
 } from '@gg/domain';
 import {
-  analysiereExpose, BUCKETS, type Dateispeicher, dokumentSchluessel, EINGANG, istEingangsSchluessel, istPdf, type KiClient, kostenBuchung, pdfText,
+  analysiereExpose, BUCKETS, type Dateispeicher, dokumentSchluessel, EINGANG, istEingangsSchluessel, istPdf, type KiClient, kostenBuchung, pdfDokument, pdfText,
+  tesseractOcr,
 } from '@gg/integrations';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { auditSchreiben } from './audit.ts';
@@ -71,11 +72,14 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
   if (!istPdf(pdf)) throw new FachFehler(422, `„${dateiname}“ ist kein PDF.`);
 
   const einstellung = await exposeExtraktionLesen(db);
+  // Rohdaten ohne KI: Textlayer + Texterkennung der Bild-Seiten (Protokoll 30, P1); der OCR-Worker lebt nur für diese Analyse
+  const texterkennung = tesseractOcr();
   const analyse = await analysiereExpose(pdf, dateiname, {
     ki: k.ki,
     pdfText: (b) => pdfText(Buffer.from(b)),
+    dokument: (b) => pdfDokument(b, { ocr: texterkennung.ocr }),
     buchen: (model, usage, quelle) => kostenBuchen(db, model, usage, quelle),
-  }, { schema: einstellung.schema, kostenGrenzeEur: einstellung.kostenGrenzeEur });
+  }, { schema: einstellung.schema, kostenGrenzeEur: einstellung.kostenGrenzeEur }).finally(() => texterkennung.beenden());
 
   // v2: Werte gegen die Seitentexte prüfen (nur der Textweg hat Seitentexte), falsche Seiten berichtigen,
   // dann per Mapping-Tabelle ins Format der Prüfseite

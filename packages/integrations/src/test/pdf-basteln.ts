@@ -4,13 +4,14 @@
  */
 export function pdfAusZeilen(zeilen: string[]): Uint8Array {
   const strom = zeilen
-    .map((t, i) => `BT /F1 11 Tf 50 ${800 - i * 16} Td (${t.replace(/([()\\])/g, '\\$1')}) Tj ET`)
+    // „a | b | c“ wird wie eine Tabellenzeile gesetzt: je Abschnitt eine eigene Spalte (echte Zellen im Textlayer)
+    .map((t, i) => zeileSetzen(t, 800 - i * 16))
     .join('\n');
   const objekte = [
     '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
     '2 0 obj\n<< /Type /Pages /Kids [4 0 R] /Count 1 >>\nendobj\n',
     '3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>\nendobj\n',
-    '4 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>\nendobj\n',
+    '4 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 1190 842] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>\nendobj\n',
     `5 0 obj\n<< /Length ${Buffer.byteLength(strom, 'latin1')} >>\nstream\n${strom}\nendstream\nendobj\n`,
   ];
   let pdf = '%PDF-1.4\n';
@@ -45,9 +46,20 @@ export function testExpose(kennung: string): Uint8Array {
  * Wie pdfAusZeilen, aber mit mehreren Seiten (je ein Zeilenblock). pdfText liefert daraus Seitenmarker „──────── Seite N“;
  * daran hängt in Tests, ob Belege und Einheiten die richtige Seite tragen.
  */
+/** Eine Zeile als PDF-Text; „a | b | c“ wird wie eine Tabellenzeile gesetzt (je Abschnitt eine Spalte, deutlicher Abstand). */
+function zeileSetzen(t: string, y: number): string {
+  let x = 50;
+  return t.split(' | ').map((teil) => {
+    const befehl = `BT /F1 11 Tf ${x} ${y} Td (${teil.replace(/([()\\])/g, '\\$1')}) Tj ET`;
+    x += teil.length * 6.5 + 30;
+    return befehl;
+  }).join('\n');
+}
+
 export function pdfAusSeiten(seiten: string[][]): Uint8Array {
   const stroeme = seiten.map((zeilen) => zeilen
-    .map((t, i) => `BT /F1 11 Tf 50 ${800 - i * 16} Td (${t.replace(/([()\\])/g, '\\$1')}) Tj ET`)
+    // „a | b | c“ wird wie eine Tabellenzeile gesetzt: je Abschnitt eine eigene Spalte (echte Zellen im Textlayer)
+    .map((t, i) => zeileSetzen(t, 800 - i * 16))
     .join('\n'));
   // Objekte: 1 Katalog, 2 Seitenbaum, 3 Schrift, dann je Seite ein Page-Objekt (4, 6, …) und sein Inhalt (5, 7, …)
   const seitenNr = seiten.map((_, i) => 4 + i * 2);
@@ -56,7 +68,7 @@ export function pdfAusSeiten(seiten: string[][]): Uint8Array {
     `2 0 obj\n<< /Type /Pages /Kids [${seitenNr.map((n) => `${n} 0 R`).join(' ')}] /Count ${seiten.length} >>\nendobj\n`,
     '3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>\nendobj\n',
     ...stroeme.flatMap((strom, i) => [
-      `${seitenNr[i]} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${seitenNr[i]! + 1} 0 R >>\nendobj\n`,
+      `${seitenNr[i]} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 1190 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${seitenNr[i]! + 1} 0 R >>\nendobj\n`,
       `${seitenNr[i]! + 1} 0 obj\n<< /Length ${Buffer.byteLength(strom, 'latin1')} >>\nstream\n${strom}\nendstream\nendobj\n`,
     ]),
   ];
@@ -74,7 +86,7 @@ export function pdfAusSeiten(seiten: string[][]): Uint8Array {
 
 /**
  * Ein Test-Exposé für die Erfassung v2 (Attrappe-Zweig erfasse_expose): zwei Seiten, Seite 1 mit Kernwerten und Makler,
- * Seite 2 mit Mietaufstellung, Angaben ohne Mapping (Instandhaltungsrücklage mit Vorschlag, Besichtigung ohne) und
+ * Seite 2 mit Mietaufstellung, Angaben ohne Mapping (Erhaltungsreserve mit Vorschlag, Besichtigung ohne) und
  * zweitem Kontakt. `abgeschnitten` fügt die Steuerzeile ein, mit der die Attrappe die erste Antwort an max_tokens
  * abschneidet (Wiederholung ohne Mietliste + Nachfass).
  */
@@ -94,10 +106,11 @@ export function testExposeV2(kennung: string, optionen: { abgeschnitten?: boolea
     ],
     [
       'Mietaufstellung',
+      'Art | Lage | Zimmer | Fläche | Kaltmiete',
       'Einheit: Wohnung | EG links | 3 | 80 m2 | 800 EUR',
       'Einheit: Wohnung | OG rechts | 3 | 80 m2 | 820 EUR',
       'Einheit: Wohnung | DG | 2 | 80 m2 | 700 EUR',
-      'Instandhaltungsrücklage: 12.000 EUR',
+      'Erhaltungsreserve: 12.000 EUR',
       'Besichtigung: nach Vereinbarung',
       'Kontakt: Max Zweit | Geschäftsführer | 0711 123456 | max@beispiel.test',
       'Die Liegenschaft befindet sich in ruhiger Wohnlage, Einkaufsmoeglichkeiten und Schulen sind fusslaeufig erreichbar.',

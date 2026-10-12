@@ -19,7 +19,7 @@ import {
   kennzahlenJeExpose, kennzahlenVergleich, kennzahlenZusammenfassen,
 } from '@gg/domain';
 import {
-  type AnalyseAbhaengigkeiten, type AnalyseErgebnis, PROMPT_VERSION_V0, PROMPT_VERSION_V2, analysiereExpose, anthropicClient, kiAttrappe, pdfText,
+  type AnalyseAbhaengigkeiten, type AnalyseErgebnis, PROMPT_VERSION_V0, PROMPT_VERSION_V2, analysiereExpose, anthropicClient, kiAttrappe, pdfDokument, pdfText, tesseractOcr,
 } from '@gg/integrations';
 
 const WURZEL = join(import.meta.dirname, '..');
@@ -66,11 +66,14 @@ else {
   ki = anthropicClient(schluessel);
 }
 
+const texterkennung = tesseractOcr();
+
 /** buchen: nur sammeln, nichts in die Datenbank. */
 const buchungen: { model: string; quelle: string }[] = [];
 const abh: AnalyseAbhaengigkeiten = {
   ki,
   pdfText: (pdf) => pdfText(Buffer.from(pdf)),
+  dokument: (pdf) => pdfDokument(pdf, { ocr: texterkennung.ocr }),
   buchen: async (model, _usage, quelle) => { buchungen.push({ model, quelle }); },
 };
 
@@ -129,6 +132,7 @@ async function arbeiter(): Promise<void> {
 }
 
 await Promise.all(Array.from({ length: Math.min(parallel, n) }, () => arbeiter()));
+await texterkennung.beenden();
 
 const zusammenfassung = kennzahlenZusammenfassen(kennzahlen);
 let gegenseite: KennzahlenZusammenfassung | null = null;

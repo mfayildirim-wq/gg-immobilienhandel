@@ -8,6 +8,7 @@
  * Dieses Objekt wird unverändert als `expose_importe.rohdaten` gespeichert.
  */
 import { z } from 'zod';
+import { Dokument } from './dokument.ts';
 import { EINHEIT_FELD_NAMEN, KATALOG, KATALOG_PFADE } from './katalog.ts';
 import { levenshtein } from './uebernahme.ts';
 import { GG_ZIEL_SCHLUESSEL, GG_ZIELE } from './ziele.ts';
@@ -47,11 +48,13 @@ export const ExposeV2 = z.object({
   einheiten_tabellen: z.array(EinheitenTabelle),
   einheiten_im_dokument: z.number().int().nullable(),
   einheiten_vollstaendig: z.boolean(),
+  /** Seit P1: das ohne KI gelesene Dokument — die unveränderten Rohdaten, aus denen `angaben`/`einheiten_tabellen` stammen */
+  dokument: Dokument.nullable().optional(),
 });
 export type ExposeV2 = z.infer<typeof ExposeV2>;
 
 /** Werkzeug-Eingabe = ExposeV2 ohne das Kennzeichen `schema` (setzt der Code). */
-const Werkzeug = ExposeV2.omit({ schema: true, felder: true }).extend({
+const Werkzeug = ExposeV2.omit({ schema: true, felder: true, dokument: true }).extend({
   einheiten_im_dokument: z.number().int().nullable().describe('Anzahl der Einheiten, die das Dokument insgesamt nennt (Wohnungen + Gewerbe + Stellplätze), null wenn nicht genannt'),
   einheiten_vollstaendig: z.boolean().describe('true, wenn alle Einheiten des Dokuments in einheiten_tabellen stehen'),
 });
@@ -132,6 +135,7 @@ export function exposeV2Bereinigen(roh: unknown): { v2: ExposeV2; warnungen: str
     v2: {
       schema: EXPOSE_V2_SCHEMA, felder, angaben, einheiten_tabellen: tabellen,
       einheiten_im_dokument: ganz(r.einheiten_im_dokument), einheiten_vollstaendig: r.einheiten_vollstaendig !== false,
+      ...(r.dokument && Dokument.safeParse(r.dokument).success ? { dokument: r.dokument as Dokument } : {}),
     },
     warnungen,
   };

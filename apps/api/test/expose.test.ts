@@ -236,10 +236,11 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
       importId: a.importId, feld: expect.stringMatching(/^angaben\.\d+$/), wert: '1.250.000 EUR', seite: 1, belegt: true, pfad: 'preise.kaufpreis',
       ziel: { feld: 'objekt.angebotspreis', wert: 1_250_000, aktuell: null, status: 'leer', quelle: 'mapping' },
     });
-    expect(nach('objekt', 'Instandhaltungsrücklage')).toMatchObject({ seite: 2, ziel: { feld: 'details.instandhaltungsruecklage', quelle: 'vorschlag' } });
+    expect(nach('objekt', 'Erhaltungsreserve')).toMatchObject({ seite: 2, ziel: { feld: 'details.instandhaltungsruecklage', quelle: 'vorschlag' } });
     expect(nach('objekt', 'Besichtigung')).toMatchObject({ wert: 'nach Vereinbarung', ziel: { feld: null, status: 'keinFeld' } });
     expect(nach('objekt', 'Ansprechpartner')).toBeUndefined();
-    expect(nach('makler', 'Ansprechpartner')).toMatchObject({ wert: 'Max Zweit', ziel: { feld: 'makler.weitereKontakte' } });
+    // Kontaktdaten erkennt der Code per Muster (keine Personen raten): die zweite E-Mail steht beim Makler
+    expect(a.angaben.makler.some((x: any) => x.wert === 'max@beispiel.test')).toBe(true);
     expect(a.angaben.objekt.filter((x: any) => x.gruppe === 'einheiten')).toHaveLength(3);
 
     // Ziele: Objekt mit Kalkulation (Prüfseite zeigt beides gemeinsam), Makler getrennt
@@ -269,16 +270,17 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
     const { key } = await lies(eingang(testExposeV2(eigene)));
     const a = await lies(json('/api/expose/analyse', { key, dateiname: `${eigene}.pdf` }));
     const feld = (art: 'objekt' | 'makler', bezeichnung: string) => a.angaben[art].find((x: any) => x.bezeichnung === bezeichnung).feld as string;
-    const ruecklage = feld('objekt', 'Instandhaltungsrücklage');
+    const ruecklage = feld('objekt', 'Erhaltungsreserve');
     const besichtigung = feld('objekt', 'Besichtigung');
-    const position = feld('makler', 'Position');
+    // zweite E-Mail: Teil A hat schon eine → „doppelt“, per Hand zu den weiteren Kontakten
+    const telefonZwei = a.angaben.makler.find((x: any) => x.wert === 'max@beispiel.test').feld as string;
     const r = await json('/api/expose/uebernehmen', {
       key, dateiname: `${eigene}.pdf`, extrahiert: a.extrahiert, importId: a.importId,
       zuordnungen: [
         { feld: ruecklage, ziel: 'details.instandhaltungsruecklage' },
         { feld: besichtigung, ziel: 'notizen' },
         { feld: besichtigung, ziel: 'details.sanierungen' },
-        { feld: position, ziel: 'makler.weitereKontakte' },
+        { feld: telefonZwei, ziel: 'makler.weitereKontakte' },
         // werden übergangen: Formularfeld der Prüfseite, unbekanntes Ziel, unbekannte Angabe, unlesbarer Wert
         { feld: feld('objekt', 'Kaufpreis'), ziel: 'objekt.angebotspreis' },
         { feld: ruecklage, ziel: 'gibt.es.nicht' },
@@ -304,7 +306,8 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
     expect(o.details).not.toHaveProperty('stellplaetze');
     expect(o.notizen).toBe(`Von der Prüfseite\nBesichtigung: nach Vereinbarung (Exposé S. 2)`);
     const [makler] = await db.select().from(schema.makler).where(eq(schema.makler.id, erg.maklerId));
-    expect((makler!.weitereKontakte as any).namen).toEqual(expect.arrayContaining(['Max Zweit', 'Geschäftsführer']));
+
+    expect((makler!.weitereKontakte as any).emails).toEqual(expect.arrayContaining(['max@beispiel.test']));
 
     const einheiten = await db.select().from(schema.objektEinheiten).where(eq(schema.objektEinheiten.objektId, erg.objektId)).orderBy(schema.objektEinheiten.sort);
     expect(einheiten).toHaveLength(3);
@@ -316,7 +319,7 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
       expect.objectContaining({ art: 'objekt', bezugId: erg.objektId, feld: ruecklage, ziel: 'details.instandhaltungsruecklage', kiWert: '12.000 EUR', aktion: 'zugeordnet', konfidenz: null, promptVersion: imp!.promptVersion }),
       expect.objectContaining({ art: 'objekt', feld: besichtigung, ziel: 'notizen', kiWert: 'nach Vereinbarung', aktion: 'zugeordnet' }),
       expect.objectContaining({ art: 'objekt', feld: besichtigung, ziel: 'details.sanierungen' }),
-      expect.objectContaining({ art: 'makler', bezugId: erg.maklerId, feld: position, ziel: 'makler.weitereKontakte', kiWert: 'Geschäftsführer' }),
+      expect.objectContaining({ art: 'makler', bezugId: erg.maklerId, feld: telefonZwei, ziel: 'makler.weitereKontakte', kiWert: 'max@beispiel.test' }),
     ]));
   });
 

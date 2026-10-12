@@ -48,7 +48,7 @@ test('Exposé importieren: Objekt, Makler, Deal anlegen; zweiter Import erkennt 
 
 /**
  * Test-Exposé für die Erfassung v2 (Attrappe-Zweig erfasse_expose): Kernwerte mit Standard-Pfad (automatisch zugeordnet),
- * „Instandhaltungsrücklage“ ohne Pfad mit gg-Vorschlag, „Energieverbrauch“, „Zustand“ und „Besichtigung“ ohne Pfad und ohne
+ * „Erhaltungsreserve“ ohne Wörterbucheintrag mit KI-Vorschlag, „Verbrauchswert Gebäude“, „Dachzustand“ und „Besichtigung“ ohne Zuordnung und ohne
  * Vorschlag, zweiter Kontakt auf Seite 2.
  */
 function testExposeV2(kennung: string): Uint8Array {
@@ -61,7 +61,7 @@ function testExposeV2(kennung: string): Uint8Array {
       'Grundstück: 480 m2',
       'Baujahr: 1965',
       'Hausgeld: 350 EUR',
-      'Instandhaltungsrücklage: 12.000 EUR',
+      'Erhaltungsreserve: 12.000 EUR',
       `Makler: Anna ${kennung} | Beispiel Immobilien GmbH | 0171 ${kennung.replace(/\D/g, '').slice(-7).padStart(7, '0')} | anna.${kennung.toLowerCase()}@beispiel.test`,
     ],
     [
@@ -69,8 +69,8 @@ function testExposeV2(kennung: string): Uint8Array {
       'Einheit: Wohnung | EG links | 3 | 80 | 800',
       'Einheit: Wohnung | OG rechts | 3 | 80 | 820',
       'Einheit: Wohnung | DG | 2 | 80 | 700',
-      'Energieverbrauch: 128,5 kWh/m2a',
-      'Zustand: gepflegt',
+      'Verbrauchswert Gebäude: 128,5 kWh/m2a',
+      'Dachzustand: gepflegt',
       'Besichtigung: nach Vereinbarung',
       'Kontakt: Max Zweit | Geschäftsführer | 0711 123456 | max@beispiel.test',
     ],
@@ -91,7 +91,7 @@ test('Exposé v2: weitere Angaben per Dropdown auf der Prüfseite und im Reiter 
   await expect(zeile('Besichtigung').getByRole('combobox', { name: 'Übernehmen in …' })).toHaveValue('');
 
   // Vorschlag der KI ist vorausgewählt; ein Feld ohne Formularfeld wird beim Anlegen gespeichert (rückgängig möglich)
-  const ruecklage = zeile('Instandhaltungsrücklage');
+  const ruecklage = zeile('Erhaltungsreserve');
   await expect(ruecklage.getByRole('combobox', { name: 'Übernehmen in …' })).toHaveValue(/^Instandhaltungsrücklage/);
   await ruecklage.getByRole('button', { name: 'Übernehmen' }).click();
   await expect(ruecklage).toHaveAttribute('data-zustand', 'gemerkt');
@@ -102,7 +102,7 @@ test('Exposé v2: weitere Angaben per Dropdown auf der Prüfseite und im Reiter 
   await expect(ruecklage).toHaveAttribute('data-zustand', 'gemerkt');
 
   // Übernahme in ein leeres Formularfeld: der Wert steht sofort im Formular (deutsche Zahl gelesen)
-  const verbrauch = zeile('Energieverbrauch');
+  const verbrauch = zeile('Verbrauchswert Gebäude');
   await verbrauch.getByRole('combobox', { name: 'Übernehmen in …' }).click();
   await page.getByRole('option', { name: /^Energiekennwert/ }).click();
   await verbrauch.getByRole('button', { name: 'Übernehmen' }).click();
@@ -139,10 +139,10 @@ test('Exposé v2: weitere Angaben per Dropdown auf der Prüfseite und im Reiter 
   const reiterZeile = (text: string) => angaben.locator('tr[data-feld]').filter({ hasText: text });
   await expect(reiterZeile('Hausgeld')).toHaveAttribute('data-status', 'gleich');
   await expect(reiterZeile('Grundstück')).toHaveAttribute('data-status', 'gleich');
-  await expect(reiterZeile('Instandhaltungsrücklage')).toHaveAttribute('data-status', 'gleich');
+  await expect(reiterZeile('Erhaltungsreserve')).toHaveAttribute('data-status', 'gleich');
 
   // Übernahme per Dropdown: „Zustand“ in das gleichnamige Feld
-  const zustand = reiterZeile('Zustand');
+  const zustand = reiterZeile('Dachzustand');
   await zustand.getByRole('combobox', { name: 'Übernehmen in …' }).click();
   await page.getByRole('option', { name: 'Zustand', exact: true }).click();
   const gespeichert = page.waitForResponse((r) => r.url().includes('/expose-uebernahme') && r.request().method() === 'POST');
@@ -164,5 +164,5 @@ test('Exposé v2: weitere Angaben per Dropdown auf der Prüfseite und im Reiter 
   await page.goto(`/makler?makler=${deal.makler.id}`);
   const m = page.getByRole('region', { name: 'Makler-Detail' });
   await m.getByRole('tab', { name: '📄 Aus dem Exposé' }).click();
-  await expect(m.getByRole('region', { name: 'Exposé-Angaben' })).toContainText('Max Zweit');
+  await expect(m.getByRole('region', { name: 'Exposé-Angaben' })).toContainText('max@beispiel.test');
 });
