@@ -67,7 +67,9 @@ function FehlerListe({ fehler, titel }: { fehler: Feldfehler; titel: string }) {
   );
 }
 
-type Phase = { art: 'upload' } | { art: 'pruefen'; schritt: 1 | 2 | 3 } | { art: 'zwischenstand'; dealId: string; adresse: string; makler: string };
+/** Wizard: 1 Objekt · 2 Fotos · 3 Makler · 4 Deal */
+type Schritt = 1 | 2 | 3 | 4;
+type Phase = { art: 'upload' } | { art: 'pruefen'; schritt: Schritt } | { art: 'zwischenstand'; dealId: string; adresse: string; makler: string };
 
 /** Exposé-Import (Charta Ablauf 1): 📄 Upload → 🏢 Objekt → 🤝 Makler → 📋 Deal & Kalkulation, auch als Stapel. */
 export function ExposeImportSeite() {
@@ -90,6 +92,8 @@ export function ExposeImportSeite() {
   const [dublette, setDublette] = useState<string | null>(null);
   /** Weitere Angaben, die beim Anlegen gespeichert werden (Feld → gg-Ziel oder 'notizen') */
   const [zuordnungen, setZuordnungen] = useState<Record<string, string>>({});
+  // Im Schritt „Fotos“ entfernte Bilder (Nummern)
+  const [fotosAus, setFotosAus] = useState<number[]>([]);
   /** Weitere Angaben, die schon ins Formular geschrieben wurden (Feld → gg-Ziel) */
   const [uebernommen, setUebernommen] = useState<Record<string, string>>({});
   /** Angaben, deren Zuordnung nicht im Wörterbuch gemerkt werden soll (Standard: merken) */
@@ -114,7 +118,7 @@ export function ExposeImportSeite() {
       setMaklerBestehend(r.dubletten.makler?.id ?? null);
       setDeal({ status: r.deal.status, nachfassFreq: r.deal.nachfassFreq, notizen: r.deal.notizen, kalk: r.deal.kalk });
       setDublette(null);
-      setZuordnungen({});
+      setZuordnungen({}); setFotosAus([]);
       setNichtMerken({});
       setUebernommen({});
       setStatus({ text: `✅ Analyse abgeschlossen${r.hinweis ? ` · ${r.hinweis}` : ''}` });
@@ -153,7 +157,7 @@ export function ExposeImportSeite() {
       setMaklerBestehend(r.dubletten.makler?.id ?? null);
       setDeal({ status: r.deal.status, nachfassFreq: r.deal.nachfassFreq, notizen: r.deal.notizen, kalk: r.deal.kalk });
       setDublette(null);
-      setZuordnungen({});
+      setZuordnungen({}); setFotosAus([]);
       setNichtMerken({});
       setUebernommen({});
       setStatus({ text: `✅ Analyse abgeschlossen${label}${r.hinweis ? ` · ${r.hinweis}` : ''}` });
@@ -182,6 +186,7 @@ export function ExposeImportSeite() {
           // Ins Formular übernommene Angaben gehen mit, damit das Wörterbuch sie lernt; geschrieben wird dort nichts doppelt
           ? { zuordnungen: Object.entries({ ...uebernommen, ...zuordnungen }).map(([feld, ziel]) => ({ feld, ziel, ...(nichtMerken[feld] ? { merken: false } : {}) })) }
           : {}),
+        ...(fotosAus.length ? { bilderAusschliessen: fotosAus } : {}),
         objekt: { ...(objektBestehend ? { bestehendeId: objektBestehend } : {}), daten: objekt },
         makler: { ...(maklerBestehend ? { bestehendeId: maklerBestehend } : {}), daten: makler },
         deal: { ...deal, status: deal.status as (typeof DEAL_STATUS)[number] },
@@ -213,14 +218,16 @@ export function ExposeImportSeite() {
 
   const schritt = phase.art === 'pruefen' ? phase.schritt : 0;
   // Jeder Schritt prüft seinen eigenen Teil des Vertrags — der Fehler steht dort, wo er entsteht.
-  const fehlerJeSchritt = useMemo(() => ({
+  const fehlerJeSchritt = useMemo((): Record<Schritt, Feldfehler> => ({
     1: pruefe(ObjektVertrag, objekt),
-    2: pruefe(MaklerVertrag, makler),
-    3: pruefe(DealVertrag, deal),
+    2: {},
+    3: pruefe(MaklerVertrag, makler),
+    4: pruefe(DealVertrag, deal),
   }), [objekt, makler, deal]);
   const zahl = (o: Feldfehler) => Object.keys(o).length;
-  const offeneFehler = zahl(fehlerJeSchritt[1]) + zahl(fehlerJeSchritt[2]) + zahl(fehlerJeSchritt[3]);
-  const SCHRITT_NAME: Record<1 | 2 | 3, string> = { 1: 'Objekt', 2: 'Makler', 3: 'Deal & Kalkulation' };
+  const offeneFehler = zahl(fehlerJeSchritt[1]) + zahl(fehlerJeSchritt[3]) + zahl(fehlerJeSchritt[4]);
+  const SCHRITT_NAME: Record<Schritt, string> = { 1: 'Objekt', 2: 'Fotos', 3: 'Makler', 4: 'Deal & Kalkulation' };
+  const SCHRITTE = [1, 2, 3, 4] as const;
 
   return (
     <Stack maw={960} mx="auto">
@@ -230,13 +237,13 @@ export function ExposeImportSeite() {
       <Stepper active={schritt} size="sm">
         <Stepper.Step label="Upload" description="📄" />
         {/* Ein Schritt mit Beanstandung ist schon am Balken erkennbar, nicht erst nach dem Hineinklicken. */}
-        {([1, 2, 3] as const).map((nr) => {
+        {SCHRITTE.map((nr) => {
           const anzahl = phase.art === 'pruefen' ? zahl(fehlerJeSchritt[nr]) : 0;
           return (
             <Stepper.Step
               key={nr}
               label={SCHRITT_NAME[nr]}
-              description={anzahl ? `${anzahl} zu prüfen` : ['🏢', '🤝', '📋'][nr - 1]}
+              description={anzahl ? `${anzahl} zu prüfen` : ['🏢', '📷', '🤝', '📋'][nr - 1]}
               color={anzahl ? 'red' : undefined}
               data-schritt-fehler={anzahl || undefined}
             />
@@ -271,9 +278,12 @@ export function ExposeImportSeite() {
         />
       )}
       {phase.art === 'pruefen' && a && phase.schritt === 2 && (
+        <FotoSchritt bilder={a.bilder ?? []} aus={fotosAus} setAus={setFotosAus} />
+      )}
+      {phase.art === 'pruefen' && a && phase.schritt === 3 && (
         <MaklerSchritt a={a} makler={makler} setMakler={setMakler} bestehend={maklerBestehend} setBestehend={setMaklerBestehend} />
       )}
-      {phase.art === 'pruefen' && a && phase.schritt === 3 && <DealSchritt deal={deal} setDeal={setDeal} />}
+      {phase.art === 'pruefen' && a && phase.schritt === 4 && <DealSchritt deal={deal} setDeal={setDeal} />}
 
       {dublette && (
         <Alert color="orange" title="Deal bereits vorhanden">
@@ -291,13 +301,13 @@ export function ExposeImportSeite() {
 
       {phase.art === 'pruefen' && (
         <Group justify="space-between">
-          <Button variant="default" disabled={phase.schritt === 1} onClick={() => setPhase({ art: 'pruefen', schritt: (phase.schritt - 1) as 1 | 2 })}>← Zurück</Button>
-          {phase.schritt < 3 ? (
+          <Button variant="default" disabled={phase.schritt === 1} onClick={() => setPhase({ art: 'pruefen', schritt: (phase.schritt - 1) as Schritt })}>← Zurück</Button>
+          {phase.schritt < 4 ? (
             <Button
               color={zahl(fehlerJeSchritt[phase.schritt]) ? 'orange' : undefined}
-              onClick={() => setPhase({ art: 'pruefen', schritt: (phase.schritt + 1) as 2 | 3 })}
+              onClick={() => setPhase({ art: 'pruefen', schritt: (phase.schritt + 1) as Schritt })}
             >
-              {phase.schritt === 1 ? 'Weiter: Makler →' : 'Weiter: Deal →'}
+              {{ 1: 'Weiter: Fotos →', 2: 'Weiter: Makler →', 3: 'Weiter: Deal →' }[phase.schritt as 1 | 2 | 3]}
             </Button>
           ) : (
             <Button
@@ -305,7 +315,7 @@ export function ExposeImportSeite() {
               loading={laeuft}
               onClick={() => {
                 // Nicht erst den Server abweisen lassen: zum ersten beanstandeten Schritt springen.
-                const offen = ([1, 2, 3] as const).find((nr) => zahl(fehlerJeSchritt[nr]));
+                const offen = SCHRITTE.find((nr) => zahl(fehlerJeSchritt[nr]));
                 if (offen) {
                   setPhase({ art: 'pruefen', schritt: offen });
                   setStatus({ text: `❌ ${SCHRITT_NAME[offen]}: ${zahl(fehlerJeSchritt[offen])} Feld(er) prüfen`, fehler: true });
@@ -385,28 +395,43 @@ function UploadSchritt(p: {
 
 const feldLabel = (text: string, konf?: string): ReactNode => <span>{text}<KonfidenzPunkt konf={konf} /></span>;
 
-// >>> Fotos aus dem Exposé: alle gefilterten Bilder gehen beim Anlegen automatisch ans Objekt, keine Auswahl
-function ExposeFotos({ bilder }: { bilder: ExposeAnalyseAntwort['bilder'] }) {
-  const [offen, setOffen] = useState(false);
-  if (!bilder.length) return <Text size="xs" c="dimmed" aria-label="Fotos aus dem Exposé">Keine Fotos gefunden</Text>;
-  const eingeklappt = bilder.length > 12 && !offen;
+// >>> Fotos aus dem Exposé: eigener Wizard-Schritt; alle Fotos sind dabei, einzelne lassen sich entfernen
+function FotoSchritt({ bilder, aus, setAus }: { bilder: ExposeAnalyseAntwort['bilder']; aus: number[]; setAus: (a: number[]) => void }) {
+  const weg = new Set(aus);
+  const behalten = bilder.filter((b) => !weg.has(b.nr)).length;
   return (
-    <Paper withBorder p="sm" aria-label="Fotos aus dem Exposé">
-      <Group justify="space-between" mb={eingeklappt ? 0 : 'xs'}>
-        <Text size="xs" fw={700} c="dimmed" tt="uppercase">Fotos aus dem Exposé ({bilder.length}) — werden beim Anlegen übernommen</Text>
-        {bilder.length > 12 && <Button size="compact-xs" variant="subtle" onClick={() => setOffen(!offen)}>{offen ? 'Einklappen' : 'Anzeigen'}</Button>}
-      </Group>
-      {!eingeklappt && (
-        <SimpleGrid cols={{ base: 3, sm: 4, md: 6 }} spacing="xs">
-          {bilder.map((b) => (
-            <Stack key={b.nr} gap={2} align="center">
-              <img src={b.url} alt={`Foto von Seite ${b.seite}`} loading="lazy" style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 4, display: 'block' }} />
-              <Text size="xs" c="dimmed">S. {b.seite}</Text>
-            </Stack>
-          ))}
-        </SimpleGrid>
+    <Stack aria-label="Fotos aus dem Exposé">
+      <Title order={3}>📷 Fotos aus dem Exposé</Title>
+      {bilder.length === 0 ? (
+        <Text size="sm" c="dimmed">Keine Fotos im Exposé gefunden.</Text>
+      ) : (
+        <>
+          <Group justify="space-between">
+            <Text size="sm">
+              <b>{behalten}</b> von {bilder.length} Fotos werden beim Anlegen ans Objekt übernommen. Logos und Symbole sind schon aussortiert; unpassende Bilder hier entfernen.
+            </Text>
+            {aus.length > 0 && <Button size="compact-sm" variant="subtle" onClick={() => setAus([])}>Alle wieder aufnehmen</Button>}
+          </Group>
+          <SimpleGrid cols={{ base: 2, sm: 3, md: 4 }} spacing="sm">
+            {bilder.map((b) => {
+              const entfernt = weg.has(b.nr);
+              return (
+                <Paper key={b.nr} withBorder p={4} data-foto={b.nr} data-entfernt={entfernt || undefined} style={{ opacity: entfernt ? 0.35 : 1 }}>
+                  <img src={b.url} alt={`Foto von Seite ${b.seite}`} loading="lazy" style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 4, display: 'block' }} />
+                  <Group justify="space-between" mt={4} gap={4}>
+                    <Text size="xs" c="dimmed">S. {b.seite} · {b.breite}×{b.hoehe}</Text>
+                    <Button
+                      size="compact-xs" variant={entfernt ? 'light' : 'subtle'} color={entfernt ? 'teal' : 'red'}
+                      onClick={() => setAus(entfernt ? aus.filter((x) => x !== b.nr) : [...aus, b.nr])}
+                    >{entfernt ? 'Wieder aufnehmen' : 'Entfernen'}</Button>
+                  </Group>
+                </Paper>
+              );
+            })}
+          </SimpleGrid>
+        </>
       )}
-    </Paper>
+    </Stack>
   );
 }
 // <<< Fotos aus dem Exposé
@@ -440,7 +465,6 @@ function ObjektSchritt({ a, objekt, setObjekt, bestehend, setBestehend }: { a: E
           </Group>
         </Alert>
       )}
-      <ExposeFotos bilder={a.bilder ?? []} />
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
         {t('strasse', 'Straße')}{t('hausnr', 'Hausnummer')}{t('plz', 'PLZ')}{t('stadt', 'Stadt')}{t('bundesland', 'Bundesland')}{n('baujahr', 'Baujahr')}
         {n('wohnflaeche', 'Wohnfläche m²')}{n('grundstueck', 'Grundstück m²')}{n('einheitenAnz', 'Einheiten gesamt')}{n('angebotspreis', 'Angebotspreis €')}

@@ -38,6 +38,7 @@ test('Zuordnung auf der Prüfseite wird gemerkt und steht in den Einstellungen; 
   await zeile.getByRole('button', { name: 'Übernehmen' }).click();
   await expect(zeile).toHaveAttribute('data-zustand', 'gemerkt');
 
+  await page.getByRole('button', { name: 'Weiter: Fotos →' }).click();
   await page.getByRole('button', { name: 'Weiter: Makler →' }).click();
   await page.getByRole('button', { name: 'Weiter: Deal →' }).click();
   await page.getByRole('textbox', { name: 'Maklerprov. %' }).fill('0');
@@ -67,6 +68,7 @@ test('Reiter „Aus dem Exposé“: das Häkchen „für künftige Importe merke
   await page.getByLabel('Exposé-PDF wählen').setInputFiles(datei);
   await page.getByRole('button', { name: 'Analysieren →' }).click();
   await expect(page.getByRole('heading', { name: '🏢 Objekt prüfen' })).toBeVisible({ timeout: 20_000 });
+  await page.getByRole('button', { name: 'Weiter: Fotos →' }).click();
   await page.getByRole('button', { name: 'Weiter: Makler →' }).click();
   await page.getByRole('button', { name: 'Weiter: Deal →' }).click();
   await page.getByRole('textbox', { name: 'Maklerprov. %' }).fill('0');

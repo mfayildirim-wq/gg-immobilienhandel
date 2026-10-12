@@ -743,6 +743,8 @@ export const ExposeUebernehmen = z.object({
   importId: z.string().optional(),
   /** Auf der Prüfseite per Dropdown zugeordnete weitere Angaben (Ziel: gg-Ziel-Schlüssel oder 'notizen') */
   zuordnungen: z.array(z.object({ feld: z.string(), ziel: z.string(), merken: z.boolean().optional() })).max(500).optional(),
+  /** Im Wizard-Schritt „Fotos“ entfernte Bilder (Nummer wie in `ExposeAnalyseAntwort.bilder[].nr`) — werden nicht übernommen */
+  bilderAusschliessen: z.array(z.number().int().min(0)).max(500).optional(),
   objekt: z.object({ bestehendeId: z.string().optional(), daten: ExposeObjektDaten }),
   makler: z.object({ bestehendeId: z.string().optional(), daten: ExposeMaklerDaten }),
   deal: z.object({ status: DealStatus, nachfassFreq: z.string().max(40), notizen: z.string().max(10000), kalk: WizardKalkSchema }),

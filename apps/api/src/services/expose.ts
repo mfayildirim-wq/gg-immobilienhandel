@@ -206,11 +206,12 @@ export async function exposeBild(db: Db, speicher: Dateispeicher, importId: stri
 }
 
 /** Bilder eines Imports ans Objekt hängen. Bei bestehendem Objekt keine Doppelten (gleicher Dateiname und gleiche Größe). Wirft nicht. */
-async function bilderUebernehmen(db: Db, speicher: Dateispeicher, objektId: string, bilder: EingangsBild[], warnungen: string[]): Promise<number> {
+async function bilderUebernehmen(db: Db, speicher: Dateispeicher, objektId: string, bilder: EingangsBild[], warnungen: string[], ausgeschlossen: Set<number> = new Set()): Promise<number> {
   const vorhanden = new Set((await db.select({ n: schema.objektFotos.dateiname, g: schema.objektFotos.groesseBytes }).from(schema.objektFotos).where(eq(schema.objektFotos.objektId, objektId))).map((f) => `${f.n}|${f.g}`));
   let n = 0;
   let fehler = 0;
   for (const [nr, b] of bilder.entries()) {
+    if (ausgeschlossen.has(nr)) continue; // im Wizard entfernt
     const dateiname = `Exposé S.${b.seite}-${nr + 1}.jpg`;
     if (vorhanden.has(`${dateiname}|${b.bytes}`)) continue;
     try {
@@ -438,7 +439,7 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
 
   // >>> Fotos aus dem Exposé: nach der Transaktion ans Objekt (Reihenfolge = Seite), danach Eingangsbilder löschen. Fehler → Warnung.
   const fotoWarnungen: string[] = [];
-  const fotos = importBilder.length ? await bilderUebernehmen(db, k.speicher, ids.objektId, importBilder, fotoWarnungen) : 0;
+  const fotos = importBilder.length ? await bilderUebernehmen(db, k.speicher, ids.objektId, importBilder, fotoWarnungen, new Set(e.bilderAusschliessen ?? [])) : 0;
   await bilderLoeschen(k.speicher, importBilder);
   const mitFotos = <T extends object>(r: T & { warnung?: string }) => ({ ...r, fotos, ...(fotoWarnungen.length ? { warnung: [r.warnung, ...fotoWarnungen].filter(Boolean).join(' ') } : {}) });
   // <<< Fotos aus dem Exposé

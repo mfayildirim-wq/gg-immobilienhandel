@@ -21,6 +21,7 @@ test('Exposé importieren: Objekt, Makler, Deal anlegen; zweiter Import erkennt 
   await durchWizard(page, datei);
   await expect(page.getByRole('textbox', { name: /Straße/ })).toHaveValue(`${kennung}strasse`);
   await expect(page.getByLabel('Einheitenaufstellung').getByRole('textbox', { name: 'Lage' })).toHaveCount(3);
+  await page.getByRole('button', { name: 'Weiter: Fotos →' }).click();
   await page.getByRole('button', { name: 'Weiter: Makler →' }).click();
   await expect(page.getByRole('textbox', { name: /^Name/ })).toHaveValue(`Anna ${kennung}`);
   await page.getByRole('button', { name: 'Weiter: Deal →' }).click();
@@ -37,6 +38,7 @@ test('Exposé importieren: Objekt, Makler, Deal anlegen; zweiter Import erkennt 
   await durchWizard(page, datei);
   await expect(page.getByText('Objekt existiert bereits')).toBeVisible();
   await page.getByRole('button', { name: 'Bestehendes Objekt verwenden' }).click();
+  await page.getByRole('button', { name: 'Weiter: Fotos →' }).click();
   await page.getByRole('button', { name: 'Weiter: Makler →' }).click();
   await expect(page.getByText(/Makler ausgewählt: Anna/)).toBeVisible();
   await page.getByRole('button', { name: 'Weiter: Deal →' }).click();
@@ -118,6 +120,7 @@ test('Exposé v2: weitere Angaben per Dropdown auf der Prüfseite und im Reiter 
   await expect(alle.locator('tr[data-feld]').filter({ hasText: 'Kaufpreis' })).toContainText('→ Angebotspreis');
   await expect(alle.locator('tr[data-feld]').filter({ hasText: 'Besichtigung' })).toContainText('—');
 
+  await page.getByRole('button', { name: 'Weiter: Fotos →' }).click();
   await page.getByRole('button', { name: 'Weiter: Makler →' }).click();
   await page.getByRole('button', { name: 'Weiter: Deal →' }).click();
   await page.getByRole('button', { name: '✅ Deal anlegen' }).click();
@@ -171,7 +174,7 @@ test('Exposé v2: weitere Angaben per Dropdown auf der Prüfseite und im Reiter 
 });
 
 // >>> Fotos aus dem Exposé (Protokoll 30 §4.4, §10): alle gefilterten Bilder gehen automatisch ans Objekt, keine Auswahl
-test('Exposé mit 2 Bildern: Prüfseite zeigt „Fotos aus dem Exposé (2)“, nach dem Anlegen hat das Objekt 2 Fotos', async ({ page }, info) => {
+test('Exposé mit 2 Bildern: Wizard-Schritt „Fotos“ zeigt beide, eines entfernt → das Objekt bekommt 1 Foto', async ({ page }, info) => {
   // Das Test-PDF mit Bildern baut `pdfMitBildern` (packages/integrations/src/test/pdf-basteln.ts); fehlt es noch, entfällt der Test.
   const basteln = (await import('@gg/integrations/test-pdf')) as Record<string, unknown>;
   test.skip(typeof basteln.pdfMitBildern !== 'function', 'pdfMitBildern ist noch nicht vorhanden');
@@ -187,9 +190,13 @@ test('Exposé mit 2 Bildern: Prüfseite zeigt „Fotos aus dem Exposé (2)“, n
     [{ zeilen, bilder: [{ breite: 800, hoehe: 600 }, { breite: 900, hoehe: 640 }] }]));
 
   await durchWizard(page, datei);
+  // eigener Schritt „Fotos“: beide Bilder sichtbar, eines entfernen → nur eines kommt ans Objekt
+  await page.getByRole('button', { name: 'Weiter: Fotos →' }).click();
   const fotos = page.getByLabel('Fotos aus dem Exposé');
-  await expect(fotos).toContainText('Fotos aus dem Exposé (2)');
   await expect(fotos.getByRole('img')).toHaveCount(2);
+  await expect(fotos).toContainText('2 von 2 Fotos werden beim Anlegen ans Objekt übernommen');
+  await fotos.locator('[data-foto="1"]').getByRole('button', { name: 'Entfernen' }).click();
+  await expect(fotos).toContainText('1 von 2 Fotos');
   await page.getByRole('button', { name: 'Weiter: Makler →' }).click();
   await page.getByRole('button', { name: 'Weiter: Deal →' }).click();
   await page.getByRole('textbox', { name: 'Maklerprov. %' }).fill('0');
@@ -199,7 +206,7 @@ test('Exposé mit 2 Bildern: Prüfseite zeigt „Fotos aus dem Exposé (2)“, n
   const dealId = new URL(page.url()).searchParams.get('deal')!;
   const deal = await (await page.request.get(`/api/deals/${dealId}`)).json();
   const liste = await (await page.request.get(`/api/objekte/${deal.objekt.id}/fotos`)).json();
-  expect(liste).toHaveLength(2);
-  expect(liste.map((f: { dateiname: string }) => f.dateiname).every((n: string) => /^Exposé S\.\d+-\d+\.jpg$/.test(n))).toBe(true);
+  expect(liste).toHaveLength(1);
+  expect(liste.map((f: { dateiname: string }) => f.dateiname)).toEqual([expect.stringMatching(/^Exposé S\.\d+-1\.jpg$/)]);
 });
 // <<< Fotos aus dem Exposé
