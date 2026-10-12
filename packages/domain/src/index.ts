@@ -16,6 +16,7 @@ export * from './expose/zuordnung.ts';
 export * from './expose/belege.ts';
 export * from './expose/angaben.ts';
 export * from './expose/kennzahlen.ts';
+export * from './expose/gold.ts';
 export * from './finanzpraesentation/index.ts';
 export * from './begleitscheine/index.ts';
 export * from './vertriebslisten/index.ts';
