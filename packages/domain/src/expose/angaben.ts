@@ -10,7 +10,7 @@ import type { ExposeV2 } from './erfassung.ts';
 import { gruppeVonPfad, KATALOG, KATALOG_GRUPPEN } from './katalog.ts';
 import type { NormWert } from './normalisieren.ts';
 import { GG_ZIELE, type ZielArt } from './ziele.ts';
-import { einheitenAusTabellen, MAPPING, zielWert, zuordnen, type ZuordnungGrund } from './zuordnung.ts';
+import { einheitenAusTabellen, type Gelernt, MAPPING, zielWert, zuordnen, type ZuordnungGrund } from './zuordnung.ts';
 
 export type AngabeWert = NormWert;
 export type AngabeStatus = 'gleich' | 'abweichend' | 'leer' | 'keinFeld';
@@ -123,9 +123,9 @@ function sortiert(zeilen: Angabe[]): Angabe[] {
 }
 
 /** Zeilen eines Imports für Objekt oder Makler. */
-export function angabenAusImport(imp: ImportFuerAngaben, art: 'objekt' | 'makler', d: DatensatzFuerAngaben): Angabe[] {
+export function angabenAusImport(imp: ImportFuerAngaben, art: 'objekt' | 'makler', d: DatensatzFuerAngaben, gelernt: Gelernt = {}): Angabe[] {
   const v2 = imp.rohdaten;
-  const { zeilen: zuordnung } = zuordnen(v2);
+  const { zeilen: zuordnung } = zuordnen(v2, null, gelernt);
   const kopf = { importId: imp.id, datum: imp.datum };
   const aus: Angabe[] = [];
   v2.angaben.forEach((a, i) => {

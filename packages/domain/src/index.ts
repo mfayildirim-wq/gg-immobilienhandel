@@ -19,6 +19,7 @@ export * from './expose/kennzahlen.ts';
 export * from './expose/gold.ts';
 export * from './expose/dokument.ts';
 export * from './expose/rohdaten.ts';
+export * from './expose/pruefung.ts';
 export * from './finanzpraesentation/index.ts';
 export * from './begleitscheine/index.ts';
 export * from './vertriebslisten/index.ts';

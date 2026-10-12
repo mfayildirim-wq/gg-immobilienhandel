@@ -24,3 +24,4 @@ export { pdfEinordnen, ersteSeiten, type PdfEinordnung } from './autoimport/pdfP
 export type { AgbFreigabe } from './autoimport/seite.ts';
 export * from './pdf/dokument.ts';
 export * from './pdf/ocr.ts';
+export * from './pdf/bilder.ts';

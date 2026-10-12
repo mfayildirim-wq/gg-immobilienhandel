@@ -353,7 +353,11 @@ const kontaktVon = (a: ExposeV2['angaben'][number]) => a.kontakt ?? (a.pfad?.sta
 /**
  * Erfassung v2 → gg. `belegt` (optional, je Angabe) setzt die Konfidenz der Prüfseite: belegt → hoch, nicht belegt → niedrig.
  */
-export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null): ZuordnungsErgebnis {
+/** Gelernte Zuordnungen: Bezeichnungsschlüssel (`bezeichnungSchluessel`) → gg-Ziel. */
+export type Gelernt = Record<string, string>;
+
+export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null, gelernt: Gelernt = {}): ZuordnungsErgebnis {
+  void gelernt;
   const werte: Record<string, NormWert | string[]> = {};
   const quelleIndex: Record<string, number> = {};
   const zeilen: ZuordnungZeile[] = [];
