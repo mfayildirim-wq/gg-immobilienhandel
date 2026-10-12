@@ -166,9 +166,16 @@ function ohneDoppel(werte: (string | null | undefined)[]): string[] {
   return aus;
 }
 
+/** Text für den Vergleich: klein, „Straße“ = „Str.“, ohne Satzzeichen und Leerraum. */
+const textSchluessel = (t: string) => t.toLowerCase().replace(/stra(ß|ss)e/g, 'str').replace(/[^a-z0-9äöü]/g, '');
+
+/** Gleich: Zahlen ±0,5 %; Texte gleich oder der eine steckt im anderen („Tübingen“ / „Tübingen-Lustnau“, „Wilhelmstraße“ / „WILHELMSTR. 73“). */
 function gleich(a: NormWert | string[] | undefined, b: NormWert): boolean {
   if (typeof a === 'number' && typeof b === 'number') return Math.abs(a - b) <= 0.005 * Math.max(Math.abs(a), Math.abs(b));
-  if (typeof a === 'string' && typeof b === 'string') return a.toLowerCase() === b.toLowerCase();
+  if (typeof a === 'string' && typeof b === 'string') {
+    const x = textSchluessel(a); const y = textSchluessel(b);
+    return x === y || (Math.min(x.length, y.length) >= 4 && (x.includes(y) || y.includes(x)));
+  }
   return a === b;
 }
 
@@ -395,17 +402,17 @@ export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null): Zuor
         listenVorschlag = ziel;
         return 'keinMapping';
       }
-      if (gleich(da, wert)) return 'zugeordnet';
       const a = angaben[i]!;
+      // Freitext: der vollständige wörtliche Text ersetzt eine kürzere Fassung aus Teil A
+      if (a.pfad?.startsWith('freitexte.') && typeof wert === 'string' && typeof da === 'string' && wert.length > da.length) {
+        werte[ziel] = wert; quelleIndex[ziel] = i; ausFeldern.delete(ziel);
+        return 'zugeordnet';
+      }
+      if (gleich(da, wert)) return 'zugeordnet';
       // Teil A hat eine Jahresmiete als Monatsmiete eingetragen (das Exposé sagt ausdrücklich „Jahr“): Monatswert gilt
       if ((ziel === 'objekt.istmiete' || ziel === 'objekt.sollmiete') && typeof wert === 'number' && wert !== zahlAusText(a.wert, false) && gleich(da, +(wert * 12).toFixed(2))) {
         werte[ziel] = wert; quelleIndex[ziel] = i; ausFeldern.delete(ziel);
         warnungen.push(`${z.label}: KI-Feld war der Jahreswert („${a.wert}“, S. ${a.seite ?? '?'}) — auf Monat umgerechnet`);
-        return 'zugeordnet';
-      }
-      // Freitext: der vollständige wörtliche Text ersetzt eine kürzere Fassung aus Teil A
-      if (a.pfad?.startsWith('freitexte.') && typeof wert === 'string' && typeof da === 'string' && wert.length > da.length) {
-        werte[ziel] = wert; quelleIndex[ziel] = i; ausFeldern.delete(ziel);
         return 'zugeordnet';
       }
       warnungen.push(`${z.label}: „${Array.isArray(da) ? da.join(', ') : String(da)}“ (KI-Feld) und „${a.wert}“ (S. ${a.seite ?? '?'}) — das KI-Feld gilt`);
