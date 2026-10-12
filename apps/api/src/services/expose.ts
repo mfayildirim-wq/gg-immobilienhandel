@@ -1,7 +1,7 @@
 import type { ExposeAnalyseAntwort, ExposeUebernehmen } from '@gg/api-contract';
 import { type Db, schema } from '@gg/db';
 import {
-  type Angabe, angabenAusImport, belegePruefen, dokumentArtPruefen, berechneAnkauf, dealEinheitenAusExpose, dublettenDeal, dublettenMakler, dublettenObjekt, einheitAlsEingabe,
+  type Angabe, angabenAusImport, belegePruefen, dokumentArtPruefen, steuerzeichenEntfernen, berechneAnkauf, dealEinheitenAusExpose, dublettenDeal, dublettenMakler, dublettenObjekt, einheitAlsEingabe,
   EXPOSE_V2_SCHEMA, type ExposeV2, exposeVorbereiten, type Gelernt, GG_ZIELE, type ImportFuerAngaben, maklerHatDaten, normalisiereFrequenz, telefonErsetzen,
   telefonNormalisieren, uebernahmeWert, type WeitereKontakte, weitereKontakte, wizardKalkSpeichern, wizardKalkVorbelegen, type ZielArt, zuordnen,
 } from '@gg/domain';
@@ -89,12 +89,13 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
   const einstellung = await exposeExtraktionLesen(db);
   // Rohdaten ohne KI: Textlayer + Texterkennung der Bild-Seiten (Protokoll 30, P1); der OCR-Worker lebt nur für diese Analyse
   const texterkennung = tesseractOcr();
-  const analyse = await analysiereExpose(pdf, dateiname, {
+  // Steuerzeichen aus dem PDF (U+0000 als Aufzählungspunkt) bereinigen — Postgres nimmt sie nicht an (22P05)
+  const analyse = steuerzeichenEntfernen(await analysiereExpose(pdf, dateiname, {
     ki: k.ki,
     pdfText: (b) => pdfText(Buffer.from(b)),
     dokument: (b) => pdfDokument(b, { ocr: texterkennung.ocr }),
     buchen: (model, usage, quelle) => kostenBuchen(db, model, usage, quelle),
-  }, { schema: einstellung.schema, kostenGrenzeEur: einstellung.kostenGrenzeEur }).finally(() => texterkennung.beenden());
+  }, { schema: einstellung.schema, kostenGrenzeEur: einstellung.kostenGrenzeEur }).finally(() => texterkennung.beenden()));
 
   // v2: Werte gegen die Seitentexte prüfen (nur der Textweg hat Seitentexte), falsche Seiten berichtigen,
   // dann per Mapping-Tabelle ins Format der Prüfseite
