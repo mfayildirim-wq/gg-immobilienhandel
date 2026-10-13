@@ -34,7 +34,6 @@ export const SICHERUNG_AUSGENOMMEN: Record<string, string> = {
   autoImportRuns: 'Protokoll der Importläufe; keine Geschäftsdaten.',
   archiveLedger: 'Ablage-Journal; wird aus den Dateien wieder aufgebaut.',
   maklerAnlaesse: 'Zwischenspeicher der KI-Kontaktanlässe, 24 Stunden gültig; entsteht beim nächsten Ansehen neu.',
-  geoVerortungen: 'Zwischenspeicher des Kartendienstes (Adresse → Stadtteil); entsteht bei der nächsten Lagebeschreibung neu.',
 };
 
 type Tabellenname = (typeof SICHERUNG_TABELLEN)[number];

@@ -54,14 +54,7 @@ test('Kundenkalkulation: Bankgespräch-Vorschau textgleich', async ({ browser })
   for (const id of PARITAET_IDS.kundenkalkulationen) {
     const a = await altBankgespraech(alt, id);
     expect(a.length, `${id}: alte Vorschau leer`).toBeGreaterThan(500);
-    const n = await neuBankgespraech(neu, id);
-    // Bewusste Korrektur (Fachentscheidung 13.10.2026): „Monatliche Investitionen“ zeigt im Neubau echte Durchschnitte
-    // über die Betrachtungsdauer, alt die Werte von Jahr 2. Die Box wird ausgeklammert, der übrige Text muss gleich sein;
-    // die neuen Werte prüft der Golden Master (packages/documents/test/bankgespraech.golden.test.ts).
-    const ohneBox = (t: string) => t.replace(/Monatliche Investitionen[\s\S]*?(?=Vermögensaufbau)/, 'Monatliche Investitionen […] ');
-    expect(ohneBox(a), `${id}: Box „Monatliche Investitionen“ alt nicht gefunden`).not.toBe(a);
-    expect(n, `${id}: neue Box ohne „Durchschnittswerte N Jahre“`).toMatch(/Monatliche Investitionen\s+Durchschnittswerte \d+ Jahre/);
-    p.text(id, 'Vorschau (gesamter Text ohne „Monatliche Investitionen“)', ohneBox(a), ohneBox(n));
+    p.text(id, 'Vorschau (gesamter Text)', a, await neuBankgespraech(neu, id));
   }
   const e = p.abschluss();
   expect(e.abweichungen, JSON.stringify(e.abweichungen, null, 1)).toEqual([]);

@@ -55,7 +55,7 @@ test.describe('Deal-Kalkulation', () => {
     await page.getByRole('textbox', { name: 'Neue Gesprächsnotiz' }).fill('Exposé angefordert');
     await page.getByRole('button', { name: '+ Eintrag' }).click();
     await expect(page.getByLabel('Kommentare').getByText('Exposé angefordert')).toBeVisible();
-    await page.getByRole('button', { name: 'Erledigt', exact: true }).click();
+    await page.getByRole('button', { name: 'Erledigt' }).click();
     await expect(page.getByText(new Date().toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }), { exact: true })).toBeVisible(); // wie alt: 08.09.2026
   });
 });

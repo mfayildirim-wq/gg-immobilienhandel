@@ -4,7 +4,6 @@
 
 import type { KiClient } from '../ki/anthropic.ts';
 import type { Verbrauch } from '../ki/kosten.ts';
-import { genutztesModell } from '../ki/modelle.ts';
 import type { PdfTextResult } from '../pdf/text.ts';
 import { EXTRACT_TOOL, SYSTEM_PROMPT } from './prompt.ts';
 
@@ -63,12 +62,9 @@ const zuBase64 = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64');
 
 /** Wirft, wenn nichts herauskommt – ein leeres Ergebnis darf keinen Deal aus Nichts anlegen. */
 export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: AnalyseAbhaengigkeiten): Promise<AnalyseErgebnis> {
-  // Gebucht und gemeldet wird das Modell, das geantwortet hat — die Modellwahl (Einstellungen) kann es umlenken
-  let genutzt = '';
   const rufe = async (model: string, inhalt: unknown[], quelle: string, zeitlimitMs?: number) => {
     const data = await a.ki.nachricht(anfrage(model, inhalt), zeitlimitMs);
-    genutzt = genutztesModell(data, model);
-    await a.buchen(genutzt, data?.usage, quelle);
+    await a.buchen(model, data?.usage, quelle);
     return toolErgebnis(data);
   };
 
@@ -80,15 +76,19 @@ export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: An
   if (textTraegt) {
     const inhalt = [{ type: 'text', text: `Analysiere dieses Immobilien-Exposé (extrahierter Text-Layer) und extrahiere ALLE relevanten Daten vollständig:\n\n${gelesen.text}` }];
     let extrahiert: any = null;
+    let modell = MODELL_SCHNELL;
     try {
       extrahiert = await rufe(MODELL_SCHNELL, inhalt, 'expose-analyse/text-schnell');
     } catch (e) {
       console.warn('[expose-analyse] schneller Versuch fehlgeschlagen:', e);
     }
-    if (!ergebnisTraegt(extrahiert)) extrahiert = await rufe(MODELL_GRUENDLICH, inhalt, 'expose-analyse/text-gruendlich');
+    if (!ergebnisTraegt(extrahiert)) {
+      extrahiert = await rufe(MODELL_GRUENDLICH, inhalt, 'expose-analyse/text-gruendlich');
+      modell = MODELL_GRUENDLICH;
+    }
     if (!extrahiert) throw new Error('Aus dem Exposé ließ sich nichts auslesen — bitte erneut versuchen.');
     const hinweis = gelesen.pageCount < seiten ? `Ausgewertet wurden die ersten ${gelesen.pageCount} von ${seiten} Seiten.` : undefined;
-    return { extrahiert, modus: 'text', modell: genutzt, seiten, zeichenProSeite, ...(hinweis ? { hinweis } : {}) };
+    return { extrahiert, modus: 'text', modell, seiten, zeichenProSeite, ...(hinweis ? { hinweis } : {}) };
   }
 
   if (seiten > MAX_PDF_SEITEN) {
@@ -103,7 +103,7 @@ export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: An
     const inhalt = [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: zuBase64(pdf) } }, frage];
     const extrahiert = await rufe(MODELL_GRUENDLICH, inhalt, 'expose-analyse/pdf', ZEITLIMIT_PDF_MS);
     if (!extrahiert) throw new Error('Aus dem Exposé ließ sich nichts auslesen — bitte erneut versuchen.');
-    return { extrahiert, modus: 'pdf', modell: genutzt, seiten, zeichenProSeite };
+    return { extrahiert, modus: 'pdf', modell: MODELL_GRUENDLICH, seiten, zeichenProSeite };
   }
 
   const fileId = await a.ki.dateiHochladen(pdf, dateiname, 'application/pdf', ZEITLIMIT_PDF_MS);
@@ -111,7 +111,7 @@ export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: An
     const inhalt = [{ type: 'document', source: { type: 'file', file_id: fileId } }, frage];
     const extrahiert = await rufe(MODELL_GRUENDLICH, inhalt, 'expose-analyse/pdf-datei', ZEITLIMIT_PDF_MS);
     if (!extrahiert) throw new Error('Aus dem Exposé ließ sich nichts auslesen — bitte erneut versuchen.');
-    return { extrahiert, modus: 'pdf', modell: genutzt, seiten, zeichenProSeite };
+    return { extrahiert, modus: 'pdf', modell: MODELL_GRUENDLICH, seiten, zeichenProSeite };
   } finally {
     await a.ki.dateiLoeschen(fileId);
   }

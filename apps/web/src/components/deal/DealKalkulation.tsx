@@ -36,7 +36,6 @@ import { verschieben } from '../../lib/reihenfolge.ts';
 import { useUngespeichert } from '../../lib/ungespeichert.ts';
 import { AlleSetzen, Variantenleiste } from './KalkWerkzeuge.tsx';
 import { PropstackDialog } from './PropstackDialog.tsx';
-import { Zahlfeld } from '../Zahlfeld.tsx';
 import css from './DealDetail.module.css';
 
 type Einheit = Omit<DealEinheit, 'id'> & { id?: string };
@@ -542,12 +541,12 @@ function EinheitenTabelle({
                       {...ZAHL} hideControls={false} step={0.1} min={0} decimalScale={1} />
                   </Table.Td>
                   <Table.Td>
-                    <Zahlfeld
+                    <NumberInput
                       size="xs"
                       w={110}
                       placeholder={z?.verkaufspreis ? z.verkaufspreis.toLocaleString('de-DE') : ''}
                       value={e.verkaufspreis ?? ''}
-                      onWert={(v) => preis(i, 'vkp', v)}
+                      onChange={(v) => preis(i, 'vkp', alsZahl(v))}
                       aria-label="Verkaufspreis"
                       {...ZAHL}
                     />
@@ -555,8 +554,8 @@ function EinheitenTabelle({
                   <Table.Td>
                     {/* KP/m² eingeben setzt den VKP (× Fläche); errechnete Werte stehen grau als Platzhalter wie beim VKP */}
                     {stpl || !e.flaeche ? <Text size="xs" c="dimmed">{z?.verkaufspreisProQm ? z.verkaufspreisProQm.toLocaleString('de-DE') : '–'}</Text> : (
-                      <Zahlfeld size="xs" w={84} placeholder={z?.verkaufspreisProQm ? z.verkaufspreisProQm.toLocaleString('de-DE') : ''}
-                        value={e.verkaufspreis && z?.verkaufspreisProQm ? z.verkaufspreisProQm : ''} onWert={(v) => preis(i, 'kpm2', v)} aria-label="KP/m²" {...ZAHL} />
+                      <NumberInput size="xs" w={84} placeholder={z?.verkaufspreisProQm ? z.verkaufspreisProQm.toLocaleString('de-DE') : ''}
+                        value={e.verkaufspreis && z?.verkaufspreisProQm ? z.verkaufspreisProQm : ''} onChange={(v) => preis(i, 'kpm2', alsZahl(v))} aria-label="KP/m²" {...ZAHL} />
                     )}
                   </Table.Td>
                   <Table.Td>

@@ -1,12 +1,8 @@
-// Bank-Präsentation: die beiden KI-Texte (Lage und Objekt). Prompts und Werkzeuge aus gg-immohandel
+// Bank-Präsentation: die beiden KI-Texte (Lage und Objekt). Prompts und Werkzeuge wörtlich aus gg-immohandel
 // src/modules/finanzpraes/finanzpraes-ki.ts. Geändert: der Aufruf läuft über die API statt aus dem Browser, und
 // was in den Aufruf geht (Adresse, Fakten, Bestand), sammelt @gg/domain (lageKiEingabe, objektKiEingabe).
-// Bewusst abweichend (Fachentscheidung 13.10.2026): Die Lage bekommt den Stadtteil aus dem Kartendienst und darf
-// sonst keinen nennen, keine erfundenen Eigennamen; beide Texte mit temperature 0, damit derselbe Deal nicht
-// jedes Mal eine andere Geographie bekommt.
-import type { LageKiEingabe, ObjektKiEingabe, Verortung } from '@gg/domain';
+import type { LageKiEingabe, ObjektKiEingabe } from '@gg/domain';
 import type { KiClient } from './anthropic.ts';
-import { genutztesModell } from './modelle.ts';
 import { HAIKU, type KiAntwort } from './persona.ts';
 
 export const LAGE_TOOL = {
@@ -45,25 +41,12 @@ export const OBJEKT_TOOL = {
   },
 };
 
-/** Was über den Stadtteil feststeht — und was die KI daraus machen darf. */
-function verortungsBlock(v: Verortung | null | undefined): string {
-  if (!v?.stadtteil) {
-    return `VERORTUNG:
-- Der Stadtteil dieser Adresse ist NICHT bekannt.
-- Nenne KEINEN Stadtteil-, Ortsteil-, Bezirks- oder Viertelnamen. Beschreibe die Lage ohne Ortsnamen unterhalb der Stadt.`;
-  }
-  return `VERORTUNG (aus Kartendaten ermittelt — maßgeblich):
-- Stadtteil: ${v.stadtteil}${v.viertel && v.viertel !== v.stadtteil ? `\n- Wohnviertel: ${v.viertel}` : ''}
-- Nenne als Stadtteil AUSSCHLIESSLICH diesen. Nenne keinen anderen Stadtteil, Ortsteil oder kein anderes Viertel.`;
-}
-
-export function lagePrompt({ fullAdresse, stadt, plz, istStuttgart, bestandStandort, bestandAnbindung, verortung }: LageKiEingabe): { system: string; user: string } {
+export function lagePrompt({ fullAdresse, stadt, plz, istStuttgart, bestandStandort, bestandAnbindung }: LageKiEingabe): { system: string; user: string } {
   const hatBestand = bestandStandort.length > 0 || bestandAnbindung.length > 0;
-  const stadtteil = verortung?.stadtteil || '';
   const stuttgartHinweis = istStuttgart
-    ? `- DIESE ADRESSE IST IN STUTTGART. Für die Anbindung gilt echte Stuttgarter Verkehrsgeographie: S-Bahn-Linien (S1-S6, U-Stadtbahn), Autobahnen (A8, A81, B10, B27) — nur was den Stadtteil wirklich bedient; im Zweifel allgemein.`
+    ? `- DIESE ADRESSE IST IN STUTTGART. Nutze echte Stuttgarter Geographie: Stadtteile, S-Bahn-Linien (S1-S6, U-Stadtbahn), Autobahnen (A8, A81, B10, B27).`
     : `- DIESE ADRESSE IST NICHT IN STUTTGART (sondern in ${stadt || 'einer anderen Stadt'}). Erfinde KEINE Stuttgarter S-Bahn-Linien, Autobahnen oder Stadtteile.
-- Wenn du echtes Wissen über die genannte Stadt/PLZ hast, nutze es (korrekte ÖPNV-Linien, Autobahnen der Region).
+- Wenn du echtes Wissen über die genannte Stadt/PLZ hast, nutze es (lokale Stadtteile, korrekte ÖPNV-Linien, Autobahnen der Region).
 - Wenn du dir nicht sicher bist, bleibe allgemein aber plausibel: "Gute ÖPNV-Anbindung", "Schnelle Autobahnanbindung" — KEINE erfundenen Linien-Nummern oder Straßennamen.`;
 
   const system = `Du bist ein erfahrener Immobilien-Vertriebsmitarbeiter.
@@ -79,12 +62,6 @@ GEOGRAPHISCHE GENAUIGKEIT (KRITISCH):
 ${stuttgartHinweis}
 - Bei unbekannten Mikro-Lagen: bleibe allgemein aber plausibel (z.B. "Gute ÖPNV-Anbindung" statt erfundene Linien)
 - ERFINDE NIEMALS Linien-Nummern, Straßennamen oder Stadtteile, die du nicht kennst.
-
-${verortungsBlock(verortung)}
-
-EIGENNAMEN:
-- Nenne keine Parks, Wälder, Gärten, Seen, Plätze, Einkaufszentren, Schulen oder Sehenswürdigkeiten mit Namen — außer sie stehen in den bereits erfassten Punkten des Nutzers.
-- Lieber allgemein und richtig ("Grünflächen in der Umgebung") als konkret und falsch.
 
 VORHANDENE EINGABEN DES NUTZERS:
 - Was der Nutzer bereits erfasst hat, ist RECHERCHIERT und hat Vorrang vor deiner Vermutung.
@@ -106,10 +83,9 @@ ${bestandAnbindung.map((z) => '- ' + z).join('\n') || '(noch nichts)'}
 ADRESSE: ${fullAdresse}
 STADT: ${stadt || '(unbekannt)'}
 PLZ: ${plz || '(unbekannt)'}
-STADTTEIL: ${stadtteil || '(unbekannt — keinen nennen)'}
 
 ${bestandsBlock}Liefere zwei Sektionen:
-1. **Standort** — 3-5 Bullets über ${stadtteil ? `den Stadtteil ${stadtteil}` : 'die Lage'}, die Wohnumgebung, Infrastruktur (Schulen, Einkauf, Erholung) — passend zu ${stadt || 'der genannten Adresse'}
+1. **Standort** — 3-5 Bullets über den Stadtteil, die Wohnumgebung, Infrastruktur (Schulen, Einkauf, Erholung) — passend zu ${stadt || 'der genannten Adresse'}
 2. **Anbindung** — 3-5 Bullets über ÖPNV (S-Bahn, U-Bahn, Bus) und Auto (Autobahn, Hauptstraßen) — passend zu ${stadt || 'der genannten Region'}
 
 ${hatBestand ? 'Die oben bereits erfassten Punkte müssen in deiner Antwort wieder auftauchen — zuerst und inhaltlich unverändert.\n\n' : ''}Gib das Ergebnis als JSON via dem bereitgestellten Tool zurück.`;
@@ -187,18 +163,18 @@ const werkzeugAntwort = (data: any, name: string) => (data?.content || []).find(
 export async function lagebeschreibungGenerieren(ki: KiClient, eingabe: LageKiEingabe): Promise<KiAntwort<{ standortBullets?: unknown; anbindungBullets?: unknown } | undefined>> {
   const { system, user } = lagePrompt(eingabe);
   const data = await ki.nachricht({
-    model: HAIKU, max_tokens: 600, temperature: 0, system, messages: [{ role: 'user', content: user }],
+    model: HAIKU, max_tokens: 600, system, messages: [{ role: 'user', content: user }],
     tools: [LAGE_TOOL], tool_choice: { type: 'tool', name: LAGE_TOOL.name },
   });
-  return { wert: werkzeugAntwort(data, LAGE_TOOL.name), model: genutztesModell(data, HAIKU), usage: data?.usage ?? {} };
+  return { wert: werkzeugAntwort(data, LAGE_TOOL.name), model: HAIKU, usage: data?.usage ?? {} };
 }
 
 /** Beschreibungstext aus den bekannten Fakten. Die Antwort kommt roh zurück; ob sie taugt, prüft objektKiUebernehmen. */
 export async function objektbeschreibungGenerieren(ki: KiClient, eingabe: ObjektKiEingabe): Promise<KiAntwort<{ beschreibung?: unknown } | undefined>> {
   const { system, user } = objektPrompt(eingabe);
   const data = await ki.nachricht({
-    model: HAIKU, max_tokens: 700, temperature: 0, system, messages: [{ role: 'user', content: user }],
+    model: HAIKU, max_tokens: 700, system, messages: [{ role: 'user', content: user }],
     tools: [OBJEKT_TOOL], tool_choice: { type: 'tool', name: OBJEKT_TOOL.name },
   });
-  return { wert: werkzeugAntwort(data, OBJEKT_TOOL.name), model: genutztesModell(data, HAIKU), usage: data?.usage ?? {} };
+  return { wert: werkzeugAntwort(data, OBJEKT_TOOL.name), model: HAIKU, usage: data?.usage ?? {} };
 }

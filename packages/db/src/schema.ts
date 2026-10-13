@@ -663,18 +663,6 @@ export const maklerAnlaesse = fach
   })
   .enableRLS();
 
-/**
- * Zwischenspeicher des Kartendienstes (Adresse → Stadtteil) für die KI-Lagebeschreibung (13.10.2026).
- * Nominatim verlangt, Ergebnisse nicht ständig neu abzufragen. `ergebnis` null = nichts Passendes gefunden.
- */
-export const geoVerortungen = fach
-  .table('geo_verortungen', {
-  schluessel: text('schluessel').primaryKey(),
-  ergebnis: jsonb('ergebnis'),
-  abgerufenAt: timestamp('abgerufen_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
-  })
-  .enableRLS();
-
 export const archiveLedger = fach
   .table(
     'archive_ledger',

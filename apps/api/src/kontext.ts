@@ -1,6 +1,6 @@
 import { createDb, verlangeLokaleDatenbank } from '@gg/db';
 import { rueckwegRegelnAusUmgebung } from '@gg/domain';
-import { anthropicClient, kiAttrappe, nominatimGeocoder, supabaseSpeicher, graphAttrappe, propstackAttrappe } from '@gg/integrations';
+import { anthropicClient, kiAttrappe, supabaseSpeicher, graphAttrappe, propstackAttrappe } from '@gg/integrations';
 import { createApp } from './app.ts';
 import { sharepointAblageBauen } from './services/sharepoint.ts';
 
@@ -27,13 +27,6 @@ export function appAusUmgebung(env: Record<string, string | undefined> = process
   const attrappe = env.KI_ATTRAPPE === '1' && !produktion;
   const ki = attrappe ? kiAttrappe() : env.ANTHROPIC_API_KEY ? anthropicClient(env.ANTHROPIC_API_KEY) : null;
 
-  /**
-   * Kartendienst für den Stadtteil in der KI-Lagebeschreibung (OpenStreetMap/Nominatim, frei, ohne Schlüssel).
-   * Mit KI-Attrappe aus: Tests fragen keinen Fremddienst. `GEOCODING=aus` schaltet ihn ab; die Kennung im
-   * User-Agent verlangen die Nutzungsregeln (`NOMINATIM_KENNUNG`, sonst der Projektname).
-   */
-  const geocoder = attrappe || env.GEOCODING === 'aus' ? null : nominatimGeocoder({ kennung: env.NOMINATIM_KENNUNG || 'gg-immobilienhandel/1.0 (Lagebeschreibung)' });
-
   // Fremdsysteme lokal ohne Zugang: Attrappen nur ausdrücklich und nie in Produktion
   const graph = env.M365_ATTRAPPE === '1' && !produktion ? graphAttrappe() : null;
   const propstack = env.PROPSTACK_ATTRAPPE === '1' && !produktion ? propstackAttrappe() : null;
@@ -41,7 +34,6 @@ export function appAusUmgebung(env: Record<string, string | undefined> = process
   const app = createApp({
     expose: speicher ? { speicher, ki, attrappe } : undefined,
     ki,
-    geocoder,
     graph,
     propstack,
     openaiKey: env.OPENAI_API_KEY,

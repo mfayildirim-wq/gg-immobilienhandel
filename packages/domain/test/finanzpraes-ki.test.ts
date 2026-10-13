@@ -2,44 +2,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   kiFehlerHinweis, lageKiEingabe, lageKiHinweis, lageKiUebernehmen, objektKiEingabe, objektKiHinweis, objektKiUebernehmen,
-  type Verortung, verortungMoeglich, verortungSchluessel, verortungWaehlen,
 } from '../src/finanzpraesentation/ki.ts';
 
 const objekt = { strasse: 'Aldinger Straße', hausnr: '86', plz: '70378', stadt: 'Stuttgart', baujahr: 1964, einheitenAnz: 6, wohnflaeche: 420, grundstueck: 610, energie: 'D', heizung: 'Gas-Etagenheizung' };
-
-const ort = (stadtteil: string, plz: string, o = 'Stuttgart', viertel = ''): Verortung => ({ stadtteil, viertel, ort: o, plz });
-
-describe('Verortung (Stadtteil aus dem Kartendienst, Fachentscheidung 13.10.2026)', () => {
-  const anschrift = { strasse: 'Marktplatz', hausnr: '1', plz: '70173', stadt: 'Stuttgart' };
-
-  it('nimmt nur einen Treffer mit derselben PLZ — der Marktplatz in Bad Cannstatt ist nicht der in Mitte', () => {
-    expect(verortungWaehlen(anschrift, [ort('Bad Cannstatt', '70372'), ort('Mitte', '70173')])).toEqual(ort('Mitte', '70173'));
-    expect(verortungWaehlen(anschrift, [ort('Bad Cannstatt', '70372')])).toBeNull();
-  });
-
-  it('ohne PLZ muss der Ort stimmen', () => {
-    const ohnePlz = { ...anschrift, plz: '' };
-    expect(verortungWaehlen(ohnePlz, [ort('Eltingen', '71229', 'Leonberg'), ort('Mitte', '70173')])).toEqual(ort('Mitte', '70173'));
-    expect(verortungWaehlen(ohnePlz, [ort('Eltingen', '71229', 'Leonberg')])).toBeNull();
-  });
-
-  it('ein Treffer ohne Stadtteil zählt nicht', () => {
-    expect(verortungWaehlen(anschrift, [ort('', '70173'), ort('Mitte', '70173', 'Stuttgart', 'Neue Vorstadt')])).toEqual(ort('Mitte', '70173', 'Stuttgart', 'Neue Vorstadt'));
-    expect(verortungWaehlen(anschrift, [])).toBeNull();
-  });
-
-  it('Schlüssel ohne Rücksicht auf Groß/klein und Leerzeichen; ohne Straße keine Abfrage', () => {
-    expect(verortungSchluessel({ strasse: ' Aldinger  Straße', hausnr: '86', plz: '70378', stadt: 'STUTTGART ' })).toBe('aldinger straße 86|70378|stuttgart');
-    expect(verortungMoeglich({ strasse: '', hausnr: '', plz: '70378', stadt: 'Stuttgart' })).toBe(false);
-    expect(verortungMoeglich(anschrift)).toBe(true);
-  });
-});
 
 describe('KI-Lagebeschreibung', () => {
   it('nimmt die Adresse aus dem Objekt und erkennt Stuttgart an Stadt oder PLZ', () => {
     expect(lageKiEingabe({}, { id: 'd' }, objekt)).toEqual({
       fullAdresse: 'Aldinger Straße 86, 70378, Stuttgart', stadt: 'Stuttgart', plz: '70378', istStuttgart: true, bestandStandort: [], bestandAnbindung: [],
-      anschrift: { strasse: 'Aldinger Straße', hausnr: '86', plz: '70378', stadt: 'Stuttgart' },
     });
     expect(lageKiEingabe({}, null, { ...objekt, stadt: 'Leonberg', plz: '71229' })!.istStuttgart).toBe(false);
     expect(lageKiEingabe({}, null, { strasse: 'Weg', plz: '70173' })!.istStuttgart).toBe(true);

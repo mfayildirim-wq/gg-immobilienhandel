@@ -6,7 +6,6 @@
  */
 import { geburtstagsHinweisEntwurf, personaDetectAnrede, type DraftResult, type MaklerErwaehnung, type MaklerPersonal, type PersonaProfile } from '@gg/domain';
 import type { KiClient } from './anthropic.ts';
-import { genutztesModell } from './modelle.ts';
 
 export const HAIKU = 'claude-haiku-4-5-20251001';
 export const SONNET = 'claude-sonnet-4-5-20250929';
@@ -28,7 +27,7 @@ export async function maklerZusammenfassung(ki: KiClient, mk: { name?: string | 
     messages: [{ role: 'user', content: `Makler: ${mk.name}${mk.firma ? ', ' + mk.firma : ''}\n\nKommunikationshistorie:\n${eintraege}\n\nErstelle eine kurze, prägnante Zusammenfassung (3-5 Sätze auf Deutsch): Wer ist dieser Makler? Welche Objekttypen/Regionen? Wie ist die Beziehungsqualität? Was sind aktuelle Themen oder nächste Schritte?` }],
   });
   const summary = textAus(data);
-  return summary ? { wert: summary, model: genutztesModell(data, HAIKU), usage: data?.usage ?? {} } : null;
+  return summary ? { wert: summary, model: HAIKU, usage: data?.usage ?? {} } : null;
 }
 
 /** personaExtractRelationshipNote: Beziehungsprofil (2-3 Sätze). Unter zwei Einträgen: Fehler wie alt. */
@@ -50,7 +49,7 @@ Erstelle ein kurzes Beziehungsprofil (2-3 Sätze) das beschreibt:
 
 Antworte NUR mit dem Profiltext, kein JSON, keine Formatierung.`;
   const data = await ki.nachricht({ model: HAIKU, max_tokens: 300, messages: [{ role: 'user', content: prompt }] });
-  return { wert: textAus(data).trim(), model: genutztesModell(data, HAIKU), usage: data?.usage ?? {} };
+  return { wert: textAus(data).trim(), model: HAIKU, usage: data?.usage ?? {} };
 }
 
 /** personaExtractPersonalDetails: strukturierte persönliche Details (JSON). */
@@ -83,7 +82,7 @@ Antworte als JSON. Lass Felder weg die nicht erkennbar sind:
   const data = await ki.nachricht({ model: HAIKU, max_tokens: 600, messages: [{ role: 'user', content: prompt }] });
   const m = textAus(data).match(/\{[\s\S]*\}/);
   if (!m) return null;
-  return { wert: JSON.parse(m[0]), model: genutztesModell(data, HAIKU), usage: data?.usage ?? {} };
+  return { wert: JSON.parse(m[0]), model: HAIKU, usage: data?.usage ?? {} };
 }
 
 /** personaExtractMentions: bis zu zwei persönliche Erwähnungen aus einem neuen Eintrag. */
@@ -100,7 +99,7 @@ Wenn nichts Persönliches: {"mentions":[]}`;
   const data = await ki.nachricht({ model: HAIKU, max_tokens: 150, messages: [{ role: 'user', content: prompt }] });
   const m = textAus(data).match(/\{[\s\S]*\}/);
   const mentions = m ? ((JSON.parse(m[0]).mentions || []) as any[]).filter((x) => x.thema && x.detail) : [];
-  return { wert: mentions, model: genutztesModell(data, HAIKU), usage: data?.usage ?? {} };
+  return { wert: mentions, model: HAIKU, usage: data?.usage ?? {} };
 }
 
 /** personaAnalyse: Kommunikationsstil aus den neuesten ausgehenden Nachrichten (Sonnet). */
@@ -146,7 +145,7 @@ Analysiere TIEF und präzise. Erkenne echte Muster, keine Vermutungen. Antworte 
       tonWA: parsed.tonWA || '', tonEmail: parsed.tonEmail || '', themenMuster: parsed.themenMuster || '', vokabular: parsed.vokabular || '',
       laenge: parsed.laenge || { wa: '', email: '' }, rawAnalysis: parsed.rawAnalysis || '',
     },
-    model: genutztesModell(data, SONNET), usage: data?.usage ?? {},
+    model: SONNET, usage: data?.usage ?? {},
   };
 }
 
@@ -224,7 +223,7 @@ Schreibe jetzt eine WhatsApp-Nachricht und eine E-Mail für einen routinemäßig
 Antworte NUR als JSON, kein Markdown, kein Kommentar:
 {"wa":"...","email":{"subject":"...","body":"..."}}`;
   const data = await ki.nachricht({ model: HAIKU, max_tokens: 800, messages: [{ role: 'user', content: prompt }] });
-  return { wert: jsonAus(textAus(data)) as DraftResult, model: genutztesModell(data, HAIKU), usage: data?.usage ?? {} };
+  return { wert: jsonAus(textAus(data)) as DraftResult, model: HAIKU, usage: data?.usage ?? {} };
 }
 
 /** Whisper-Transkription (POST /api/transcribe der alten App): Deutsch, whisper-1. */

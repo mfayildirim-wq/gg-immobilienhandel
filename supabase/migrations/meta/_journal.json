@@ -71,13 +71,6 @@
       "when": 1790344102311,
       "tag": "20260925134822_dokumente_sp_fehlt_seit",
       "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1791894377983,
-      "tag": "20261013122617_geo_verortungen",
-      "breakpoints": true
     }
   ]
 }

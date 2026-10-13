@@ -21,24 +21,10 @@ const text = (v: unknown) => String(v ?? '').trim();
 /** Mehrzeiliges Feld → Liste, ohne Leerzeilen. */
 const alsZeilen = (wert: unknown) => String(wert ?? '').split('\n').map((z) => z.trim()).filter(Boolean);
 
-export interface Anschrift { strasse: string; hausnr: string; plz: string; stadt: string }
-
-/**
- * Wo die Adresse liegt, laut Kartendienst (OpenStreetMap). Neu gegenüber der alten App: dort bekam die KI nur den
- * Adresstext und riet den Stadtteil — mal „Kaltental“, mal „Feuerbach“. Fachentscheidung 13.10.2026: Der Stadtteil
- * kommt als Fakt in den Aufruf; ohne ihn nennt die KI keinen.
- * `stadtteil` ist der Stadtbezirk bzw. Ortsteil (Stuttgart: „Vaihingen“), `viertel` das Wohnviertel darunter („Vaihingen-Mitte“).
- */
-export interface Verortung { stadtteil: string; viertel: string; ort: string; plz: string }
-
 export interface LageKiEingabe {
   fullAdresse: string; stadt: string; plz: string; istStuttgart: boolean;
   /** Bestand vor dem Aufruf — er ist Vorgabe, nicht Opfer. */
   bestandStandort: string[]; bestandAnbindung: string[];
-  /** Die Adresse in Teilen, für den Kartendienst. */
-  anschrift: Anschrift;
-  /** Ermittelte Lage; `null`/fehlend = unbekannt, dann nennt die KI keinen Stadtteil. */
-  verortung?: Verortung | null;
 }
 
 /** Adresse aus dem Objekt (führend), sonst aus dem Deal. `null`, wenn weder Straße noch Stadt bekannt sind. */
@@ -55,30 +41,7 @@ export function lageKiEingabe(data: Daten, deal: any | null, objekt: any | null)
     istStuttgart: /stuttgart/i.test(stadt) || /^70\d{3}$/.test(plz),
     bestandStandort: alsZeilen(data.standortBullets),
     bestandAnbindung: alsZeilen(data.anbindungBullets),
-    anschrift: { strasse, hausnr, plz, stadt },
   };
-}
-
-const klein = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
-
-/** Schlüssel für den Zwischenspeicher: dieselbe Adresse, anders geschrieben (Groß/klein, Leerzeichen), fragt nicht neu an. */
-export function verortungSchluessel(a: Anschrift): string {
-  return [klein(`${a.strasse} ${a.hausnr}`), klein(a.plz), klein(a.stadt)].join('|');
-}
-
-/** Ohne Straße lässt sich kein Stadtteil bestimmen — eine Stadt allein hat viele. */
-export const verortungMoeglich = (a: Anschrift) => a.strasse.trim().length > 0;
-
-/**
- * Welcher Treffer des Kartendienstes gilt. Der Dienst liefert auch Nahverwandtes: „Marktplatz 1, 70173 Stuttgart“
- * ergab den Marktplatz in Bad Cannstatt (70372). Deshalb muss die PLZ stimmen, wenn eine bekannt ist; ohne PLZ der Ort.
- * Kein passender Treffer oder keiner mit Stadtteil → `null` (dann lieber kein Stadtteil als ein falscher).
- */
-export function verortungWaehlen(a: Anschrift, kandidaten: Verortung[]): Verortung | null {
-  const plz = a.plz.trim();
-  const stadt = klein(a.stadt);
-  const passt = (v: Verortung) => (plz ? v.plz.trim() === plz : !stadt || klein(v.ort) === stadt || klein(v.ort).includes(stadt) || stadt.includes(klein(v.ort)));
-  return kandidaten.find((v) => passt(v) && v.stadtteil.trim()) ?? null;
 }
 
 /**

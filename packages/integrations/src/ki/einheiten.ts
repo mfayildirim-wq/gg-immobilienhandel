@@ -2,7 +2,6 @@
 // (POST /api/deals/:dealId/extract-units). Geändert: das PDF geht als Dokument an das Modell statt als
 // JPEG-Seiten (der Neubau hat keinen Seiten-Renderer; das Modell rastert die Seiten selbst).
 import type { KiClient } from './anthropic.ts';
-import { genutztesModell } from './modelle.ts';
 import { SONNET, type KiAntwort } from './persona.ts';
 
 export const EINHEITEN_TOOL = {
@@ -66,5 +65,5 @@ export async function einheitenExtrahieren(ki: KiClient, pdf: Uint8Array, seiten
   if (!block?.input?.einheiten) throw new Error('KI lieferte keine Einheitenliste');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const einheiten = (block.input.einheiten as any[]).filter((e) => e && e.typ);
-  return { wert: einheiten, model: genutztesModell(data, model), usage: data?.usage ?? {} };
+  return { wert: einheiten, model, usage: data?.usage ?? {} };
 }

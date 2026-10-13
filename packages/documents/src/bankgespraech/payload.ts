@@ -95,20 +95,16 @@ export function bankgespraechPayload(k: KundenkalkFuerPdf, out: KKalkOutputs, ct
   const zinsAnzeige = erstesDarlehen?.zinssatz ?? out.finanzierung.gewichteterZinssatz;
   const tilgungAnzeige = erstesDarlehen?.tilgung ?? out.finanzierung.gewichteteTilgung;
 
-  // Monatliche Investitionen: Durchschnitt über die Betrachtungsdauer, je Monat — aus denselben Jahreswerten wie die
-  // Cashflow-Tabelle, damit „nach Steuer“ gleich dem Ø Cashflow auf Seite 1 ist. Bewusste Korrektur gegenüber der alten
-  // App: die zeigte unter „Durchschnittswerte“ die Werte von Jahr 2 (Fachentscheidung 13.10.2026).
-  const mittelMonat = (wert: (y: (typeof cashflowYears)[number]) => number) =>
-    cashflowYears.reduce((s, y) => s + wert(y), 0) / (dauerJahre * 12);
-  const durchschnittMonat = {
-    zins: mittelMonat((y) => y.zinsen),
-    tilgung: mittelMonat((y) => y.tilgung),
-    nichtUmlagefaehig: mittelMonat((y) => y.bewirtschaftung),
-    kaltmiete: mittelMonat((y) => y.kaltmiete),
-    vorSteuer: mittelMonat((y) => y.cashflowVorSteuer),
-    steuer: mittelMonat((y) => y.steuerErstattungLast),
-    nachSteuer: durchschnitt_cashflowProMonat,
-  };
+  // Monatliche Investitionen Basisjahr ab 2. Jahr (Index 1 in den Engine-Matrizen)
+  const j2Idx = 1;
+  const zinsM = -(m.zinsen_pro_jahr[j2Idx] || 0) / 12;
+  const tilgungM = -(m.tilgung_pro_jahr[j2Idx] || 0) / 12;
+  const nuMonat = -(k.inputs.nichtUmlagefaehig || 0)
+                  * Math.pow(1 + (k.inputs.kostensteigerungJaehrlich ?? 0), j2Idx);
+  const kaltMonat = (m.miete_pro_jahr[j2Idx] || 0) / 12;
+  const einnahmenVorSteuer = kaltMonat + nuMonat + zinsM + tilgungM;
+  const steuernJ2Monat = -(m.steuern_jahr[j2Idx] || 0) / 12;
+  const einnahmenNachSteuer = einnahmenVorSteuer + steuernJ2Monat;
 
   const hv = out.bankgespraech.hochrechnungVerkauf;
   return {
@@ -176,7 +172,13 @@ export function bankgespraechPayload(k: KundenkalkFuerPdf, out: KKalkOutputs, ct
     kaufpreisProQm: k.objSnapshot.wohnflaecheGesamt > 0
       ? Math.round((k.kaufpreisWohnung ?? k.inputs.kaufpreis) / k.objSnapshot.wohnflaecheGesamt)
       : 0,
-    durchschnittMonat,
+    basisjahr2_zinsMonat: zinsM,
+    basisjahr2_tilgungMonat: tilgungM,
+    basisjahr2_nichtUmlagefaehigMonat: nuMonat,
+    basisjahr2_kaltmieteMonat: kaltMonat,
+    basisjahr2_einnahmenVorSteuerMonat: einnahmenVorSteuer,
+    basisjahr2_steuerrueckerstattungMonat: steuernJ2Monat,
+    basisjahr2_einnahmenNachSteuerMonat: einnahmenNachSteuer,
     zins: zinsAnzeige,
     tilgung: tilgungAnzeige,
     wertzuwachsPa: k.inputs.wertsteigerungJaehrlich,

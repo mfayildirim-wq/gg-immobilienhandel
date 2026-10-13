@@ -1,5 +1,5 @@
 import { type Db, schema } from '@gg/db';
-import { KALK_STANDARD, type KalkStandard, kiModellwahlBereinigen, type KiModellwahl, KUNDENKALK_STANDARD, type KundenkalkStandard, standardVorlagen, type Vorlage, vorlagenBereinigen } from '@gg/domain';
+import { KALK_STANDARD, type KalkStandard, KUNDENKALK_STANDARD, type KundenkalkStandard, standardVorlagen, type Vorlage, vorlagenBereinigen } from '@gg/domain';
 import { asc, eq, sql } from 'drizzle-orm';
 import type { Tx } from './tx.ts';
 
@@ -75,17 +75,4 @@ export async function vorlagenSpeichern(db: Db, e: { vorlagen: Vorlage[]; meinNa
     await wertSpeichern(tx, 'mein-name', e.meinName.trim() || null);
   });
   return vorlagenLesen(db);
-}
-
-const SCHLUESSEL_KI_MODELLE = 'ki-modelle';
-
-/** KI-Modell je Bereich (Einstellungen → KI-Modelle); ohne Eintrag überall „standard“ = wie bisher. */
-export async function kiModellwahlLesen(db: Db | Tx): Promise<KiModellwahl> {
-  return kiModellwahlBereinigen(await wertLesen(db, SCHLUESSEL_KI_MODELLE));
-}
-
-export async function kiModellwahlSpeichern(db: Db, wert: KiModellwahl): Promise<KiModellwahl> {
-  const sauber = kiModellwahlBereinigen(wert);
-  await wertSpeichern(db, SCHLUESSEL_KI_MODELLE, sauber);
-  return sauber;
 }

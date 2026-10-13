@@ -18,7 +18,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { type ReactNode, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { KkErgebnis } from '../components/kundenkalk/KkErgebnis.tsx';
-import { Zahlfeld } from '../components/Zahlfeld.tsx';
 import { type AuswahlAuftrag, BildAuswahl } from '../components/praesentation/BildAuswahl.tsx';
 import { useAutomatischSpeichern } from '../lib/automatischSpeichern.ts';
 import { bankgespraechPdfLaden, kundenkalkulationSpeichern, useDealDetail, useKundenkalkEinstellungen, useKundenkalkulation } from '../lib/api.ts';
@@ -55,7 +54,7 @@ function Editor({ start }: { start: Kundenkalkulation }) {
   });
   const out = useMemo(() => computeKKalk(k.inputs), [k.inputs]);
   const i = k.inputs;
-  const setzeFeld = (feld: string, v: number) => setK((alt) => kundenkalkFeldSetzen(alt, feld, v));
+  const setzeFeld = (feld: string, v: number | string) => setK((alt) => kundenkalkFeldSetzen(alt, feld, typeof v === 'number' ? v : 0));
   const setzeInputs = (f: (inp: typeof i) => typeof i) => setK((alt) => ({ ...alt, inputs: f(alt.inputs) }));
   const pct = (feld: (typeof KK_PROZENTFELDER)[number]) => Math.round((i[feld] ?? 0) * 100 * 10000) / 10000;
   const gik = out.investition.gik;
@@ -87,25 +86,25 @@ function Editor({ start }: { start: Kundenkalkulation }) {
         <Stack gap="sm">
           <Abschnitt titel="Investition">
             <SimpleGrid cols={2} spacing="xs">
-              <Zahlfeld label="Kaufpreis Wohnung" suffix=" €" value={k.kaufpreisWohnung} onWert={(v) => setzeFeld('kaufpreisWohnung', v ?? 0)} {...ZAHL} />
-              <Zahlfeld label="Kaufpreis Stellplatz" suffix=" €" value={k.kaufpreisStellplatz} onWert={(v) => setzeFeld('kaufpreisStellplatz', v ?? 0)} {...ZAHL} />
-              <Zahlfeld label="Stellplätze (Stk.)" value={k.stellplaetzeAnzahl} onWert={(v) => setzeFeld('stellplaetzeAnzahl', v ?? 0)} {...ZAHL} />
-              <Zahlfeld label="Mietfläche" suffix=" m²" value={k.objSnapshot.wohnflaecheGesamt} onWert={(v) => setzeFeld('mietflaeche', v ?? 0)} {...ZAHL} />
+              <NumberInput label="Kaufpreis Wohnung" suffix=" €" value={k.kaufpreisWohnung} onChange={(v) => setzeFeld('kaufpreisWohnung', v)} {...ZAHL} />
+              <NumberInput label="Kaufpreis Stellplatz" suffix=" €" value={k.kaufpreisStellplatz} onChange={(v) => setzeFeld('kaufpreisStellplatz', v)} {...ZAHL} />
+              <NumberInput label="Stellplätze (Stk.)" value={k.stellplaetzeAnzahl} onChange={(v) => setzeFeld('stellplaetzeAnzahl', v)} {...ZAHL} />
+              <NumberInput label="Mietfläche" suffix=" m²" value={k.objSnapshot.wohnflaecheGesamt} onChange={(v) => setzeFeld('mietflaeche', v)} {...ZAHL} />
             </SimpleGrid>
             <Text size="sm" mt={6}>Kaufpreis gesamt: <b>{i.kaufpreis.toLocaleString('de-DE')} €</b></Text>
             <Divider my="xs" label="Nebenkosten" labelPosition="left" />
             {([['notarPct', 'Notar'], ['grundbuchPct', 'Grundbuch'], ['grundsteuerPct', 'Grunderwerbsteuer'], ['maklerPct', 'Makler'], ['sonstigePct', 'Sonstige']] as const).map(([feld, label]) => (
               <Group key={feld} gap="xs" wrap="nowrap" mb={4}>
                 <Text size="sm" style={{ flex: 1 }}>{label}</Text>
-                <Zahlfeld w={90} size="xs" aria-label={`${label} %`} suffix=" %" decimalScale={4} value={pct(feld)} onWert={(v) => setzeFeld(feld, v ?? 0)} {...ZAHL} />
-                <Zahlfeld w={120} size="xs" aria-label={`${label} €`} suffix=" €" value={Math.round(i[feld] * i.kaufpreis)} onWert={(v) => setzeFeld(`${feld}__eur`, v ?? 0)} {...ZAHL} />
+                <NumberInput w={90} size="xs" aria-label={`${label} %`} suffix=" %" decimalScale={4} value={pct(feld)} onChange={(v) => setzeFeld(feld, v)} {...ZAHL} />
+                <NumberInput w={120} size="xs" aria-label={`${label} €`} suffix=" €" value={Math.round(i[feld] * i.kaufpreis)} onChange={(v) => setzeFeld(`${feld}__eur`, v)} {...ZAHL} />
               </Group>
             ))}
             <Divider my="xs" label="Sanierung" labelPosition="left" />
             {i.sanierungsposten.map((p, idx) => (
               <Group key={idx} gap={4} wrap="nowrap" mb={4}>
                 <TextInput size="xs" style={{ flex: 1 }} aria-label="Bezeichnung" value={p.label} onChange={(e) => { const label = e.currentTarget.value; setzeInputs((inp) => ({ ...inp, sanierungsposten: inp.sanierungsposten.map((x, j) => (j === idx ? { ...x, label } : x)) })); }} />
-                <Zahlfeld size="xs" w={110} aria-label="Betrag" suffix=" €" value={p.amount} onWert={(v) => setzeInputs((inp) => ({ ...inp, sanierungsposten: inp.sanierungsposten.map((x, j) => (j === idx ? { ...x, amount: v ?? 0 } : x)) }))} {...ZAHL} />
+                <NumberInput size="xs" w={110} aria-label="Betrag" suffix=" €" value={p.amount} onChange={(v) => setzeInputs((inp) => ({ ...inp, sanierungsposten: inp.sanierungsposten.map((x, j) => (j === idx ? { ...x, amount: typeof v === 'number' ? v : 0 } : x)) }))} {...ZAHL} />
                 <Select size="xs" w={160} aria-label="Modus" data={MODI} value={p.modus} allowDeselect={false} onChange={(v) => v && setzeInputs((inp) => ({ ...inp, sanierungsposten: inp.sanierungsposten.map((x, j) => (j === idx ? { ...x, modus: v as SanierungsModus } : x)) }))} />
                 <ActionIcon variant="subtle" color="red" aria-label="Posten entfernen" onClick={() => setzeInputs((inp) => ({ ...inp, sanierungsposten: inp.sanierungsposten.filter((_, j) => j !== idx) }))}><IconTrash size={14} /></ActionIcon>
               </Group>
@@ -125,9 +124,9 @@ function Editor({ start }: { start: Kundenkalkulation }) {
             {i.darlehen.map((d, idx) => (
               <Group key={idx} gap={4} wrap="nowrap" mt={6}>
                 <TextInput size="xs" style={{ flex: 1 }} aria-label="Tranche" value={d.label} onChange={(e) => { const label = e.currentTarget.value; setzeInputs((inp) => ({ ...inp, darlehen: inp.darlehen.map((x, j) => (j === idx ? { ...x, label } : x)) })); }} />
-                <Zahlfeld size="xs" w={120} aria-label="Summe" suffix=" €" value={d.summe} onWert={(v) => setzeInputs((inp) => ({ ...inp, darlehen: inp.darlehen.map((x, j) => (j === idx ? { ...x, summe: v ?? 0 } : x)) }))} {...ZAHL} />
-                <Zahlfeld size="xs" w={80} aria-label="Zinssatz" suffix=" %" decimalScale={4} value={Math.round(d.zinssatz * 1e6) / 1e4} onWert={(v) => setzeInputs((inp) => ({ ...inp, darlehen: inp.darlehen.map((x, j) => (j === idx ? { ...x, zinssatz: (v ?? 0) / 100 } : x)) }))} {...ZAHL} />
-                <Zahlfeld size="xs" w={80} aria-label="Tilgung" suffix=" %" decimalScale={4} value={Math.round(d.tilgung * 1e6) / 1e4} onWert={(v) => setzeInputs((inp) => ({ ...inp, darlehen: inp.darlehen.map((x, j) => (j === idx ? { ...x, tilgung: (v ?? 0) / 100 } : x)) }))} {...ZAHL} />
+                <NumberInput size="xs" w={120} aria-label="Summe" suffix=" €" value={d.summe} onChange={(v) => setzeInputs((inp) => ({ ...inp, darlehen: inp.darlehen.map((x, j) => (j === idx ? { ...x, summe: typeof v === 'number' ? v : 0 } : x)) }))} {...ZAHL} />
+                <NumberInput size="xs" w={80} aria-label="Zinssatz" suffix=" %" decimalScale={4} value={Math.round(d.zinssatz * 1e6) / 1e4} onChange={(v) => setzeInputs((inp) => ({ ...inp, darlehen: inp.darlehen.map((x, j) => (j === idx ? { ...x, zinssatz: (typeof v === 'number' ? v : 0) / 100 } : x)) }))} {...ZAHL} />
+                <NumberInput size="xs" w={80} aria-label="Tilgung" suffix=" %" decimalScale={4} value={Math.round(d.tilgung * 1e6) / 1e4} onChange={(v) => setzeInputs((inp) => ({ ...inp, darlehen: inp.darlehen.map((x, j) => (j === idx ? { ...x, tilgung: (typeof v === 'number' ? v : 0) / 100 } : x)) }))} {...ZAHL} />
                 <ActionIcon variant="subtle" color="red" aria-label="Tranche entfernen" disabled={i.darlehen.length <= 1} onClick={() => setzeInputs((inp) => ({ ...inp, darlehen: inp.darlehen.filter((_, j) => j !== idx) }))}><IconTrash size={14} /></ActionIcon>
               </Group>
             ))}
@@ -142,14 +141,14 @@ function Editor({ start }: { start: Kundenkalkulation }) {
 
           <Abschnitt titel="Miete, Wert & Steuer">
             <SimpleGrid cols={2} spacing="xs">
-              <Zahlfeld label="Nettokaltmiete" suffix=" €/Mon." value={i.nettokaltmieteMonat} onWert={(v) => setzeFeld('nettokaltmieteMonat', v ?? 0)} {...ZAHL} />
-              <Zahlfeld label="Nicht umlagefähige Nebenkosten" suffix=" €/Mon." value={i.nichtUmlagefaehig} onWert={(v) => setzeFeld('nichtUmlagefaehig', v ?? 0)} {...ZAHL} />
-              <Zahlfeld label="Mietsteigerung" suffix=" %/J." decimalScale={4} value={pct('mieterhoehungJaehrlich')} onWert={(v) => setzeFeld('mieterhoehungJaehrlich', v ?? 0)} {...ZAHL} />
-              <Zahlfeld label="Wertsteigerung" suffix=" %/J." decimalScale={4} value={pct('wertsteigerungJaehrlich')} onWert={(v) => setzeFeld('wertsteigerungJaehrlich', v ?? 0)} {...ZAHL} />
-              <Zahlfeld label="AfA-Satz" suffix=" %/J." decimalScale={4} value={pct('afaSatz')} onWert={(v) => setzeFeld('afaSatz', v ?? 0)} {...ZAHL} />
-              <Zahlfeld label="Anteil Gebäude" suffix=" %" decimalScale={4} value={pct('anteilGebaeudeKaufpreis')} onWert={(v) => setzeFeld('anteilGebaeudeKaufpreis', v ?? 0)} {...ZAHL} />
-              <Zahlfeld label="Steuersatz" suffix=" %" decimalScale={4} value={pct('grenzsteuersatz')} onWert={(v) => setzeFeld('grenzsteuersatz', v ?? 0)} {...ZAHL} />
-              <Zahlfeld label="Betrachtungsdauer" suffix=" Jahre" value={i.betrachtungsdauerJahre ?? 10} onWert={(v) => setzeFeld('betrachtungsdauerJahre', v ?? 0)} {...ZAHL} />
+              <NumberInput label="Nettokaltmiete" suffix=" €/Mon." value={i.nettokaltmieteMonat} onChange={(v) => setzeFeld('nettokaltmieteMonat', v)} {...ZAHL} />
+              <NumberInput label="Nicht umlagefähige Nebenkosten" suffix=" €/Mon." value={i.nichtUmlagefaehig} onChange={(v) => setzeFeld('nichtUmlagefaehig', v)} {...ZAHL} />
+              <NumberInput label="Mietsteigerung" suffix=" %/J." decimalScale={4} value={pct('mieterhoehungJaehrlich')} onChange={(v) => setzeFeld('mieterhoehungJaehrlich', v)} {...ZAHL} />
+              <NumberInput label="Wertsteigerung" suffix=" %/J." decimalScale={4} value={pct('wertsteigerungJaehrlich')} onChange={(v) => setzeFeld('wertsteigerungJaehrlich', v)} {...ZAHL} />
+              <NumberInput label="AfA-Satz" suffix=" %/J." decimalScale={4} value={pct('afaSatz')} onChange={(v) => setzeFeld('afaSatz', v)} {...ZAHL} />
+              <NumberInput label="Anteil Gebäude" suffix=" %" decimalScale={4} value={pct('anteilGebaeudeKaufpreis')} onChange={(v) => setzeFeld('anteilGebaeudeKaufpreis', v)} {...ZAHL} />
+              <NumberInput label="Steuersatz" suffix=" %" decimalScale={4} value={pct('grenzsteuersatz')} onChange={(v) => setzeFeld('grenzsteuersatz', v)} {...ZAHL} />
+              <NumberInput label="Betrachtungsdauer" suffix=" Jahre" value={i.betrachtungsdauerJahre ?? 10} onChange={(v) => setzeFeld('betrachtungsdauerJahre', v)} {...ZAHL} />
             </SimpleGrid>
           </Abschnitt>
 
