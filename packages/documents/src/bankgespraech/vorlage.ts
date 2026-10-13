@@ -112,14 +112,17 @@ export interface BankgespraechPayload {
   wohnflaeche: number;
   kaufpreisProQm: number;            // = kaufpreisWohnung / wohnflaeche (User-Wunsch 2026-05-03)
 
-  // Kennzahlen — Monatliche Investitionen ab 2.J (Excel F77-G84)
-  basisjahr2_zinsMonat: number;          // negativ
-  basisjahr2_tilgungMonat: number;       // negativ
-  basisjahr2_nichtUmlagefaehigMonat: number; // negativ
-  basisjahr2_kaltmieteMonat: number;     // positiv
-  basisjahr2_einnahmenVorSteuerMonat: number;
-  basisjahr2_steuerrueckerstattungMonat: number;
-  basisjahr2_einnahmenNachSteuerMonat: number;
+  // Kennzahlen — Monatliche Investitionen (Excel F77-G84): Ø je Monat über die Betrachtungsdauer.
+  // Alt: Werte von Jahr 2 unter der Überschrift „Durchschnittswerte“ (Fachentscheidung 13.10.2026).
+  durchschnittMonat: {
+    zins: number;              // negativ
+    tilgung: number;           // negativ
+    nichtUmlagefaehig: number; // negativ
+    kaltmiete: number;         // positiv
+    vorSteuer: number;
+    steuer: number;            // Erstattung (+) / Last (−)
+    nachSteuer: number;        // = durchschnitt_cashflowProMonat
+  };
 
   // Kennzahlen — Annahmen (Excel F87-G92)
   zins: number;
@@ -150,6 +153,24 @@ function escapeHtml(s: string): string {
   return String(s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/**
+ * Inhalt der Box „Monatliche Investitionen“ (Seite 2). Eigene Funktion, damit der Golden Master die alte Fassung
+ * (Werte von Jahr 2, Untertitel nur „Durchschnittswerte“) byte-genau nachbauen und den Rest der Seite weiter prüfen kann.
+ */
+export function monatlicheInvestitionenBox(w: BankgespraechPayload['durchschnittMonat'], untertitel: string): string {
+  return `<div class="bg-box-t">Monatliche Investitionen</div>
+      <div class="bg-box-t-sub" style="margin-top:0">${untertitel}</div>
+      <table>
+        <tr><td>Zins</td><td class="bg-num bg-red">${fmtD(w.zins)} €</td></tr>
+        <tr><td>Tilgung</td><td class="bg-num bg-red">${fmtD(w.tilgung)} €</td></tr>
+        <tr><td>nicht umlagefähige Nebenkosten</td><td class="bg-num bg-red">${fmtD(w.nichtUmlagefaehig)} €</td></tr>
+        <tr><td>Kaltmiete pro Monat</td><td class="bg-num bg-grn">${fmtD(w.kaltmiete)} €</td></tr>
+        <tr class="bg-sum"><td class="bg-bold">mtl. Einnahmen vor Steuer</td><td class="bg-num bg-bold ${cls(w.vorSteuer)}">${fmtD(w.vorSteuer)} €</td></tr>
+        <tr><td>Steuerrückerstattung</td><td class="bg-num ${cls(w.steuer)}">${fmtD(w.steuer)} €</td></tr>
+        <tr class="bg-sum"><td class="bg-bold">mtl. Einnahmen nach Steuer</td><td class="bg-num bg-bold ${cls(w.nachSteuer)}">${fmtD(w.nachSteuer)} €</td></tr>
+      </table>`;
 }
 
 export const DEFAULT_BULLETS = [
@@ -556,17 +577,7 @@ function bankgespraechBodyHtml(p: BankgespraechPayload): string {
 
     <!-- Box 3 unten links: Monatliche Investitionen -->
     <div class="bg-box">
-      <div class="bg-box-t">Monatliche Investitionen</div>
-      <div class="bg-box-t-sub" style="margin-top:0">Durchschnittswerte</div>
-      <table>
-        <tr><td>Zins</td><td class="bg-num bg-red">${fmtD(p.basisjahr2_zinsMonat)} €</td></tr>
-        <tr><td>Tilgung</td><td class="bg-num bg-red">${fmtD(p.basisjahr2_tilgungMonat)} €</td></tr>
-        <tr><td>nicht umlagefähige Nebenkosten</td><td class="bg-num bg-red">${fmtD(p.basisjahr2_nichtUmlagefaehigMonat)} €</td></tr>
-        <tr><td>Kaltmiete pro Monat</td><td class="bg-num bg-grn">${fmtD(p.basisjahr2_kaltmieteMonat)} €</td></tr>
-        <tr class="bg-sum"><td class="bg-bold">mtl. Einnahmen vor Steuer</td><td class="bg-num bg-bold ${cls(p.basisjahr2_einnahmenVorSteuerMonat)}">${fmtD(p.basisjahr2_einnahmenVorSteuerMonat)} €</td></tr>
-        <tr><td>Steuerrückerstattung</td><td class="bg-num ${cls(p.basisjahr2_steuerrueckerstattungMonat)}">${fmtD(p.basisjahr2_steuerrueckerstattungMonat)} €</td></tr>
-        <tr class="bg-sum"><td class="bg-bold">mtl. Einnahmen nach Steuer</td><td class="bg-num bg-bold ${cls(p.basisjahr2_einnahmenNachSteuerMonat)}">${fmtD(p.basisjahr2_einnahmenNachSteuerMonat)} €</td></tr>
-      </table>
+      ${monatlicheInvestitionenBox(p.durchschnittMonat, `Durchschnittswerte ${p.hv_dauerJahre} Jahre`)}
     </div>
 
     <!-- Box 4 unten rechts: Vermögensaufbau / Hochrechnung Verkauf -->

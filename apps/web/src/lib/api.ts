@@ -1,5 +1,5 @@
 import { gehalteneKarten, type Vorher } from './gehalteneKarten.ts';
-import type { KalkStandard } from '@gg/domain';
+import type { KalkStandard, KiModellwahl } from '@gg/domain';
 import type {
   ExposeAnalyseAntwort,
   ExposeUebernehmen,
@@ -417,6 +417,11 @@ export const usePapierkorbLeeren = () => usePapierkorbAendern(() => anfrage<{ en
 
 export const useKalkStandardSpeichern = () =>
   useAendern('einstellungen', (e: KalkStandard) => anfrage<KalkStandard>('/api/einstellungen/kalk-standard', senden('PUT', e)));
+
+export const useKiModellwahl = () =>
+  useQuery({ queryKey: ['einstellungen', 'ki-modelle'], queryFn: () => anfrage<KiModellwahl>('/api/einstellungen/ki-modelle') });
+export const useKiModellwahlSpeichern = () =>
+  useAendern('einstellungen', (e: KiModellwahl) => anfrage<KiModellwahl>('/api/einstellungen/ki-modelle', senden('PUT', e)));
 
 // ── Ankauf-Cockpit ────────────────────────────────────────
 

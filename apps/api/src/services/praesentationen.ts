@@ -6,11 +6,12 @@ import {
   flaechenVorbelegen, objektbeschreibungVorbelegen, objektKiEingabe, objektKiHinweis, objektKiUebernehmen, projektkalkulationVorbelegen, type Slide, type SlideTyp,
   STANDARD_PRESET_ORDER, verkaufspreiseVorbelegen,
 } from '@gg/domain';
-import { type KiAntwort, type KiClient, kostenBuchung, lagebeschreibungGenerieren, objektbeschreibungGenerieren } from '@gg/integrations';
+import { type Geocoder, type KiAntwort, type KiClient, kostenBuchung, lagebeschreibungGenerieren, objektbeschreibungGenerieren } from '@gg/integrations';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { auditSchreiben } from './audit.ts';
 import { FachFehler } from '../fehler.ts';
 import { dealUndObjektAlt } from './altformat.ts';
+import { verortungErmitteln } from './verortung.ts';
 
 const STANDARD_SCHLUESSEL = 'finanzpraes-standard';
 
@@ -126,8 +127,9 @@ export async function praesentationVorbelegen(db: Db, id: string, v: Praesentati
  * Die beiden KI-Texte (finanzpraesGenerateLageKI, finanzpraesGenerateObjektKI). Wie die Vorbelegung speichert der
  * Aufruf nicht: der Editor übernimmt das Ergebnis und speichert selbst. Fehlt die Grundlage (keine Adresse, keine
  * Fakten), kommt nur ein Hinweis zurück und die KI wird gar nicht gefragt.
+ * Für die Lage fragt der Aufruf vorher den Kartendienst nach dem Stadtteil (Fachentscheidung 13.10.2026).
  */
-export async function praesentationKiText(db: Db, ki: KiClient | null | undefined, id: string, v: PraesentationKi) {
+export async function praesentationKiText(db: Db, ki: KiClient | null | undefined, id: string, v: PraesentationKi, geocoder?: Geocoder | null) {
   const p = await laden(db, id);
   const { deal, objekt } = await dealUndObjektAlt(db, p.dealId);
   const lage = v.art === 'lage' ? lageKiEingabe(v.data, deal, objekt) : null;
@@ -146,7 +148,7 @@ export async function praesentationKiText(db: Db, ki: KiClient | null | undefine
   };
   try {
     if (lage) {
-      const a = await lagebeschreibungGenerieren(ki, lage);
+      const a = await lagebeschreibungGenerieren(ki, { ...lage, verortung: await verortungErmitteln(db, geocoder, lage.anschrift) });
       await buchen(a);
       const r = lageKiUebernehmen(v.data, a.wert);
       return { data: r.data, hinweis: lageKiHinweis(r.bullets) };

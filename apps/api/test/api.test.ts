@@ -425,6 +425,54 @@ describe.skipIf(!url)('Deal-Ablauf gegen die lokale Datenbank', () => {
     expect((await post('/api/praesentationen/gibt-es-nicht/ki', { art: 'lage', data: {} })).status).toBe(404);
   });
 
+  it('Bank-Präsentation: Stadtteil aus dem Kartendienst (zwischengespeichert) und Modellwahl je Bereich', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const gesendet: any[] = [];
+    const anfragen: string[] = [];
+    const mitKarte = createApp({
+      db, auth: offen,
+      ki: { ...kiAttrappe(), async nachricht(body) { gesendet.push(body); return kiAttrappe().nachricht(body); } },
+      geocoder: { async kandidaten(a) { anfragen.push(a.strasse); return [{ stadtteil: 'Bad Cannstatt', viertel: 'Cannstatt-Mitte', ort: 'Stuttgart', plz: '70372' }, { stadtteil: 'Münster', viertel: '', ort: 'Stuttgart', plz: '70376' }]; } },
+    });
+    const req = (pfad: string, body?: unknown, method = 'POST') =>
+      mitKarte.request(pfad, body === undefined ? undefined : { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const objekt = await lies(req('/api/objekte', { strasse: 'Kartenweg', hausnr: '7', plz: '70376', stadt: 'Stuttgart' }));
+    angelegt.objekte.push(objekt.id);
+    const { id: dealId } = await lies(req('/api/deals', { objektId: objekt.id }));
+    const p = await lies(req(`/api/deals/${dealId}/praesentation`, { vorlage: 'leer' }));
+    const vorher = await lies(req('/api/einstellungen/ki-modelle'));
+    expect(vorher).toEqual({ praesentation: 'standard', expose: 'standard', makler: 'standard', autoimport: 'standard' });
+
+    try {
+      // Unbekanntes Modell fällt auf „standard“ zurück; ein bekanntes gilt für den Bereich
+      expect(await lies(req('/api/einstellungen/ki-modelle', { ...vorher, praesentation: 'claude-sonnet-5-5', makler: 'gibt-es-nicht' }, 'PUT')))
+        .toEqual({ ...vorher, praesentation: 'claude-sonnet-5-5' });
+
+      expect((await req(`/api/praesentationen/${p.id}/ki`, { art: 'lage', data: {} })).status).toBe(200);
+      expect((await req(`/api/praesentationen/${p.id}/ki`, { art: 'lage', data: {} })).status).toBe(200);
+      // Der Treffer mit der richtigen PLZ zählt (nicht Bad Cannstatt); die zweite Lage kommt aus dem Zwischenspeicher
+      expect(anfragen).toEqual(['Kartenweg']);
+      expect(gesendet[0].messages[0].content).toContain('STADTTEIL: Münster');
+      expect(gesendet[0].system).toContain('- Stadtteil: Münster\n- Nenne als Stadtteil AUSSCHLIESSLICH diesen.');
+      // Sonnet 5.5: kein temperature, kein erzwungenes Werkzeug
+      expect(gesendet[0]).toMatchObject({ model: 'claude-sonnet-5-5', tool_choice: { type: 'auto' } });
+      expect(gesendet[0]).not.toHaveProperty('temperature');
+      const buchungen = await db.select({ modell: schema.auditLog.aiModel }).from(schema.auditLog).where(sql`${schema.auditLog.metadata} like ${`%${p.id}%`}`);
+      expect(buchungen.map((b) => b.modell)).toEqual(['claude-sonnet-5-5', 'claude-sonnet-5-5']);
+    } finally {
+      await req('/api/einstellungen/ki-modelle', vorher, 'PUT');
+      await db.delete(schema.geoVerortungen).where(eq(schema.geoVerortungen.schluessel, 'kartenweg 7|70376|stuttgart'));
+      await db.delete(schema.auditLog).where(sql`${schema.auditLog.metadata} like ${`%${p.id}%`}`);
+    }
+    // Ohne Kartendienst: kein Stadtteil, Haiku wie bisher
+    gesendet.length = 0;
+    const ohneKarte = createApp({ db, auth: offen, ki: { ...kiAttrappe(), async nachricht(body) { gesendet.push(body); return kiAttrappe().nachricht(body); } } });
+    await ohneKarte.request(`/api/praesentationen/${p.id}/ki`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ art: 'lage', data: {} }) });
+    expect(gesendet[0]).toMatchObject({ model: 'claude-haiku-4-5-20251001', temperature: 0 });
+    expect(gesendet[0].messages[0].content).toContain('STADTTEIL: (unbekannt — keinen nennen)');
+    await db.delete(schema.auditLog).where(sql`${schema.auditLog.metadata} like ${`%${p.id}%`}`);
+  });
+
   it('Begleitschein: aus der Vorlage anlegen, Status mit Archiv, Aktionen (Daten, Vordruck), Vorlage mit Aufräumen', async () => {
     const vorherVorlage = await lies(app.request('/api/einstellungen/begleitscheine/ankauf/vorlage'));
     const vorherAktionen = await lies(app.request('/api/einstellungen/begleitscheine/ankauf/aktionen'));

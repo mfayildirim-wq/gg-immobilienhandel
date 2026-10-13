@@ -81,6 +81,7 @@ import {
   DealListenEintrag,
   Fehler,
   KalkStandardSchema,
+  KiModellwahlSchema,
   KalkulationSpeichern,
   Kennzahlen,
   KommentarAnlegen,
@@ -98,7 +99,7 @@ import {
   StatusWechsel,
 } from '@gg/api-contract';
 import type { Db } from '@gg/db';
-import { AUFBEWAHRUNG, DealStatus, geplanteStufe, rueckwegPruefen, type RueckwegRegeln } from '@gg/domain';
+import { AUFBEWAHRUNG, DealStatus, geplanteStufe, type KiBereich, kiModellFuer, rueckwegPruefen, type RueckwegRegeln } from '@gg/domain';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { sql } from 'drizzle-orm';
@@ -134,7 +135,7 @@ import { autoSicherungDatei, autoSicherungEinspielen, autoSicherungErstellen, au
 import { filterAnlegen, filterListe, filterLoeschen, filterUmbenennen, filterVorlagenEinrichten, listenAltformat } from './services/listen.ts';
 import { projektAnlegen, projektDealAuswahl, projektDetail, projekteListe, projektLoeschen, projektSpeichern } from './services/projekte.ts';
 import { fotoDatei, fotoHochladen, fotoLoeschen, fotoPort, fotosListe, fotosSortieren } from './services/fotos.ts';
-import { type Dateispeicher, type GraphClient, type KiClient, KiSchluesselFehler, type PropstackClient, type SharepointAblage, nachrichtenSuche, webSuche, anthropicClient, anthropicSchluesselPruefen } from '@gg/integrations';
+import { type Dateispeicher, type Geocoder, type GraphClient, type KiClient, KiSchluesselFehler, type PropstackClient, type SharepointAblage, nachrichtenSuche, webSuche, anthropicClient, anthropicSchluesselPruefen, kiMitModell } from '@gg/integrations';
 import { bekannteExposeDateien, exposeAnalysieren, exposeEingang, exposeEingangUebernehmen, type ExposeKontext, exposeUebernehmen, MAX_EXPOSE_BYTES } from './services/expose.ts';
 import { auth, type AuthOptionen } from './middleware/auth.ts';
 import {
@@ -150,7 +151,7 @@ import {
   statusAendern,
   statusHistorie,
 } from './services/deals.ts';
-import { kalkStandardLesen, kalkStandardSpeichern, kundenkalkEinstellungenLesen, kundenkalkEinstellungenSpeichern, vorlagenLesen, vorlagenSpeichern } from './services/einstellungen.ts';
+import { kalkStandardLesen, kalkStandardSpeichern, kiModellwahlLesen, kiModellwahlSpeichern, kundenkalkEinstellungenLesen, kundenkalkEinstellungenSpeichern, vorlagenLesen, vorlagenSpeichern } from './services/einstellungen.ts';
 import {
   kundenkalkulationAnlegen,
   kundenkalkulationDetail,
@@ -193,6 +194,8 @@ export interface AppKontext {
   expose?: ExposeKontext;
   /** KI (Anthropic oder Attrappe) für Makler-Funktionen; Standard: die des Exposé-Imports. */
   ki?: KiClient | null;
+  /** Kartendienst (Adresse → Stadtteil) für die KI-Lagebeschreibung; ohne ihn nennt die KI keinen Stadtteil. */
+  geocoder?: Geocoder | null;
   /** Propstack-Client; ohne Vorgabe wird er aus dem hinterlegten Schlüssel gebaut. */
   propstack?: PropstackClient | null;
   /** Microsoft-Graph-Client; ohne Vorgabe wird er aus dem hinterlegten Zugang gebaut. */
@@ -238,7 +241,7 @@ const Version = z.object({ version: z.number().int() });
 const Geaendert = json(z.object({ id: z.string(), version: z.number().int() }), 'geändert');
 const konflikt = { 400: fehler('Eingabe ungültig'), 404: fehler('nicht gefunden'), 409: fehler('Versionskonflikt') };
 
-export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, cronGeheimnis, kiSchluesselPruefen = anthropicSchluesselPruefen, autoImport, sharepoint = null, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
+export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, cronGeheimnis, kiSchluesselPruefen = anthropicSchluesselPruefen, autoImport, sharepoint = null, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
   const autoImportAktiv = autoImport?.aktiv ?? true;
   const exposeKontext = async () => {
     if (!expose) throw new FachFehler(422, 'Dateiablage ist nicht eingerichtet (SUPABASE_SERVICE_ROLE_KEY).');
@@ -250,14 +253,17 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
    * Die KI für jede Anfrage — die eine Stelle dafür. Fest vorgegeben (Attrappe, Tests) geht vor; sonst gilt der in
    * Einstellungen → Zugänge hinterlegte Schlüssel, erst danach `ANTHROPIC_API_KEY` aus der Umgebung. Gelesen wird je
    * Anfrage: ein neu eingetragener Schlüssel wirkt sofort, ohne Neustart (online: ohne neues Deployment).
+   * Mit Bereich gilt das dort eingestellte Modell (Einstellungen → KI-Modelle); die Hülle passt jede Anfrage an
+   * das Modell an, auch ohne Umlenkung.
    */
-  const kiAktuell = async (): Promise<KiClient | null> => {
+  const kiAktuell = async (bereich?: KiBereich): Promise<KiClient | null> => {
     const fest = kiOpt ?? (expose?.attrappe ? expose.ki : null);
-    if (fest) return fest;
-    const key = await zugangLesen(db, 'anthropic-api-key');
-    return key ? anthropicClient(key) : (expose?.ki ?? null);
+    const key = fest ? null : await zugangLesen(db, 'anthropic-api-key');
+    const ki = fest ?? (key ? anthropicClient(key) : (expose?.ki ?? null));
+    if (!ki) return null;
+    return kiMitModell(ki, bereich ? kiModellFuer(await kiModellwahlLesen(db), bereich) : null);
   };
-  const exposeMitKi = async () => ({ ...(await exposeKontext()), ki: await kiAktuell() });
+  const exposeMitKi = async () => ({ ...(await exposeKontext()), ki: await kiAktuell('expose') });
   const ablage = () => {
     const s = speicherOpt ?? expose?.speicher;
     if (!s) throw new FachFehler(422, 'Dateiablage ist nicht eingerichtet (SUPABASE_SERVICE_ROLE_KEY).');
@@ -440,32 +446,32 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   const kiFehler = { 404: fehler('Makler fehlt'), 422: fehler('KI nicht eingerichtet oder zu wenig Daten') };
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/ki/zusammenfassung', request: { params: IdParam }, responses: { 200: json(z.object({ kiSummary: z.string().nullable(), kiSummaryAt: z.string().nullable() }), 'Zusammenfassung'), ...kiFehler } }),
-    async (c) => c.json(await zusammenfassungErstellen(db, await kiAktuell(), c.req.valid('param').id), 200),
+    async (c) => c.json(await zusammenfassungErstellen(db, await kiAktuell('makler'), c.req.valid('param').id), 200),
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/ki/erwaehnungen', request: { params: IdParam, ...body(z.object({ text: z.string().max(5000), kanal: z.string().max(40) })) }, responses: { 200: json(z.object({ neu: z.number() }), 'Erwähnungen ergänzt'), ...kiFehler } }),
-    async (c) => { const b = c.req.valid('json'); return c.json(await erwaehnungenErgaenzen(db, await kiAktuell(), c.req.valid('param').id, b.text, b.kanal, heuteDe()), 200); },
+    async (c) => { const b = c.req.valid('json'); return c.json(await erwaehnungenErgaenzen(db, await kiAktuell('makler'), c.req.valid('param').id, b.text, b.kanal, heuteDe()), 200); },
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/ki/beziehungsprofil', request: { params: IdParam }, responses: { 200: json(z.object({ beziehungsNotiz: z.string() }), 'Beziehungsprofil'), ...kiFehler } }),
-    async (c) => c.json(await beziehungsprofilErstellen(db, await kiAktuell(), c.req.valid('param').id), 200),
+    async (c) => c.json(await beziehungsprofilErstellen(db, await kiAktuell('makler'), c.req.valid('param').id), 200),
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/ki/persoenliches', request: { params: IdParam }, responses: { 200: json(z.object({ persoenlich: z.record(z.string(), z.unknown()) }), 'Persönliches ergänzt'), ...kiFehler } }),
-    async (c) => c.json(await persoenlichesErgaenzen(db, await kiAktuell(), c.req.valid('param').id), 200),
+    async (c) => c.json(await persoenlichesErgaenzen(db, await kiAktuell('makler'), c.req.valid('param').id), 200),
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/ki/entwurf', request: { params: IdParam }, responses: { 200: json(NachrichtEntwurf, 'Entwurf WhatsApp + E-Mail'), ...kiFehler } }),
-    async (c) => c.json(await entwurfErstellen(db, await kiAktuell(), c.req.valid('param').id), 200),
+    async (c) => c.json(await entwurfErstellen(db, await kiAktuell('makler'), c.req.valid('param').id), 200),
   );
   const suche = (): Suchdienste => sucheOpt ?? (expose?.attrappe ? { web: async () => [], news: async () => [] } : { web: webSuche, news: nachrichtenSuche });
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/ki/anlaesse', request: { params: IdParam }, responses: { 200: json(z.object({ anlaesse: z.array(z.object({ emoji: z.string(), text: z.string(), priority: z.string(), quelleUrl: z.string().optional() })) }), 'Kontakt-Anlässe'), ...kiFehler } }),
-    async (c) => c.json(await kontaktAnlaesseErmitteln(db, await kiAktuell(), suche(), c.req.valid('param').id, heuteBerlin()), 200),
+    async (c) => c.json(await kontaktAnlaesseErmitteln(db, await kiAktuell('makler'), suche(), c.req.valid('param').id, heuteBerlin()), 200),
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/ki/gespraechsoeffner', request: { params: IdParam }, responses: { 200: json(z.object({ text: z.string() }), 'Gesprächsöffner'), ...kiFehler } }),
-    async (c) => c.json(await gespraechsoeffnerErstellen(db, await kiAktuell(), c.req.valid('param').id, heuteBerlin()), 200),
+    async (c) => c.json(await gespraechsoeffnerErstellen(db, await kiAktuell('makler'), c.req.valid('param').id, heuteBerlin()), 200),
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/osint', request: { params: IdParam }, responses: { 200: json(z.object({ persoenlich: z.record(z.string(), z.unknown()) }), 'OSINT-Ergebnis gespeichert'), 404: fehler('Makler fehlt') } }),
@@ -477,7 +483,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/persona/analyse', responses: { 200: json(PersonaStand, 'analysiert'), 422: fehler('zu wenig Daten oder KI fehlt') } }),
-    async (c) => c.json(await personaAnalysieren(db, await kiAktuell()), 200),
+    async (c) => c.json(await personaAnalysieren(db, await kiAktuell('makler')), 200),
   );
   app.post('/api/transkription', async (c) => {
     const form = await c.req.parseBody();
@@ -689,7 +695,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
     const form = await c.req.parseBody();
     const f = form['file'];
     const datei = f && typeof f !== 'string' ? { name: f.name, typ: f.type, bytes: new Uint8Array(await f.arrayBuffer()) } : null;
-    return c.json(await einheitenAusMieterliste(await dateien(), await kiAktuell(), c.req.param('id'), datei), 200);
+    return c.json(await einheitenAusMieterliste(await dateien(), await kiAktuell('expose'), c.req.param('id'), datei), 200);
   });
 
   // ── Kalkulationsvarianten (alt d.kalkVarianten) ─────────
@@ -780,7 +786,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
     async (c) => {
       botFreigeschaltet();
       return c.json(await autoImportAusfuehren(db, {
-        speicher: ablage(), ki: await kiAktuell(), graph: await m365Client(db, graphOpt), ordner: await m365OrdnerLesen(db),
+        speicher: ablage(), ki: await kiAktuell('autoimport'), graph: await m365Client(db, graphOpt), ordner: await m365OrdnerLesen(db),
         browserStarten: autoImport?.browserStarten ?? browserStarten, maxZeitlimitSek: autoImport?.maxZeitlimitSek, lokaleZieleErlaubt: autoImport?.lokaleZieleErlaubt,
       }, c.req.valid('json').mailUid), 200);
     },
@@ -1147,7 +1153,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/praesentationen/{id}/ki', request: { params: IdParam, ...body(PraesentationKi) }, responses: { 200: json(VorbelegungErgebnis, 'KI-Text für die Folie (nicht gespeichert)'), 404: fehler('nicht gefunden'), 422: fehler('KI nicht eingerichtet'), 500: fehler('KI-Aufruf fehlgeschlagen') } }),
-    async (c) => c.json(await praesentationKiText(db, await kiAktuell(), c.req.valid('param').id, c.req.valid('json')), 200),
+    async (c) => c.json(await praesentationKiText(db, await kiAktuell('praesentation'), c.req.valid('param').id, c.req.valid('json'), geocoder), 200),
   );
   const exportieren = (art: 'pdf' | 'pptx') => async (c: import('hono').Context) => {
     const praes = await praesentationFuerExport(db, c.req.param('id')!);
@@ -1260,6 +1266,15 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   app.openapi(
     createRoute({ method: 'put', path: '/api/einstellungen/kalk-standard', request: body(KalkStandardSchema), responses: { 200: json(KalkStandardSchema, 'gespeichert'), 400: fehler('Eingabe ungültig') } }),
     async (c) => c.json(await kalkStandardSpeichern(db, c.req.valid('json')), 200),
+  );
+
+  app.openapi(
+    createRoute({ method: 'get', path: '/api/einstellungen/ki-modelle', responses: { 200: json(KiModellwahlSchema, 'KI-Modell je Bereich') } }),
+    async (c) => c.json(await kiModellwahlLesen(db), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'put', path: '/api/einstellungen/ki-modelle', request: body(KiModellwahlSchema), responses: { 200: json(KiModellwahlSchema, 'gespeichert'), 400: fehler('Eingabe ungültig') } }),
+    async (c) => c.json(await kiModellwahlSpeichern(db, c.req.valid('json')), 200),
   );
 
   app.doc31('/api/openapi.json', { openapi: '3.1.0', info: { title: 'GG Immobilienhandel API', version: '0.1.0' } });
