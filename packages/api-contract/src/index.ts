@@ -194,6 +194,8 @@ export const KommentarAnlegen = z.object({ text: z.string().trim().min(1).max(50
 export const KalkStandardSchema = z.object({
   notar: Zahl, gest: Zahl, makler: Zahl, fk_p: Zahl, ek_p: Zahl, euribor: Zahl, margeB: Zahl, bank_abgeb: Zahl,
   ek_r: Zahl, halt: Zahl, vprov: Zahl, glo_m: Zahl, rp_pct: Zahl, rend_k: Zahl, auf_h: Zahl, auf_e: Zahl,
+  // Zielwerte „Kaufpreis für Zielmarge“; fehlen bei Altbestand und älteren Aufrufern → Werkseinstellung
+  ziel_auf: Zahl.default(15), ziel_glo: Zahl.default(20), rend_glo: Zahl.default(5),
 });
 
 // ── Makler- und Objekt-Detail ──────────────────────────────
