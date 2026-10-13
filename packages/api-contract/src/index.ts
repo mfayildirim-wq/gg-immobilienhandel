@@ -198,6 +198,10 @@ export const KalkStandardSchema = z.object({
   ziel_auf: Zahl.default(15), ziel_glo: Zahl.default(20), rend_glo: Zahl.default(5),
 });
 
+/** KI-Modell je Bereich: Modellkennung oder „standard“ (wie bisher). Unbekanntes setzt die API auf „standard“ zurück. */
+const KiModell = z.string().min(1).max(100);
+export const KiModellwahlSchema = z.object({ praesentation: KiModell, expose: KiModell, makler: KiModell, autoimport: KiModell });
+
 // ── Makler- und Objekt-Detail ──────────────────────────────
 
 export const MaklerKommunikation = z.object({

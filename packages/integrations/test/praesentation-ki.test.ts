@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { kiAttrappe, lagebeschreibungGenerieren, lagePrompt, objektbeschreibungGenerieren, objektPrompt, type KiClient } from '../src/index.ts';
 
-const stuttgart = { fullAdresse: 'Aldinger Straße 86, 70378, Stuttgart', stadt: 'Stuttgart', plz: '70378', istStuttgart: true, bestandStandort: [], bestandAnbindung: [] };
+const stuttgart = {
+  fullAdresse: 'Aldinger Straße 86, 70378, Stuttgart', stadt: 'Stuttgart', plz: '70378', istStuttgart: true, bestandStandort: [], bestandAnbindung: [],
+  anschrift: { strasse: 'Aldinger Straße', hausnr: '86', plz: '70378', stadt: 'Stuttgart' },
+};
+const muenster = { stadtteil: 'Münster', viertel: 'Münster', ort: 'Stuttgart', plz: '70378' };
 
 /** Attrappe, die mitschreibt, was an das Modell geht. */
 function mitschrift() {
@@ -10,18 +14,32 @@ function mitschrift() {
   return { ki, gesendet };
 }
 
-describe('Bank-Präsentation: KI-Texte (Prompts wie alt)', () => {
-  it('Lage: Haiku, 600 Tokens, erzwungenes Werkzeug; Adresse, Stadt und PLZ stehen in der Frage', async () => {
+describe('Bank-Präsentation: KI-Texte (Prompts wie alt, Lage mit Stadtteil aus dem Kartendienst)', () => {
+  it('Lage: Haiku, 600 Tokens, temperature 0, erzwungenes Werkzeug; Adresse, Stadt, PLZ und Stadtteil stehen in der Frage', async () => {
     const { ki, gesendet } = mitschrift();
-    const a = await lagebeschreibungGenerieren(ki, stuttgart);
-    expect(gesendet[0]).toMatchObject({ model: 'claude-haiku-4-5-20251001', max_tokens: 600, tool_choice: { type: 'tool', name: 'lagebeschreibung_speichern' } });
+    const a = await lagebeschreibungGenerieren(ki, { ...stuttgart, verortung: muenster });
+    expect(gesendet[0]).toMatchObject({ model: 'claude-haiku-4-5-20251001', max_tokens: 600, temperature: 0, tool_choice: { type: 'tool', name: 'lagebeschreibung_speichern' } });
     expect(gesendet[0].tools[0].input_schema.required).toEqual(['standortBullets', 'anbindungBullets']);
-    expect(gesendet[0].messages[0].content).toContain('Generiere eine Lagebeschreibung für folgendes Objekt:\n\nADRESSE: Aldinger Straße 86, 70378, Stuttgart\nSTADT: Stuttgart\nPLZ: 70378\n\nLiefere zwei Sektionen:');
+    expect(gesendet[0].messages[0].content).toContain('Generiere eine Lagebeschreibung für folgendes Objekt:\n\nADRESSE: Aldinger Straße 86, 70378, Stuttgart\nSTADT: Stuttgart\nPLZ: 70378\nSTADTTEIL: Münster\n\nLiefere zwei Sektionen:');
+    expect(gesendet[0].messages[0].content).toContain('1. **Standort** — 3-5 Bullets über den Stadtteil Münster,');
     expect(a).toMatchObject({ model: 'claude-haiku-4-5-20251001', wert: { standortBullets: ['Wohnlage in Stuttgart (Test-Modus)'], anbindungBullets: ['ÖPNV in der Nähe (Test-Modus)'] } });
   });
 
-  it('Lage: in Stuttgart echte Geographie, anderswo ausdrücklich keine Stuttgarter Linien', () => {
-    expect(lagePrompt(stuttgart).system).toContain('- DIESE ADRESSE IST IN STUTTGART. Nutze echte Stuttgarter Geographie: Stadtteile, S-Bahn-Linien (S1-S6, U-Stadtbahn), Autobahnen (A8, A81, B10, B27).');
+  it('Lage: der ermittelte Stadtteil ist maßgeblich — ohne ihn nennt die KI keinen (Fachentscheidung 13.10.2026)', () => {
+    const mit = lagePrompt({ ...stuttgart, verortung: { ...muenster, viertel: 'Münster-Ost' } }).system;
+    expect(mit).toContain('VERORTUNG (aus Kartendaten ermittelt — maßgeblich):\n- Stadtteil: Münster\n- Wohnviertel: Münster-Ost\n- Nenne als Stadtteil AUSSCHLIESSLICH diesen.');
+    const ohne = lagePrompt(stuttgart);
+    expect(ohne.system).toContain('- Der Stadtteil dieser Adresse ist NICHT bekannt.\n- Nenne KEINEN Stadtteil-, Ortsteil-, Bezirks- oder Viertelnamen.');
+    expect(ohne.user).toContain('STADTTEIL: (unbekannt — keinen nennen)');
+    expect(ohne.user).toContain('3-5 Bullets über die Lage,');
+    for (const p of [mit, ohne.system]) {
+      expect(p).toContain('- Nenne keine Parks, Wälder, Gärten, Seen, Plätze, Einkaufszentren, Schulen oder Sehenswürdigkeiten mit Namen');
+      expect(p).not.toContain('Nutze echte Stuttgarter Geographie: Stadtteile');
+    }
+  });
+
+  it('Lage: in Stuttgart echte Verkehrsgeographie, anderswo ausdrücklich keine Stuttgarter Linien', () => {
+    expect(lagePrompt(stuttgart).system).toContain('- DIESE ADRESSE IST IN STUTTGART. Für die Anbindung gilt echte Stuttgarter Verkehrsgeographie: S-Bahn-Linien (S1-S6, U-Stadtbahn), Autobahnen (A8, A81, B10, B27)');
     const leonberg = lagePrompt({ ...stuttgart, stadt: 'Leonberg', plz: '71229', istStuttgart: false });
     expect(leonberg.system).toContain('- DIESE ADRESSE IST NICHT IN STUTTGART (sondern in Leonberg). Erfinde KEINE Stuttgarter S-Bahn-Linien, Autobahnen oder Stadtteile.');
     expect(leonberg.system).toContain('- ERFINDE NIEMALS Linien-Nummern, Straßennamen oder Stadtteile, die du nicht kennst.');
@@ -38,10 +56,10 @@ describe('Bank-Präsentation: KI-Texte (Prompts wie alt)', () => {
     expect(a.wert).toEqual({ standortBullets: ['Ruhige Wohnlage', 'Wohnlage in Stuttgart (Test-Modus)'], anbindungBullets: ['ÖPNV in der Nähe (Test-Modus)'] });
   });
 
-  it('Objekt: Haiku, 700 Tokens; Fakten als Liste, vorhandene Beschreibung als Vorlage', async () => {
+  it('Objekt: Haiku, 700 Tokens, temperature 0; Fakten als Liste, vorhandene Beschreibung als Vorlage', async () => {
     const { ki, gesendet } = mitschrift();
     const a = await objektbeschreibungGenerieren(ki, { fakten: ['Adresse: Aldinger Straße 86, 70378 Stuttgart', 'Baujahr: 1964'], aktuelleBeschreibung: 'Solides Haus.' });
-    expect(gesendet[0]).toMatchObject({ model: 'claude-haiku-4-5-20251001', max_tokens: 700, tool_choice: { type: 'tool', name: 'objektbeschreibung_speichern' } });
+    expect(gesendet[0]).toMatchObject({ model: 'claude-haiku-4-5-20251001', max_tokens: 700, temperature: 0, tool_choice: { type: 'tool', name: 'objektbeschreibung_speichern' } });
     const frage = gesendet[0].messages[0].content as string;
     expect(frage).toContain('VORHANDENE FAKTEN:\n- Adresse: Aldinger Straße 86, 70378 Stuttgart\n- Baujahr: 1964\n\nBISHERIGE BESCHREIBUNG (übernimm faktische Details, aber UMFORMULIERE in positive Banker-Sprache wenn nötig):\n"Solides Haus."\n');
     expect(gesendet[0].system).toContain('ANTI-HALLUZINATION:\n- Erfinde KEINE konkreten Modernisierungs-Details, Jahreszahlen oder Bauteile, die NICHT in den Fakten stehen');
