@@ -12,6 +12,7 @@ import { IconFileUpload, IconPlus, IconTrash, IconX } from '@tabler/icons-react'
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { type ReactNode, useMemo, useRef, useState, useEffect } from 'react';
+import { Zahlfeld } from '../components/Zahlfeld.tsx';
 import {
   DublettenFehler, exposeAnalysieren, exposeHochladen, exposeUebernehmen, useBekannteExposeDateien, useKiStatus, useMakler,
 } from '../lib/api.ts';
@@ -369,7 +370,7 @@ function ObjektSchritt({ a, objekt, setObjekt, bestehend, setBestehend }: { a: E
     <TextInput label={feldLabel(label, k[konfSchluessel])} value={(objekt[feld] as string) ?? ''} onChange={(e) => setObjekt({ ...objekt, [feld]: e.currentTarget.value })} />
   );
   const n = (feld: keyof ExposeObjektDaten, label: string) => (
-    <NumberInput label={feldLabel(label, k[feld as string])} value={(objekt[feld] as number) ?? ''} onChange={(v) => setObjekt({ ...objekt, [feld]: typeof v === 'number' ? v : null })} {...ZAHL} thousandSeparator={feld === 'baujahr' || feld === 'heizungsbaujahr' ? undefined : '.'} />
+    <Zahlfeld label={feldLabel(label, k[feld as string])} value={(objekt[feld] as number) ?? ''} onWert={(v) => setObjekt({ ...objekt, [feld]: v })} {...ZAHL} thousandSeparator={feld === 'baujahr' || feld === 'heizungsbaujahr' ? undefined : '.'} />
   );
   const ea = objekt.energieausweis ?? {};
   const einheiten = objekt.einheiten ?? [];
@@ -396,7 +397,7 @@ function ObjektSchritt({ a, objekt, setObjekt, bestehend, setBestehend }: { a: E
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
         {t('heizungsart', 'Heizungsart')}{n('heizungsbaujahr', 'Heizung Baujahr')}
         <TextInput label={feldLabel('Energieklasse', k.energieklasse)} value={ea.klasse ?? ''} onChange={(e) => setObjekt({ ...objekt, energieausweis: { ...ea, klasse: e.currentTarget.value } })} />
-        <NumberInput label={feldLabel('Energiekennwert kWh/m²a', k.energiekennwert)} value={ea.kennwert ?? ''} onChange={(v) => setObjekt({ ...objekt, energieausweis: { ...ea, kennwert: typeof v === 'number' ? v : null } })} {...ZAHL} />
+        <Zahlfeld label={feldLabel('Energiekennwert kWh/m²a', k.energiekennwert)} value={ea.kennwert ?? ''} onWert={(v) => setObjekt({ ...objekt, energieausweis: { ...ea, kennwert: v } })} {...ZAHL} />
         <TextInput label={feldLabel('Energieausweis Art', k.energieart)} value={ea.art ?? ''} onChange={(e) => setObjekt({ ...objekt, energieausweis: { ...ea, art: e.currentTarget.value } })} />
       </SimpleGrid>
       <Paper withBorder p="sm" aria-label="Einheitenaufstellung">
@@ -412,9 +413,9 @@ function ObjektSchritt({ a, objekt, setObjekt, bestehend, setBestehend }: { a: E
                 <Table.Tr key={i}>
                   <Table.Td><Select size="xs" w={110} data={['Wohnung', 'Gewerbe', 'Stellplatz', 'Sonstiges']} value={e.typ ?? 'Wohnung'} allowDeselect={false} onChange={(v) => v && setE(i, { typ: v })} aria-label="Typ" /></Table.Td>
                   <Table.Td><TextInput size="xs" w={100} value={e.lage ?? ''} onChange={(ev) => setE(i, { lage: ev.currentTarget.value })} aria-label="Lage" /></Table.Td>
-                  <Table.Td><NumberInput size="xs" w={60} value={e.zimmer ?? ''} onChange={(v) => setE(i, { zimmer: typeof v === 'number' ? v : null })} aria-label="Zimmer" {...ZAHL} /></Table.Td>
-                  <Table.Td><NumberInput size="xs" w={70} value={e.flaeche ?? ''} onChange={(v) => setE(i, { flaeche: typeof v === 'number' ? v : null })} aria-label="Fläche" {...ZAHL} /></Table.Td>
-                  <Table.Td><NumberInput size="xs" w={90} value={e.kaltmiete ?? ''} onChange={(v) => setE(i, { kaltmiete: typeof v === 'number' ? v : null })} aria-label="Kaltmiete" {...ZAHL} /></Table.Td>
+                  <Table.Td><Zahlfeld size="xs" w={60} value={e.zimmer ?? ''} onWert={(v) => setE(i, { zimmer: v })} aria-label="Zimmer" {...ZAHL} /></Table.Td>
+                  <Table.Td><Zahlfeld size="xs" w={70} value={e.flaeche ?? ''} onWert={(v) => setE(i, { flaeche: v })} aria-label="Fläche" {...ZAHL} /></Table.Td>
+                  <Table.Td><Zahlfeld size="xs" w={90} value={e.kaltmiete ?? ''} onWert={(v) => setE(i, { kaltmiete: v })} aria-label="Kaltmiete" {...ZAHL} /></Table.Td>
                   <Table.Td><Select size="xs" w={110} data={['Vermietet', 'Leerstand']} value={e.vermiet ?? 'Vermietet'} allowDeselect={false} onChange={(v) => v && setE(i, { vermiet: v })} aria-label="Status" /></Table.Td>
                   <Table.Td><ActionIcon variant="subtle" color="red" aria-label="Einheit entfernen" onClick={() => setObjekt({ ...objekt, einheiten: einheiten.filter((_, j) => j !== i) })}><IconTrash size={14} /></ActionIcon></Table.Td>
                 </Table.Tr>
@@ -500,7 +501,7 @@ function DealSchritt({ deal, setDeal }: { deal: { status: string; nachfassFreq: 
         <Text size="xs" fw={700} c="dimmed" tt="uppercase" mb="xs">🧮 Kalkulations-Vorwerte (aus Exposé, sonst Einstellungen)</Text>
         <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="xs">
           {WIZARD_KALK_FELDER.map((f) => (
-            <NumberInput key={f} label={KALK_LABEL[f]} value={deal.kalk[f] ?? ''} onChange={(v) => setDeal({ ...deal, kalk: { ...deal.kalk, [f]: typeof v === 'number' ? v : null } })} {...ZAHL} />
+            <Zahlfeld key={f} label={KALK_LABEL[f]} value={deal.kalk[f] ?? ''} onWert={(v) => setDeal({ ...deal, kalk: { ...deal.kalk, [f]: v } })} {...ZAHL} />
           ))}
         </SimpleGrid>
         <Text size="xs" c="dimmed" mt="xs">Alle Werte lassen sich nach dem Import in der Kalkulation anpassen. Eine 0 bleibt 0.</Text>
