@@ -57,6 +57,13 @@
       "when": 1790156818375,
       "tag": "20260923094658_makler_anlaesse",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791894377983,
+      "tag": "20261013122617_geo_verortungen",
+      "breakpoints": true
     }
   ]
 }

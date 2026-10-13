@@ -7,6 +7,7 @@
 import type { PersonenInfo } from '@gg/domain';
 import { HAIKU, type KiAntwort } from './persona.ts';
 import type { KiClient } from './anthropic.ts';
+import { genutztesModell } from './modelle.ts';
 
 export interface WebTreffer { titel: string; url: string; snippet: string }
 export interface Nachricht { titel: string; quelle: string; datum: string; snippet: string }
@@ -127,7 +128,7 @@ Regeln:
     const parsed = match ? JSON.parse(match[0]) : [];
     anlaesse = Array.isArray(parsed) ? parsed.filter((h: any) => h.emoji && h.text && typeof h.text === 'string').slice(0, 4) : []; // eslint-disable-line @typescript-eslint/no-explicit-any
   } catch { anlaesse = []; }
-  return { wert: anlaesse, model: HAIKU, usage: data?.usage ?? {} };
+  return { wert: anlaesse, model: genutztesModell(data, HAIKU), usage: data?.usage ?? {} };
 }
 
 /** vtGenerateCallOpener: 1-2 Sätze Gesprächseinstieg. */
@@ -147,7 +148,7 @@ export async function gespraechsoeffner(
 ${context ? 'Kontext:\n' + context : ''}
 Kurz, persönlich, keine Floskeln. Nutze Geburtstag oder aktuelle Anlässe wenn vorhanden — dezent und natürlich.`;
   const data = await ki.nachricht({ model: HAIKU, max_tokens: 120, messages: [{ role: 'user', content: prompt }] });
-  return { wert: ((data?.content?.[0]?.text as string) || '').trim(), model: HAIKU, usage: data?.usage ?? {} };
+  return { wert: ((data?.content?.[0]?.text as string) || '').trim(), model: genutztesModell(data, HAIKU), usage: data?.usage ?? {} };
 }
 
 /** mkRunOSINT: allgemeine Suche + Handelsregister-Suche; XING/LinkedIn, HR-Nummer, Amtsgericht, Rechtsform. */
