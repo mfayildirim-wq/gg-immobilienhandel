@@ -173,8 +173,9 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
     const einheiten = dealEinheitenAusExpose(e.objekt.daten.einheiten ?? [], standard.rend_k).map((x) => ({ ...x, id: `${dealId}:${crypto.randomUUID()}`, dealId }));
     const kalk = wizardKalkSpeichern(e.deal.kalk, standard);
     const { kennzahlen } = berechneAnkauf(kalk, einheiten.map((x) => einheitAlsEingabe({ ...x, mieteNeu: null, mieteNeuManuell: false, verkaufspreis: null, stueck: null })), [], standard);
+    // Erster Nachfasstermin heute: ohne nächsten und letzten Kontakt fehlte der Deal im Cockpit (Befund 13.10.2026).
     await tx.insert(schema.deals).values({
-      id: dealId, objektId, maklerId, status: e.deal.status, angebotsDatum: heute, nachfassFrequenz: normalisiereFrequenz(e.deal.nachfassFreq),
+      id: dealId, objektId, maklerId, status: e.deal.status, angebotsDatum: heute, nextContact: heute, nachfassFrequenz: normalisiereFrequenz(e.deal.nachfassFreq),
       notizen: text(e.deal.notizen), kalkulation: { ...kalk, ...kennzahlen }, exposeRohdaten: { ...e.extrahiert, originalFileName: e.dateiname },
     });
     for (const x of einheiten) await tx.insert(schema.dealEinheiten).values(x);

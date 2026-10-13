@@ -127,6 +127,7 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
     const deal = await lies(app.request(`/api/deals/${erg.dealId}`));
     expect(deal.einheiten.map((e: any) => [e.lage, e.flaeche, e.mieteIst, e.renditeK])).toEqual([['EG links', 80, 800, 4.5], ['OG rechts', 80, 820, 4.5], ['DG', 80, 700, 4.5]]);
     expect(deal.kalkulation).toMatchObject({ kaufpreis: 1_250_000, makler: 0, rp_pct: 10 });
+    expect(deal.nextContact).toBe(deal.angebotsDatum);
     expect(deal.kalkulation.gik).toBeGreaterThan(1_250_000);
     const [makler] = await db.select().from(schema.makler).where(eq(schema.makler.id, erg.maklerId));
     expect(makler).toMatchObject({ tel: `+49 ${a.makler.tel.slice(1)}`, kontaktFrequenz: 'Monatlich', prio: 'B' });
