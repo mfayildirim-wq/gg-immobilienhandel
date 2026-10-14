@@ -21,7 +21,7 @@ const SCHLUESSEL = [bezeichnungSchluessel(BEZ_18), bezeichnungSchluessel(BEZ_19)
 
 describe.skipIf(!url)('Exposé-Wörterbuch: lernt beim Zuordnen (Prüfseite und Reiter)', () => {
   const { db, client } = createDb(url!);
-  const app = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, expose: { speicher: speicherImSpeicher(), ki: kiAttrappe(), attrappe: true } });
+  const app = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, expose: { speicher: speicherImSpeicher(), ki: kiAttrappe(), attrappe: true, texterkennung: null } });
   mitAusgeliefertenStandards(url!);
   const kennung = `Wb${Date.now()}`;
   const importIds: string[] = [];

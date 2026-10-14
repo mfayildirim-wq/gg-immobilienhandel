@@ -13,7 +13,7 @@ const url = process.env.DATABASE_URL ? verlangeLokaleDatenbank(process.env.DATAB
 describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, Ablage im Speicher)', () => {
   const { db, client } = createDb(url!);
   const speicher = speicherImSpeicher();
-  const app = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, expose: { speicher, ki: kiAttrappe(), attrappe: true } });
+  const app = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, expose: { speicher, ki: kiAttrappe(), attrappe: true, texterkennung: null } });
   const kennung = `Imp${Date.now()}`;
   const angelegt = { deals: [] as string[], objekte: [] as string[], makler: [] as string[], importe: [] as string[] };
   mitAusgeliefertenStandards(url!);
@@ -44,7 +44,7 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
 
   it('KI-Schlüssel aus Einstellungen → Zugänge gilt auch für den Exposé-Import — ohne Neustart, vor der Umgebung', async () => {
     // Wie online: keine Attrappe, kein Schlüssel in der Umgebung
-    const online = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, expose: { speicher, ki: null, attrappe: false } });
+    const online = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, expose: { speicher, ki: null, attrappe: false, texterkennung: null } });
     const zugang = (wert: string) => online.request('/api/zugaenge/anthropic-api-key', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ wert }) });
     try {
       expect((await zugang('')).status).toBe(200);
@@ -63,7 +63,7 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
   it('abgelehnter KI-Schlüssel: klare Meldung mit Quelle statt „Interner Fehler“; „Schlüssel testen“ prüft den verwendeten Schlüssel', async () => {
     const abgelehnt = { nachricht: async () => { throw new KiSchluesselFehler(401, 'invalid x-api-key'); }, dateiHochladen: async () => { throw new KiSchluesselFehler(401, 'invalid x-api-key'); }, dateiLoeschen: async () => {} };
     let geprueft = '';
-    const online = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, ki: abgelehnt, expose: { speicher, ki: null, attrappe: false },
+    const online = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, ki: abgelehnt, expose: { speicher, ki: null, attrappe: false, texterkennung: null },
       kiSchluesselPruefen: async (key: string) => { geprueft = key; return { gueltig: false, meldung: 'abgelehnt (Test)' }; } });
     const post = (pfad: string, body: unknown) => online.request(pfad, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     const zugang = (wert: string) => online.request('/api/zugaenge/anthropic-api-key', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ wert }) });
@@ -88,7 +88,7 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
   it('Nutzungslimit, Überlast und unerwartete Fehler: die Ursache steht in der Antwort statt nur „Interner Fehler“', async () => {
     const mit = (fehler: Error) => {
       const ki = { nachricht: async () => { throw fehler; }, dateiHochladen: async () => 'f', dateiLoeschen: async () => {} };
-      return createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, ki, expose: { speicher, ki: null, attrappe: false } });
+      return createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, ki, expose: { speicher, ki: null, attrappe: false, texterkennung: null } });
     };
     const analysieren = async (app: ReturnType<typeof createApp>) => {
       const e = await lies(app.request('/api/expose/eingang', { method: 'POST', body: testExpose('Fehlertest') }));

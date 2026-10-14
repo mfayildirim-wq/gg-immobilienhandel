@@ -7,7 +7,7 @@ import {
 } from '@gg/domain';
 import {
   analysiereExpose, BUCKETS, bilderAusPdf, type ExposeBild, type Dateispeicher, dokumentSchluessel, EINGANG, istEingangsSchluessel, istPdf, type KiClient, kostenBuchung, pdfDokument, pdfText,
-  tesseractOcr,
+  tesseractOcr, type Texterkennung,
 } from '@gg/integrations';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { PDFDocument } from 'pdf-lib';
@@ -25,6 +25,11 @@ export interface ExposeKontext {
   attrappe: boolean;
   /** Fotos aus dem PDF herauslösen; Standard `bilderAusPdf`, im Test austauschbar */
   bilder?: (pdf: Uint8Array) => Promise<ExposeBild[]>;
+  /**
+   * Texterkennung für Bild-Seiten je Analyse; Standard `tesseractOcr()` (lokal aus node_modules).
+   * `null` = aus (`OCR=aus`, Tests): Bild-Seiten bleiben ohne Text, Scans gehen wie bisher komplett an das gründliche Modell.
+   */
+  texterkennung?: (() => Texterkennung) | null;
 }
 
 export const MAX_EXPOSE_BYTES = 200 * 1024 * 1024;
@@ -88,14 +93,15 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
   const bilderLauf = (k.bilder ?? bilderAusPdf)(pdf).then((b) => ({ b, fehler: null as unknown }), (fehler: unknown) => ({ b: [] as ExposeBild[], fehler }));
   const einstellung = await exposeExtraktionLesen(db);
   // Rohdaten ohne KI: Textlayer + Texterkennung der Bild-Seiten (Protokoll 30, P1); der OCR-Worker lebt nur für diese Analyse
-  const texterkennung = tesseractOcr();
+  const texterkennung = k.texterkennung === null ? null : (k.texterkennung ?? tesseractOcr)();
+  if (texterkennung?.grund) console.warn('[expose-analyse] ohne Texterkennung:', texterkennung.grund);
   // Steuerzeichen aus dem PDF (U+0000 als Aufzählungspunkt) bereinigen — Postgres nimmt sie nicht an (22P05)
   const analyse = steuerzeichenEntfernen(await analysiereExpose(pdf, dateiname, {
     ki: k.ki,
     pdfText: (b) => pdfText(Buffer.from(b)),
-    dokument: (b) => pdfDokument(b, { ocr: texterkennung.ocr }),
+    dokument: (b) => pdfDokument(b, { ocr: texterkennung?.ocr }),
     buchen: (model, usage, quelle) => kostenBuchen(db, model, usage, quelle),
-  }, { schema: einstellung.schema, kostenGrenzeEur: einstellung.kostenGrenzeEur }).finally(() => texterkennung.beenden()));
+  }, { schema: einstellung.schema, kostenGrenzeEur: einstellung.kostenGrenzeEur }).finally(() => texterkennung?.beenden()));
 
   // v2: Werte gegen die Seitentexte prüfen (nur der Textweg hat Seitentexte), falsche Seiten berichtigen,
   // dann per Mapping-Tabelle ins Format der Prüfseite

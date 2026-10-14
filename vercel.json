@@ -14,7 +14,7 @@
     },
     "api/render.mjs": {
       "maxDuration": 300,
-      "includeFiles": "{apps/api/dist/**,node_modules/.pnpm/@napi-rs+canvas*/**,node_modules/.pnpm/pdfjs-dist@*/node_modules/**,node_modules/.pnpm/@sparticuz+chromium@*/node_modules/@sparticuz/chromium/bin/**}"
+      "includeFiles": "{apps/api/dist/**,apps/api/assets/**,node_modules/.pnpm/@napi-rs+canvas*/**,node_modules/.pnpm/pdfjs-dist@*/node_modules/**,node_modules/.pnpm/@sparticuz+chromium@*/node_modules/@sparticuz/chromium/bin/**,node_modules/.pnpm/tesseract.js-core@*/node_modules/tesseract.js-core/**,apps/api/node_modules/tesseract.js-core/**}"
     }
   },
   "rewrites": [

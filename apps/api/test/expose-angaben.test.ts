@@ -22,7 +22,7 @@ function erfassung(kennung: string): ExposeV2 {
 
 describe.skipIf(!url)('Reiter „Aus dem Exposé“: Angaben lesen und übernehmen (Erfassung v2)', () => {
   const { db, client } = createDb(url!);
-  const app = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, expose: { speicher: speicherImSpeicher(), ki: kiAttrappe(), attrappe: true } });
+  const app = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, expose: { speicher: speicherImSpeicher(), ki: kiAttrappe(), attrappe: true, texterkennung: null } });
   const kennung = `Ang${Date.now()}`;
   mitAusgeliefertenStandards(url!);
   const importId = crypto.randomUUID();

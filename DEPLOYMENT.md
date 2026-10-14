@@ -74,6 +74,16 @@ das direkt aus, der Node-Builder von Vercel nicht. `apps/api/bau-vercel.mjs` bü
 **Nur Produktion wird gebaut** (`ignoreCommand`, wie in der alten App): Vorschau-Deployments liefen sonst mit dem
 Code eines Branches gegen die echte Datenbank.
 
+**Texterkennung auf Vercel (14.10.2026, Exposé-Import v3):** `tesseract.js` startet einen Worker-Thread aus einer Datei. Im
+Bündel zeigte der Standardpfad ins Leere, und Node beendet bei einer fehlenden Worker-Datei den Prozess — jede Analyse mit
+Fotoseiten wäre online abgestürzt (Protokoll 31, B6). Deshalb bündelt `bau-vercel.mjs` den Worker als zweite Datei
+`dist/ocr-worker.cjs` (alle Abhängigkeiten drin, nur `tesseract.js-core` mit dem WASM bleibt in `node_modules` und steht in
+`includeFiles`), `kontext.ts` prüft, ob die Datei da ist, und die deutschen Sprachdaten liegen in `apps/api/assets`
+(`includeFiles`), damit online nichts vom CDN geladen und nichts geschrieben wird. Fehlt etwas, läuft die Analyse **ohne**
+OCR weiter (Warnung im Log) statt abzubrechen. Nachweis vor dem Produktivgang: ein eingescanntes Exposé auf der
+Testumgebung importieren und im Log „Bild-Seite(n) per Texterkennung gelesen“ sehen; andernfalls `OCR=aus` setzen.
+Die Analyse läuft über `/api/render` (300 s); das OCR-Zeitbudget je Dokument ist 120 s.
+
 ## Umgebungsvariablen (Vercel → Settings → Environment Variables, nur „Production")
 
 | Variable | Pflicht | Wofür |
@@ -89,6 +99,7 @@ Code eines Branches gegen die echte Datenbank.
 | `CRON_SECRET` | ja | schützt `/api/cron/sicherung` und `/api/cron/archiv`; Vercel hängt es als `Authorization: Bearer …` an. Ohne Wert antworten beide immer mit 401 |
 | `OAUTH_HOSTS` | bei eigener Domain | zusätzliche Adressen für die Microsoft-Anmeldung; die Vercel-Domains gelten von selbst |
 | `AUTO_IMPORT_AKTIV` | zum Freischalten | Auto-Import-Bot. **Online ist er aus, bis hier `ja` steht** — dann antworten `/api/auto-import/lauf` und `…/abbrechen` mit 503 und die Oberfläche zeigt keine Bot-Knöpfe. Braucht zusätzlich `ANTHROPIC_API_KEY`, die M365-Verbindung und für AGB-Seiten die Freigabe unter Einstellungen → Freigaben |
+| `OCR` | zum Abschalten | Texterkennung für Bild-Seiten im Exposé-Import (tesseract.js, deutsch). Standard an; `aus` lässt Bild-Seiten ohne Text und schickt Scans wie früher komplett an das gründliche Modell. Siehe „Texterkennung auf Vercel“ unten |
 
 Nicht setzen: `AUTH_LOCAL_OPEN`, `KI_ATTRAPPE`, `M365_ATTRAPPE`, `PROPSTACK_ATTRAPPE` (in Produktion ohnehin wirkungslos).
 

@@ -16,7 +16,7 @@ describe.skipIf(!url)('Exposé-Import: Fotos aus dem Exposé (Fake-Herauslösung
   const { db, client } = createDb(url!);
   const speicher = speicherImSpeicher();
   let bilder: () => Promise<ExposeBild[]> = async () => [];
-  const app = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, expose: { speicher, ki: kiAttrappe(), attrappe: true, bilder: () => bilder() } });
+  const app = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, expose: { speicher, ki: kiAttrappe(), attrappe: true, texterkennung: null, bilder: () => bilder() } });
   const kennung = `Fot${Date.now()}`;
   const angelegt = { deals: [] as string[], objekte: [] as string[], makler: [] as string[], importe: [] as string[] };
   mitAusgeliefertenStandards(url!);
