@@ -123,6 +123,34 @@ Die alte App verhält sich genauso; eine Änderung ist eine bewusste Abweichung 
       (`tests/e2e/ankauf.spec.ts`, Begründung steht dort). Beim Neuentwurf ohne Durchklicken durch die
       Warteschlange testen — der alte Test war davon abhängig, was vorherige Tests hinterlassen hatten.
 
+## Exposé-Import v3 (14.10.2026, Branch `expose-import-v3`, Protokoll 31)
+
+Übernommen aus `expose-extraktion-v1` mit den sieben Pflichtpunkten; die Bereinigung (Abschnitt 4 und 7.5 in Protokoll 31)
+folgt schrittweise auf `main`. Vor dem Produktivgang: Migration `20261014121320_expose_importe` einspielen (drei neue
+Tabellen, eine neue Spalte `objekt_einheiten.details`, nichts an bestehenden Daten), dann ein eingescanntes Exposé auf der
+Testumgebung importieren (Nachweis Texterkennung, sonst `OCR=aus`).
+
+- [x] Texterkennung auf Vercel (Worker gebündelt, Sprachdaten mitgeliefert, Absturz abgefangen, Schalter `OCR`)
+- [x] Migration neu erzeugt nach `geo_verortungen`; Konflikte mit `main` (Modellwahl, `genutztesModell`, Nachfasstermin) gelöst
+- [x] Einheiten Teil A ↔ Mietliste über Fläche/Lage/Art/Miete statt Position; Tabelle gilt nur mit Mieten aus Teil A ergänzt
+- [x] Jahresspalten (`Jahresnettokaltmiete`, `p.a.`, `/Jahr`) ÷ 12; doppelte Mietliste (Übersicht + Anhang) zählt einmal
+- [x] Mieternamen entfallen auch ohne Kopfzeile; „Gewerbemieter/Hauptmieter“ im Kopf ebenso
+- [x] Übernehmen: Import-Zeile gesperrt, zweite Übernahme → 409; PDF vor den Fotos; Knopf während des Laufs gesperrt
+- [ ] **Bewusste Abweichungen von der alten App** (Fachentscheidung 12.10.2026, Protokoll 30 §12, noch ohne Paritätstest):
+      Jahresmiete am Wortlaut („p.a.“) und per Plausibilität (> 40 €/m² → ÷ 12 mit Warnung) als Monatsmiete; Platzhalter
+      („auf Anfrage“) gelten als leer; Mobil nur bei Mobilnummer; längerer wörtlicher Freitext ersetzt die Kurzfassung.
+      **Offen E8:** die €/m²-Plausibilität bei Mischobjekten nur als Warnung (Protokoll 31, B4).
+- [ ] **Teil A bekommt im Produktivweg den Dokument-Text** statt des pdfjs-Textlayers wie `main`, und Scans gehen nach OCR
+      als Text an Haiku statt als PDF an Sonnet (Protokoll 31, B7; Entscheidung E7 offen). Gemessen gleich an 5 Exposés,
+      kein Paritätstest.
+- [ ] Folgeschritte (Protokoll 31, 7.5): „Abbrechen“ räumt den Import auf; Ergänzen-Modus ohne Deal-Schritt; Prüfseite
+      nutzt `uebernahmeWert` aus der Domain und fragt vor dem Überschreiben; Toleranz je Typ (Jahr, Stückzahl exakt);
+      Kaufpreis mit zwei Zielen; Leerstand „frei ab“; Typerkennung nur auf dem Typ-Feld; Datum nicht als Zahl;
+      `bezeichnungen.ts` mit Wörterbuch vor dem KI-Aufruf und `stop_reason`; Gesamt-Zeitbudget; Pixelobergrenze beim
+      Rendern; Rohdaten-Heuristik nach `integrations`; tote Reste (`pruefung.ts`, Werkzeug-Schema v2, Kostengrenze,
+      Einstellung `expose-extraktion`); Messwerkzeuge (`gold.ts`, `kennzahlen.ts`) neu schneiden oder entfernen (E2);
+      `import_korrekturen` behalten oder weglassen (E3); Provision „zzgl. MwSt.“ × 1,19 mit Warnung (E4).
+
 ## Erledigt (21.09.2026)
 
 - [x] CI grün — sie lief erst seit dem Anlegen des Remotes und war von Anfang an rot (keine Dateiablage, kein Chrome-Pfad)
