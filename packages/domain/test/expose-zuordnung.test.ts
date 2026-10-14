@@ -122,11 +122,12 @@ describe('Exposé v2: Mapping Standard → gg (Protokoll 28)', () => {
       expect(r.pruefdaten.objekt.einheiten).toHaveLength(4);
       expect(r.pruefdaten.objekt.einheiten[3]).toMatchObject({ typ: 'Stellplatz', lage: 'TG' });
       expect(r.einheitenDetails[0]).toMatchObject({ nebenkosten: 150, weitere: { Kaution: '2.400 €' } });
-      // Teil A länger als die Tabelle → Teil A, ohne Zusatz
+      // Teil A länger als die Tabelle → Teil A; Zusatz nur bei den Einheiten, die in der Tabelle eine Entsprechung haben (Protokoll 31, B8)
       const mehr = exposeV2MitFeldern();
       (mehr.felder!.objekt as { einheiten: unknown[] }).einheiten.push({ typ: 'Gewerbe', lage: 'Laden', flaeche: 50, kaltmiete: 900 });
       expect(zuordnen(mehr).pruefdaten.objekt.einheiten).toHaveLength(5);
-      expect(zuordnen(mehr).einheitenDetails).toEqual([null, null, null, null, null]);
+      expect(zuordnen(mehr).einheitenDetails[0]).toMatchObject({ nebenkosten: 150 });
+      expect(zuordnen(mehr).einheitenDetails[4]).toBeNull();
       // Tabelle länger (z. B. nach dem Nachfass) → die Tabelle gilt
       const weniger = exposeV2MitFeldern();
       (weniger.felder!.objekt as { einheiten: unknown[] }).einheiten.splice(1);
@@ -270,5 +271,57 @@ describe('Exposé v2: Mapping Standard → gg (Protokoll 28)', () => {
       expect(r.zeilen[19]).toMatchObject({ ziel: null, grund: 'doppelt' });
       expect(r.pruefdaten.objekt.angebotspreis).toBe(1_250_000);
     });
+  });
+});
+
+describe('Einheiten-Abgleich Teil A ↔ Mietliste (Protokoll 31, B8): über Fläche und Lage, nicht über die Reihenfolge', () => {
+  const mitEinheiten = (einheiten: unknown[]) => {
+    const v2 = exposeV2MitFeldern();
+    (v2.felder!.objekt as { einheiten: unknown[] }).einheiten = einheiten;
+    return v2;
+  };
+
+  it('Teil A in anderer Reihenfolge als die Tabelle: Typ und Zusatzspalten landen bei der richtigen Einheit', () => {
+    // Tabelle (Fixture): EG 80 m² 800 € (NK 150, Kaution) · OG 80 m² 820 € · DG 80 m² leer · Tiefgarage Stellplatz 60 €
+    const v2 = mitEinheiten([
+      { typ: 'Wohnung', lage: 'TG', zimmer: null, flaeche: null, kaltmiete: 60, vermiet: 'Vermietet' },   // Teil A nennt den Stellplatz zuerst und „Wohnung“
+      { typ: 'Wohnung', lage: 'DG', zimmer: 2.5, flaeche: 80, kaltmiete: 0, vermiet: 'Leerstand' },
+      { typ: 'Wohnung', lage: 'OG', zimmer: 3, flaeche: 80, kaltmiete: 820, vermiet: 'Vermietet' },
+      { typ: 'Wohnung', lage: 'EG', zimmer: 3, flaeche: 80, kaltmiete: 800, vermiet: 'Vermietet' },
+    ]);
+    const r = zuordnen(v2);
+    expect(r.pruefdaten.objekt.einheiten.map((e) => [e.lage, e.typ])).toEqual([['TG', 'Stellplatz'], ['DG', 'Wohnung'], ['OG', 'Wohnung'], ['EG', 'Wohnung']]);
+    // Zusatzspalten der EG-Zeile (NK 150, Kaution) hängen an der EG-Einheit — nicht an der ersten
+    expect(r.einheitenDetails[3]).toMatchObject({ nebenkosten: 150, weitere: { Kaution: '2.400 €' } });
+    expect(r.einheitenDetails[0]).not.toMatchObject({ nebenkosten: 150 });
+  });
+
+  it('keine Entsprechung → keine Zusatzdaten, Typ bleibt', () => {
+    const v2 = mitEinheiten([
+      { typ: 'Wohnung', lage: '1. OG rechts', zimmer: 4, flaeche: 120, kaltmiete: 1200, vermiet: 'Vermietet' },
+      { typ: 'Wohnung', lage: '2. OG', zimmer: 4, flaeche: 118, kaltmiete: 1180, vermiet: 'Vermietet' },
+      { typ: 'Wohnung', lage: 'DG', zimmer: 2, flaeche: 61, kaltmiete: 610, vermiet: 'Vermietet' },
+      { typ: 'Wohnung', lage: 'EG', zimmer: 3, flaeche: 95, kaltmiete: 950, vermiet: 'Vermietet' },
+    ]);
+    const r = zuordnen(v2);
+    expect(r.pruefdaten.objekt.einheiten.map((e) => e.typ)).toEqual(['Wohnung', 'Wohnung', 'Wohnung', 'Wohnung']);
+    expect(r.einheitenDetails).toEqual([null, null, null, null]);
+  });
+
+  it('Tabelle länger, aber ohne Kaltmiete: die Tabelle gilt, Mieten aus Teil A bleiben bei den passenden Einheiten', () => {
+    const v2 = mitEinheiten([
+      { typ: 'Wohnung', lage: 'OG', zimmer: 3, flaeche: 80, kaltmiete: 820, vermiet: 'Vermietet' },
+      { typ: 'Wohnung', lage: 'EG', zimmer: 3, flaeche: 80, kaltmiete: 800, vermiet: 'Vermietet' },
+    ]);
+    const t = v2.einheiten_tabellen[0]!;
+    const km = t.spalten.findIndex((s) => s.feld === 'kaltmiete');
+    t.spalten = t.spalten.filter((_, i) => i !== km);
+    t.zeilen = t.zeilen.map((z) => z.filter((_, i) => i !== km));
+    const r = zuordnen(v2);
+    const e = r.pruefdaten.objekt.einheiten;
+    expect(e).toHaveLength(4);
+    expect(e.find((x) => x.lage === 'EG')).toMatchObject({ kaltmiete: 800, zimmer: 3 });
+    expect(e.find((x) => x.lage === 'OG')).toMatchObject({ kaltmiete: 820 });
+    expect(e.find((x) => x.lage === 'DG')).toMatchObject({ kaltmiete: null });
   });
 });

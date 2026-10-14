@@ -361,6 +361,15 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
   const manuell = imp ? zuordnungenAuswerten(imp, e.zuordnungen, gelernt, objektDetails(e.objekt.daten, zuordnung!.details, e.importId)) : null;
 
   const ids = await db.transaction(async (tx) => {
+    // Doppel-Submit (Protokoll 31, W27): die Import-Zeile wird gesperrt; ist sie nicht mehr „analysiert“, lief die Übernahme schon —
+    // sonst entstehen zwei Objekte und zwei Deals (die Deal-Dublettenprüfung greift nur bei gleichem Objekt)
+    if (e.importId) {
+      const [z] = await tx.select({ status: schema.exposeImporte.status }).from(schema.exposeImporte).where(eq(schema.exposeImporte.id, e.importId)).for('update');
+      if (!z) throw new FachFehler(404, 'Exposé-Import nicht gefunden');
+      if (z.status !== 'analysiert') {
+        throw new FachFehler(409, z.status === 'uebernommen' ? 'Dieses Exposé wurde schon übernommen.' : 'Dieses Exposé wurde verworfen — bitte erneut analysieren.', { status: z.status });
+      }
+    }
     // 1. Objekt
     let objektId: string;
     let objektNeu = false;
@@ -494,42 +503,46 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
     return { dealId, objektId, maklerId, ergaenzt: false };
   });
 
-  // >>> Fotos aus dem Exposé: nach der Transaktion ans Objekt (Reihenfolge = Seite), danach Eingangsbilder löschen. Fehler → Warnung.
+  // 5. Erst das PDF an den Deal, dann die Fotos: online läuft das in der 60-s-Function, und viele Fotos dürfen das Exposé
+  // nicht verdrängen — ein Deal ohne Exposé wäre der schlimmere Fehler (Protokoll 31, W26). Der Deal besteht auch, wenn beides scheitert.
+  const adresse = [e.objekt.daten.strasse, e.objekt.daten.hausnr].filter(Boolean).join(' ') || 'Objekt';
+  const pdf = await pdfAnDenDeal(db, k, e.key, ids, `Exposé_${adresse}.pdf`);
+  // Fotos aus dem Exposé ans Objekt (Reihenfolge = Seite), danach Eingangsbilder löschen. Fehler → Warnung.
   const fotoWarnungen: string[] = [];
   const fotos = importBilder.length ? await bilderUebernehmen(db, k.speicher, ids.objektId, importBilder, fotoWarnungen, new Set(e.bilderAusschliessen ?? [])) : 0;
   await bilderLoeschen(k.speicher, importBilder);
-  const mitFotos = <T extends object>(r: T & { warnung?: string }) => ({ ...r, fotos, ...(fotoWarnungen.length ? { warnung: [r.warnung, ...fotoWarnungen].filter(Boolean).join(' ') } : {}) });
-  // <<< Fotos aus dem Exposé
+  const warnung = [pdf.warnung, ...fotoWarnungen].filter(Boolean).join(' ');
+  return { ...ids, pdfGespeichert: pdf.pdfGespeichert, fotos, ...(warnung ? { warnung } : {}) };
+}
 
-  // 5. PDF an den Deal: pdfs/<dealId>.pdf und Eintrag im Dokumentenreiter. Der Deal besteht auch, wenn das scheitert.
-  const adresse = [e.objekt.daten.strasse, e.objekt.daten.hausnr].filter(Boolean).join(' ') || 'Objekt';
-  const dateiname = `Exposé_${adresse}.pdf`;
+/** PDF an den Deal: pdfs/<dealId>.pdf und Eintrag im Dokumentenreiter; beim Ergänzen als weiteres Exposé. */
+async function pdfAnDenDeal(db: Db, k: ExposeKontext, key: string, ids: { dealId: string; ergaenzt: boolean }, dateiname: string): Promise<{ pdfGespeichert: boolean; warnung?: string }> {
   if (ids.ergaenzt) {
     try {
       const docId = crypto.randomUUID();
       const docKey = dokumentSchluessel(ids.dealId, docId, dateiname);
-      await k.speicher.kopieren(BUCKETS.pdfs, e.key, BUCKETS.dealDocs, docKey);
+      await k.speicher.kopieren(BUCKETS.pdfs, key, BUCKETS.dealDocs, docKey);
       const groesse = (await k.speicher.holen(BUCKETS.dealDocs, docKey)).byteLength;
       await db.insert(schema.dealDokumente).values({ id: docId, dealId: ids.dealId, dateiname, mimeType: 'application/pdf', groesseBytes: groesse, label: 'Exposé (Import, ergänzt)', istExpose: true, storageKey: docKey });
-      await k.speicher.loeschen(BUCKETS.pdfs, [e.key]).catch(() => undefined);
-      return mitFotos({ ...ids, pdfGespeichert: true });
+      await k.speicher.loeschen(BUCKETS.pdfs, [key]).catch(() => undefined);
+      return { pdfGespeichert: true };
     } catch (err) {
       console.error('[expose] PDF-Ergänzung fehlgeschlagen:', err);
-      return mitFotos({ ...ids, pdfGespeichert: false, warnung: 'Deal ergänzt, das Exposé-PDF konnte aber nicht gespeichert werden.' });
+      return { pdfGespeichert: false, warnung: 'Deal ergänzt, das Exposé-PDF konnte aber nicht gespeichert werden.' };
     }
   }
   try {
     const zielKey = `${ids.dealId}.pdf`;
-    await k.speicher.verschieben(BUCKETS.pdfs, e.key, zielKey);
+    await k.speicher.verschieben(BUCKETS.pdfs, key, zielKey);
     const docId = crypto.randomUUID();
     const docKey = dokumentSchluessel(ids.dealId, docId, dateiname);
     await k.speicher.kopieren(BUCKETS.pdfs, zielKey, BUCKETS.dealDocs, docKey);
     const groesse = (await k.speicher.holen(BUCKETS.dealDocs, docKey)).byteLength;
     await db.insert(schema.dealDokumente).values({ id: docId, dealId: ids.dealId, dateiname, mimeType: 'application/pdf', groesseBytes: groesse, label: 'Exposé (Import)', istExpose: true, storageKey: docKey });
-    return mitFotos({ ...ids, pdfGespeichert: true });
+    return { pdfGespeichert: true };
   } catch (err) {
     console.error('[expose] PDF-Übernahme fehlgeschlagen:', err);
-    return mitFotos({ ...ids, pdfGespeichert: false, warnung: 'Deal angelegt, das Exposé-PDF konnte aber nicht gespeichert werden.' });
+    return { pdfGespeichert: false, warnung: 'Deal angelegt, das Exposé-PDF konnte aber nicht gespeichert werden.' };
   }
 }
 

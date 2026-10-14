@@ -12,7 +12,7 @@
 import type { EinheitenTabelle, ExposeV2 } from './erfassung.ts';
 import type { EinheitFeld } from './katalog.ts';
 import { jahrAusText, leerraum, type NormWert, plzOrtTrennen, strasseTrennen, wertNormalisieren, zahlAusText } from './normalisieren.ts';
-import { bezeichnungSchluessel } from './rohdaten.ts';
+import { bezeichnungSchluessel, zeitraum } from './rohdaten.ts';
 import { istMobilnummer } from './uebernahme.ts';
 import { GG_ZIELE, type GgZiel } from './ziele.ts';
 
@@ -258,10 +258,12 @@ export function einheitenAusTabellen(tabellen: EinheitenTabelle[]): { einheiten:
       if (zeile.slice(0, 2).some((c) => SUMME.test(c.trim()))) continue;
       const zelle = (f: EinheitFeld) => { const i = idx.get(f); return i === undefined ? undefined : (zeile[i] ?? '').trim() || undefined; };
       const zahl = (f: EinheitFeld) => { const c = zelle(f); return c === undefined ? null : zahlAusText(c); };
+      // Jahresspalten („Jahresnettokaltmiete“, „NK p.a.“, „Miete/Jahr“) → Monatswert (Protokoll 31, B9)
+      const betrag = (f: EinheitFeld) => { const n = zahl(f); const i = idx.get(f); return n !== null && i !== undefined && zeitraum(t.spalten[i]!.ueberschrift) === 'jahr' ? +(n / 12).toFixed(2) : n; };
       const statusText = zelle('status');
       const kaltText = zelle('kaltmiete');
       const leer = /leer|frei\b|unvermietet|nicht vermietet/i.test(`${statusText ?? ''} ${kaltText ?? ''}`);
-      let kaltmiete = zahl('kaltmiete');
+      let kaltmiete = betrag('kaltmiete');
       if (leer && kaltmiete === null) kaltmiete = 0;
       const vermiet = leer ? 'Leerstand' : statusText && /vermietet|bestand|belegt/i.test(statusText) ? 'Vermietet' : kaltmiete && kaltmiete > 0 ? 'Vermietet' : null;
       einheiten.push({
@@ -270,7 +272,7 @@ export function einheitenAusTabellen(tabellen: EinheitenTabelle[]): { einheiten:
       });
       const d: EinheitDetails = {};
       const nr = zelle('nr'); if (nr) d.nr = nr;
-      for (const f of ['nebenkosten', 'warmmiete', 'sollmiete'] as const) { const n = zahl(f); if (n !== null) d[f] = n; }
+      for (const f of ['nebenkosten', 'warmmiete', 'sollmiete'] as const) { const n = betrag(f); if (n !== null) d[f] = n; }
       for (const f of ['mietbeginn', 'mietende'] as const) { const c = zelle(f); if (c) d[f] = c; }
       if (statusText) d.status = statusText;
       if (t.seite !== null) d.seite = t.seite;
@@ -281,6 +283,51 @@ export function einheitenAusTabellen(tabellen: EinheitenTabelle[]): { einheiten:
     }
   }
   return { einheiten, details };
+}
+
+/**
+ * Welche Einheit der einen Liste entspricht welcher der anderen? Punkte: gleiche Fläche 2, gleiche Lage 2 (gleiche Stellplatz-/
+ * Gewerbe-Art in der Lage 1), gleiche Art 1, gleiche Miete 1; ab 2 Punkten ein Paar, beste Paare zuerst, jede Einheit einmal.
+ * Zwei vorhandene, deutlich verschiedene Flächen schließen ein Paar aus. Ergebnis je Einheit der Basis: Index in `andere` oder null.
+ */
+export function einheitenAbgleichen(basis: EinheitV0[], andere: EinheitV0[]): (number | null)[] {
+  const norm = (s: string | null) => (s ?? '').toLowerCase().replace(/[^a-z0-9äöüß]/g, '');
+  const nah = (a: number, b: number, mindest: number) => Math.abs(a - b) <= Math.max(mindest, 0.01 * Math.max(Math.abs(a), Math.abs(b)));
+  const punkte = (a: EinheitV0, b: EinheitV0): number => {
+    let p = 0;
+    if (a.flaeche !== null && b.flaeche !== null) {
+      if (nah(a.flaeche, b.flaeche, 0.5)) p += 2;
+      else if (!nah(a.flaeche, b.flaeche, 2) && Math.abs(a.flaeche - b.flaeche) > 0.05 * Math.max(a.flaeche, b.flaeche)) return 0;
+    }
+    const la = norm(a.lage); const lb = norm(b.lage);
+    if (la && lb) {
+      if (la === lb) p += 2;
+      else { const ta = einheitTyp(a.lage ?? ''); if (ta !== 'Wohnung' && ta === einheitTyp(b.lage ?? '')) p += 1; }
+    }
+    if (a.typ && b.typ && a.typ === b.typ) p += 1;
+    if (a.kaltmiete !== null && b.kaltmiete !== null && a.kaltmiete > 0 && nah(a.kaltmiete, b.kaltmiete, 1)) p += 1;
+    return p;
+  };
+  const kandidaten: { i: number; j: number; p: number }[] = [];
+  basis.forEach((a, i) => andere.forEach((b, j) => { const p = punkte(a, b); if (p >= 2) kandidaten.push({ i, j, p }); }));
+  kandidaten.sort((x, y) => y.p - x.p || x.i - y.i || x.j - y.j);
+  const aus: (number | null)[] = basis.map(() => null);
+  const vergeben = new Set<number>();
+  for (const k of kandidaten) {
+    if (aus[k.i] !== null || vergeben.has(k.j)) continue;
+    aus[k.i] = k.j;
+    vergeben.add(k.j);
+  }
+  return aus;
+}
+
+/** Leere Felder der Einheit aus ihrer Entsprechung füllen; `artAusQuelle`: die Quelle (gelesene Liste) sagt ausdrücklich Stellplatz/Gewerbe. */
+function einheitErgaenzen(e: EinheitV0, q: EinheitV0, artAusQuelle: boolean): EinheitV0 {
+  const typ = artAusQuelle && e.typ === 'Wohnung' && (q.typ === 'Stellplatz' || q.typ === 'Gewerbe') ? q.typ : e.typ;
+  return {
+    typ, lage: e.lage ?? q.lage, zimmer: e.zimmer ?? q.zimmer, flaeche: e.flaeche ?? q.flaeche,
+    kaltmiete: e.kaltmiete ?? q.kaltmiete, vermiet: e.vermiet ?? q.vermiet,
+  };
 }
 
 // ── Teil A (gg-Felder wie früher) ──────────────────────────────
@@ -562,17 +609,16 @@ export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null, geler
   }
   const ausTabellen = einheitenAusTabellen(v2.einheiten_tabellen);
   const einheitenA = einheitenAusFeldern(felder);
-  // Teil A wie früher; nur wenn die wörtlichen Tabellen mehr Einheiten haben (z. B. nach dem Nachfass), gelten sie
+  // Teil A wie früher; nur wenn die wörtlichen Tabellen mehr Einheiten haben (z. B. nach dem Nachfass), gelten sie.
+  // Die Listen werden über Fläche, Lage, Art und Miete verbunden — nicht über die Reihenfolge (Protokoll 31, B8):
+  // die gelesene Liste sagt Stellplatz/Gewerbe, wo Teil A „Wohnung“ meint; Zusatzspalten hängen an der passenden Einheit;
+  // gilt die Tabelle, bleiben Mieten und Zimmer aus Teil A bei den passenden Einheiten erhalten.
   const ausA = einheitenA.length >= ausTabellen.einheiten.length && einheitenA.length > 0;
-  // Gleich lang: die Art aus der wörtlichen Liste, wo sie ausdrücklich Stellplatz/Gewerbe sagt und Teil A „Wohnung“ meint
+  const paare = ausA ? einheitenAbgleichen(einheitenA, ausTabellen.einheiten) : einheitenAbgleichen(ausTabellen.einheiten, einheitenA);
   const einheiten = ausA
-    ? einheitenA.map((e, i) => {
-      const t = ausTabellen.einheiten.length === einheitenA.length ? ausTabellen.einheiten[i]!.typ : null;
-      return e.typ === 'Wohnung' && (t === 'Stellplatz' || t === 'Gewerbe') ? { ...e, typ: t } : e;
-    })
-    : ausTabellen.einheiten;
-  // Zusatz je Einheit aus den wörtlichen Tabellen nur, wenn beide Listen gleich lang sind (Zuordnung nach Reihenfolge)
-  const einheitenDetails = ausA && ausTabellen.einheiten.length !== einheitenA.length ? einheitenA.map(() => null) : ausTabellen.details;
+    ? einheitenA.map((e, i) => { const j = paare[i] ?? null; return j === null ? e : einheitErgaenzen(e, ausTabellen.einheiten[j]!, true); })
+    : ausTabellen.einheiten.map((e, i) => { const j = paare[i] ?? null; return j === null ? e : einheitErgaenzen(e, einheitenA[j]!, false); });
+  const einheitenDetails = ausA ? einheitenA.map((_, i) => { const j = paare[i] ?? null; return j === null ? null : ausTabellen.details[j]!; }) : ausTabellen.details;
   p.objekt.einheiten = einheiten;
   const m = p.makler;
   // Mobil nur bei Mobilnummer — gilt auch für Teil A (Prüfung 12.10.2026: Festnetz im Feld Mobil)

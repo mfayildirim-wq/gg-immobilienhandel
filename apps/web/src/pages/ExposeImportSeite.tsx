@@ -182,7 +182,8 @@ export function ExposeImportSeite() {
   };
 
   const anlegen = async (ergaenzeDealId: string | null = ergaenzen) => {
-    if (!a || !datei) return;
+    // Doppelklick (Protokoll 31, W27): während die Übernahme läuft, geht keine zweite los — der Server lehnt sie zusätzlich mit 409 ab
+    if (!a || !datei || laeuft) return;
     setLaeuft(true);
     try {
       const r = await exposeUebernehmen({
@@ -301,7 +302,7 @@ export function ExposeImportSeite() {
               if (a?.importId) void exposeImportVerwerfen(a.importId).catch(() => {});
               navigate({ to: '/deals', search: { deal: dublette } });
             }}>Exposé überspringen</Button>
-            <Button size="xs" color="teal" onClick={() => { const id = dublette; setDublette(null); setErgaenzen(id); void anlegen(id); }}>Zum bestehenden Deal hinzufügen (Fotos, Makler, Exposé)</Button>
+            <Button size="xs" color="teal" loading={laeuft} onClick={() => { const id = dublette; setDublette(null); setErgaenzen(id); void anlegen(id); }}>Zum bestehenden Deal hinzufügen (Fotos, Makler, Exposé)</Button>
             <Button size="xs" variant="default" onClick={() => setDublette(null)}>Zurück zum Wizard</Button>
           </Group>
         </Alert>

@@ -542,3 +542,48 @@ describe('Rohdaten: Zusammenspiel mit der Zuordnung', () => {
     expect(r.angaben.map((a) => [a.seite, a.bezeichnung])).toEqual([[1, 'Baujahr'], [1, 'Kaufpreis'], [2, 'Wohnfläche']]);
   });
 });
+
+describe('Rohdaten: Mietlisten — Befunde Protokoll 31 (B9, B10)', () => {
+  it('Jahresspalten („Jahresnettokaltmiete“, „Miete p.a.“, „NK/Jahr“): Spalte bleibt wörtlich, die Zuordnung rechnet ÷ 12', () => {
+    const r = roh([
+      ['Nr.', 'Fläche', 'Jahresnettokaltmiete', 'NK p.a.'],
+      ['1', '60 m²', '7.200 €', '1.200 €'], ['2', '55 m²', '6.600 €', '1.080 €'], ['3', '70 m²', '8.400 €', '1.440 €'],
+    ]);
+    const t = r.einheiten_tabellen[0]!;
+    expect(t.spalten.map((s) => s.feld)).toEqual(['nr', 'flaeche', 'kaltmiete', 'nebenkosten']);
+    expect(t.zeilen[0]).toEqual(['1', '60 m²', '7.200 €', '1.200 €']);
+    const z = zuordnen({ schema: EXPOSE_V2_SCHEMA, felder: null, ...r, einheiten_vollstaendig: true });
+    expect(z.pruefdaten.objekt.einheiten.map((e) => e.kaltmiete)).toEqual([600, 550, 700]);
+    expect(z.einheitenDetails.map((d) => d?.nebenkosten)).toEqual([100, 90, 120]);
+    expect(spaltenFeld('Miete p.a.')).toBe('kaltmiete');
+    expect(spaltenFeld('Kaltmiete/Jahr')).toBe('kaltmiete');
+  });
+
+  it('dieselbe Mietliste auf zwei Seiten (Übersicht und Anhang) zählt einmal', () => {
+    const liste = [['Whg.', 'Fläche', 'Kaltmiete'], ['1', '60 m²', '600 €'], ['2', '55 m²', '550 €'], ['3', '70 m²', '700 €']];
+    const r = roh([['Objektübersicht'], ...liste], [['Anlage: Mieterliste'], ...liste]);
+    expect(r.einheiten_tabellen).toHaveLength(1);
+    expect(r.einheiten_im_dokument).toBe(3);
+    const z = zuordnen({ schema: EXPOSE_V2_SCHEMA, felder: null, ...r, einheiten_vollstaendig: true });
+    expect(z.pruefdaten.objekt.einheiten).toHaveLength(3);
+    // zwei verschiedene Listen bleiben zwei
+    const andere = [['Whg.', 'Fläche', 'Kaltmiete'], ['4', '80 m²', '800 €'], ['5', '85 m²', '850 €'], ['6', '90 m²', '900 €']];
+    expect(roh(liste, andere).einheiten_tabellen).toHaveLength(2);
+  });
+
+  it('Datenschutz ohne Kopfzeile: eine Namensspalte entfällt; „Gewerbemieter“/„Hauptmieter“ im Kopf ebenso', () => {
+    const r = roh([
+      ['1', 'EG links', 'Erika Beispiel', '65 m²', '450 €'],
+      ['2', 'EG rechts', 'Max Muster', '54 m²', '480 €'],
+      ['3', 'OG links', 'Lisa Lustig', '70 m²', '500 €'],
+    ]);
+    expect(r.einheiten_tabellen).toHaveLength(1);
+    expect(JSON.stringify(r)).not.toMatch(/Erika|Muster|Lustig/);
+    expect(r.einheiten_tabellen[0]!.zeilen[0]).toEqual(['1', 'EG links', '65 m²', '450 €']);
+    expect(spaltenFeld('Gewerbemieter')).toBe('mieter');
+    expect(spaltenFeld('Hauptmieter')).toBe('mieter');
+    expect(spaltenFeld('Mietbeginn')).toBe('mietbeginn');
+    const k = roh([['Nr.', 'Gewerbemieter', 'Fläche', 'Kaltmiete'], ['1', 'Bäckerei Krume', '120 m²', '1.800 €'], ['2', 'Kanzlei Recht', '90 m²', '1.350 €'], ['3', 'Salon Haar', '60 m²', '900 €']]);
+    expect(JSON.stringify(k)).not.toMatch(/Krume|Kanzlei|Salon/);
+  });
+});

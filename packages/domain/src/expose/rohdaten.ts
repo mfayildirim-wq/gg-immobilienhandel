@@ -156,6 +156,9 @@ function periode(text: string): 'jahr' | 'monat' | null {
   return null;
 }
 
+/** Zeitraum einer Bezeichnung (z. B. Spaltenüberschrift einer Mietliste) — für die Zuordnung: Jahreswerte ÷ 12. */
+export const zeitraum = periode;
+
 /** Miet-Bezeichnungen (Ist/Soll, Monat/Jahr) — nur aus Wortlaut von Bezeichnung und Wert. */
 function mietPfad(n: string, bez: string, wert: string | undefined): string | null | undefined {
   if (/(je|pro|\/) ?(m2|qm)|m2 ?preis|\bm2\b/.test(n)) return undefined;
@@ -349,7 +352,8 @@ function spaltenEntflechten(zl: Zl[]): Zl[] {
 // ── Mietlisten-Tabellen ────────────────────────────────────────
 
 const SUMME = /^(summe|gesamt|total|σ|insgesamt|∑)/i;
-const MIETER = /^(mieter|mietername|mieterin|name|vorname|nachname|bewohner|nutzer|mietpartei|inhaber)( |$)/;
+// Mieterspalten (Datenschutz, Protokoll 28 §2): auch zusammengesetzt („Gewerbemieter“, „Hauptmieter“); „Mietbeginn/-ende“ prüft der Aufrufer
+const MIETER = /^(mieter|mietername|mieterin|name|vorname|nachname|bewohner|nutzer|mietpartei|inhaber)( |$)|^[a-z]+mieter(in|name)?( |$)/;
 
 type FeldOderMieter = EinheitFeld | 'mieter' | null;
 
@@ -625,7 +629,34 @@ function tabelleOhneKopf(seite: number, zl: Zl[], i: number): { tabelle: Einheit
       if (je.length >= 2 && je.every((x) => x >= 1 && x <= 60)) spalten[ci]!.feld = 'kaltmiete';
     }
   }
-  return { tabelle: { seite, titel: null, spalten, zeilen }, verbraucht: rows };
+  // Datenschutz: Spalten mit Personennamen (Mieter) entfallen auch ohne Kopfzeile (Protokoll 31, B10)
+  const namensSpalten = new Set<number>();
+  for (let ci = 0; ci < n; ci++) {
+    if (spalten[ci]!.feld || eurSpalten.includes(ci)) continue;
+    const zellen = dz.map((r) => r[ci] ?? '').filter(Boolean);
+    if (zellen.length >= 2 && zellen.filter(nameartig).length / zellen.length >= 0.6) namensSpalten.add(ci);
+  }
+  const behalten = (_: unknown, ci: number) => !namensSpalten.has(ci);
+  return { tabelle: { seite, titel: null, spalten: spalten.filter(behalten), zeilen: zeilen.map((r) => r.filter(behalten)) }, verbraucht: rows };
+}
+
+/**
+ * Dieselbe Mietliste auf mehreren Seiten (Übersicht und Anhang) zählt einmal: eine Tabelle, deren Datenzeilen alle schon in
+ * einer früheren Tabelle stehen, entfällt — sonst verdoppeln sich Einheiten und `einheiten_im_dokument` (Protokoll 31, B9).
+ */
+function tabellenOhneDubletten(tabellen: EinheitenTabelle[]): EinheitenTabelle[] {
+  const datenzeilen = (t: EinheitenTabelle) => t.zeilen
+    .filter((z) => !z.slice(0, 2).some((c) => SUMME.test(c.trim())))
+    .map((z) => z.map((c) => leerraum(c).toLowerCase()).join('\u0001'));
+  const aus: EinheitenTabelle[] = [];
+  const gesehen: Set<string>[] = [];
+  for (const t of tabellen) {
+    const zeilen = datenzeilen(t);
+    if (zeilen.length >= 2 && gesehen.some((g) => zeilen.every((z) => g.has(z)))) continue;
+    aus.push(t);
+    gesehen.push(new Set(zeilen));
+  }
+  return aus;
 }
 
 /** Überschrift einer Tabelle: eine der drei Zeilen davor, wenn sie nach Mietliste/Aufstellung/Übersicht klingt. */
@@ -1149,6 +1180,7 @@ export function rohdatenAusDokument(d: Dokument): Rohdaten {
     ctx.aus.sort((a, b) => a.o - b.o);
     for (const x of ctx.aus) angaben.push(x.a);
   }
-  return { angaben: kontakteOrdnen(angaben), einheiten_tabellen: tabellen, einheiten_im_dokument: zaehle(angaben, tabellen, texte) };
+  const eindeutig = tabellenOhneDubletten(tabellen);
+  return { angaben: kontakteOrdnen(angaben), einheiten_tabellen: eindeutig, einheiten_im_dokument: zaehle(angaben, eindeutig, texte) };
 }
 

@@ -366,6 +366,25 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
     ]));
   });
 
+  it('Doppel-Submit: dieselbe Analyse ein zweites Mal übernehmen → 409, kein zweites Objekt, kein zweiter Deal (Protokoll 31, W27)', async () => {
+    const eigene = `Dopp${Date.now()}`;
+    const { key } = await lies(eingang(testExposeV2(eigene)));
+    const a = await lies(json('/api/expose/analyse', { key, dateiname: `${eigene}.pdf` }));
+    const body = { key, dateiname: `${eigene}.pdf`, extrahiert: a.extrahiert, importId: a.importId, objekt: { daten: a.objekt }, makler: { daten: a.makler }, deal: a.deal };
+    const deals = async () => (await db.select().from(schema.deals)).length;
+    const objekte = async () => (await db.select().from(schema.objekte)).length;
+    const [d0, o0] = [await deals(), await objekte()];
+    const erste = await json('/api/expose/uebernehmen', body);
+    expect(erste.status).toBe(201);
+    const erg = await lies(erste);
+    angelegt.deals.push(erg.dealId); angelegt.objekte.push(erg.objektId); if (erg.maklerId) angelegt.makler.push(erg.maklerId);
+    expect(erg.pdfGespeichert).toBe(true);
+    const zweite = await json('/api/expose/uebernehmen', body);
+    expect(zweite.status).toBe(409);
+    expect((await lies(zweite)).fehler).toContain('schon übernommen');
+    expect([await deals(), await objekte()]).toEqual([d0 + 1, o0 + 1]);
+  });
+
   it('Exposé überspringen: Import wird verworfen; unbekannt → 404; übernommene bleiben übernommen', async () => {
     const eigene = `Vverw${Date.now()}`;
     const { key } = await lies(eingang(testExposeV2(eigene)));
