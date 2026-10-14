@@ -117,8 +117,8 @@ Die alte App verhält sich genauso; eine Änderung ist eine bewusste Abweichung 
 - [x] **KI-Anlässe sparsam** (23.09.2026, Branch `ki-anlaesse-sparsam`): Anlässe werden nur noch für die gewählte
       Makler-Karte und im Anruf-Briefing geladen (die alte App fragte für jede fällige Karte Web-Suche + KI ab — mit echtem
       Bestand >100 Aufrufe beim Öffnen, ab 60/min 429). Zwischenspeicher 24 h in der Tabelle `makler_anlaesse` statt im
-      Prozess (online startet jede Function-Instanz leer). Gemessen: 1 Aufruf beim Öffnen statt >100. **Migration
-      `20260923094658_makler_anlaesse` muss online von Hand eingespielt werden** (`npx supabase db push`).
+      Prozess (online startet jede Function-Instanz leer). Gemessen: 1 Aufruf beim Öffnen statt >100. Migration
+      `20260923094658_makler_anlaesse` online eingespielt am 24.09.2026 (Prod und Test).
 - [ ] **Wählmaschine neu entwerfen.** Bis dahin ist ihr Klicktest übersprungen
       (`tests/e2e/ankauf.spec.ts`, Begründung steht dort). Beim Neuentwurf ohne Durchklicken durch die
       Warteschlange testen — der alte Test war davon abhängig, was vorherige Tests hinterlassen hatten.
