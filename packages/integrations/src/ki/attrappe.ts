@@ -9,10 +9,19 @@ import type { KiClient } from './anthropic.ts';
  *   Kaufpreis: 1.250.000 €        Wohnfläche: 480 m²        Baujahr: 1978
  *   Makler: Anna Beispiel | Beispiel Immobilien GmbH | 0171 1234567 | anna@beispiel.test
  *   Einheit: Wohnung | EG links | 3 | 78 | 780
+ *
+ * Erfassung v2 (Werkzeug erfasse_expose) liest dieselben Zeilen seitenweise als wörtliche Angaben mit Seite, Standard-Pfad
+ * und gg-Vorschlag; die Einheit-Zeilen werden eine Mietliste (`attrappeErfassung`). Zusätzlich:
+ *   Grundstück: 480 m2        Hausgeld: 350 EUR        Denkmalschutz: ja
+ *   Instandhaltungsrücklage: 12.000 EUR   → ohne Pfad, gg-Vorschlag details.instandhaltungsruecklage
+ *   Besichtigung: nach Vereinbarung       → ohne Pfad und ohne Vorschlag (ebenso jede andere unbekannte „Feld: Wert“-Zeile)
+ *   Kontakt: Max Zweit | Geschäftsführer | 0711 123456 | max@beispiel.test   → Kontakt 2, 3 …
+ *   Attrappe: abgeschnitten   → die erste Antwort endet mit stop_reason max_tokens (nur die ersten Angaben)
  */
+const zahl = (s: string | undefined) => { const m = s?.match(/\d[\d.,]*/)?.[0]; return m ? Number(m.replace(/\./g, '').replace(',', '.')) || null : null; };
+
 export function kiAttrappe(): KiClient {
   // erste Zahl im Wert („240 m2“ → 240, „1.250.000 EUR“ → 1250000)
-  const zahl = (s: string | undefined) => { const m = s?.match(/\d[\d.,]*/)?.[0]; return m ? Number(m.replace(/\./g, '').replace(',', '.')) || null : null; };
   return {
     async nachricht(body: any) {
       // Aufrufe ohne Werkzeug (Makler-KI, Persona): feste, erkennbare Textantworten
@@ -21,8 +30,11 @@ export function kiAttrappe(): KiClient {
         // Einheiten-Zeilen „Einheit: Typ | Lage | Zimmer | Fläche | Kaltmiete“ direkt aus dem (unkomprimierten) Test-PDF
         const dok = body.messages?.[0]?.content?.find?.((c: any) => c.type === 'document')?.source?.data ?? '';
         const roh = Buffer.from(dok, 'base64').toString('latin1');
-        const einheiten = [...roh.matchAll(/\(Einheit:\s*([^)]*)\)/g)].map((m) => {
-          const [typ, lage, zimmer, flaeche, kaltmiete] = m[1]!.split('|').map((s) => s.trim());
+        // Textobjekte je Zeile (gleiche y-Lage) zusammensetzen — Tabellenzeilen stehen in mehreren Spalten
+        const zeilen = new Map<string, string[]>();
+        for (const m of roh.matchAll(/Tf\s+[\d.]+\s+([\d.]+)\s+Td\s+\(((?:[^()\\]|\\.)*)\)\s*Tj/g)) zeilen.set(m[1]!, [...(zeilen.get(m[1]!) ?? []), m[2]!]);
+        const einheiten = [...zeilen.values()].map((z) => z.join(' | ')).map((z) => /^Einheit:\s*(.*)$/.exec(z)).filter(Boolean).map((m) => {
+          const [typ, lage, zimmer, flaeche, kaltmiete] = m![1]!.split(/\s*\|\s*|\s{2,}/).map((s) => s.trim());
           return { typ: typ || 'Wohnung', lage: lage ?? '', zimmer: zahl(zimmer), flaeche: zahl(flaeche), kaltmiete: zahl(kaltmiete) };
         });
         return { content: [{ type: 'tool_use', name: 'extract_einheiten', input: { einheiten } }], usage: { input_tokens: 0, output_tokens: 0 } };
@@ -57,27 +69,33 @@ export function kiAttrappe(): KiClient {
       }
 
       const text = JSON.stringify(body?.messages ?? []).replace(/\\n/g, '\n');
-      const feld = (name: string) => new RegExp(`${name}:\\s*([^\\n"]+)`).exec(text)?.[1]?.trim();
-      const adresse = /^(.+?)\s+(\d+\s*\w?),\s*(\d{5})\s+(.+)$/.exec(feld('Adresse') ?? '');
-      const makler = (feld('Makler') ?? '').split('|').map((s) => s.trim());
-      const einheiten = [...text.matchAll(/Einheit:\s*([^\n"]+)/g)].map((m) => {
-        const [typ, lage, zimmer, flaeche, kaltmiete] = m[1]!.split('|').map((s) => s.trim());
-        return { typ: typ || 'Wohnung', lage, zimmer: zahl(zimmer), flaeche: zahl(flaeche), kaltmiete: zahl(kaltmiete), vermiet: 'Vermietet' };
-      });
-      const input = {
-        objekt: {
-          strasse: adresse?.[1] ?? '', hausnr: adresse?.[2] ?? '', plz: adresse?.[3] ?? '', stadt: adresse?.[4] ?? '',
-          angebotspreis: zahl(feld('Kaufpreis')), wohnflaeche: zahl(feld('Wohnfläche') ?? feld('Wohnflaeche')), baujahr: zahl(feld('Baujahr')),
-          einheitenAnz: einheiten.length || null, einheiten,
-        },
-        makler: { name: makler[0] ?? '', firma: makler[1] ?? '', mobiltel: makler[2] ?? '', email: makler[3] ?? '' },
-        kalkulation: { kaufpreis: zahl(feld('Kaufpreis')) },
-        _konfidenz: { strasse: adresse ? 'hoch' : 'niedrig', angebotspreis: feld('Kaufpreis') ? 'hoch' : 'niedrig', wohnflaeche: 'mittel' },
-      };
+      if (werkzeug === 'bezeichnungen_zuordnen') return antwortBezeichnungen(body);
+      const input = teilA(text);
       return { content: [{ type: 'tool_use', name: 'extract_expose_data', input }], usage: { input_tokens: 0, output_tokens: 0 } };
     },
     async dateiHochladen() { return 'attrappe'; },
     async dateiLoeschen() {},
+  };
+}
+
+/** Teil A wie das bisherige Werkzeug (`extract_expose_data`): objekt, makler, kalkulation, _konfidenz aus den Testzeilen. */
+function teilA(text: string) {
+  const feld = (name: string) => new RegExp(`${name}:\\s*([^\\n"]+)`).exec(text)?.[1]?.trim();
+  const adresse = /^(.+?)\s+(\d+\s*\w?),\s*(\d{5})\s+(.+)$/.exec(feld('Adresse') ?? '');
+  const makler = (feld('Makler') ?? '').split(/\s*\|\s*|\s{2,}/).map((s) => s.trim());
+  const einheiten = [...text.matchAll(/Einheit:\s*([^\n"]+)/g)].map((m) => {
+    const [typ, lage, zimmer, flaeche, kaltmiete] = m[1]!.split(/\s*\|\s*|\s{2,}/).map((s) => s.trim());
+    return { typ: typ || 'Wohnung', lage, zimmer: zahl(zimmer), flaeche: zahl(flaeche), kaltmiete: zahl(kaltmiete), vermiet: 'Vermietet' };
+  });
+  return {
+    objekt: {
+      strasse: adresse?.[1] ?? '', hausnr: adresse?.[2] ?? '', plz: adresse?.[3] ?? '', stadt: adresse?.[4] ?? '',
+      angebotspreis: zahl(feld('Kaufpreis')), wohnflaeche: zahl(feld('Wohnfläche') ?? feld('Wohnflaeche')), baujahr: zahl(feld('Baujahr')),
+      einheitenAnz: einheiten.length || null, einheiten,
+    },
+    makler: { name: makler[0] ?? '', firma: makler[1] ?? '', mobiltel: makler[2] ?? '', email: makler[3] ?? '' },
+    kalkulation: { kaufpreis: zahl(feld('Kaufpreis')) },
+    _konfidenz: { strasse: adresse ? 'hoch' : 'niedrig', angebotspreis: feld('Kaufpreis') ? 'hoch' : 'niedrig', wohnflaeche: 'mittel' },
   };
 }
 
@@ -97,4 +115,16 @@ function textAntwort(prompt: string): string {
   }
   if (prompt.startsWith('Analysiere die Kommunikation zwischen')) return 'Test-Modus: sachlich-freundliche Beziehung per Sie.';
   return 'Test-Modus: Zusammenfassung der Kommunikation.';
+}
+
+/** Zuordnung unbekannter Bezeichnungen (Test-Modus): nur die bekannte Testangabe bekommt einen Vorschlag. */
+const BEZEICHNUNGEN_ATTRAPPE: Record<string, { pfad: string | null; gg: string | null }> = {
+  'erhaltungsreserve': { pfad: null, gg: 'details.instandhaltungsruecklage' },
+};
+
+function antwortBezeichnungen(body: any) {
+  const text: string = (body?.messages?.[0]?.content ?? []).map((c: any) => c?.text ?? '').join('\n');
+  const zuordnungen = text.split('\n').map((z) => /^(\d+)\.\s+(.*?)\s+=\s/.exec(z)).filter(Boolean)
+    .map((m) => ({ nr: Number(m![1]), ...(BEZEICHNUNGEN_ATTRAPPE[m![2]!.trim().toLowerCase().replace(/:$/, '')] ?? { pfad: null, gg: null }) }));
+  return { content: [{ type: 'tool_use', name: 'bezeichnungen_zuordnen', input: { zuordnungen } }], usage: { input_tokens: 0, output_tokens: 0 } };
 }
