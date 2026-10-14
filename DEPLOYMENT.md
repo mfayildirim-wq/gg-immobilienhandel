@@ -49,6 +49,13 @@ auch dort (sichern nur Testdaten). Supabase Free pausiert das Projekt nach einer
    das Paket fehlte in der Function. Jetzt wird pdfjs erst beim ersten PDF geladen, und `includeFiles` nimmt
    Canvas und pdfjs mit. Lokal unsichtbar — dort ist das Paket installiert.
 3. **`vercel link` schreibt `.env*` in die `.gitignore`** — das verschluckt `.env.example`. Eingegrenzt auf `.vercel`.
+4. **`Cannot find package '@napi-rs/canvas' imported from /var/task/apps/api/dist/vercel.mjs`** (14.10.2026): Das Bündel lädt
+   Pakete, die es nicht einbettet (`EXTERN` in `bau-vercel.mjs`), zur Laufzeit aus `node_modules` — aufgelöst **von `apps/api`
+   aus**. Ein Paket, das nur ein Arbeitsbereichs-Paket (z. B. `packages/integrations`) als Abhängigkeit hat, findet Node dort
+   nicht; lokal mit tsx fällt das nicht auf, weil jede Datei aus ihrem eigenen Paket auflöst. Folge online: Fotos aus dem Exposé
+   und Texterkennung liefen leer („Bild übersprungen“, „OCR fehlgeschlagen“ im Log), die Analyse selbst lief durch. Regel:
+   **jedes Paket in `EXTERN` steht auch in `apps/api/package.json`** (`pdfjs-dist`, `@napi-rs/canvas`, `playwright-core`,
+   `@sparticuz/chromium`, dazu `tesseract.js-core` für den OCR-Worker). Laufzeit-Logs: `npx vercel logs --deployment gg-immobilienhandel.vercel.app --json`.
 
 **Noch offen:** `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` bei Vercel (ohne sie kein Exposé-Import, kein Diktat),
 Azure-Redirect-URI für M365, Fotos und Dokumente der Produktion (nicht im Export), Direkt-Upload über 4,5 MB,
