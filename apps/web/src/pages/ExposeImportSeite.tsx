@@ -725,8 +725,11 @@ function ErfassteAngaben({ a, formular, schreiben, zuordnungen, setZuordnungen, 
                                 data={optionen(art, x)} value={wahl} onChange={(v) => setAuswahl((s) => ({ ...s, [x.feld]: v }))} />
                               <Button size="compact-xs" variant="light" disabled={!wahl} onClick={() => wahl && uebernehmen(art, x, wahl)}>Übernehmen</Button>
                             </Group>
-                            <Checkbox size="xs" data-merken={x.feld} label="für künftige Importe merken" checked={!nichtMerken[x.feld]}
-                              onChange={(e) => setNichtMerken({ ...nichtMerken, [x.feld]: !e.currentTarget.checked })} />
+                            {/* Gelernt wird nur eine gewählte Zuordnung — ohne Ziel wirkt das Häkchen nicht, also auch nicht zeigen (Rückmeldung 14.10.2026) */}
+                            {wahl && (
+                              <Checkbox size="xs" data-merken={x.feld} label="für künftige Importe merken" checked={!nichtMerken[x.feld]}
+                                onChange={(e) => setNichtMerken({ ...nichtMerken, [x.feld]: !e.currentTarget.checked })} />
+                            )}
                             {fehler[x.feld] && <Text fz={11} c="red">{fehler[x.feld]}</Text>}
                             {!fehler[x.feld] && x.ziel.hinweis && <Text fz={11} c="dimmed">{x.ziel.hinweis}</Text>}
                           </Stack>

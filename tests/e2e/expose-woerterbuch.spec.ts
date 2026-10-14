@@ -29,12 +29,13 @@ test('Zuordnung auf der Prüfseite wird gemerkt und steht in den Einstellungen; 
 
   const zeile = page.getByLabel('Weitere Angaben', { exact: true }).locator('tr[data-feld]').filter({ hasText: bezeichnung });
   await expect(zeile).toContainText('gepflegt');
+  // Das Häkchen erscheint erst mit gewähltem Ziel — ohne Ziel wird nichts gelernt (14.10.2026)
+  await expect(zeile.getByLabel('für künftige Importe merken')).toHaveCount(0);
+  await zeile.getByRole('combobox', { name: 'Übernehmen in …' }).click();
+  await page.getByRole('option', { name: 'Zustand', exact: true }).click();
   const haken = zeile.getByLabel('für künftige Importe merken');
   await expect(haken).toBeVisible();
   await expect(haken).toBeChecked(); // voreingestellt an
-
-  await zeile.getByRole('combobox', { name: 'Übernehmen in …' }).click();
-  await page.getByRole('option', { name: 'Zustand', exact: true }).click();
   await zeile.getByRole('button', { name: 'Übernehmen' }).click();
   await expect(zeile).toHaveAttribute('data-zustand', 'gemerkt');
 
@@ -55,7 +56,7 @@ test('Zuordnung auf der Prüfseite wird gemerkt und steht in den Einstellungen; 
   await expect(eintrag).toHaveCount(0);
 });
 
-test('Reiter „Aus dem Exposé“: das Häkchen „für künftige Importe merken“ ist sichtbar und voreingestellt', async ({ page }, info) => {
+test('Reiter „Aus dem Exposé“: das Häkchen „für künftige Importe merken“ erscheint mit gewähltem Ziel und ist voreingestellt', async ({ page }, info) => {
   const kennung = `X${Date.now()}${info.project.name.slice(0, 1)}`;
   const datei = join(tmpdir(), `${kennung}.pdf`);
   writeFileSync(datei, pdfAusSeiten([[
@@ -81,6 +82,10 @@ test('Reiter „Aus dem Exposé“: das Häkchen „für künftige Importe merke
   const s = page.getByRole('region', { name: 'Objekt-Detail' });
   await s.getByRole('tab', { name: /Aus dem Exposé/ }).click();
   const zeile = s.getByRole('region', { name: 'Exposé-Angaben' }).locator('tr[data-feld]').filter({ hasText: 'Besichtigung' });
+  await expect(zeile.getByRole('combobox', { name: 'Übernehmen in …' })).toBeVisible();
+  await expect(zeile.getByLabel('für künftige Importe merken')).toHaveCount(0);
+  await zeile.getByRole('combobox', { name: 'Übernehmen in …' }).click();
+  await page.getByRole('option', { name: 'In Notizen', exact: true }).click();
   const haken = zeile.getByLabel('für künftige Importe merken');
   await expect(haken).toBeVisible();
   await expect(haken).toBeChecked();
