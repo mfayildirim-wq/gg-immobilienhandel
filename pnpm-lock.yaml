@@ -59,6 +59,9 @@ importers:
       '@hono/zod-openapi':
         specifier: ^1.6.3
         version: 1.6.3(hono@4.13.8)(zod@4.6.5)
+      '@napi-rs/canvas':
+        specifier: 0.1.100
+        version: 0.1.100
       '@sparticuz/chromium':
         specifier: 153.0.0
         version: 153.0.0
