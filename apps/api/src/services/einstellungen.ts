@@ -89,3 +89,18 @@ export async function kiModellwahlSpeichern(db: Db, wert: KiModellwahl): Promise
   await wertSpeichern(db, SCHLUESSEL_KI_MODELLE, sauber);
   return sauber;
 }
+
+export interface ExposeExtraktion { schema: 'v2' | 'v0'; kostenGrenzeEur: number }
+export const EXPOSE_EXTRAKTION_STANDARD: ExposeExtraktion = { schema: 'v2', kostenGrenzeEur: 1 };
+
+/**
+ * Exposé-Auswertung (Protokoll 28): Erfassung v2 oder v0 und Kostengrenze je Analyse; fehlende/ungültige Werte → Standard.
+ * Ein gespeichertes 'v1' (Protokoll 27, abgelöst) gilt als 'v2'.
+ */
+export async function exposeExtraktionLesen(db: Db | Tx): Promise<ExposeExtraktion> {
+  const w = (await wertLesen(db, 'expose-extraktion')) as { schema?: unknown; kostenGrenzeEur?: unknown } | null;
+  return {
+    schema: w?.schema === 'v0' ? 'v0' : 'v2',
+    kostenGrenzeEur: typeof w?.kostenGrenzeEur === 'number' && Number.isFinite(w.kostenGrenzeEur) && w.kostenGrenzeEur > 0 ? w.kostenGrenzeEur : EXPOSE_EXTRAKTION_STANDARD.kostenGrenzeEur,
+  };
+}

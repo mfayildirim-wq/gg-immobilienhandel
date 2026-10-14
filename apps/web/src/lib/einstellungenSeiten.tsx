@@ -1,4 +1,4 @@
-import { IconBriefcase, IconBuildingBank, IconCalculator, IconChecklist, IconTableShare, IconTemplate, IconTrash, IconCopy, IconHistory, IconTool, IconKey, IconDatabaseExport, IconBook, IconShieldLock, IconMail, IconRobot } from '@tabler/icons-react';
+import { IconBriefcase, IconBuildingBank, IconCalculator, IconChecklist, IconTableShare, IconTemplate, IconTrash, IconCopy, IconHistory, IconTool, IconKey, IconDatabaseExport, IconBook, IconShieldLock, IconMail, IconRobot, IconBooks } from '@tabler/icons-react';
 import type { ComponentType } from 'react';
 import { BegleitscheinEinstellungen } from '../components/begleitschein/BegleitscheinEinstellungen.tsx';
 import { PraesentationStandards } from '../components/praesentation/PraesentationStandards.tsx';
@@ -14,6 +14,7 @@ import { AuditEinstellungen } from '../components/AuditEinstellungen.tsx';
 import { DublettenEinstellungen } from '../components/DublettenEinstellungen.tsx';
 import { PapierkorbEinstellungen } from '../components/PapierkorbEinstellungen.tsx';
 import { VorlagenEinstellungen } from '../components/VorlagenEinstellungen.tsx';
+import { ExposeWoerterbuchEinstellungen } from '../components/ExposeWoerterbuchEinstellungen.tsx';
 import { DdEinstellungen } from '../components/DdEinstellungen.tsx';
 import { KalkulationEinstellungen, KundenkalkEinstellungenFormular } from '../pages/EinstellungenSeite.tsx';
 
@@ -26,6 +27,7 @@ export const EINSTELLUNGEN_SEITEN: { pfad: string; label: string; icon: Componen
   { pfad: 'begleitscheine', label: 'Begleitscheine', icon: IconChecklist, komponente: BegleitscheinEinstellungen },
   { pfad: 'vorlagen', label: 'Vorlagen-Texte', icon: IconTemplate, komponente: VorlagenEinstellungen },
   { pfad: 'dd', label: 'DD-Dokumentenliste', icon: IconChecklist, komponente: DdEinstellungen },
+  { pfad: 'expose-woerterbuch', label: 'Exposé-Wörterbuch', icon: IconBooks, komponente: ExposeWoerterbuchEinstellungen },
   { pfad: 'sicherung', label: 'Sicherung', icon: IconDatabaseExport, komponente: SicherungEinstellungen },
   { pfad: 'zugaenge', label: 'Zugänge', icon: IconKey, komponente: ZugaengeEinstellungen },
   { pfad: 'ki-modelle', label: 'KI-Modelle', icon: IconRobot, komponente: KiModelleEinstellungen },

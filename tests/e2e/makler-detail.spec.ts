@@ -50,6 +50,10 @@ test('Makler-Detail: Profil (Prio, Telefon normalisiert, Nicht kontaktieren), No
   await expect(s.getByText('Aktive Deals (1)')).toBeVisible();
   await expect(s.locator('[data-makler-deal]')).toContainText(`${name} Str, Ulm`);
 
+  // 📄 Aus dem Exposé: ohne Import leer (mit Import: expose-import.spec.ts)
+  await s.getByRole('tab', { name: '📄 Aus dem Exposé' }).click();
+  await expect(s.getByText('Keine Exposé-Angaben zu diesem Makler.')).toBeVisible();
+
   // Löschen → Papierkorb
   await s.getByRole('tab', { name: '👤 Profil' }).click();
   await s.getByRole('button', { name: 'Löschen' }).click();

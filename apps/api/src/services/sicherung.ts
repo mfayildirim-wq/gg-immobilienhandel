@@ -17,7 +17,7 @@ import { auditSchreiben } from './audit.ts';
 /** Reihenfolge ist die Einspielreihenfolge: erst die Eltern, dann die Kinder. */
 export const SICHERUNG_TABELLEN = [
   'makler', 'objekte', 'objektEinheiten', 'objektFotos', 'deals', 'dealEinheiten', 'dealSanierungen', 'dealKommentare',
-  'dealKalkVarianten', 'dealDokumente', 'dealStatusHistorie', 'maklerKommunikation',
+  'dealKalkVarianten', 'dealDokumente', 'dealStatusHistorie', 'exposeImporte', 'exposeBezeichnungen', 'importKorrekturen', 'maklerKommunikation',
   'kundenkalkulationen', 'finanzpraesentationen', 'praesentationFolien', 'vertriebslisten', 'vertriebslisteZeilen',
   'projekte', 'projektEinheiten', 'projektMieterhistorie', 'projektAufgaben', 'projektGebaeudeMassnahmen',
   'begleitscheinVorlagen', 'begleitscheine', 'begleitscheinAktionen', 'vordrucke',
@@ -76,7 +76,7 @@ export async function sicherungPlan(db: Db, roh: unknown) {
   for (const name of SICHERUNG_TABELLEN) {
     const ausDatei = (datei.tabellen[name] ?? []) as any[];
     const bestand = await db.select().from(tabelle(name));
-    const schluessel = name === 'einstellungen' ? 'schluessel' : name === 'begleitscheinVorlagen' ? 'typ' : 'id';
+    const schluessel = name === 'einstellungen' || name === 'exposeBezeichnungen' ? 'schluessel' : name === 'begleitscheinVorlagen' ? 'typ' : 'id';
     const vorhanden = new Set(bestand.map((z: any) => z[schluessel]));
     const neu = ausDatei.filter((z) => !vorhanden.has(z[schluessel])).length;
     zeilen.push({ tabelle: name, neu, aktualisiert: ausDatei.length - neu, inDatei: ausDatei.length, imBestand: bestand.length });
@@ -93,7 +93,7 @@ export async function sicherungEinspielen(db: Db, roh: unknown) {
       const ausDatei = (datei.tabellen[name] ?? []) as any[];
       if (!ausDatei.length) continue;
       const t = tabelle(name);
-      const schluessel = name === 'einstellungen' ? 'schluessel' : name === 'begleitscheinVorlagen' ? 'typ' : 'id';
+      const schluessel = name === 'einstellungen' || name === 'exposeBezeichnungen' ? 'schluessel' : name === 'begleitscheinVorlagen' ? 'typ' : 'id';
       // dd_checkliste_vorlage führt ihre ID als „generated always": die alte ID lässt sich nur ausdrücklich setzen und
       // beim Aktualisieren gar nicht. Fiel erst mit echtem Bestand auf — vorher war die Tabelle immer leer.
       const identitaet = name === 'ddChecklisteVorlage';

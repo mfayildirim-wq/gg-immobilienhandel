@@ -8,7 +8,7 @@ von der echten Produktion der alten App). Offene Punkte stehen in `OFFEN.md` unt
 | | |
 |---|---|
 | GitHub | `mfayildirim-wq/gg-immobilienhandel`, privat |
-| Supabase | Projekt `gg-immobilienhandel`, Ref `zbqdkfqsqdocrxxrtjow`, Frankfurt (`eu-central-1`), Organisation MFY. 9 Migrationen angewendet (39 Tabellen in `fach`, Stand 14.10.2026), Buckets `pdfs`, `deal-docs`, `obj-photos` privat angelegt. Echter Bestand umgezogen am 21.09.2026. |
+| Supabase | Projekt `gg-immobilienhandel`, Ref `zbqdkfqsqdocrxxrtjow`, Frankfurt (`eu-central-1`), Organisation MFY. 10 Migrationen angewendet (42 Tabellen in `fach`, Stand 14.10.2026: `expose_importe` eingespielt vor dem Merge von PR #32 — die Tabellen bleiben leer, bis der Code online ist), Buckets `pdfs`, `deal-docs`, `obj-photos` privat angelegt. Echter Bestand umgezogen am 21.09.2026. |
 | Vercel | Team `mfy` (Hobby), Projekt `gg-immobilienhandel`, mit dem Repo verbunden, 7 Variablen für Production gesetzt |
 | Zugangsdaten | nur lokal in `~/Documents/ivtag/immohandel-doks/.geheim/cloud.env` (Rechte 600) und verschlüsselt bei Vercel — nicht im Repo |
 
@@ -74,6 +74,16 @@ das direkt aus, der Node-Builder von Vercel nicht. `apps/api/bau-vercel.mjs` bü
 **Nur Produktion wird gebaut** (`ignoreCommand`, wie in der alten App): Vorschau-Deployments liefen sonst mit dem
 Code eines Branches gegen die echte Datenbank.
 
+**Texterkennung auf Vercel (14.10.2026, Exposé-Import v3):** `tesseract.js` startet einen Worker-Thread aus einer Datei. Im
+Bündel zeigte der Standardpfad ins Leere, und Node beendet bei einer fehlenden Worker-Datei den Prozess — jede Analyse mit
+Fotoseiten wäre online abgestürzt (Protokoll 31, B6). Deshalb bündelt `bau-vercel.mjs` den Worker als zweite Datei
+`dist/ocr-worker.cjs` (alle Abhängigkeiten drin, nur `tesseract.js-core` mit dem WASM bleibt in `node_modules` und steht in
+`includeFiles`), `kontext.ts` prüft, ob die Datei da ist, und die deutschen Sprachdaten liegen in `apps/api/assets`
+(`includeFiles`), damit online nichts vom CDN geladen und nichts geschrieben wird. Fehlt etwas, läuft die Analyse **ohne**
+OCR weiter (Warnung im Log) statt abzubrechen. Nachweis vor dem Produktivgang: ein eingescanntes Exposé auf der
+Testumgebung importieren und im Log „Bild-Seite(n) per Texterkennung gelesen“ sehen; andernfalls `OCR=aus` setzen.
+Die Analyse läuft über `/api/render` (300 s); das OCR-Zeitbudget je Dokument ist 120 s.
+
 ## Umgebungsvariablen (Vercel → Settings → Environment Variables, nur „Production")
 
 | Variable | Pflicht | Wofür |
@@ -89,6 +99,7 @@ Code eines Branches gegen die echte Datenbank.
 | `CRON_SECRET` | ja | schützt `/api/cron/sicherung` und `/api/cron/archiv`; Vercel hängt es als `Authorization: Bearer …` an. Ohne Wert antworten beide immer mit 401 |
 | `OAUTH_HOSTS` | bei eigener Domain | zusätzliche Adressen für die Microsoft-Anmeldung; die Vercel-Domains gelten von selbst |
 | `AUTO_IMPORT_AKTIV` | zum Freischalten | Auto-Import-Bot. **Online ist er aus, bis hier `ja` steht** — dann antworten `/api/auto-import/lauf` und `…/abbrechen` mit 503 und die Oberfläche zeigt keine Bot-Knöpfe. Braucht zusätzlich `ANTHROPIC_API_KEY`, die M365-Verbindung und für AGB-Seiten die Freigabe unter Einstellungen → Freigaben |
+| `OCR` | zum Abschalten | Texterkennung für Bild-Seiten im Exposé-Import (tesseract.js, deutsch). Standard an; `aus` lässt Bild-Seiten ohne Text und schickt Scans wie früher komplett an das gründliche Modell. Siehe „Texterkennung auf Vercel“ unten |
 
 Nicht setzen: `AUTH_LOCAL_OPEN`, `KI_ATTRAPPE`, `M365_ATTRAPPE`, `PROPSTACK_ATTRAPPE` (in Produktion ohnehin wirkungslos).
 

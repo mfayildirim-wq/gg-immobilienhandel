@@ -120,6 +120,8 @@ export const objektEinheiten = fach
   kaltmiete: numeric('kaltmiete', { precision: 14, scale: 2, mode: 'number' }),
   vermietung: text('vermietung'),
   sort: integer('sort'),
+  /** Zusatz aus dem Exposé-Import (Erfassung v2): { nr, nebenkosten, warmmiete, sollmiete, mietbeginn, mietende, status, seite, weitere } */
+  details: jsonb('details'),
   ...zeitSpalten,
   })
   .enableRLS();
@@ -663,4 +665,82 @@ export const archiveLedger = fach
       primaryKey({ columns: [t.bucket, t.key] }),
     ],
   )
+  .enableRLS();
+
+/**
+ * Exposé-Importe (Protokoll 26/27): eine Zeile je Analyse — Rohdaten (Erfassung v2, Protokoll 28; bei Altimporten v0), Messwerte und die
+ * Verknüpfung zu Deal, Objekt und Makler. Der „Stand am Objekt“ wird beim Lesen aus diesen Zeilen gerechnet.
+ */
+export const exposeImporte = fach
+  .table(
+    'expose_importe',
+    {
+  id: text('id').primaryKey(),
+      eingangKey: text('eingang_key'),
+      dateiname: text('dateiname'),
+      dealId: text('deal_id').references((): AnyPgColumn => deals.id, { onDelete: 'set null' }),
+      objektId: text('objekt_id').references((): AnyPgColumn => objekte.id, { onDelete: 'set null' }),
+      maklerId: text('makler_id').references((): AnyPgColumn => makler.id, { onDelete: 'set null' }),
+      /** 'gg-expose-v2' | 'gg-expose-v0' */
+      schemaVersion: text('schema_version').notNull(),
+      promptVersion: text('prompt_version'),
+      modell: text('modell'),
+      weg: text('weg'),
+      seitenGelesen: integer('seiten_gelesen'),
+      seitenGesamt: integer('seiten_gesamt'),
+      stopReason: text('stop_reason'),
+      inputTokens: integer('input_tokens'),
+      outputTokens: integer('output_tokens'),
+      dauerMs: integer('dauer_ms'),
+      kostenEur: numeric('kosten_eur', { precision: 10, scale: 4, mode: 'number' }),
+      /** analysiert | uebernommen | verworfen */
+      status: text('status').notNull().default('analysiert'),
+      rohdaten: jsonb('rohdaten').notNull(),
+      /** { nachfass, wiederholung, belegt: Record<string, boolean>, warnungen: string[] } */
+      analyse: jsonb('analyse'),
+      ...zeitSpalten,
+    },
+    (t) => [
+      index('expose_importe_objekt_idx').on(t.objektId),
+      index('expose_importe_makler_idx').on(t.maklerId),
+      index('expose_importe_deal_idx').on(t.dealId),
+    ],
+  )
+  .enableRLS();
+
+/** Jede Übernahme/Ersetzung aus dem Reiter „Aus dem Exposé“ und jede Korrektur eines Importwerts — Grundlage fürs Lernen. */
+export const importKorrekturen = fach
+  .table('import_korrekturen', {
+  id: text('id').primaryKey(),
+  importId: text('import_id').notNull().references((): AnyPgColumn => exposeImporte.id, { onDelete: 'cascade' }),
+  /** objekt | makler | einheit */
+  art: text('art').notNull(),
+  bezugId: text('bezug_id').notNull(),
+  /** Angabe des Imports, z. B. 'angaben.12' */
+  feld: text('feld').notNull(),
+  ziel: text('ziel'),
+  kiWert: jsonb('ki_wert'),
+  handWert: jsonb('hand_wert'),
+  /** uebernommen | ersetzt | korrigiert */
+  aktion: text('aktion').notNull(),
+  konfidenz: text('konfidenz'),
+  promptVersion: text('prompt_version'),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+  })
+  .enableRLS();
+
+/**
+ * Exposé-Wörterbuch (Protokoll 30): wächst beim Zuordnen auf der Prüfseite und im Reiter „Aus dem Exposé“.
+ * Schlüssel = normalisierte Bezeichnung (`bezeichnungSchluessel`), Ziel = gg-Ziel-Schlüssel.
+ */
+export const exposeBezeichnungen = fach
+  .table('expose_bezeichnungen', {
+    schluessel: text('schluessel').primaryKey(),
+    /** Schreibweise, wie sie zuletzt im Exposé stand */
+    bezeichnung: text('bezeichnung').notNull(),
+    ziel: text('ziel').notNull(),
+    anzahl: integer('anzahl').notNull().default(1),
+    zuletzt: timestamp('zuletzt', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+    erstelltVon: text('erstellt_von'),
+  })
   .enableRLS();
