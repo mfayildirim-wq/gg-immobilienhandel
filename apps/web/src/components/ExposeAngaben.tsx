@@ -175,8 +175,11 @@ export function ExposeAngaben({ art, id, version }: { art: Art; id: string; vers
                   data={zielOptionen(data.ziele, vorschlag)} value={wahl} onChange={(v) => setAuswahl((s) => ({ ...s, [schluessel]: v }))} />
                 <Button size="compact-xs" variant="light" disabled={!wahl || uebernahme.isPending} onClick={() => wahl && senden(a, wahl)}>Übernehmen</Button>
               </Group>
-              <Checkbox size="xs" data-merken={a.feld} label="für künftige Importe merken" checked={!nichtMerken[schluessel]}
-                onChange={(e) => setNichtMerken((m) => ({ ...m, [schluessel]: !e.currentTarget.checked }))} />
+              {/* Gelernt wird nur eine gewählte Zuordnung — ohne Ziel wirkt das Häkchen nicht, also auch nicht zeigen (Rückmeldung 14.10.2026) */}
+              {wahl && (
+                <Checkbox size="xs" data-merken={a.feld} label="für künftige Importe merken" checked={!nichtMerken[schluessel]}
+                  onChange={(e) => setNichtMerken((m) => ({ ...m, [schluessel]: !e.currentTarget.checked }))} />
+              )}
               {a.ziel.hinweis && <Text fz={11} c="dimmed">{a.ziel.hinweis}</Text>}
             </Stack>
           )}
