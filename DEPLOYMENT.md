@@ -8,7 +8,7 @@ von der echten Produktion der alten App). Offene Punkte stehen in `OFFEN.md` unt
 | | |
 |---|---|
 | GitHub | `mfayildirim-wq/gg-immobilienhandel`, privat |
-| Supabase | Projekt `gg-immobilienhandel`, Ref `zbqdkfqsqdocrxxrtjow`, Frankfurt (`eu-central-1`), Organisation MFY. 9 Migrationen angewendet (39 Tabellen in `fach`, Stand 14.10.2026), Buckets `pdfs`, `deal-docs`, `obj-photos` privat angelegt. Echter Bestand umgezogen am 21.09.2026. |
+| Supabase | Projekt `gg-immobilienhandel`, Ref `zbqdkfqsqdocrxxrtjow`, Frankfurt (`eu-central-1`), Organisation MFY. 10 Migrationen angewendet (42 Tabellen in `fach`, Stand 14.10.2026: `expose_importe` eingespielt vor dem Merge von PR #32 — die Tabellen bleiben leer, bis der Code online ist), Buckets `pdfs`, `deal-docs`, `obj-photos` privat angelegt. Echter Bestand umgezogen am 21.09.2026. |
 | Vercel | Team `mfy` (Hobby), Projekt `gg-immobilienhandel`, mit dem Repo verbunden, 7 Variablen für Production gesetzt |
 | Zugangsdaten | nur lokal in `~/Documents/ivtag/immohandel-doks/.geheim/cloud.env` (Rechte 600) und verschlüsselt bei Vercel — nicht im Repo |
 
