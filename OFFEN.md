@@ -126,9 +126,10 @@ Die alte App verhält sich genauso; eine Änderung ist eine bewusste Abweichung 
 ## Exposé-Import v3 (14.10.2026, Branch `expose-import-v3`, Protokoll 31)
 
 Übernommen aus `expose-extraktion-v1` mit den sieben Pflichtpunkten; die Bereinigung (Abschnitt 4 und 7.5 in Protokoll 31)
-folgt schrittweise auf `main`. Vor dem Produktivgang: Migration `20261014121320_expose_importe` einspielen (drei neue
-Tabellen, eine neue Spalte `objekt_einheiten.details`, nichts an bestehenden Daten), dann ein eingescanntes Exposé auf der
-Testumgebung importieren (Nachweis Texterkennung, sonst `OCR=aus`).
+folgt schrittweise auf `main`. Migration `20261014121320_expose_importe` ist auf der privaten Produktion eingespielt
+(14.10.2026). Online-Nachweis am 15.10.2026 auf der privaten Produktion: Fotos kommen an (Postplatz-Exposé: 2 Bilder) und
+ein reines Bild-PDF wird per Texterkennung gelesen (Warnung „1 Bild-Seite(n) per Texterkennung gelesen“, alle Felder
+richtig). Vorher lief beides online leer, weil `@napi-rs/canvas` dem API-Paket fehlte (PR #34, `DEPLOYMENT.md` Stolperstein 4).
 
 - [x] Texterkennung auf Vercel (Worker gebündelt, Sprachdaten mitgeliefert, Absturz abgefangen, Schalter `OCR`)
 - [x] Migration neu erzeugt nach `geo_verortungen`; Konflikte mit `main` (Modellwahl, `genutztesModell`, Nachfasstermin) gelöst
@@ -136,6 +137,10 @@ Testumgebung importieren (Nachweis Texterkennung, sonst `OCR=aus`).
 - [x] Jahresspalten (`Jahresnettokaltmiete`, `p.a.`, `/Jahr`) ÷ 12; doppelte Mietliste (Übersicht + Anhang) zählt einmal
 - [x] Mieternamen entfallen auch ohne Kopfzeile; „Gewerbemieter/Hauptmieter“ im Kopf ebenso
 - [x] Übernehmen: Import-Zeile gesperrt, zweite Übernahme → 409; PDF vor den Fotos; Knopf während des Laufs gesperrt
+- [x] Aus dem Test auf privat (14.10.2026): Häkchen „für künftige Importe merken“ erst mit gewähltem Ziel (PR #33);
+      `@napi-rs/canvas` als Abhängigkeit von `apps/api`, sonst keine Fotos und keine Texterkennung online (PR #34)
+- [ ] Aus dem Test auf privat: „Wohneinheiten: 8 (6 Wohn- und 2 Gewerbeeinheiten)“ wird nur als Vorschlag angeboten, weil
+      mehrere Zahlen im Wert stehen; getrennte Wohn-/Gewerbeeinheiten gibt es nicht als Feld (Fachfrage, ggf. Folgeschritt)
 - [ ] **Bewusste Abweichungen von der alten App** (Fachentscheidung 12.10.2026, Protokoll 30 §12, noch ohne Paritätstest):
       Jahresmiete am Wortlaut („p.a.“) und per Plausibilität (> 40 €/m² → ÷ 12 mit Warnung) als Monatsmiete; Platzhalter
       („auf Anfrage“) gelten als leer; Mobil nur bei Mobilnummer; längerer wörtlicher Freitext ersetzt die Kurzfassung.
