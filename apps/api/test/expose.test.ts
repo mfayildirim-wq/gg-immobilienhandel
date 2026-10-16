@@ -85,7 +85,7 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
     }
   });
 
-  it('Nutzungslimit, Überlast und unerwartete Fehler: die Ursache steht in der Antwort statt nur „Interner Fehler“', async () => {
+  it('Nutzungslimit und Überlast im Klartext; unerwartete Fehler nur mit Referenz, die Ursache bleibt im Log (E6)', async () => {
     const mit = (fehler: Error) => {
       const ki = { nachricht: async () => { throw fehler; }, dateiHochladen: async () => 'f', dateiLoeschen: async () => {} };
       return createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, ki, expose: { speicher, ki: null, attrappe: false, texterkennung: null } });
@@ -104,7 +104,10 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
       const kaputt = mit(new Error('Verbindung zur Datenbank verloren'));
       const k = await analysieren(kaputt);
       expect(k.status).toBe(500);
-      expect((await lies(k)).fehler).toBe('Interner Fehler: Verbindung zur Datenbank verloren');
+      const antwort = await lies(k);
+      expect(antwort.fehler).toMatch(/^Interner Fehler \(Referenz [a-z0-9]{8}\)$/);
+      expect(antwort.fehler).not.toContain('Datenbank');
+      expect(antwort.details).toMatchObject({ pfad: '/api/expose/analyse', referenz: expect.stringMatching(/^[a-z0-9]{8}$/) });
     } finally {
       await zugang(limit, '');
     }

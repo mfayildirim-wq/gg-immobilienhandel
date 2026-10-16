@@ -289,10 +289,11 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, prop
       return c.json({ fehler: err.meldung, details: { quelle: 'anthropic', art: err.art, status: err.status } }, status);
     }
     if (err instanceof AnalyseFehler) return c.json({ fehler: err.message }, 422);
-    console.error(err);
-    // Unerwartet: die Ursache mitgeben statt nur „Interner Fehler“ (ohne Stack, gekürzt)
-    const ursache = err instanceof Error && err.message ? `: ${err.message.replace(/\s+/g, ' ').substring(0, 300)}` : '';
-    return c.json({ fehler: `Interner Fehler${ursache}`, details: { pfad: c.req.path } }, 500);
+    // Unerwartet (E6, 16.10.2026): Fach- und KI-Fehler oben im Klartext; technische Ursachen (SQL, Stack, Pfade) nur ins Log,
+    // die Antwort trägt eine Referenz, mit der man die Logzeile findet.
+    const referenz = Math.random().toString(36).slice(2, 10);
+    console.error(`[fehler ${referenz}] ${c.req.method} ${c.req.path}`, err);
+    return c.json({ fehler: `Interner Fehler (Referenz ${referenz})`, details: { pfad: c.req.path, referenz } }, 500);
   });
 
   app.get('/api/health', async (c) => {
