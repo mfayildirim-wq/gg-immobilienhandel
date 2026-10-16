@@ -1,5 +1,5 @@
 {
-  "id": "6b382035-bd31-43cd-820a-fcee069ca589",
+  "id": "fc0bb237-a004-418b-96c2-7bfe64a61e14",
   "prevId": "f801aae8-a8a6-4f0f-a1e4-a2bb9fa25512",
   "version": "7",
   "dialect": "postgresql",
@@ -1513,57 +1513,6 @@
       "checkConstraints": {},
       "isRLSEnabled": true
     },
-    "fach.expose_bezeichnungen": {
-      "name": "expose_bezeichnungen",
-      "schema": "fach",
-      "columns": {
-        "schluessel": {
-          "name": "schluessel",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "bezeichnung": {
-          "name": "bezeichnung",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ziel": {
-          "name": "ziel",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "anzahl": {
-          "name": "anzahl",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "zuletzt": {
-          "name": "zuletzt",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "erstellt_von": {
-          "name": "erstellt_von",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": true
-    },
     "fach.expose_importe": {
       "name": "expose_importe",
       "schema": "fach",
@@ -1988,107 +1937,6 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": true
-    },
-    "fach.import_korrekturen": {
-      "name": "import_korrekturen",
-      "schema": "fach",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "import_id": {
-          "name": "import_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "art": {
-          "name": "art",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "bezug_id": {
-          "name": "bezug_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "feld": {
-          "name": "feld",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ziel": {
-          "name": "ziel",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ki_wert": {
-          "name": "ki_wert",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "hand_wert": {
-          "name": "hand_wert",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "aktion": {
-          "name": "aktion",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "konfidenz": {
-          "name": "konfidenz",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "prompt_version": {
-          "name": "prompt_version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "import_korrekturen_import_id_expose_importe_id_fk": {
-          "name": "import_korrekturen_import_id_expose_importe_id_fk",
-          "tableFrom": "import_korrekturen",
-          "tableTo": "expose_importe",
-          "schemaTo": "fach",
-          "columnsFrom": [
-            "import_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

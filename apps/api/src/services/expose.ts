@@ -2,7 +2,7 @@ import type { ExposeAnalyseAntwort, ExposeUebernehmen } from '@gg/api-contract';
 import { type Db, schema } from '@gg/db';
 import {
   type Angabe, angabenAusImport, belegePruefen, dokumentArtPruefen, steuerzeichenEntfernen, berechneAnkauf, dealEinheitenAusExpose, dublettenDeal, dublettenMakler, dublettenObjekt, einheitAlsEingabe,
-  EXPOSE_V2_SCHEMA, type ExposeV2, exposeVorbereiten, type Gelernt, GG_ZIELE, type ImportFuerAngaben, maklerHatDaten, normalisiereFrequenz, telefonErsetzen,
+  EXPOSE_V2_SCHEMA, type ExposeV2, exposeVorbereiten, GG_ZIELE, type ImportFuerAngaben, maklerHatDaten, normalisiereFrequenz, telefonErsetzen,
   telefonNormalisieren, uebernahmeWert, type WeitereKontakte, weitereKontakte, wizardKalkSpeichern, wizardKalkVorbelegen, type ZielArt, zuordnen,
 } from '@gg/domain';
 import {
@@ -15,7 +15,6 @@ import { auditSchreiben } from './audit.ts';
 import { FachFehler } from '../fehler.ts';
 import { exposeExtraktionLesen, kalkStandardLesen } from './einstellungen.ts';
 import { detailsLesen, detailsSetzen, fuerAngaben, listeAnhaengen } from './exposeAngaben.ts';
-import { gelerntLesen, lernen } from './exposeBezeichnungen.ts';
 import { fotoHochladen } from './fotos.ts';
 import { objektTitel } from './objekte.ts';
 
@@ -111,7 +110,6 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
   let v2: ExposeV2 | null = null;
   let belegt: (boolean | null)[] = [];
   let belegQuote: number | null = null;
-  let gelerntAnalyse: Gelernt = {};
   const warnungen = [...analyse.warnungen];
   let v0: any = analyse.extrahiert;
   if (analyse.v2) {
@@ -123,8 +121,7 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
       belegQuote = b.quote;
       v2 = { ...v2, angaben: v2.angaben.map((x, i) => (b.seiteBerichtigt[i] !== undefined ? { ...x, seite: b.seiteBerichtigt[i]! } : x)) };
     }
-    gelerntAnalyse = await gelerntLesen(db);
-    const z = zuordnen(v2, belegt, gelerntAnalyse);
+    const z = zuordnen(v2, belegt);
     warnungen.push(...z.warnungen);
     v0 = z.pruefdaten;
   }
@@ -174,7 +171,7 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
     extrahiert: v0,
     importId, schemaVersion: analyse.schemaVersion,
     // Leerer Datensatz: auf der Prüfseite gibt es noch nichts Gespeichertes → Status „leer“
-    angaben: { objekt: imp ? angabenAusImport(imp, 'objekt', {}, gelerntAnalyse) : [], makler: imp ? angabenAusImport(imp, 'makler', {}, gelerntAnalyse) : [] },
+    angaben: { objekt: imp ? angabenAusImport(imp, 'objekt', {}) : [], makler: imp ? angabenAusImport(imp, 'makler', {}) : [] },
     ziele: { objekt: zieleListe(['objekt', 'kalkulation']), makler: zieleListe(['makler']) },
     belegQuote, warnungen,
     konfidenz: v0?._konfidenz ?? {},
@@ -297,17 +294,16 @@ const ZUORDNUNG_SPALTEN = { objekt: new Set(['sollMiete']), makler: new Set(['st
 interface Zuordnungen {
   objekt: { details: Record<string, unknown>; notizen: string[]; spalten: Record<string, unknown> };
   makler: { spalten: Record<string, unknown>; weitere: WeitereKontakte };
-  korrekturen: { art: 'objekt' | 'makler'; feld: string; ziel: string; kiWert: string }[];
 }
 
 /**
  * Manuelle Zuordnungen der Prüfseite (`angaben.N` → gg-Ziel oder 'notizen') in Schreibaufträge übersetzen. Ziele mit
  * Prüfseitenfeld (`pruef`) setzt die Oberfläche selbst ins Formular; Kalkulation ebenso. Ungültiges wird übergangen.
  */
-function zuordnungenAuswerten(imp: ImportFuerAngaben, liste: ExposeUebernehmen['zuordnungen'], gelernt: Gelernt, details: Record<string, unknown>): Zuordnungen {
-  const aus: Zuordnungen = { objekt: { details, notizen: [], spalten: {} }, makler: { spalten: {}, weitere: { namen: [], telefonnummern: [], emails: [] } }, korrekturen: [] };
+function zuordnungenAuswerten(imp: ImportFuerAngaben, liste: ExposeUebernehmen['zuordnungen'], details: Record<string, unknown>): Zuordnungen {
+  const aus: Zuordnungen = { objekt: { details, notizen: [], spalten: {} }, makler: { spalten: {}, weitere: { namen: [], telefonnummern: [], emails: [] } } };
   if (!liste?.length) return aus;
-  const angaben = new Map<string, Angabe>([...angabenAusImport(imp, 'objekt', {}, gelernt), ...angabenAusImport(imp, 'makler', {}, gelernt)].map((a) => [a.feld, a]));
+  const angaben = new Map<string, Angabe>([...angabenAusImport(imp, 'objekt', {}), ...angabenAusImport(imp, 'makler', {})].map((a) => [a.feld, a]));
   for (const { feld, ziel } of liste) {
     const a = angaben.get(feld);
     if (!a || !feld.startsWith('angaben.')) continue;
@@ -326,7 +322,6 @@ function zuordnungenAuswerten(imp: ImportFuerAngaben, liste: ExposeUebernehmen['
         aus.makler.weitere.namen.push(...k.namen); aus.makler.weitere.telefonnummern.push(...k.telefonnummern); aus.makler.weitere.emails.push(...k.emails);
       } else aus[art].spalten[u.spalte] = u.wert;
     } else continue;
-    aus.korrekturen.push({ art, feld, ziel, kiWert: a.wert });
   }
   return aus;
 }
@@ -361,10 +356,9 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
     importBilder = eingangsBilder(z.analyse);
     if (z.schemaVersion === EXPOSE_V2_SCHEMA) imp = { ...fuerAngaben(z), promptVersion: z.promptVersion };
   }
-  const gelernt = await gelerntLesen(db);
-  const zuordnung = imp ? zuordnen(imp.rohdaten, imp.belegt, gelernt) : null;
+  const zuordnung = imp ? zuordnen(imp.rohdaten, imp.belegt) : null;
   const v0 = zuordnung ? zuordnung.pruefdaten : e.extrahiert;
-  const manuell = imp ? zuordnungenAuswerten(imp, e.zuordnungen, gelernt, objektDetails(e.objekt.daten, zuordnung!.details, e.importId)) : null;
+  const manuell = imp ? zuordnungenAuswerten(imp, e.zuordnungen, objektDetails(e.objekt.daten, zuordnung!.details, e.importId)) : null;
 
   const ids = await db.transaction(async (tx) => {
     // Doppel-Submit (Protokoll 31, W27): die Import-Zeile wird gesperrt; ist sie nicht mehr „analysiert“, lief die Übernahme schon —
@@ -460,13 +454,6 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
       if (e.importId) {
         await tx.update(schema.exposeImporte).set({ dealId: ergaenzen.id, objektId, maklerId, status: 'uebernommen', updatedAt: sql`now()` }).where(eq(schema.exposeImporte.id, e.importId));
       }
-      if (imp) {
-        const alle = new Map([...angabenAusImport(imp, 'objekt', {}, gelernt), ...angabenAusImport(imp, 'makler', {}, gelernt)].map((a) => [a.feld, a]));
-        for (const z of e.zuordnungen ?? []) {
-          const a = alle.get(z.feld);
-          if (a && z.merken !== false && z.feld.startsWith('angaben.') && a.zuordnung !== 'zugeordnet') await lernen(tx, a.bezeichnung, z.ziel);
-        }
-      }
       return { dealId: ergaenzen.id, objektId, maklerId, ergaenzt: true };
     }
 
@@ -488,23 +475,6 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
     await tx.insert(schema.dealStatusHistorie).values({ id: crypto.randomUUID(), dealId, vonStatus: null, nachStatus: e.deal.status, quelle: 'wizard' });
     if (e.importId) {
       await tx.update(schema.exposeImporte).set({ dealId, objektId, maklerId, status: 'uebernommen', updatedAt: sql`now()` }).where(eq(schema.exposeImporte.id, e.importId));
-    }
-    // Manuelle Zuordnungen der Prüfseite: Lerndaten für die Mapping-Tabelle (nur, was tatsächlich geschrieben wurde)
-    for (const x of manuell?.korrekturen ?? []) {
-      const bezugId = x.art === 'objekt' ? (objektNeu ? objektId : null) : (maklerNeu ? maklerId : null);
-      if (!bezugId) continue;
-      await tx.insert(schema.importKorrekturen).values({
-        id: crypto.randomUUID(), importId: e.importId!, art: x.art, bezugId, feld: x.feld, ziel: x.ziel, kiWert: x.kiWert, handWert: null,
-        aktion: 'zugeordnet', konfidenz: null, promptVersion: imp!.promptVersion,
-      });
-    }
-    // Wörterbuch lernt mit: Angaben ohne Mapping, die der Nutzer einem gg-Ziel zugeordnet hat (auch ins Formular; „merken“ = Standard ja)
-    if (imp) {
-      const alle = new Map([...angabenAusImport(imp, 'objekt', {}, gelernt), ...angabenAusImport(imp, 'makler', {}, gelernt)].map((a) => [a.feld, a]));
-      for (const z of e.zuordnungen ?? []) {
-        const a = alle.get(z.feld);
-        if (a && z.merken !== false && z.feld.startsWith('angaben.') && a.zuordnung !== 'zugeordnet') await lernen(tx, a.bezeichnung, z.ziel);
-      }
     }
     return { dealId, objektId, maklerId, ergaenzt: false };
   });

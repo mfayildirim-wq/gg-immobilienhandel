@@ -752,7 +752,7 @@ export const ExposeUebernehmen = z.object({
   /** Verweis auf die gespeicherte Analyse (expose_importe); ohne importId wird wie bisher `extrahiert` verwendet */
   importId: z.string().optional(),
   /** Auf der Prüfseite per Dropdown zugeordnete weitere Angaben (Ziel: gg-Ziel-Schlüssel oder 'notizen') */
-  zuordnungen: z.array(z.object({ feld: z.string(), ziel: z.string(), merken: z.boolean().optional() })).max(500).optional(),
+  zuordnungen: z.array(z.object({ feld: z.string(), ziel: z.string() })).max(500).optional(),
   /** Im Wizard-Schritt „Fotos“ entfernte Bilder (Nummer wie in `ExposeAnalyseAntwort.bilder[].nr`) — werden nicht übernommen */
   bilderAusschliessen: z.array(z.number().int().min(0)).max(500).optional(),
   objekt: z.object({ bestehendeId: z.string().optional(), daten: ExposeObjektDaten }),
@@ -782,14 +782,9 @@ export type ExposeAngabenAntwort = z.infer<typeof ExposeAngabenAntwort>;
 /** `ziel`: gg-Ziel-Schlüssel (z. B. 'objekt.angebotspreis', 'details.hausgeld_monat') oder 'notizen' */
 export const ExposeUebernahme = z.object({
   version: z.number().int(), importId: z.string(), feld: z.string(), ziel: z.string().min(1).max(80), ersetzen: z.boolean().default(false),
-  /** Bezeichnung → Ziel im Wörterbuch merken (Standard: ja; nur bei Angaben ohne Mapping) */
-  merken: z.boolean().optional(),
 });
 export type ExposeUebernahme = z.input<typeof ExposeUebernahme>;
 
-/** Eintrag im gelernten Exposé-Wörterbuch (Einstellungen). */
-export const ExposeBezeichnung = z.object({ schluessel: z.string(), bezeichnung: z.string(), ziel: z.string(), anzahl: z.number().int(), zuletzt: z.string() });
-export type ExposeBezeichnung = z.infer<typeof ExposeBezeichnung>;
 
 // ── Bank-Präsentation ──────────────────────────────────────
 

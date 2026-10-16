@@ -62,10 +62,4 @@ describe('Exposé v2: Angaben-Zeilen (Protokoll 28)', () => {
     expect(vergleichsStatus(1, null)).toBe('leer');
     expect(notizText({ bezeichnung: 'A', wert: 'b', seite: null })).toBe('A: b');
   });
-
-  it('gelernte Zuordnung: Ziel mit Quelle „mapping“ und Hinweis „gelernt“', () => {
-    const zeilen = angabenAusImport(imp(), 'objekt', { details: {} }, { besichtigung: 'details.denkmalschutz' });
-    expect(finde(zeilen, 'angaben.19')).toMatchObject({ ziel: { feld: 'details.denkmalschutz', quelle: 'mapping', hinweis: 'gelernt', wert: 'nach Vereinbarung' } });
-    expect(finde(angabenAusImport(imp(), 'objekt', { details: {} }), 'angaben.19').ziel.status).toBe('keinFeld');
-  });
 });

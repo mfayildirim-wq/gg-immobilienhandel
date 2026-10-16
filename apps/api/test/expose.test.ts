@@ -3,7 +3,7 @@ import { KALK_STANDARD } from '@gg/domain';
 import { KiDienstFehler, KiSchluesselFehler, kiAttrappe, speicherImSpeicher, testExpose, testExposeV2 } from '@gg/integrations';
 import { eq, inArray, like } from 'drizzle-orm';
 import { PDFDocument } from 'pdf-lib';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.ts';
 import { mitAusgeliefertenStandards } from './standardwerte.ts';
 
@@ -18,15 +18,8 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
   const angelegt = { deals: [] as string[], objekte: [] as string[], makler: [] as string[], importe: [] as string[] };
   mitAusgeliefertenStandards(url!);
 
-  // Gelernte Bezeichnungen aus früheren Läufen würden „Vorschlag“ zu „Mapping“ machen
-  beforeAll(async () => { await db.delete(schema.exposeBezeichnungen); });
-
   afterAll(async () => {
-    await db.delete(schema.exposeBezeichnungen);
-    if (angelegt.importe.length) {
-      await db.delete(schema.importKorrekturen).where(inArray(schema.importKorrekturen.importId, angelegt.importe));
-      await db.delete(schema.exposeImporte).where(inArray(schema.exposeImporte.id, angelegt.importe));
-    }
+    if (angelegt.importe.length) await db.delete(schema.exposeImporte).where(inArray(schema.exposeImporte.id, angelegt.importe));
     if (angelegt.deals.length) await db.delete(schema.deals).where(inArray(schema.deals.id, angelegt.deals));
     if (angelegt.objekte.length) await db.delete(schema.objekte).where(inArray(schema.objekte.id, angelegt.objekte));
     if (angelegt.makler.length) await db.delete(schema.makler).where(inArray(schema.makler.id, angelegt.makler));
@@ -323,7 +316,7 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
     const r = await json('/api/expose/uebernehmen', {
       key, dateiname: `${eigene}.pdf`, extrahiert: a.extrahiert, importId: a.importId,
       zuordnungen: [
-        { feld: ruecklage, ziel: 'details.instandhaltungsruecklage', merken: false },
+        { feld: ruecklage, ziel: 'details.instandhaltungsruecklage' },
         { feld: besichtigung, ziel: 'notizen' },
         { feld: besichtigung, ziel: 'details.sanierungen' },
         { feld: telefonZwei, ziel: 'makler.weitereKontakte' },
@@ -358,15 +351,6 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
     const einheiten = await db.select().from(schema.objektEinheiten).where(eq(schema.objektEinheiten.objektId, erg.objektId)).orderBy(schema.objektEinheiten.sort);
     expect(einheiten).toHaveLength(3);
     expect(einheiten.map((x) => x.details)).toEqual([{ seite: 2 }, { seite: 2 }, { seite: 2 }]);
-
-    const k = await db.select().from(schema.importKorrekturen).where(eq(schema.importKorrekturen.importId, a.importId));
-    expect(k).toHaveLength(4);
-    expect(k).toEqual(expect.arrayContaining([
-      expect.objectContaining({ art: 'objekt', bezugId: erg.objektId, feld: ruecklage, ziel: 'details.instandhaltungsruecklage', kiWert: '12.000 EUR', aktion: 'zugeordnet', konfidenz: null, promptVersion: imp!.promptVersion }),
-      expect.objectContaining({ art: 'objekt', feld: besichtigung, ziel: 'notizen', kiWert: 'nach Vereinbarung', aktion: 'zugeordnet' }),
-      expect.objectContaining({ art: 'objekt', feld: besichtigung, ziel: 'details.sanierungen' }),
-      expect.objectContaining({ art: 'makler', bezugId: erg.maklerId, feld: telefonZwei, ziel: 'makler.weitereKontakte', kiWert: 'max@beispiel.test' }),
-    ]));
   });
 
   it('Doppel-Submit: dieselbe Analyse ein zweites Mal übernehmen → 409, kein zweites Objekt, kein zweiter Deal (Protokoll 31, W27)', async () => {

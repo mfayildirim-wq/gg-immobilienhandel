@@ -16,7 +16,7 @@ import { Zahlfeld } from '../components/Zahlfeld.tsx';
 import {
   DublettenFehler, exposeAnalysieren, exposeHochladen, exposeImportVerwerfen, exposeUebernehmen, useBekannteExposeDateien, useKiStatus, useMakler,
 } from '../lib/api.ts';
-import { Bezeichnung, Fundstelle, istEinheit, KonfidenzPunkt, Wortlaut } from '../components/ExposeAngaben.tsx';
+import { Bezeichnung, Fundstelle, istEinheit, KonfidenzPunkt, kurzText, Wortlaut } from '../components/ExposeAngaben.tsx';
 
 const ZAHL = { decimalSeparator: ',', thousandSeparator: '.', hideControls: true } as const;
 const WIZARD_STATUS = DEAL_STATUS.filter((s) => s !== 'Angekauft');
@@ -102,8 +102,6 @@ export function ExposeImportSeite() {
   const [fotosAus, setFotosAus] = useState<number[]>([]);
   /** Weitere Angaben, die schon ins Formular geschrieben wurden (Feld → gg-Ziel) */
   const [uebernommen, setUebernommen] = useState<Record<string, string>>({});
-  /** Angaben, deren Zuordnung nicht im Wörterbuch gemerkt werden soll (Standard: merken) */
-  const [nichtMerken, setNichtMerken] = useState<Record<string, boolean>>({});
 
   const schaetzung = useMemo(() => stapel.map((f) => exposeKostenSchaetzung(f.size)), [stapel]);
   const summe = schaetzung.reduce((s, e) => s + e.eur, 0);
@@ -126,7 +124,6 @@ export function ExposeImportSeite() {
       setDublette(null);
       setErgaenzen(null);
       setZuordnungen({}); setFotosAus([]);
-      setNichtMerken({});
       setUebernommen({});
       setStatus({ text: `✅ Analyse abgeschlossen${r.hinweis ? ` · ${r.hinweis}` : ''}` });
       setPhase({ art: 'pruefen', schritt: 1 });
@@ -166,7 +163,6 @@ export function ExposeImportSeite() {
       setDublette(null);
       setErgaenzen(null);
       setZuordnungen({}); setFotosAus([]);
-      setNichtMerken({});
       setUebernommen({});
       setStatus({ text: `✅ Analyse abgeschlossen${label}${r.hinweis ? ` · ${r.hinweis}` : ''}` });
       setPhase({ art: 'pruefen', schritt: 1 });
@@ -192,8 +188,8 @@ export function ExposeImportSeite() {
       const r = await exposeUebernehmen({
         key: a.key, dateiname: datei.name, extrahiert: a.extrahiert, importId: a.importId,
         ...(Object.keys({ ...uebernommen, ...zuordnungen }).length
-          // Ins Formular übernommene Angaben gehen mit, damit das Wörterbuch sie lernt; geschrieben wird dort nichts doppelt
-          ? { zuordnungen: Object.entries({ ...uebernommen, ...zuordnungen }).map(([feld, ziel]) => ({ feld, ziel, ...(nichtMerken[feld] ? { merken: false } : {}) })) }
+          // Ins Formular übernommene Angaben gehen mit (geschrieben wird dort nichts doppelt)
+          ? { zuordnungen: Object.entries({ ...uebernommen, ...zuordnungen }).map(([feld, ziel]) => ({ feld, ziel })) }
           : {}),
         ...(fotosAus.length ? { bilderAusschliessen: fotosAus } : {}),
         objekt: { ...(objektBestehend ? { bestehendeId: objektBestehend } : {}), daten: objekt },
@@ -289,7 +285,7 @@ export function ExposeImportSeite() {
         <ErfassteAngaben
           a={a} formular={{ objekt, makler, kalkulation: deal.kalk }}
           schreiben={(f) => { setObjekt(f.objekt); setMakler(f.makler); setDeal((d) => ({ ...d, kalk: f.kalkulation })); }}
-          zuordnungen={zuordnungen} setZuordnungen={setZuordnungen} uebernommen={uebernommen} setUebernommen={setUebernommen} nichtMerken={nichtMerken} setNichtMerken={setNichtMerken}
+          zuordnungen={zuordnungen} setZuordnungen={setZuordnungen} uebernommen={uebernommen} setUebernommen={setUebernommen}
         />
       )}
       {phase.art === 'pruefen' && a && phase.schritt === 2 && (
@@ -412,6 +408,34 @@ function UploadSchritt(p: {
 
 const feldLabel = (text: string, konf?: string): ReactNode => <span>{text}<KonfidenzPunkt konf={konf} /></span>;
 
+/**
+ * Werte aus dem Exposé, die ein schon gefülltes Formularfeld bestreiten („doppelt“: das KI-Feld gilt, der zweite Wert wartet):
+ * als Knopf unter dem Feld, wie die Kontakt-Alternativen beim Makler (Rückmeldung 16.10.2026, statt der Tabelle unten).
+ */
+type FeldVorschlag = { wert: string | number | boolean; text: string; feld: string };
+function feldVorschlaege(a: ExposeAnalyseAntwort, pruef: string): FeldVorschlag[] {
+  const aus: FeldVorschlag[] = [];
+  for (const x of [...a.angaben.objekt, ...a.angaben.makler]) {
+    if (x.zuordnung !== 'doppelt' || !x.ziel.feld || GG_ZIELE[x.ziel.feld]?.pruef !== pruef) continue;
+    const wert = x.ziel.wert ?? zielWert(x.ziel.feld, x.wert, x.pfad).wert;
+    if (wert === null || wert === undefined || aus.some((v) => String(v.wert) === String(wert))) continue;
+    aus.push({ wert, text: typeof wert === 'number' ? wert.toLocaleString('de-DE', { maximumFractionDigits: 2 }) : String(wert), feld: x.feld });
+  }
+  return aus;
+}
+/** Knöpfe unter einem Feld; der Wert, der schon im Feld steht, wird nicht angeboten. */
+function Vorschlaege({ liste, aktuell, waehlen }: { liste: FeldVorschlag[]; aktuell: unknown; waehlen: (w: FeldVorschlag['wert']) => void }) {
+  const extra = liste.filter((v) => String(v.wert) !== String(aktuell ?? ''));
+  if (!extra.length) return null;
+  return (
+    <Group gap={4} mt={4} data-vorschlaege>
+      {extra.map((v) => <Button key={v.feld} size="compact-xs" variant="light" title={`Aus dem Exposé: ${v.text}`} onClick={() => waehlen(v.wert)}>{kurzText(v.text, 40)}</Button>)}
+    </Group>
+  );
+}
+/** Welche Angaben als Knopf an einem Formularfeld stehen (und deshalb unten nicht noch einmal). */
+const amFeld = (x: ExposeAngabe) => x.zuordnung === 'doppelt' && !!x.ziel.feld && !!GG_ZIELE[x.ziel.feld]?.pruef;
+
 // >>> Fotos aus dem Exposé: eigener Wizard-Schritt; alle Fotos sind dabei, einzelne lassen sich entfernen
 function FotoSchritt({ bilder, aus, setAus }: { bilder: ExposeAnalyseAntwort['bilder']; aus: number[]; setAus: (a: number[]) => void }) {
   const weg = new Set(aus);
@@ -477,12 +501,21 @@ function EinheitenSumme({ einheiten, wohnflaeche, istmiete }: { einheiten: NonNu
 function ObjektSchritt({ a, objekt, setObjekt, bestehend, setBestehend, ergaenzen, setErgaenzen }: { a: ExposeAnalyseAntwort; objekt: ExposeObjektDaten; setObjekt: (o: ExposeObjektDaten) => void; bestehend: string | null; setBestehend: (id: string | null) => void; ergaenzen: string | null; setErgaenzen: (id: string | null) => void }) {
   const k = a.konfidenz;
   const t = (feld: keyof ExposeObjektDaten, label: string, konfSchluessel = feld as string) => (
-    <TextInput label={feldLabel(label, k[konfSchluessel])} value={(objekt[feld] as string) ?? ''} onChange={(e) => setObjekt({ ...objekt, [feld]: e.currentTarget.value })} />
+    <div>
+      <TextInput label={feldLabel(label, k[konfSchluessel])} value={(objekt[feld] as string) ?? ''} onChange={(e) => setObjekt({ ...objekt, [feld]: e.currentTarget.value })} />
+      <Vorschlaege liste={feldVorschlaege(a, `objekt.${feld}`)} aktuell={objekt[feld]} waehlen={(w) => setObjekt({ ...objekt, [feld]: String(w) })} />
+    </div>
   );
   const n = (feld: keyof ExposeObjektDaten, label: string) => (
-    <Zahlfeld label={feldLabel(label, k[feld as string])} value={(objekt[feld] as number) ?? ''} onWert={(v) => setObjekt({ ...objekt, [feld]: v })} {...ZAHL} thousandSeparator={feld === 'baujahr' || feld === 'heizungsbaujahr' ? undefined : '.'} />
+    <div>
+      <Zahlfeld label={feldLabel(label, k[feld as string])} value={(objekt[feld] as number) ?? ''} onWert={(v) => setObjekt({ ...objekt, [feld]: v })} {...ZAHL} thousandSeparator={feld === 'baujahr' || feld === 'heizungsbaujahr' ? undefined : '.'} />
+      <Vorschlaege liste={feldVorschlaege(a, `objekt.${feld}`)} aktuell={objekt[feld]} waehlen={(w) => setObjekt({ ...objekt, [feld]: typeof w === 'number' ? w : Number(w) })} />
+    </div>
   );
   const ea = objekt.energieausweis ?? {};
+  const eaVorschlag = (teil: 'klasse' | 'kennwert' | 'art') => (
+    <Vorschlaege liste={feldVorschlaege(a, `objekt.energieausweis.${teil}`)} aktuell={ea[teil]} waehlen={(w) => setObjekt({ ...objekt, energieausweis: { ...ea, [teil]: teil === 'kennwert' ? Number(w) : String(w) } })} />
+  );
   const einheiten = objekt.einheiten ?? [];
   const setE = (i: number, teil: object) => setObjekt({ ...objekt, einheiten: einheiten.map((e, j) => (j === i ? { ...e, ...teil } : e)) });
   return (
@@ -490,9 +523,12 @@ function ObjektSchritt({ a, objekt, setObjekt, bestehend, setBestehend, ergaenze
       <Title order={3}>🏢 Objekt prüfen</Title>
       <Text size="sm" c="dimmed">Erkannte Werte prüfen und korrigieren. Punkt: grün sicher · orange unsicher · rot nicht erkannt.</Text>
       {a.warnungen.length > 0 && (
-        <Alert color="yellow" title="Hinweise der Analyse" aria-label="Warnungen">
-          <Stack gap={2}>{a.warnungen.map((w, i) => <Text key={i} size="sm">{w}</Text>)}</Stack>
-        </Alert>
+        <Accordion variant="separated" chevronPosition="left" aria-label="Warnungen">
+          <Accordion.Item value="hinweise">
+            <Accordion.Control icon={<span aria-hidden>⚠️</span>}>Hinweise der Analyse ({a.warnungen.length})</Accordion.Control>
+            <Accordion.Panel><Stack gap={2}>{a.warnungen.map((w, i) => <Text key={i} size="sm">{w}</Text>)}</Stack></Accordion.Panel>
+          </Accordion.Item>
+        </Accordion>
       )}
       {a.dubletten.objekt && (
         <Alert color={bestehend ? 'green' : 'orange'} title={a.dubletten.objekt.sicherheit === 'exact' ? 'Objekt existiert bereits' : 'Ähnliches Objekt gefunden'}>
@@ -525,9 +561,18 @@ function ObjektSchritt({ a, objekt, setObjekt, bestehend, setBestehend, ergaenze
       <Text size="xs" fw={700} c="dimmed" tt="uppercase">Energie & Heizung</Text>
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
         {t('heizungsart', 'Heizungsart')}{n('heizungsbaujahr', 'Heizung Baujahr')}
-        <TextInput label={feldLabel('Energieklasse', k.energieklasse)} value={ea.klasse ?? ''} onChange={(e) => setObjekt({ ...objekt, energieausweis: { ...ea, klasse: e.currentTarget.value } })} />
-        <Zahlfeld label={feldLabel('Energiekennwert kWh/m²a', k.energiekennwert)} value={ea.kennwert ?? ''} onWert={(v) => setObjekt({ ...objekt, energieausweis: { ...ea, kennwert: v } })} {...ZAHL} />
-        <TextInput label={feldLabel('Energieausweis Art', k.energieart)} value={ea.art ?? ''} onChange={(e) => setObjekt({ ...objekt, energieausweis: { ...ea, art: e.currentTarget.value } })} />
+        <div>
+          <TextInput label={feldLabel('Energieklasse', k.energieklasse)} value={ea.klasse ?? ''} onChange={(e) => setObjekt({ ...objekt, energieausweis: { ...ea, klasse: e.currentTarget.value } })} />
+          {eaVorschlag('klasse')}
+        </div>
+        <div>
+          <Zahlfeld label={feldLabel('Energiekennwert kWh/m²a', k.energiekennwert)} value={ea.kennwert ?? ''} onWert={(v) => setObjekt({ ...objekt, energieausweis: { ...ea, kennwert: v } })} {...ZAHL} />
+          {eaVorschlag('kennwert')}
+        </div>
+        <div>
+          <TextInput label={feldLabel('Energieausweis Art', k.energieart)} value={ea.art ?? ''} onChange={(e) => setObjekt({ ...objekt, energieausweis: { ...ea, art: e.currentTarget.value } })} />
+          {eaVorschlag('art')}
+        </div>
       </SimpleGrid>
       <Paper withBorder p="sm" aria-label="Einheitenaufstellung">
         <Group justify="space-between" mb="xs">
@@ -575,7 +620,10 @@ function MaklerSchritt({ a, makler, setMakler, bestehend, setBestehend }: { a: E
   const telFehler = telefonPruefen(makler.tel), mailFehler = emailPruefen(makler.email);
 
   const mitOptionen = (feld: 'name' | 'tel' | 'email', label: string, konf: string | undefined, optionen?: string[]) => {
-    const extra = [...new Set((optionen ?? []).map((o) => o?.trim()).filter(Boolean))].filter((o) => o !== (makler[feld] ?? '').trim());
+    // Alternativen der KI (alleNamen …) plus die „doppelten“ Angaben aus dem Exposé zu diesem Feld
+    const pruefe = feld === 'tel' ? ['makler.mobiltel', 'makler.festnetztel'] : [`makler.${feld}`];
+    const doppelt = pruefe.flatMap((pr) => feldVorschlaege(a, pr).map((v) => v.text));
+    const extra = [...new Set([...(optionen ?? []), ...doppelt].map((o) => o?.trim()).filter(Boolean))].filter((o) => o !== (makler[feld] ?? '').trim());
     return (
       <div>
         <TextInput label={feldLabel(label, konf)} value={makler[feld] ?? ''} onChange={(e) => setMakler({ ...makler, [feld]: e.currentTarget.value })}
@@ -666,11 +714,10 @@ function formSchreiben(f: Formular, pfad: string, wert: unknown): Formular {
 }
 const istLeer = (v: unknown) => v === null || v === undefined || (typeof v === 'string' && !v.trim());
 
-function ErfassteAngaben({ a, formular, schreiben, zuordnungen, setZuordnungen, uebernommen, setUebernommen, nichtMerken, setNichtMerken }: {
+function ErfassteAngaben({ a, formular, schreiben, zuordnungen, setZuordnungen, uebernommen, setUebernommen }: {
   a: ExposeAnalyseAntwort; formular: Formular; schreiben: (f: Formular) => void;
   zuordnungen: Record<string, string>; setZuordnungen: (z: Record<string, string>) => void;
   uebernommen: Record<string, string>; setUebernommen: (u: Record<string, string>) => void;
-  nichtMerken: Record<string, boolean>; setNichtMerken: (m: Record<string, boolean>) => void;
 }) {
   const [auswahl, setAuswahl] = useState<Record<string, string | null>>({});
   const [fehler, setFehler] = useState<Record<string, string>>({});
@@ -680,7 +727,9 @@ function ErfassteAngaben({ a, formular, schreiben, zuordnungen, setZuordnungen, 
   ];
   const erfasst = alle.filter(({ x }) => !istEinheit(x));
   const automatisch = erfasst.filter(({ x }) => x.zuordnung === 'zugeordnet').length;
-  const weitere = erfasst.filter(({ x }) => x.zuordnung !== 'zugeordnet');
+  const anFeldern = erfasst.filter(({ x }) => amFeld(x)).length;
+  // Unten nur, was kein Formularfeld hat; „doppelt“ ohne lesbaren Wert (Nachbarzelle, Platzhalter) bleibt bei „Alle erfassten Angaben“
+  const weitere = erfasst.filter(({ x }) => x.zuordnung !== 'zugeordnet' && !amFeld(x) && !(x.zuordnung === 'doppelt' && (!x.ziel.feld || x.ziel.wert === null)));
   const zielLabel = (art: AngabeArt, s: string) => (s === NOTIZEN ? 'Notizen' : a.ziele[art].find((z) => z.schluessel === s)?.label ?? s);
   if (!alle.length) return null;
 
@@ -718,13 +767,16 @@ function ErfassteAngaben({ a, formular, schreiben, zuordnungen, setZuordnungen, 
   return (
     <Stack gap="sm">
       <Text size="sm" c="dimmed" data-erfassung>
-        {erfasst.length} Angaben erfasst · {automatisch} automatisch zugeordnet · {weitere.length} weitere
+        {erfasst.length} Angaben erfasst · {automatisch} automatisch zugeordnet{anFeldern ? ` · ${anFeldern} als Vorschlag am Feld` : ''} · {weitere.length} weitere
         {a.belegQuote !== null ? ` · ${Math.round(a.belegQuote * 100)} % auf der Seite belegt` : ''}
       </Text>
+      <Accordion variant="separated" chevronPosition="left">
       {weitere.length > 0 && (
+        <Accordion.Item value="weitere">
+        <Accordion.Control>Weitere Angaben aus dem Exposé ({weitere.length})</Accordion.Control>
+        <Accordion.Panel>
         <Paper withBorder p="sm" aria-label="Weitere Angaben">
-          <Title order={5} mb={4}>Weitere Angaben aus dem Exposé ({weitere.length})</Title>
-          <Text size="xs" c="dimmed" mb="xs">Nicht automatisch zugeordnet. Ins Formular, in ein weiteres Feld oder in die Notizen übernehmen — sonst bleiben sie im Reiter „Aus dem Exposé“.</Text>
+          <Text size="xs" c="dimmed" mb="xs">Angaben ohne Formularfeld. In ein weiteres Feld oder in die Notizen übernehmen — sonst bleiben sie im Reiter „Aus dem Exposé“.</Text>
           <ScrollArea>
             <Table miw={760} verticalSpacing={4} horizontalSpacing={6}>
               <Table.Thead><Table.Tr><Table.Th>Bezeichnung</Table.Th><Table.Th>Wert</Table.Th><Table.Th>Seite</Table.Th><Table.Th>Übernehmen in …</Table.Th></Table.Tr></Table.Thead>
@@ -757,11 +809,6 @@ function ErfassteAngaben({ a, formular, schreiben, zuordnungen, setZuordnungen, 
                                 data={optionen(art, x)} value={wahl} onChange={(v) => setAuswahl((s) => ({ ...s, [x.feld]: v }))} />
                               <Button size="compact-xs" variant="light" disabled={!wahl} onClick={() => wahl && uebernehmen(art, x, wahl)}>Übernehmen</Button>
                             </Group>
-                            {/* Gelernt wird nur eine gewählte Zuordnung — ohne Ziel wirkt das Häkchen nicht, also auch nicht zeigen (Rückmeldung 14.10.2026) */}
-                            {wahl && (
-                              <Checkbox size="xs" data-merken={x.feld} label="für künftige Importe merken" checked={!nichtMerken[x.feld]}
-                                onChange={(e) => setNichtMerken({ ...nichtMerken, [x.feld]: !e.currentTarget.checked })} />
-                            )}
                             {fehler[x.feld] && <Text fz={11} c="red">{fehler[x.feld]}</Text>}
                             {!fehler[x.feld] && x.ziel.hinweis && <Text fz={11} c="dimmed">{x.ziel.hinweis}</Text>}
                           </Stack>
@@ -774,8 +821,9 @@ function ErfassteAngaben({ a, formular, schreiben, zuordnungen, setZuordnungen, 
             </Table>
           </ScrollArea>
         </Paper>
+        </Accordion.Panel>
+        </Accordion.Item>
       )}
-      <Accordion variant="separated" chevronPosition="left">
         <Accordion.Item value="alle">
           <Accordion.Control>Alle erfassten Angaben ({alle.length})</Accordion.Control>
           <Accordion.Panel>

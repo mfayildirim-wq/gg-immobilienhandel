@@ -10,7 +10,7 @@ import type { ExposeV2 } from './erfassung.ts';
 import { gruppeVonPfad, KATALOG, KATALOG_GRUPPEN } from './katalog.ts';
 import type { NormWert } from './normalisieren.ts';
 import { GG_ZIELE, type ZielArt } from './ziele.ts';
-import { einheitenAusTabellen, type Gelernt, MAPPING, zielWert, zuordnen, type ZuordnungGrund } from './zuordnung.ts';
+import { einheitenAusTabellen, MAPPING, zielWert, zuordnen, type ZuordnungGrund } from './zuordnung.ts';
 
 export type AngabeWert = NormWert;
 export type AngabeStatus = 'gleich' | 'abweichend' | 'leer' | 'keinFeld';
@@ -123,9 +123,9 @@ function sortiert(zeilen: Angabe[]): Angabe[] {
 }
 
 /** Zeilen eines Imports für Objekt oder Makler. */
-export function angabenAusImport(imp: ImportFuerAngaben, art: 'objekt' | 'makler', d: DatensatzFuerAngaben, gelernt: Gelernt = {}): Angabe[] {
+export function angabenAusImport(imp: ImportFuerAngaben, art: 'objekt' | 'makler', d: DatensatzFuerAngaben): Angabe[] {
   const v2 = imp.rohdaten;
-  const { zeilen: zuordnung } = zuordnen(v2, null, gelernt);
+  const { zeilen: zuordnung } = zuordnen(v2, null);
   const kopf = { importId: imp.id, datum: imp.datum };
   const aus: Angabe[] = [];
   v2.angaben.forEach((a, i) => {
@@ -139,7 +139,7 @@ export function angabenAusImport(imp: ImportFuerAngaben, art: 'objekt' | 'makler
     aus.push({
       ...kopf, gruppe: gruppeVonPfad(a.pfad), feld: `angaben.${i}`, pfad: a.pfad, bezeichnung: a.bezeichnung,
       standard: a.pfad ? KATALOG[a.pfad]?.label ?? null : null, wert: a.wert, seite: a.seite, belegt: imp.belegt?.[i] ?? null, zuordnung: z.grund,
-      ziel: zielZeile(passend, wert, passend ? (z.ziel ? 'mapping' : 'vorschlag') : null, d, a.pfad, a.wert, z.gelernt ? (z.hinweis ? `gelernt · ${z.hinweis}` : 'gelernt') : z.hinweis),
+      ziel: zielZeile(passend, wert, passend ? (z.ziel ? 'mapping' : 'vorschlag') : null, d, a.pfad, a.wert, z.hinweis),
     });
   });
   if (art === 'objekt') {
