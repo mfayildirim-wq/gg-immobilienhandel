@@ -670,6 +670,8 @@ const T = z.string().max(5000).nullable().optional();
 
 export const ExposeEinheitDaten = z.object({
   typ: T, lage: T, zimmer: Nr, flaeche: Nr, kaltmiete: Nr, vermiet: T,
+  // Zeile trägt den Gesamtwert oder den Rest aus dem Gesamtwert (bitte aufteilen); beim Anlegen ohne Bedeutung
+  hinweis: z.enum(['gesamtwert', 'rest']).nullable().optional(),
 });
 
 export const ExposeObjektDaten = z.object({

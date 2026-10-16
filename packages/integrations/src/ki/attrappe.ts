@@ -91,7 +91,8 @@ function teilA(text: string) {
     objekt: {
       strasse: adresse?.[1] ?? '', hausnr: adresse?.[2] ?? '', plz: adresse?.[3] ?? '', stadt: adresse?.[4] ?? '',
       angebotspreis: zahl(feld('Kaufpreis')), wohnflaeche: zahl(feld('Wohnfläche') ?? feld('Wohnflaeche')), baujahr: zahl(feld('Baujahr')),
-      einheitenAnz: einheiten.length || null, einheiten,
+      istmiete: zahl(feld('Mieteinnahmen') ?? feld('Ist-Miete')),
+      einheitenAnz: einheiten.length || zahl(feld('Einheiten gesamt')) || null, einheiten,
     },
     makler: { name: makler[0] ?? '', firma: makler[1] ?? '', mobiltel: makler[2] ?? '', email: makler[3] ?? '' },
     kalkulation: { kaufpreis: zahl(feld('Kaufpreis')) },
