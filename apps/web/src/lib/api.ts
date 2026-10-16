@@ -488,7 +488,7 @@ export async function exposeHochladen(datei: File): Promise<{ key: string }> {
   const key = await direktHochladen('expose', datei);
   return anfrage<{ key: string }>('/api/expose/eingang/uebernehmen', senden('POST', { key }));
 }
-export const exposeAnalysieren = (key: string, dateiname: string) => anfrage<ExposeAnalyseAntwort>('/api/expose/analyse', senden('POST', { key, dateiname }));
+export const exposeAnalysieren = (key: string, dateiname: string, bilder = true) => anfrage<ExposeAnalyseAntwort>('/api/expose/analyse', senden('POST', { key, dateiname, bilder }));
 
 export class DublettenFehler extends ApiFehler {
   constructor(readonly dealId: string, message: string) { super(409, message); }

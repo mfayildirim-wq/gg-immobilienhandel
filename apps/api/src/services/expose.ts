@@ -78,7 +78,7 @@ export async function pdfErzeuger(pdf: Uint8Array): Promise<string | null> {
   } catch { return null; }
 }
 
-export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, dateiname: string): Promise<ExposeAnalyseAntwort> {
+export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, dateiname: string, optionen: { bilder?: boolean } = {}): Promise<ExposeAnalyseAntwort> {
   if (!istEingangsSchluessel(key)) throw new FachFehler(422, 'Ungültiger Upload-Schlüssel.');
   if (!k.ki) throw new FachFehler(422, 'Keine KI eingerichtet: Anthropic-Schlüssel unter Einstellungen → Zugänge hinterlegen.');
   let pdf: Uint8Array;
@@ -89,8 +89,11 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
   }
   if (!istPdf(pdf)) throw new FachFehler(422, `„${dateiname}“ ist kein PDF.`);
 
-  // Fotos parallel zur Analyse herauslösen (Zeit sparen); ein Fehler dort stoppt die Analyse nicht
-  const bilderLauf = (k.bilder ?? bilderAusPdf)(pdf).then((b) => ({ b, fehler: null as unknown }), (fehler: unknown) => ({ b: [] as ExposeBild[], fehler }));
+  // Fotos parallel zur Analyse herauslösen (Zeit sparen); ein Fehler dort stoppt die Analyse nicht.
+  // Abgewählt (Häkchen auf der Upload-Seite, 16.10.2026): keine Bilder, der Schritt „Fotos“ entfällt
+  const bilderLauf = optionen.bilder === false
+    ? Promise.resolve({ b: [] as ExposeBild[], fehler: null as unknown })
+    : (k.bilder ?? bilderAusPdf)(pdf).then((b) => ({ b, fehler: null as unknown }), (fehler: unknown) => ({ b: [] as ExposeBild[], fehler }));
   const einstellung = await exposeExtraktionLesen(db);
   // Rohdaten ohne KI: Textlayer + Texterkennung der Bild-Seiten (Protokoll 30, P1); der OCR-Worker lebt nur für diese Analyse
   const texterkennung = k.texterkennung === null ? null : (k.texterkennung ?? tesseractOcr)();

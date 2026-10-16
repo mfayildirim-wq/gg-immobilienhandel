@@ -51,6 +51,18 @@ describe.skipIf(!url)('Exposé-Import: Fotos aus dem Exposé (Fake-Herauslösung
   };
   const eingangsBilder = (importId: string) => [...speicher.inhalt.keys()].filter((k) => k.startsWith(`pdfs/_eingang/${importId}/`));
 
+  it('Fotos abgewählt (bilder: false): die Herauslösung läuft nicht, die Analyse liefert keine Bilder (16.10.2026)', async () => {
+    let gerufen = 0;
+    bilder = async () => { gerufen++; return [bild(1, 9)]; };
+    const name = `${kennung}ohne`;
+    const e: any = await (await app.request('/api/expose/eingang', { method: 'POST', body: testExpose(name) })).json();
+    const a: any = await (await json('/api/expose/analyse', { key: e.key, dateiname: `${name}.pdf`, bilder: false })).json();
+    angelegt.importe.push(a.importId);
+    expect(gerufen).toBe(0);
+    expect(a.bilder).toEqual([]);
+    expect(eingangsBilder(a.importId)).toEqual([]);
+  });
+
   it('Analyse legt die Bilder in den Eingang; Route liefert das JPEG; die DB hält nur die Liste', async () => {
     bilder = async () => [bild(3, 2), bild(1, 1)];
     const { a } = await analysieren(kennung);

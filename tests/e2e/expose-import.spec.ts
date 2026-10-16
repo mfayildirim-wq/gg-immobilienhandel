@@ -268,3 +268,46 @@ test('Einheiten: nur Gesamtwerte → erste Zeile trägt sie, übrige Zeilen leer
   await expect(tabelle.locator('tr[data-hinweis="rest"]')).toHaveCount(1);
   await expect(tabelle.getByText('Rest aus Gesamtwert, bitte aufteilen')).toBeVisible();
 });
+
+/** Häkchen „Fotos aus dem Exposé übernehmen“ (16.10.2026): abgewählt werden keine Bilder herausgelöst und der Schritt „Fotos“ entfällt. */
+test('Fotos abgewählt: kein Schritt „Fotos“, das Objekt bekommt keine Bilder; die Wahl bleibt gemerkt', async ({ page }, info) => {
+  const basteln = (await import('@gg/integrations/test-pdf')) as Record<string, unknown>;
+  test.skip(typeof basteln.pdfMitBildern !== 'function', 'pdfMitBildern ist noch nicht vorhanden');
+  const kennung = `G${Date.now()}${info.project.name.slice(0, 1)}`;
+  const datei = join(tmpdir(), `${kennung}.pdf`);
+  const zeilen = [
+    `Expose ${kennung} - Mehrfamilienhaus in guter Lage mit solidem Mietertrag und Entwicklungspotenzial`,
+    `Adresse: ${kennung}strasse 12, 89073 Ulm`, 'Kaufpreis: 1.250.000 EUR', 'Wohnflaeche: 240 m2', 'Baujahr: 1965',
+    `Makler: Anna ${kennung} | Beispiel Immobilien GmbH | 0171 ${kennung.replace(/\D/g, '').slice(-7).padStart(7, '0')} | anna.${kennung.toLowerCase()}@beispiel.test`,
+  ];
+  writeFileSync(datei, (basteln.pdfMitBildern as (seiten: { zeilen: string[]; bilder?: { breite: number; hoehe: number }[] }[]) => Uint8Array)(
+    [{ zeilen, bilder: [{ breite: 800, hoehe: 600 }] }]));
+
+  await page.goto('/expose-import');
+  await expect(page.getByText('Test-Modus')).toBeVisible();
+  const haken = page.getByLabel('Fotos aus dem Exposé übernehmen');
+  await expect(haken).toBeChecked(); // Standard: an
+  await haken.uncheck();
+  await page.getByLabel('Exposé-PDF wählen').setInputFiles(datei);
+  await page.getByRole('button', { name: 'Analysieren →' }).click();
+  await expect(page.getByRole('heading', { name: '🏢 Objekt prüfen' })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('button', { name: 'Weiter: Fotos →' })).toHaveCount(0);
+  await expect(page.getByText('Fotos', { exact: true })).toHaveCount(0); // kein Schritt im Balken
+  await page.getByRole('button', { name: 'Weiter: Makler →' }).click();
+  await page.getByRole('button', { name: '← Zurück' }).click();
+  await expect(page.getByRole('heading', { name: '🏢 Objekt prüfen' })).toBeVisible();
+  await page.getByRole('button', { name: 'Weiter: Makler →' }).click();
+  await page.getByRole('button', { name: 'Weiter: Deal →' }).click();
+  await page.getByRole('textbox', { name: 'Maklerprov. %' }).fill('0');
+  await page.getByRole('button', { name: '✅ Deal anlegen' }).click();
+  await expect(page).toHaveURL(/\/deals\?deal=/, { timeout: 15_000 });
+  const dealId = new URL(page.url()).searchParams.get('deal')!;
+  const deal = await (await page.request.get(`/api/deals/${dealId}`)).json();
+  const liste = await (await page.request.get(`/api/objekte/${deal.objekt.id}/fotos`)).json();
+  expect(liste).toHaveLength(0);
+
+  // die Wahl bleibt beim nächsten Import gemerkt
+  await page.goto('/expose-import');
+  await expect(page.getByLabel('Fotos aus dem Exposé übernehmen')).not.toBeChecked();
+  await page.getByLabel('Fotos aus dem Exposé übernehmen').check();
+});

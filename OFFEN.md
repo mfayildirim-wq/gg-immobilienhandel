@@ -142,6 +142,9 @@ richtig). Vorher lief beides online leer, weil `@napi-rs/canvas` dem API-Paket f
       Beide Zeilen sind auf der Prüfseite markiert („bitte aufteilen“). Zeilenzahl aus der Einheitenliste, sonst aus „Einheiten
       gesamt“, sonst eine Zeile. Summenzeile unter der Aufstellung vergleicht mit dem Exposé; Abweichung > 1 % nur als Warnung.
       Golden Master `expose-uebernahme.json` bleibt, der Vergleich lässt die Einheiten aus.
+- [x] **Häkchen „Fotos aus dem Exposé übernehmen“ (16.10.2026)** auf der Upload-Seite, voreingestellt an, Wahl bleibt im
+      Browser gemerkt. Abgewählt: `POST /api/expose/analyse { bilder: false }` löst keine Bilder heraus, der Schritt „Fotos“
+      entfällt im Wizard (Objekt → Makler → Deal).
 - [x] Übernehmen: Import-Zeile gesperrt, zweite Übernahme → 409; PDF vor den Fotos; Knopf während des Laufs gesperrt
 - [x] Aus dem Test auf privat (14.10.2026): Häkchen „für künftige Importe merken“ erst mit gewähltem Ziel (PR #33);
       `@napi-rs/canvas` als Abhängigkeit von `apps/api`, sonst keine Fotos und keine Texterkennung online (PR #34)
