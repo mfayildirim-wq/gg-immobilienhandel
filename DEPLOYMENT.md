@@ -39,7 +39,7 @@ online prüfen → erst dann Pull Request nach `main` mergen. **Migrationen** la
 Was dort anders ist: kein KI-Schlüssel (KI-Funktionen aus), kein M365, Auto-Import aus. Die nächtlichen Crons laufen
 auch dort (sichern nur Testdaten). Supabase Free pausiert das Projekt nach einer Woche ohne Zugriff — im Dashboard wecken.
 
-**Drei Stolpersteine des ersten Deployments — für das nächste Mal:**
+**Vier Stolpersteine der ersten Deployments — für das nächste Mal:**
 
 1. **`BLOCKED / COMMIT_AUTHOR_REQUIRED`** (auch per CLI): Vercel braucht zum Commit-Autor ein GitHub-Konto.
    Das Vercel-Konto muss mit GitHub verbunden sein **und** die Commit-Adresse muss GitHub einem Konto zuordnen.
@@ -55,7 +55,10 @@ auch dort (sichern nur Testdaten). Supabase Free pausiert das Projekt nach einer
    nicht; lokal mit tsx fällt das nicht auf, weil jede Datei aus ihrem eigenen Paket auflöst. Folge online: Fotos aus dem Exposé
    und Texterkennung liefen leer („Bild übersprungen“, „OCR fehlgeschlagen“ im Log), die Analyse selbst lief durch. Regel:
    **jedes Paket in `EXTERN` steht auch in `apps/api/package.json`** (`pdfjs-dist`, `@napi-rs/canvas`, `playwright-core`,
-   `@sparticuz/chromium`, dazu `tesseract.js-core` für den OCR-Worker). Laufzeit-Logs: `npx vercel logs --deployment gg-immobilienhandel.vercel.app --json`.
+   `@sparticuz/chromium`, dazu `tesseract.js-core` für den OCR-Worker). Laufzeit-Logs: `npx vercel logs --deployment gg-immobilienhandel.vercel.app --json` (keine Live-Verfolgung, sondern
+   eine Abfrage über ein Zeitfenster, Standard die letzten 30 Minuten; im Hobby-Tarif reicht die Aufbewahrung nicht weiter, und
+   am 15.10.2026 kam die Abfrage trotz frischer Aufrufe leer zurück). Verlässlicher Nachweis ist die Antwort von
+   `POST /api/expose/analyse`: `bilder` gefüllt und bei Scans die Warnung „… Bild-Seite(n) per Texterkennung gelesen“.
 
 **Noch offen:** `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` bei Vercel (ohne sie kein Exposé-Import, kein Diktat),
 Azure-Redirect-URI für M365, Fotos und Dokumente der Produktion (nicht im Export), Direkt-Upload über 4,5 MB,
