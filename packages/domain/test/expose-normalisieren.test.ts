@@ -3,7 +3,7 @@ import { jahrAusText, jaNeinAusText, plzOrtTrennen, strasseTrennen, wertNormalis
 
 describe('Exposé v2: wörtliche Werte lesen (Protokoll 28)', () => {
   it.each([
-    ['1.250.000,00 €', 1_250_000], ['1.250.000 €', 1_250_000], ['1,25 Mio. €', 1_250_000], ['ca. 85,5 m²', 85.5], ['85.5 qm', 85.5],
+    ['1.250.000,00 €', 1_250_000], ['1.250.000 €', 1_250_000], ['1.900000 Euro', 1_900_000], ['2,250000 €', 2_250_000], ['3.1416', 3.1416], ['85.500', 85_500], ['1,25 Mio. €', 1_250_000], ['ca. 85,5 m²', 85.5], ['85.5 qm', 85.5],
     ['3,57 % inkl. MwSt.', 3.57], ['1.250', 1250], ['27.840 € p.a.', 27_840], ['900 Tsd. €', 900_000], ['1,250,000.50', 1_250_000.5],
   ])('zahlAusText(%s) = %s', (text, zahl) => expect(zahlAusText(text)).toBe(zahl));
 

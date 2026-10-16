@@ -114,6 +114,12 @@ Prüft **gegen die laufende alte App**, ob der Neubau fachlich dasselbe zeigt �
 
 **Bisher gefunden:** Datumsanzeige „Zuletzt“ war im Neubau „8.9.2026“, alt „08.09.2026“ → angeglichen.
 
+**Exposé-Import (`pnpm paritaet:expose`, kostet Geld):** dieselben PDFs auf drei Wegen — alte App (laufend, Port 3001), Neubau v0 (derselbe
+Aufruf, portiert) und Neubau v2 (Produktivweg: Rohdaten ohne KI, Teil A auf dem Dokument-Text, Scan → OCR → Text) — und die Felder der
+Prüfseite im Vergleich. `--nur "a,b"` wählt PDFs, `--scan "a"` nimmt ein PDF zusätzlich als nachgestellten Scan (gerastert, ohne Textlayer;
+`pdfAlsScan` aus `@gg/integrations`). alt ↔ v0 zeigt das KI-Rauschen, v0 ↔ v2 die Wirkung der Eingabe. Ergebnisse werden je PDF und Weg
+unter `.cache/paritaet-expose/` abgelegt; Bericht `berichte/paritaet/expose.md` (Protokoll 31 §8.2).
+
 ## Deal-Detail, Makler, Cockpit-KI, Vorlagen
 
 - **Deal-Info:** Objekt wechseln/neu anlegen (Kaufpreis, Wohnfläche, Einheiten aus dem Objekt), Makler-Pflicht beim manuellen Anlegen, Dublette Objekt+Makler, Frequenzwechsel belegt den nächsten Kontakt vor (nur wenn leer), 1 Wo/1 Mo/3 Mo/6 Mo, E-Mail an Makler, Objektfotos, Gesprächslog, Löschen.

@@ -9,6 +9,7 @@ export * from './ki/attrappe.ts';
 export * from './speicher/speicher.ts';
 export * from './speicher/bild.ts';
 export * from './test/pdf-basteln.ts';
+export * from './test/pdf-scan.ts';
 export * from './expose/triage.ts';
 export * from './speicher/dateipruefung.ts';
 export * from './ki/persona.ts';
