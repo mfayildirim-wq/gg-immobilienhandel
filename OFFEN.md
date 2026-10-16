@@ -145,9 +145,19 @@ richtig). Vorher lief beides online leer, weil `@napi-rs/canvas` dem API-Paket f
       Jahresmiete am Wortlaut („p.a.“) und per Plausibilität (> 40 €/m² → ÷ 12 mit Warnung) als Monatsmiete; Platzhalter
       („auf Anfrage“) gelten als leer; Mobil nur bei Mobilnummer; längerer wörtlicher Freitext ersetzt die Kurzfassung.
       **Offen E8:** die €/m²-Plausibilität bei Mischobjekten nur als Warnung (Protokoll 31, B4).
-- [ ] **Teil A bekommt im Produktivweg den Dokument-Text** statt des pdfjs-Textlayers wie `main`, und Scans gehen nach OCR
-      als Text an Haiku statt als PDF an Sonnet (Protokoll 31, B7; Entscheidung E7 offen). Gemessen gleich an 5 Exposés,
-      kein Paritätstest.
+- [ ] **Teil A bekommt im Produktivweg den Dokument-Text** statt des pdfjs-Textlayers wie vor v3, und Scans gehen nach OCR
+      als Text an Haiku statt als PDF an Sonnet (Protokoll 31, B7; Entscheidung E7 offen). Paritätstest 16.10.2026
+      (`pnpm paritaet:expose`, Protokoll 31 §8.2): Dokument-Text und pdfjs-Text sind praktisch gleich (Postplatz 1530/1534 Zeichen),
+      die Abweichungen alt ↔ v2 sind KI-Rauschen (Haiku lässt ganze Gruppen `makler`/`kalkulation` mal weg — auch in der alten App)
+      und gewollte Korrekturen (Jahresmiete ÷ 12). Beim nachgestellten Scan liest OCR → Haiku Adresse, Einheiten und Mieten besser als
+      Sonnet mit dem PDF, verliert aber den Energieausweis (Klasse E/142,7 → „A“/75). Empfehlung: v2 behalten; bei fehlender
+      `makler`-/`kalkulation`-Gruppe in Teil A einmal wiederholen (Rauschen dämpfen); OCR-Ergebnis des Energieblocks prüfen.
+- [x] Paritätstest Exposé-Import: Zahl „1.900000 Euro“ (Tausenderpunkte im Textlayer verloren) wurde 1,9 — auf der privaten
+      Produktion steht der Postplatz-Deal vom 14.10. 14:03 mit Kaufpreis 1,9 € in der Kalkulation (von Hand auf 1.950.000 setzen);
+      `tokenLesen` liest Dreiergruppen hinter einem einzelnen Trennzeichen jetzt als Tausender.
+- [ ] **KI gesperrt bis 01.11.2026:** Der Anthropic-Schlüssel der privaten Produktion (derselbe wie in der lokalen `.env`) hat sein
+      Nutzungslimit erreicht — jede Analyse endet mit „Nutzungslimit erreicht“. Limit in der Anthropic-Konsole (Settings → Limits)
+      erhöhen. Der Paritätslauf für McMakler (v2) fehlt deshalb; nach der Freigabe `pnpm paritaet:expose --nur McMakler_Expose` nachholen.
 - [ ] Folgeschritte (Protokoll 31, 7.5): „Abbrechen“ räumt den Import auf; Ergänzen-Modus ohne Deal-Schritt; Prüfseite
       nutzt `uebernahmeWert` aus der Domain und fragt vor dem Überschreiben; Toleranz je Typ (Jahr, Stückzahl exakt);
       Kaufpreis mit zwei Zielen; Leerstand „frei ab“; Typerkennung nur auf dem Typ-Feld; Datum nicht als Zahl;

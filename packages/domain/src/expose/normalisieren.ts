@@ -16,6 +16,10 @@ function tokenLesen(roh: string): number | null {
   const punkte = (t.match(/\./g) ?? []).length;
   const kommas = (t.match(/,/g) ?? []).length;
   let s: string;
+  // „1.900000“: ein Trennzeichen, danach sechs oder mehr Ziffern in Dreiergruppen — die weiteren Tausenderpunkte sind im
+  // Textlayer verloren gegangen (Postplatz-Exposé, Paritätstest 16.10.2026: daraus wurde ein Kaufpreis von 1,9 €)
+  const gruppen = t.match(/^(\d{1,3})[.,](\d{6,})$/);
+  if (gruppen && gruppen[2]!.length % 3 === 0) return Number(gruppen[1]! + gruppen[2]!);
   if (punkte && kommas) {
     s = t.lastIndexOf(',') > t.lastIndexOf('.') ? t.replace(/\./g, '').replace(',', '.') : t.replace(/,/g, '');
   } else if (kommas) {

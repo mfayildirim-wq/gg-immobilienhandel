@@ -25,6 +25,7 @@
     "umzug:inventar": "pnpm --filter @gg/umzug inventar",
     "golden:erzeugen": "tsx werkzeuge/golden-master/erzeugen.ts",
     "paritaet": "playwright test -c playwright.paritaet.config.ts",
+    "paritaet:expose": "tsx --env-file-if-exists=.env tests/paritaet/expose.ts",
     "paritaet:wiederherstellen": "tsx -e \"import('./tests/paritaet/umgebung.ts').then(m => m.wiederherstellen())\"",
     "demo:daten": "tsx werkzeuge/demo-daten.ts",
     "ui:abgleich": "tsx werkzeuge/ui-abgleich.ts",
