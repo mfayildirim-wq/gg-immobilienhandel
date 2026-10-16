@@ -223,3 +223,48 @@ test('Exposé mit 2 Bildern: Wizard-Schritt „Fotos“ zeigt beide, eines entfe
   expect(liste.map((f: { dateiname: string }) => f.dateiname)).toEqual([expect.stringMatching(/^Exposé S\.\d+-1\.jpg$/)]);
 });
 // <<< Fotos aus dem Exposé
+
+/** Einheiten ohne Verteilung (Fachentscheidung 16.10.2026): Gesamtwerte stehen in der ersten offenen Zeile, der Rest bleibt leer. */
+test('Einheiten: nur Gesamtwerte → erste Zeile trägt sie, übrige Zeilen leer; gemischt → Rest in der ersten offenen Zeile; Summenzeile', async ({ page }, info) => {
+  const kennung = `U${Date.now()}${info.project.name.slice(0, 1)}`;
+  const kopf = (k: string) => [
+    `Expose ${k} - Mehrfamilienhaus in guter Lage mit solidem Mietertrag und Entwicklungspotenzial`,
+    `Adresse: ${k}strasse 12, 89073 Ulm`, 'Kaufpreis: 1.250.000 EUR', 'Baujahr: 1965',
+    `Makler: Anna ${k} | Beispiel Immobilien GmbH | 0171 ${k.replace(/\D/g, '').slice(-7).padStart(7, '0')} | anna.${k.toLowerCase()}@beispiel.test`,
+  ];
+  // Fall A: nur Gesamtwerte und die Anzahl
+  const nurGesamt = join(tmpdir(), `${kennung}a.pdf`);
+  writeFileSync(nurGesamt, pdfAusSeiten([[...kopf(`${kennung}A`), 'Wohnflaeche: 500 m2', 'Mieteinnahmen: 5.000 EUR', 'Einheiten gesamt: 10']]));
+  await durchWizard(page, nurGesamt);
+  const tabelle = page.getByLabel('Einheitenaufstellung');
+  const flaechen = tabelle.getByRole('textbox', { name: 'Fläche' });
+  const mieten = tabelle.getByRole('textbox', { name: 'Kaltmiete' });
+  await expect(flaechen).toHaveCount(10);
+  await expect(flaechen.first()).toHaveValue('500');
+  await expect(mieten.first()).toHaveValue('5.000');
+  await expect(flaechen.nth(1)).toHaveValue('');
+  await expect(mieten.nth(9)).toHaveValue('');
+  await expect(tabelle.locator('tr[data-hinweis="gesamtwert"]')).toHaveCount(1);
+  await expect(tabelle.getByText('Gesamtwert, bitte aufteilen')).toBeVisible();
+  const summe = tabelle.getByRole('row', { name: 'Summe Einheiten' });
+  await expect(summe).toContainText('500');
+  await expect(summe).not.toHaveAttribute('data-flaeche-weicht', 'true');
+  // der Hinweis verschwindet, sobald die Zeile von Hand geändert wird; die Summe zeigt die Abweichung
+  await flaechen.first().fill('60');
+  await expect(tabelle.locator('tr[data-hinweis]')).toHaveCount(0);
+  await expect(summe).toHaveAttribute('data-flaeche-weicht', 'true');
+
+  // Fall B: zwei Einheiten bekannt, der Rest in Zeile 3, darunter leer
+  const gemischt = join(tmpdir(), `${kennung}b.pdf`);
+  writeFileSync(gemischt, pdfAusSeiten([[
+    ...kopf(`${kennung}B`), 'Wohnflaeche: 500 m2', 'Mieteinnahmen: 5.000 EUR', 'Einheiten gesamt: 4',
+    'Einheit: Wohnung | EG | 3 | 70 | 600', 'Einheit: Wohnung | OG | 4 | 130 | 1100', 'Einheit: Wohnung | DG | | |', 'Einheit: Stellplatz | TG | | |',
+  ]]));
+  await durchWizard(page, gemischt);
+  await expect(flaechen).toHaveCount(4);
+  await expect(flaechen.nth(2)).toHaveValue('300');
+  await expect(mieten.nth(2)).toHaveValue('3.300');
+  await expect(flaechen.nth(3)).toHaveValue('');
+  await expect(tabelle.locator('tr[data-hinweis="rest"]')).toHaveCount(1);
+  await expect(tabelle.getByText('Rest aus Gesamtwert, bitte aufteilen')).toBeVisible();
+});

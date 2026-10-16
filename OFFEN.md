@@ -136,6 +136,12 @@ richtig). Vorher lief beides online leer, weil `@napi-rs/canvas` dem API-Paket f
 - [x] Einheiten Teil A ↔ Mietliste über Fläche/Lage/Art/Miete statt Position; Tabelle gilt nur mit Mieten aus Teil A ergänzt
 - [x] Jahresspalten (`Jahresnettokaltmiete`, `p.a.`, `/Jahr`) ÷ 12; doppelte Mietliste (Übersicht + Anhang) zählt einmal
 - [x] Mieternamen entfallen auch ohne Kopfzeile; „Gewerbemieter/Hauptmieter“ im Kopf ebenso
+- [x] **Einheiten ohne Verteilung (Fachentscheidung 16.10.2026, Protokoll 31 §8.4, bewusste Abweichung von der alten App):**
+      Gesamtwohnfläche und Ist-Miete werden nicht mehr auf die Einheiten verteilt. Kennt keine Zeile den Wert, trägt die erste
+      Wohn-/Gewerbezeile den Gesamtwert; kennen ihn einige, bekommt die erste offene Zeile den Rest, alle weiteren bleiben leer.
+      Beide Zeilen sind auf der Prüfseite markiert („bitte aufteilen“). Zeilenzahl aus der Einheitenliste, sonst aus „Einheiten
+      gesamt“, sonst eine Zeile. Summenzeile unter der Aufstellung vergleicht mit dem Exposé; Abweichung > 1 % nur als Warnung.
+      Golden Master `expose-uebernahme.json` bleibt, der Vergleich lässt die Einheiten aus.
 - [x] Übernehmen: Import-Zeile gesperrt, zweite Übernahme → 409; PDF vor den Fotos; Knopf während des Laufs gesperrt
 - [x] Aus dem Test auf privat (14.10.2026): Häkchen „für künftige Importe merken“ erst mit gewähltem Ziel (PR #33);
       `@napi-rs/canvas` als Abhängigkeit von `apps/api`, sonst keine Fotos und keine Texterkennung online (PR #34)

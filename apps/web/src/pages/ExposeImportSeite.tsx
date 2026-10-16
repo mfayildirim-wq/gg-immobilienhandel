@@ -3,7 +3,7 @@ import {
   type ExposeAnalyseAntwort, type ExposeAngabe, type ExposeMaklerDaten, type ExposeObjektDaten, type ExposeZiel,
 } from '@gg/api-contract';
 import {
-  DEAL_STATUS, emailPruefen, exposeKostenBestaetigen, exposeKostenSchaetzung, FREQUENZEN, GG_ZIELE, telefonPruefen, WIZARD_KALK_FELDER, zielWert, type WizardKalk,
+  DEAL_STATUS, einheitenSumme, emailPruefen, exposeKostenBestaetigen, exposeKostenSchaetzung, FREQUENZEN, GG_ZIELE, telefonPruefen, WIZARD_KALK_FELDER, zielWert, type WizardKalk,
 } from '@gg/domain';
 import {
   Accordion, ActionIcon, Alert, Anchor, Badge, Button, Checkbox, Group, NumberInput, Paper, ScrollArea, Select, SimpleGrid, Stack, Stepper, Table, Text, Textarea, TextInput, Title, UnstyledButton,
@@ -445,6 +445,27 @@ function FotoSchritt({ bilder, aus, setAus }: { bilder: ExposeAnalyseAntwort['bi
 }
 // <<< Fotos aus dem Exposé
 
+/** Summenzeile unter der Einheitenaufstellung: Summe der Zeilen gegen Wohnfläche und Ist-Miete aus dem Exposé. */
+function EinheitenSumme({ einheiten, wohnflaeche, istmiete }: { einheiten: NonNullable<ExposeObjektDaten['einheiten']>; wohnflaeche: number | null; istmiete: number | null }) {
+  const s = einheitenSumme(einheiten, wohnflaeche, istmiete);
+  const zahl = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits: 2 });
+  const zelle = (ist: number, soll: number | null, weicht: boolean, einheit: string) => (
+    <Text size="xs" fw={700} c={weicht ? 'red' : undefined}>
+      {zahl(ist)}{soll !== null ? <Text span size="xs" fw={400} c="dimmed"> / {zahl(soll)} {einheit}</Text> : null}{weicht ? ' ⚠' : ''}
+    </Text>
+  );
+  return (
+    <Table.Tfoot>
+      <Table.Tr aria-label="Summe Einheiten" data-flaeche-weicht={s.flaecheWeicht || undefined} data-miete-weicht={s.mieteWeicht || undefined}>
+        <Table.Td colSpan={3}><Text size="xs" c="dimmed">Summe / Exposé</Text></Table.Td>
+        <Table.Td>{zelle(s.flaeche, wohnflaeche, s.flaecheWeicht, 'm²')}</Table.Td>
+        <Table.Td>{zelle(s.miete, istmiete, s.mieteWeicht, '€')}</Table.Td>
+        <Table.Td colSpan={3}>{(s.flaecheWeicht || s.mieteWeicht) && <Text size="xs" c="red">Summe weicht vom Exposé ab</Text>}</Table.Td>
+      </Table.Tr>
+    </Table.Tfoot>
+  );
+}
+
 function ObjektSchritt({ a, objekt, setObjekt, bestehend, setBestehend, ergaenzen, setErgaenzen }: { a: ExposeAnalyseAntwort; objekt: ExposeObjektDaten; setObjekt: (o: ExposeObjektDaten) => void; bestehend: string | null; setBestehend: (id: string | null) => void; ergaenzen: string | null; setErgaenzen: (id: string | null) => void }) {
   const k = a.konfidenz;
   const t = (feld: keyof ExposeObjektDaten, label: string, konfSchluessel = feld as string) => (
@@ -507,20 +528,23 @@ function ObjektSchritt({ a, objekt, setObjekt, bestehend, setBestehend, ergaenze
         </Group>
         <ScrollArea>
           <Table miw={620}>
-            <Table.Thead><Table.Tr><Table.Th>Typ</Table.Th><Table.Th>Lage</Table.Th><Table.Th>Zi.</Table.Th><Table.Th>m²</Table.Th><Table.Th>Kaltmiete €</Table.Th><Table.Th>Status</Table.Th><Table.Th /></Table.Tr></Table.Thead>
+            <Table.Thead><Table.Tr><Table.Th>Typ</Table.Th><Table.Th>Lage</Table.Th><Table.Th>Zi.</Table.Th><Table.Th>m²</Table.Th><Table.Th>Kaltmiete €</Table.Th><Table.Th>Status</Table.Th><Table.Th>Hinweis</Table.Th><Table.Th /></Table.Tr></Table.Thead>
             <Table.Tbody>
               {einheiten.map((e, i) => (
-                <Table.Tr key={i}>
+                <Table.Tr key={i} data-hinweis={e.hinweis ?? undefined}>
                   <Table.Td><Select size="xs" w={110} data={['Wohnung', 'Gewerbe', 'Stellplatz', 'Sonstiges']} value={e.typ ?? 'Wohnung'} allowDeselect={false} onChange={(v) => v && setE(i, { typ: v })} aria-label="Typ" /></Table.Td>
                   <Table.Td><TextInput size="xs" w={100} value={e.lage ?? ''} onChange={(ev) => setE(i, { lage: ev.currentTarget.value })} aria-label="Lage" /></Table.Td>
                   <Table.Td><Zahlfeld size="xs" w={60} value={e.zimmer ?? ''} onWert={(v) => setE(i, { zimmer: v })} aria-label="Zimmer" {...ZAHL} /></Table.Td>
-                  <Table.Td><Zahlfeld size="xs" w={70} value={e.flaeche ?? ''} onWert={(v) => setE(i, { flaeche: v })} aria-label="Fläche" {...ZAHL} /></Table.Td>
-                  <Table.Td><Zahlfeld size="xs" w={90} value={e.kaltmiete ?? ''} onWert={(v) => setE(i, { kaltmiete: v })} aria-label="Kaltmiete" {...ZAHL} /></Table.Td>
+                  {/* Gesamtwert-/Rest-Zeile: sobald Fläche oder Miete von Hand geändert wird, ist der Hinweis erledigt */}
+                  <Table.Td><Zahlfeld size="xs" w={70} value={e.flaeche ?? ''} onWert={(v) => setE(i, { flaeche: v, hinweis: null })} aria-label="Fläche" {...ZAHL} /></Table.Td>
+                  <Table.Td><Zahlfeld size="xs" w={90} value={e.kaltmiete ?? ''} onWert={(v) => setE(i, { kaltmiete: v, hinweis: null })} aria-label="Kaltmiete" {...ZAHL} /></Table.Td>
                   <Table.Td><Select size="xs" w={110} data={['Vermietet', 'Leerstand']} value={e.vermiet ?? 'Vermietet'} allowDeselect={false} onChange={(v) => v && setE(i, { vermiet: v })} aria-label="Status" /></Table.Td>
+                  <Table.Td>{e.hinweis ? <Badge size="xs" color="yellow" variant="light">{e.hinweis === 'rest' ? 'Rest aus Gesamtwert, bitte aufteilen' : 'Gesamtwert, bitte aufteilen'}</Badge> : null}</Table.Td>
                   <Table.Td><ActionIcon variant="subtle" color="red" aria-label="Einheit entfernen" onClick={() => setObjekt({ ...objekt, einheiten: einheiten.filter((_, j) => j !== i) })}><IconTrash size={14} /></ActionIcon></Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>
+            {einheiten.length > 0 && <EinheitenSumme einheiten={einheiten} wohnflaeche={objekt.wohnflaeche ?? null} istmiete={objekt.istmiete ?? null} />}
           </Table>
         </ScrollArea>
       </Paper>

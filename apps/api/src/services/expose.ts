@@ -126,6 +126,10 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
     v0 = z.pruefdaten;
   }
 
+  // Einheitenzeilen und Gesamtwerte (ohne Verteilung) — die Warnungen gehören zur gespeicherten Analyse
+  const v = exposeVorbereiten(v0);
+  warnungen.push(...v.warnungen);
+
   const importId = crypto.randomUUID();
   // >>> Fotos aus dem Exposé: in den Eingang, nur die Liste (ohne Bilddaten) in die Analyse
   const fotos = await bilderAblegen(k.speicher, importId, await bilderLauf);
@@ -140,7 +144,6 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
   }).returning({ createdAt: schema.exposeImporte.createdAt });
 
   const imp = v2 ? { id: importId, datum: zeile!.createdAt, rohdaten: v2, belegt } : null;
-  const v = exposeVorbereiten(v0);
   const standard = await kalkStandardLesen(db);
 
   // Dubletten gegen den aktiven Bestand, neueste zuerst (Reihenfolge wie die alte Liste)
