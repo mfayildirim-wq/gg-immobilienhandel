@@ -10,6 +10,7 @@ const LABEL: Record<keyof KalkStandard, string> = {
   euribor: 'Euribor %', margeB: 'Marge Bank %', bank_abgeb: 'Abschlussgebühr Bank %', ek_r: 'EK-Rendite p. a. %', halt: 'Haltedauer Monate',
   vprov: 'Vertriebsprovision %', glo_m: 'Marge Global %', rp_pct: 'Risikopuffer %', rend_k: 'Ziel-Rendite Einheiten %',
   auf_h: 'Aufteilung: Häuser', auf_e: 'Aufteilung: Einheiten',
+  ziel_auf: 'Zielmarge Aufteiler %', ziel_glo: 'Zielmarge Global %', rend_glo: 'Soll-Rendite Global %',
 };
 
 /** Einstellungen → Kalkulation: Standardwerte der Ankaufskalkulation. */

@@ -8,10 +8,7 @@ import {
   KundenkalkulationSpeichern,
   KundenkalkEinstellungen,
   FotoReihenfolge,
-  Dokument,
-  DokumentBezug,
-  SharepointKonfiguration,
-  SharepointStand,
+  DealDokument,
   PapierkorbEintrag,
   DublettenPaarSicht,
   AuditBefund,
@@ -81,6 +78,7 @@ import {
   DealListenEintrag,
   Fehler,
   KalkStandardSchema,
+  KiModellwahlSchema,
   KalkulationSpeichern,
   Kennzahlen,
   KommentarAnlegen,
@@ -98,9 +96,8 @@ import {
   StatusWechsel,
 } from '@gg/api-contract';
 import type { Db } from '@gg/db';
-import { AUFBEWAHRUNG, DealStatus, geplanteStufe, rueckwegPruefen, type RueckwegRegeln } from '@gg/domain';
+import { AUFBEWAHRUNG, DealStatus, geplanteStufe, type KiBereich, kiModellFuer, rueckwegPruefen, type RueckwegRegeln } from '@gg/domain';
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi';
-import type { Context } from 'hono';
 import { sql } from 'drizzle-orm';
 import { bankgespraechPdf, type BilderPorts, browserStarten, erzeugeSchleuse, finanzpraesPdf, finanzpraesPptx, KeinBrowserError, praesentationDateiname, SCHLEUSE_STANDARD, type Schleuse } from '@gg/documents/pdf';
 import type { FinanzPraes } from '@gg/domain';
@@ -120,9 +117,7 @@ import {
   vertriebslisteAnlegen, vertriebslisteDetail, vertriebslisteLoeschen, vertriebslistenUebersicht, vertriebslisteSpeichern, vlEinstellungenLesen, vlEinstellungenSpeichern,
 } from './services/vertriebslisten.ts';
 import { varianteAnlegen, varianteLoeschen, variantenListe } from './services/kalkVarianten.ts';
-import { dokumentBezeichnen, dokumentDatei, einheitenAusMieterliste, dokumenteHochladen, dokumenteListe, dokumenteUebernehmen, dokumentLoeschen } from './services/dateien.ts';
-import { sharepointKonfigurationSpeichern, sharepointStand, sharepointVerbindungTesten } from './services/sharepoint.ts';
-import { dokumenteAbgleichen, dokumenteNachSharepoint, migrationsStand } from './services/dokumenteMigration.ts';
+import { dokumentBezeichnen, dokumentDatei, einheitenAusMieterliste, dokumenteHochladen, dokumenteListe, dokumenteUebernehmen, dokumentLoeschen } from './services/dealDokumente.ts';
 import { uploadTicket } from './services/direktUpload.ts';
 import { alsStrom } from './strom.ts';
 import { cronErlaubt } from './cron.ts';
@@ -134,7 +129,7 @@ import { autoSicherungDatei, autoSicherungEinspielen, autoSicherungErstellen, au
 import { filterAnlegen, filterListe, filterLoeschen, filterUmbenennen, filterVorlagenEinrichten, listenAltformat } from './services/listen.ts';
 import { projektAnlegen, projektDealAuswahl, projektDetail, projekteListe, projektLoeschen, projektSpeichern } from './services/projekte.ts';
 import { fotoDatei, fotoHochladen, fotoLoeschen, fotoPort, fotosListe, fotosSortieren } from './services/fotos.ts';
-import { type Dateispeicher, type GraphClient, type KiClient, KiSchluesselFehler, type PropstackClient, type SharepointAblage, nachrichtenSuche, webSuche, anthropicClient, anthropicSchluesselPruefen } from '@gg/integrations';
+import { type Dateispeicher, type Geocoder, type GraphClient, type KiClient, KiSchluesselFehler, type PropstackClient, nachrichtenSuche, webSuche, anthropicClient, anthropicSchluesselPruefen, kiMitModell } from '@gg/integrations';
 import { bekannteExposeDateien, exposeAnalysieren, exposeEingang, exposeEingangUebernehmen, type ExposeKontext, exposeUebernehmen, MAX_EXPOSE_BYTES } from './services/expose.ts';
 import { auth, type AuthOptionen } from './middleware/auth.ts';
 import {
@@ -150,7 +145,7 @@ import {
   statusAendern,
   statusHistorie,
 } from './services/deals.ts';
-import { kalkStandardLesen, kalkStandardSpeichern, kundenkalkEinstellungenLesen, kundenkalkEinstellungenSpeichern, vorlagenLesen, vorlagenSpeichern } from './services/einstellungen.ts';
+import { kalkStandardLesen, kalkStandardSpeichern, kiModellwahlLesen, kiModellwahlSpeichern, kundenkalkEinstellungenLesen, kundenkalkEinstellungenSpeichern, vorlagenLesen, vorlagenSpeichern } from './services/einstellungen.ts';
 import {
   kundenkalkulationAnlegen,
   kundenkalkulationDetail,
@@ -193,6 +188,8 @@ export interface AppKontext {
   expose?: ExposeKontext;
   /** KI (Anthropic oder Attrappe) für Makler-Funktionen; Standard: die des Exposé-Imports. */
   ki?: KiClient | null;
+  /** Kartendienst (Adresse → Stadtteil) für die KI-Lagebeschreibung; ohne ihn nennt die KI keinen Stadtteil. */
+  geocoder?: Geocoder | null;
   /** Propstack-Client; ohne Vorgabe wird er aus dem hinterlegten Schlüssel gebaut. */
   propstack?: PropstackClient | null;
   /** Microsoft-Graph-Client; ohne Vorgabe wird er aus dem hinterlegten Zugang gebaut. */
@@ -210,11 +207,6 @@ export interface AppKontext {
   kiSchluesselPruefen?: (apiKey: string) => Promise<{ gueltig: boolean; meldung: string }>;
   /** `CRON_SECRET`: ohne dieses Geheimnis antworten die Cron-Routen immer mit 401. */
   cronGeheimnis?: string;
-  /**
-   * SharePoint als Ablage neuer Dokumente (Protokoll 19): fest (Tests) oder als Lieferant, der sie aus den
-   * Einstellungen baut (Server). Ohne Angabe oder mit null bleibt alles in Supabase.
-   */
-  sharepoint?: SharepointAblage | null | (() => Promise<SharepointAblage | null>);
   /** Wohin die Microsoft-Anmeldung zurückleiten darf; Standard: nur lokale Adressen (`rueckwegRegelnAusUmgebung`). */
   oauthRueckweg?: RueckwegRegeln;
   /** Dateiablage (Supabase Storage); ohne sie antworten Foto-Routen mit 422. */
@@ -238,26 +230,27 @@ const Version = z.object({ version: z.number().int() });
 const Geaendert = json(z.object({ id: z.string(), version: z.number().int() }), 'geändert');
 const konflikt = { 400: fehler('Eingabe ungültig'), 404: fehler('nicht gefunden'), 409: fehler('Versionskonflikt') };
 
-export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, cronGeheimnis, kiSchluesselPruefen = anthropicSchluesselPruefen, autoImport, sharepoint = null, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
+export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, cronGeheimnis, kiSchluesselPruefen = anthropicSchluesselPruefen, autoImport, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
   const autoImportAktiv = autoImport?.aktiv ?? true;
-  const exposeKontext = async () => {
+  const exposeKontext = () => {
     if (!expose) throw new FachFehler(422, 'Dateiablage ist nicht eingerichtet (SUPABASE_SERVICE_ROLE_KEY).');
-    return { ...expose, sharepoint: await sharepointJetzt() };
+    return expose;
   };
-  const sharepointJetzt = () => (typeof sharepoint === 'function' ? sharepoint() : Promise.resolve(sharepoint));
-  const dateien = async () => ({ db, speicher: ablage(), sharepoint: await sharepointJetzt() });
   /**
    * Die KI für jede Anfrage — die eine Stelle dafür. Fest vorgegeben (Attrappe, Tests) geht vor; sonst gilt der in
    * Einstellungen → Zugänge hinterlegte Schlüssel, erst danach `ANTHROPIC_API_KEY` aus der Umgebung. Gelesen wird je
    * Anfrage: ein neu eingetragener Schlüssel wirkt sofort, ohne Neustart (online: ohne neues Deployment).
+   * Mit Bereich gilt das dort eingestellte Modell (Einstellungen → KI-Modelle); die Hülle passt jede Anfrage an
+   * das Modell an, auch ohne Umlenkung.
    */
-  const kiAktuell = async (): Promise<KiClient | null> => {
+  const kiAktuell = async (bereich?: KiBereich): Promise<KiClient | null> => {
     const fest = kiOpt ?? (expose?.attrappe ? expose.ki : null);
-    if (fest) return fest;
-    const key = await zugangLesen(db, 'anthropic-api-key');
-    return key ? anthropicClient(key) : (expose?.ki ?? null);
+    const key = fest ? null : await zugangLesen(db, 'anthropic-api-key');
+    const ki = fest ?? (key ? anthropicClient(key) : (expose?.ki ?? null));
+    if (!ki) return null;
+    return kiMitModell(ki, bereich ? kiModellFuer(await kiModellwahlLesen(db), bereich) : null);
   };
-  const exposeMitKi = async () => ({ ...(await exposeKontext()), ki: await kiAktuell() });
+  const exposeMitKi = async () => ({ ...exposeKontext(), ki: await kiAktuell('expose') });
   const ablage = () => {
     const s = speicherOpt ?? expose?.speicher;
     if (!s) throw new FachFehler(422, 'Dateiablage ist nicht eingerichtet (SUPABASE_SERVICE_ROLE_KEY).');
@@ -440,32 +433,32 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   const kiFehler = { 404: fehler('Makler fehlt'), 422: fehler('KI nicht eingerichtet oder zu wenig Daten') };
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/ki/zusammenfassung', request: { params: IdParam }, responses: { 200: json(z.object({ kiSummary: z.string().nullable(), kiSummaryAt: z.string().nullable() }), 'Zusammenfassung'), ...kiFehler } }),
-    async (c) => c.json(await zusammenfassungErstellen(db, await kiAktuell(), c.req.valid('param').id), 200),
+    async (c) => c.json(await zusammenfassungErstellen(db, await kiAktuell('makler'), c.req.valid('param').id), 200),
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/ki/erwaehnungen', request: { params: IdParam, ...body(z.object({ text: z.string().max(5000), kanal: z.string().max(40) })) }, responses: { 200: json(z.object({ neu: z.number() }), 'Erwähnungen ergänzt'), ...kiFehler } }),
-    async (c) => { const b = c.req.valid('json'); return c.json(await erwaehnungenErgaenzen(db, await kiAktuell(), c.req.valid('param').id, b.text, b.kanal, heuteDe()), 200); },
+    async (c) => { const b = c.req.valid('json'); return c.json(await erwaehnungenErgaenzen(db, await kiAktuell('makler'), c.req.valid('param').id, b.text, b.kanal, heuteDe()), 200); },
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/ki/beziehungsprofil', request: { params: IdParam }, responses: { 200: json(z.object({ beziehungsNotiz: z.string() }), 'Beziehungsprofil'), ...kiFehler } }),
-    async (c) => c.json(await beziehungsprofilErstellen(db, await kiAktuell(), c.req.valid('param').id), 200),
+    async (c) => c.json(await beziehungsprofilErstellen(db, await kiAktuell('makler'), c.req.valid('param').id), 200),
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/ki/persoenliches', request: { params: IdParam }, responses: { 200: json(z.object({ persoenlich: z.record(z.string(), z.unknown()) }), 'Persönliches ergänzt'), ...kiFehler } }),
-    async (c) => c.json(await persoenlichesErgaenzen(db, await kiAktuell(), c.req.valid('param').id), 200),
+    async (c) => c.json(await persoenlichesErgaenzen(db, await kiAktuell('makler'), c.req.valid('param').id), 200),
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/ki/entwurf', request: { params: IdParam }, responses: { 200: json(NachrichtEntwurf, 'Entwurf WhatsApp + E-Mail'), ...kiFehler } }),
-    async (c) => c.json(await entwurfErstellen(db, await kiAktuell(), c.req.valid('param').id), 200),
+    async (c) => c.json(await entwurfErstellen(db, await kiAktuell('makler'), c.req.valid('param').id), 200),
   );
   const suche = (): Suchdienste => sucheOpt ?? (expose?.attrappe ? { web: async () => [], news: async () => [] } : { web: webSuche, news: nachrichtenSuche });
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/ki/anlaesse', request: { params: IdParam }, responses: { 200: json(z.object({ anlaesse: z.array(z.object({ emoji: z.string(), text: z.string(), priority: z.string(), quelleUrl: z.string().optional() })) }), 'Kontakt-Anlässe'), ...kiFehler } }),
-    async (c) => c.json(await kontaktAnlaesseErmitteln(db, await kiAktuell(), suche(), c.req.valid('param').id, heuteBerlin()), 200),
+    async (c) => c.json(await kontaktAnlaesseErmitteln(db, await kiAktuell('makler'), suche(), c.req.valid('param').id, heuteBerlin()), 200),
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/ki/gespraechsoeffner', request: { params: IdParam }, responses: { 200: json(z.object({ text: z.string() }), 'Gesprächsöffner'), ...kiFehler } }),
-    async (c) => c.json(await gespraechsoeffnerErstellen(db, await kiAktuell(), c.req.valid('param').id, heuteBerlin()), 200),
+    async (c) => c.json(await gespraechsoeffnerErstellen(db, await kiAktuell('makler'), c.req.valid('param').id, heuteBerlin()), 200),
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/osint', request: { params: IdParam }, responses: { 200: json(z.object({ persoenlich: z.record(z.string(), z.unknown()) }), 'OSINT-Ergebnis gespeichert'), 404: fehler('Makler fehlt') } }),
@@ -477,7 +470,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/persona/analyse', responses: { 200: json(PersonaStand, 'analysiert'), 422: fehler('zu wenig Daten oder KI fehlt') } }),
-    async (c) => c.json(await personaAnalysieren(db, await kiAktuell()), 200),
+    async (c) => c.json(await personaAnalysieren(db, await kiAktuell('makler')), 200),
   );
   app.post('/api/transkription', async (c) => {
     const form = await c.req.parseBody();
@@ -648,48 +641,39 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
     async (c) => c.json(await vlEinstellungenSpeichern(db, c.req.valid('json')), 200),
   );
 
-  // ── Dokumente an Deal und Objekt (alt: /api/docs/:dealId; Protokoll 19) ─────────────
+  // ── Deal-Dokumente (alt: /api/docs/:dealId) ─────────────
   const DokParam = z.object({ id: z.string().min(1), dokId: z.string().min(1) });
-  const dateiAntwort = async (c: Context, bezug: DokumentBezug, dokId: string) => {
-    const d = await dokumentDatei(await dateien(), bezug, dokId);
-    if (d.art === 'weiterleitung') return c.redirect(d.url, 302);
-    return alsStrom(d.bytes, { 'Content-Type': d.mime, 'Content-Disposition': d.disposition, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store' });
-  };
-  const formularDateien = async (c: Context) => {
+  app.openapi(
+    createRoute({ method: 'get', path: '/api/deals/{id}/dokumente', request: { params: IdParam }, responses: { 200: json(z.array(DealDokument), 'Dokumente, neueste zuerst'), 404: fehler('Deal fehlt') } }),
+    async (c) => c.json(await dokumenteListe(db, c.req.valid('param').id), 200),
+  );
+  // Mehrteilige Formulardaten (Feld „dateien“, bis 20 Dateien); Prüfung der Signatur im Service
+  app.post('/api/deals/:id/dokumente', async (c) => {
     const form = await c.req.parseBody({ all: true });
     const roh = form['dateien'];
-    return Promise.all((Array.isArray(roh) ? roh : roh ? [roh] : []).filter((f): f is File => typeof f !== 'string')
+    const dateien = await Promise.all((Array.isArray(roh) ? roh : roh ? [roh] : []).filter((f): f is File => typeof f !== 'string')
       .map(async (f) => ({ name: f.name, typ: f.type, bytes: new Uint8Array(await f.arrayBuffer()) })));
-  };
-  for (const [art, pfad, fehlt] of [['deal', 'deals', 'Deal fehlt'], ['objekt', 'objekte', 'Objekt fehlt']] as const) {
-    const bezug = (id: string): DokumentBezug => ({ art, id });
-    app.openapi(
-      createRoute({ method: 'get', path: `/api/${pfad}/{id}/dokumente`, request: { params: IdParam, query: z.object({ mitDeals: z.enum(['1']).optional() }) }, responses: { 200: json(z.array(Dokument), 'Dokumente, neueste zuerst'), 404: fehler(fehlt) } }),
-      async (c) => c.json(await dokumenteListe(db, bezug(c.req.valid('param').id), c.req.valid('query').mitDeals === '1'), 200),
-    );
-    // Mehrteilige Formulardaten (Feld „dateien“, bis 20 Dateien); Prüfung der Signatur im Service
-    app.post(`/api/${pfad}/:id/dokumente`, async (c) => c.json(await dokumenteHochladen(await dateien(), bezug(c.req.param('id')), await formularDateien(c)), 201));
-    app.get(`/api/${pfad}/:id/dokumente/:dokId/datei`, (c) => dateiAntwort(c, bezug(c.req.param('id')), c.req.param('dokId')));
-    app.openapi(
-      createRoute({ method: 'patch', path: `/api/${pfad}/{id}/dokumente/{dokId}`, request: { params: DokParam, ...body(z.object({ label: z.string().max(500) })) }, responses: { 200: json(z.object({ ok: z.literal(true) }), 'Bezeichnung gesetzt'), 404: fehler('nicht gefunden') } }),
-      async (c) => { const p = c.req.valid('param'); return c.json(await dokumentBezeichnen(db, bezug(p.id), p.dokId, c.req.valid('json').label), 200); },
-    );
-    app.openapi(
-      createRoute({ method: 'delete', path: `/api/${pfad}/{id}/dokumente/{dokId}`, request: { params: DokParam }, responses: { 200: json(z.object({ ok: z.literal(true) }), 'gelöscht'), 404: fehler('nicht gefunden') } }),
-      async (c) => { const p = c.req.valid('param'); return c.json(await dokumentLoeschen(await dateien(), bezug(p.id), p.dokId), 200); },
-    );
-    app.openapi(
-      createRoute({ method: 'post', path: `/api/${pfad}/{id}/dokumente/uebernehmen`, request: { params: IdParam, ...body(z.object({ dateien: z.array(z.object({ key: z.string(), name: z.string().min(1).max(300), typ: z.string().max(200) })).max(20) })) }, responses: { 201: json(z.array(Dokument), 'übernommen'), 400: fehler('Schlüssel ungültig'), 404: fehler('nicht gefunden'), 413: fehler('zu groß'), 415: fehler('Typ nicht erlaubt') } }),
-      async (c) => c.json(await dokumenteUebernehmen(await dateien(), bezug(c.req.valid('param').id), c.req.valid('json').dateien), 201),
-    );
-  }
+    return c.json(await dokumenteHochladen(db, ablage(), c.req.param('id'), dateien), 201);
+  });
+  app.get('/api/deals/:id/dokumente/:dokId/datei', async (c) => {
+    const d = await dokumentDatei(db, ablage(), c.req.param('id'), c.req.param('dokId'));
+    return alsStrom(d.bytes, { 'Content-Type': d.mime, 'Content-Disposition': d.disposition, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store' });
+  });
+  app.openapi(
+    createRoute({ method: 'patch', path: '/api/deals/{id}/dokumente/{dokId}', request: { params: DokParam, ...body(z.object({ label: z.string().max(500) })) }, responses: { 200: json(z.object({ ok: z.literal(true) }), 'Bezeichnung gespeichert'), 404: fehler('nicht gefunden') } }),
+    async (c) => { const p = c.req.valid('param'); return c.json(await dokumentBezeichnen(db, p.id, p.dokId, c.req.valid('json').label), 200); },
+  );
+  app.openapi(
+    createRoute({ method: 'delete', path: '/api/deals/{id}/dokumente/{dokId}', request: { params: DokParam }, responses: { 200: json(z.object({ ok: z.literal(true) }), 'gelöscht'), 404: fehler('nicht gefunden') } }),
+    async (c) => { const p = c.req.valid('param'); return c.json(await dokumentLoeschen(db, ablage(), p.id, p.dokId), 200); },
+  );
 
   // Einheiten aus Mieterliste-PDF (alt POST /api/deals/:dealId/extract-units, Feld „file“)
   app.post('/api/deals/:id/einheiten-aus-pdf', async (c) => {
     const form = await c.req.parseBody();
     const f = form['file'];
     const datei = f && typeof f !== 'string' ? { name: f.name, typ: f.type, bytes: new Uint8Array(await f.arrayBuffer()) } : null;
-    return c.json(await einheitenAusMieterliste(await dateien(), await kiAktuell(), c.req.param('id'), datei), 200);
+    return c.json(await einheitenAusMieterliste(db, ablage(), await kiAktuell('expose'), c.req.param('id'), datei), 200);
   });
 
   // ── Kalkulationsvarianten (alt d.kalkVarianten) ─────────
@@ -733,31 +717,6 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
     createRoute({ method: 'put', path: '/api/m365/konfiguration', request: body(z.object({ clientId: z.string().max(200), tenantId: z.string().max(200), clientSecret: z.string().max(500).optional() })), responses: { 200: json(z.object({ ok: z.literal(true) }), 'gespeichert') } }),
     async (c) => c.json(await m365KonfigurationSpeichern(db, c.req.valid('json')), 200),
   );
-  // ── SharePoint als Dokumentablage (Protokoll 19) ──
-  app.openapi(
-    createRoute({ method: 'get', path: '/api/sharepoint', responses: { 200: json(SharepointStand, 'Site, Wurzel, Schalter') } }),
-    async (c) => c.json(await sharepointStand(db), 200),
-  );
-  app.openapi(
-    createRoute({ method: 'put', path: '/api/sharepoint/konfiguration', request: body(SharepointKonfiguration), responses: { 200: json(z.object({ ok: z.literal(true) }), 'gespeichert'), 400: fehler('unvollständig') } }),
-    async (c) => c.json(await sharepointKonfigurationSpeichern(db, c.req.valid('json')), 200),
-  );
-  app.openapi(
-    createRoute({ method: 'post', path: '/api/sharepoint/test', responses: { 200: json(z.object({ ok: z.literal(true), schritte: z.array(z.string()), webUrl: z.string(), dauerMs: z.number() }), 'Verbindung steht'), 422: fehler('nicht eingerichtet'), 502: fehler('Verbindung fehlgeschlagen') } }),
-    async (c) => c.json(await sharepointVerbindungTesten(db), 200),
-  );
-  app.openapi(
-    createRoute({ method: 'get', path: '/api/sharepoint/migration', responses: { 200: json(z.object({ inSupabase: z.number(), inSharepoint: z.number(), fehlend: z.number() }), 'Stand des Bestands') } }),
-    async (c) => c.json(await migrationsStand(db), 200),
-  );
-  app.openapi(
-    createRoute({ method: 'post', path: '/api/sharepoint/migration', request: body(z.object({ limit: z.number().int().min(1).max(200).optional() })), responses: { 200: json(z.object({ migriert: z.number(), offen: z.number(), fehler: z.array(z.string()) }), 'ein Bündel übertragen'), 422: fehler('nicht aktiv') } }),
-    async (c) => { const k = await dateien(); return c.json(await dokumenteNachSharepoint(db, k.speicher, k.sharepoint, c.req.valid('json').limit), 200); },
-  );
-  app.openapi(
-    createRoute({ method: 'post', path: '/api/sharepoint/abgleich', responses: { 200: json(z.object({ geprueft: z.number(), verschoben: z.number(), verschwunden: z.number(), zurueck: z.number(), fehler: z.array(z.string()) }), 'abgeglichen'), 422: fehler('nicht aktiv') } }),
-    async (c) => c.json(await dokumenteAbgleichen(db, await sharepointJetzt()), 200),
-  );
   app.openapi(
     createRoute({ method: 'put', path: '/api/m365/ordner', request: body(z.object({ ordner: z.string().max(200) })), responses: { 200: json(z.object({ ordner: z.string() }), 'gespeichert') } }),
     async (c) => c.json(await m365OrdnerSpeichern(db, c.req.valid('json').ordner), 200),
@@ -780,7 +739,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
     async (c) => {
       botFreigeschaltet();
       return c.json(await autoImportAusfuehren(db, {
-        speicher: ablage(), ki: await kiAktuell(), graph: await m365Client(db, graphOpt), ordner: await m365OrdnerLesen(db),
+        speicher: ablage(), ki: await kiAktuell('autoimport'), graph: await m365Client(db, graphOpt), ordner: await m365OrdnerLesen(db),
         browserStarten: autoImport?.browserStarten ?? browserStarten, maxZeitlimitSek: autoImport?.maxZeitlimitSek, lokaleZieleErlaubt: autoImport?.lokaleZieleErlaubt,
       }, c.req.valid('json').mailUid), 200);
     },
@@ -816,7 +775,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   // Anhang → Exposé-Eingang: dieselbe Strecke wie ein Datei-Upload, nur aus der Mail
   app.post('/api/m365/mails/:uid/anhaenge/:anhangId/uebernehmen', async (c) => {
     const bytes = await m365Anhang(db, graphOpt, c.req.param('uid'), c.req.param('anhangId'));
-    const eingang = await exposeEingang(await exposeKontext(), bytes);
+    const eingang = await exposeEingang(exposeKontext(), bytes);
     await m365Sperren(db, c.req.param('uid'));
     return c.json(eingang, 200);
   });
@@ -1147,7 +1106,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/praesentationen/{id}/ki', request: { params: IdParam, ...body(PraesentationKi) }, responses: { 200: json(VorbelegungErgebnis, 'KI-Text für die Folie (nicht gespeichert)'), 404: fehler('nicht gefunden'), 422: fehler('KI nicht eingerichtet'), 500: fehler('KI-Aufruf fehlgeschlagen') } }),
-    async (c) => c.json(await praesentationKiText(db, await kiAktuell(), c.req.valid('param').id, c.req.valid('json')), 200),
+    async (c) => c.json(await praesentationKiText(db, await kiAktuell('praesentation'), c.req.valid('param').id, c.req.valid('json'), geocoder), 200),
   );
   const exportieren = (art: 'pdf' | 'pptx') => async (c: import('hono').Context) => {
     const praes = await praesentationFuerExport(db, c.req.param('id')!);
@@ -1222,16 +1181,20 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
     const laenge = Number(c.req.header('content-length') ?? 0);
     if (laenge > MAX_EXPOSE_BYTES) return c.json({ fehler: 'Das PDF ist größer als 200 MB.' }, 413);
     const bytes = new Uint8Array(await c.req.arrayBuffer());
-    return c.json(await exposeEingang(await exposeKontext(), bytes), 201);
+    return c.json(await exposeEingang(exposeKontext(), bytes), 201);
   });
   // Direkt-Upload (Function-Grenze 4,5 MB): Ticket → Browser lädt in den Speicher → Übernahme prüft die liegende Datei
   app.openapi(
-    createRoute({ method: 'post', path: '/api/upload/ticket', request: body(z.object({ zweck: z.enum(['expose', 'dokument']), groesse: z.number().int().nonnegative().optional() })), responses: { 200: json(z.object({ url: z.string(), key: z.string(), art: z.enum(['put', 'upload-session']) }), 'Upload-Adresse'), 413: fehler('zu groß'), 422: fehler('Dateiablage nicht eingerichtet') } }),
-    async (c) => { const b = c.req.valid('json'); return c.json(await uploadTicket(await dateien(), b.zweck, b.groesse), 200); },
+    createRoute({ method: 'post', path: '/api/upload/ticket', request: body(z.object({ zweck: z.enum(['expose', 'dokument']), groesse: z.number().int().nonnegative().optional() })), responses: { 200: json(z.object({ url: z.string(), key: z.string() }), 'Upload-Adresse'), 413: fehler('zu groß'), 422: fehler('Dateiablage nicht eingerichtet') } }),
+    async (c) => { const b = c.req.valid('json'); return c.json(await uploadTicket(ablage(), b.zweck, b.groesse), 200); },
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/expose/eingang/uebernehmen', request: body(z.object({ key: z.string() })), responses: { 201: json(z.object({ key: z.string(), groesse: z.number() }), 'im Eingang'), 404: fehler('Datei fehlt'), 422: fehler('kein PDF') } }),
-    async (c) => c.json(await exposeEingangUebernehmen(await exposeKontext(), c.req.valid('json').key), 201),
+    async (c) => c.json(await exposeEingangUebernehmen(exposeKontext(), c.req.valid('json').key), 201),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/deals/{id}/dokumente/uebernehmen', request: { params: IdParam, ...body(z.object({ dateien: z.array(z.object({ key: z.string(), name: z.string().min(1).max(300), typ: z.string().max(200) })).min(1).max(50) })) }, responses: { 201: json(z.array(DealDokument), 'übernommen'), 404: fehler('nicht gefunden'), 413: fehler('zu groß'), 415: fehler('Dateiart nicht erlaubt') } }),
+    async (c) => c.json(await dokumenteUebernehmen(db, ablage(), c.req.valid('param').id, c.req.valid('json').dateien), 201),
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/expose/analyse', ...{ request: body(z.object({ key: z.string(), dateiname: z.string().max(300) })) }, responses: { 200: json(ExposeAnalyseAntwort, 'ausgewertet'), 404: fehler('Datei fehlt'), 422: fehler('nicht auswertbar') } }),
@@ -1239,7 +1202,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/expose/uebernehmen', request: body(ExposeUebernehmen), responses: { 201: json(ExposeUebernahmeErgebnis, 'angelegt'), 404: fehler('nicht gefunden'), 409: fehler('Deal bereits vorhanden'), 422: fehler('ungültig') } }),
-    async (c) => c.json(await exposeUebernehmen(db, await exposeKontext(), c.req.valid('json'), heuteBerlin()), 201),
+    async (c) => c.json(await exposeUebernehmen(db, exposeKontext(), c.req.valid('json'), heuteBerlin()), 201),
   );
   app.get('/api/expose/bekannte-dateien', async (c) => c.json(await bekannteExposeDateien(db)));
 
@@ -1260,6 +1223,15 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, propstack: pro
   app.openapi(
     createRoute({ method: 'put', path: '/api/einstellungen/kalk-standard', request: body(KalkStandardSchema), responses: { 200: json(KalkStandardSchema, 'gespeichert'), 400: fehler('Eingabe ungültig') } }),
     async (c) => c.json(await kalkStandardSpeichern(db, c.req.valid('json')), 200),
+  );
+
+  app.openapi(
+    createRoute({ method: 'get', path: '/api/einstellungen/ki-modelle', responses: { 200: json(KiModellwahlSchema, 'KI-Modell je Bereich') } }),
+    async (c) => c.json(await kiModellwahlLesen(db), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'put', path: '/api/einstellungen/ki-modelle', request: body(KiModellwahlSchema), responses: { 200: json(KiModellwahlSchema, 'gespeichert'), 400: fehler('Eingabe ungültig') } }),
+    async (c) => c.json(await kiModellwahlSpeichern(db, c.req.valid('json')), 200),
   );
 
   app.doc31('/api/openapi.json', { openapi: '3.1.0', info: { title: 'GG Immobilienhandel API', version: '0.1.0' } });

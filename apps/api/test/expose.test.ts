@@ -127,12 +127,13 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
     const deal = await lies(app.request(`/api/deals/${erg.dealId}`));
     expect(deal.einheiten.map((e: any) => [e.lage, e.flaeche, e.mieteIst, e.renditeK])).toEqual([['EG links', 80, 800, 4.5], ['OG rechts', 80, 820, 4.5], ['DG', 80, 700, 4.5]]);
     expect(deal.kalkulation).toMatchObject({ kaufpreis: 1_250_000, makler: 0, rp_pct: 10 });
+    expect(deal.nextContact).toBe(deal.angebotsDatum);
     expect(deal.kalkulation.gik).toBeGreaterThan(1_250_000);
     const [makler] = await db.select().from(schema.makler).where(eq(schema.makler.id, erg.maklerId));
     expect(makler).toMatchObject({ tel: `+49 ${a.makler.tel.slice(1)}`, kontaktFrequenz: 'Monatlich', prio: 'B' });
     const verlauf = await lies(app.request(`/api/deals/${erg.dealId}/status-historie`));
     expect(verlauf[0]).toMatchObject({ nachStatus: 'In Prüfung', quelle: 'wizard' });
-    const [dok] = await db.select().from(schema.dokumente).where(eq(schema.dokumente.dealId, erg.dealId));
+    const [dok] = await db.select().from(schema.dealDokumente).where(eq(schema.dealDokumente.dealId, erg.dealId));
     expect(dok).toMatchObject({ label: 'Exposé (Import)', istExpose: true, dateiname: `Exposé_${kennung}strasse 12.pdf` });
     expect(speicher.inhalt.has(`pdfs/${erg.dealId}.pdf`)).toBe(true);
     expect(speicher.inhalt.has(`pdfs/${key}`)).toBe(false);

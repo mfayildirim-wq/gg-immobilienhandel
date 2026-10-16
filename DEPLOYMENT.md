@@ -10,7 +10,7 @@ von der echten Produktion der alten App). Offene Punkte stehen in `OFFEN.md` unt
 | GitHub | `mfayildirim-wq/gg-immobilienhandel`, privat |
 | Supabase | Projekt `gg-immobilienhandel`, Ref `zbqdkfqsqdocrxxrtjow`, Frankfurt (`eu-central-1`), Organisation MFY. 7 Migrationen angewendet (37 Tabellen in `fach`), Buckets `pdfs`, `deal-docs`, `obj-photos` privat angelegt. Echter Bestand umgezogen am 21.09.2026. |
 | Vercel | Team `mfy` (Hobby), Projekt `gg-immobilienhandel`, mit dem Repo verbunden, 7 Variablen für Production gesetzt |
-| Zugangsdaten | nur lokal in `~/Documents/ivtag/immohandel-doks/.geheim/cloud.env` (Rechte 600, dort per `.gitignore` ausgeschlossen) und verschlüsselt bei Vercel — nicht im Repo |
+| Zugangsdaten | nur lokal in `~/Documents/ivtag/.geheim/cloud.env` (Rechte 600) und verschlüsselt bei Vercel — nicht im Repo |
 
 **Online seit 21.09.2026:** <https://gg-immobilienhandel.vercel.app> — geprüft: Oberfläche, Anmeldung
 (Supabase Auth, Registrierung geschlossen, E-Mail-Allowlist), API (ohne Token 401), Sicherheits-Header,
@@ -28,7 +28,7 @@ Zweite, vollständig getrennte Umgebung zum Prüfen vor dem Produktivgang — **
 | Branch | `test` — Sammelbranch: `main` plus alle offenen Pull Requests, die geprüft werden sollen |
 | Vercel | Projekt `gg-immobilienhandel-test` (Team `mfy`), Produktions-Branch `test`, Node 24, eigene 8 Variablen (nur Production) |
 | Supabase | Projekt `gg-immobilienhandel-test`, Ref `kpvlmvkyvickqtdswzmh`, Frankfurt, Organisation MFY; 8 Migrationen, 38 Tabellen, 5 Buckets, Registrierung geschlossen |
-| Zugangsdaten | `~/Documents/ivtag/immohandel-doks/.geheim/cloud-test.env` (eigenes Passwort, eigener `GG_ENCRYPTION_KEY`, eigenes `CRON_SECRET`) |
+| Zugangsdaten | `~/Documents/ivtag/.geheim/cloud-test.env` (eigenes Passwort, eigener `GG_ENCRYPTION_KEY`, eigenes `CRON_SECRET`) |
 | Alle Adressen | Dev, Test, Prod mit Konsolen: `../immohandel-doks/protokoll/18-umgebungen-mfayildirim.md` |
 | Bestand | per `pnpm umzug` aus der alten lokalen DB (55/55 Prüfungen); Fotos und Dokumente fehlen wie online |
 
@@ -97,7 +97,8 @@ Nicht setzen: `AUTH_LOCAL_OPEN`, `KI_ATTRAPPE`, `M365_ATTRAPPE`, `PROPSTACK_ATTR
 1. Vercel-Projekt anlegen, Repository verbinden, Root = Wurzel des Repos (die `vercel.json` liegt dort).
 2. Variablen oben eintragen.
 3. Migrationen gegen die Zieldatenbank anwenden — **laufen nicht mit dem Deploy mit**, bewusst von Hand:
-   `npx supabase db push --dry-run`, dann ohne `--dry-run`. Stand 24.09.2026: alle 8 Migrationen online (38 Tabellen).
+   `npx supabase db push --dry-run`, dann ohne `--dry-run`. **Offen online:** `20260923094658_makler_anlaesse`
+   (Zwischenspeicher der KI-Anlässe) — ohne sie antwortet `/api/makler/{id}/ki/anlaesse` mit 500.
 4. Storage-Buckets anlegen (lokal macht das `server.ts` beim Start, online niemand).
 5. In Azure AD die Redirect-URI `https://<adresse>/m365/rueckweg` registrieren.
 6. Erst danach: `pnpm umzug:probe` gegen die Produktion (nur lesend), dann der Umzug.
@@ -111,28 +112,6 @@ pnpm vercel:probe     # gebaute Oberfläche + gebündelte API + Header aus verce
 
 Die Probe findet Bündelfehler und alles, was die Content-Security-Policy blockiert. Sie ersetzt **kein** echtes
 Deployment: Function-Größe, Kaltstart und das schreibgeschützte Dateisystem zeigt nur Vercel selbst.
-
-## SharePoint als Dokumentablage (Protokoll 19, seit 25.09.2026)
-
-Dokumente an Deals und Objekten können in einer SharePoint-Dokumentbibliothek liegen; Bestände bleiben in Supabase
-lesbar, bis sie übertragen werden. Ohne Einrichtung verhält sich alles wie zuvor.
-
-1. **Azure (einmalig, Administrator):** in der App-Registrierung aus Einstellungen → Microsoft 365 die
-   Anwendungsberechtigung `Sites.Selected` hinzufügen, Administratorzustimmung erteilen. Dann der App Schreibrechte auf
-   genau eine Site geben — Graph Explorer als Admin (Zustimmung `Sites.FullControl.All` nur für den Explorer):
-   `GET /sites/<host>.sharepoint.com:/sites/<Name>` → `id`, dann
-   `POST /sites/<id>/permissions` mit `{ "roles": ["write"], "grantedToIdentities": [ { "application": { "id": "<Client-ID>", "displayName": "GG Immohandel" } } ] }`.
-2. **App:** Einstellungen → Microsoft 365 (Client-ID, Tenant, Geheimnis — dieselbe App), dann Einstellungen → SharePoint:
-   Site-Adresse, Wurzelordner, Speichern, **Verbindung prüfen** (schreibt/liest/löscht eine Probedatei), einschalten.
-3. **CSP:** `connect-src` und `frame-src` erlauben `https://*.sharepoint.com` (Upload-Session und Vorschau) — steht in `vercel.json`.
-4. **Bestand:** Einstellungen → SharePoint → „Bestand nach SharePoint übertragen“, 25 je Lauf, wiederaufnehmbar; die
-   Supabase-Datei bleibt als Rückweg. „Abgleich“ findet in SharePoint verschobene Dateien über ihre Kennung wieder.
-5. **Werkzeug:** `pnpm sharepoint:probe` prüft eine Site mit App-Token aus der Umgebung (`M365_TENANT_ID`, `M365_CLIENT_ID`,
-   `M365_CLIENT_SECRET`, `SHAREPOINT_SITE_ID`).
-
-Ablage: `<Wurzel>/Objekte/<Adresse> [<objekt-id>]/…` und `…/Deals/<deal-id>/…`. Große Dateien gehen vom Browser direkt an
-die Graph-Upload-Session (Stücke mit `Content-Range`), Downloads über die kurzlebige Download-Adresse — beides ohne die
-4,5-MB-Grenze der Function. SharePoint-Dateien sind **nicht** im Archiv-Spiegel; SharePoint versioniert selbst.
 
 ## Nächtliche Läufe (`vercel.json` → `crons`)
 

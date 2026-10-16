@@ -8,7 +8,8 @@ import {
   KALK_STANDARD,
   type KalkStandard,
   margenAmpel,
-  sanierungAlsEingabe, kalkMitStandard, einheitMieteGeaendert, einheitPreisSetzen, mieteSollSetzen, type PreisFeld } from '@gg/domain';
+  sanierungAlsEingabe, kalkMitStandard, einheitMieteGeaendert, einheitPreisSetzen, mieteSollSetzen, type PreisFeld,
+  globalBeiSollRendite, type ZielKaufpreis, zielKaufpreis, zielWerte } from '@gg/domain';
 import {
   ActionIcon,
   Alert,
@@ -36,6 +37,7 @@ import { verschieben } from '../../lib/reihenfolge.ts';
 import { useUngespeichert } from '../../lib/ungespeichert.ts';
 import { AlleSetzen, Variantenleiste } from './KalkWerkzeuge.tsx';
 import { PropstackDialog } from './PropstackDialog.tsx';
+import { Zahlfeld } from '../Zahlfeld.tsx';
 import css from './DealDetail.module.css';
 
 type Einheit = Omit<DealEinheit, 'id'> & { id?: string };
@@ -63,10 +65,14 @@ export function DealKalkulation({ deal, leistenPlatz }: { deal: DealDetail; leis
   const [einheiten, setEinheiten] = useState<Einheit[]>(deal.einheiten);
   const [sanierungen, setSanierungen] = useState<Sanierung[]>(deal.sanierungen);
 
-  const ergebnis = useMemo(
-    () => berechneAnkauf(kalkMitStandard(kalk, standard), einheiten.map(einheitAlsEingabe), sanierungen.map(sanierungAlsEingabe), standard),
-    [kalk, einheiten, sanierungen, standard],
-  );
+  const { ergebnis, ziel } = useMemo(() => {
+    const k = kalkMitStandard(kalk, standard), e = einheiten.map(einheitAlsEingabe), s = sanierungen.map(sanierungAlsEingabe);
+    return {
+      ergebnis: berechneAnkauf(k, e, s, standard),
+      // Knöpfe „Kaufpreis für Zielmarge“: Vorschlag je Exit-Weg, gerechnet mit demselben Rechenkern
+      ziel: { werte: zielWerte(k, standard), aufteiler: zielKaufpreis('aufteiler', k, e, s, standard), global: zielKaufpreis('global', k, e, s, standard) },
+    };
+  }, [kalk, einheiten, sanierungen, standard]);
   const geaendert =
     JSON.stringify([kalk, einheiten, sanierungen]) !== JSON.stringify([deal.kalkulation, deal.einheiten, deal.sanierungen]);
   // Reiterwechsel und ein anderer Deal bauen die Kalkulation neu auf — ohne Rückfrage wären die Eingaben still verloren
@@ -155,6 +161,19 @@ export function DealKalkulation({ deal, leistenPlatz }: { deal: DealDetail; leis
           <Eingabe c={c} feld="kaufpreis" einheit="€" w={130} label="Kaufpreis" />
           <Neben label="KP/m²" wert={wf ? euroProQm(r.kaufpreis / wf) : '–'} k="kaufpreis-m2" />
           <Neben label="Rendite" wert={r.kaufpreis ? prozent((r.jahresmieteIst / r.kaufpreis) * 100, 2) : '–'} k="rendite-kp" />
+        </Zeile>
+        <Zeile label="Kaufpreis für Zielmarge">
+          <ZielKnopf weg="Aufteiler" marge={ziel.werte.margeAufteiler} z={ziel.aufteiler} setzen={(kp) => setzeFeld('kaufpreis', kp)} />
+          <ZielKnopf weg="Global" marge={ziel.werte.margeGlobal} z={ziel.global} setzen={(kp) => setzeFeld('kaufpreis', kp)} />
+        </Zeile>
+        <Zeile label="Zielwerte">
+          <Text size="xs" c="dimmed">Aufteiler</Text>
+          <Eingabe c={c} feld="ziel_auf" einheit="%" w={76} step={0.5} label="Zielmarge Aufteiler" />
+          <Text size="xs" c="dimmed">Global</Text>
+          <Eingabe c={c} feld="ziel_glo" einheit="%" w={76} step={0.5} label="Zielmarge Global" />
+          <Text size="xs" c="dimmed">bei Soll-Rendite</Text>
+          <Eingabe c={c} feld="rend_glo" einheit="%" w={76} step={0.1} label="Soll-Rendite Global" />
+          <Text size="xs" c="dimmed">= Faktor {ziel.werte.sollRenditeGlobal > 0 ? de1(100 / ziel.werte.sollRenditeGlobal) : '–'}</Text>
         </Zeile>
         <Zeile label="Notar & Grundbuch">
           <Eingabe c={c} feld="notar" einheit="%" w={80} step={0.01} label="Notar" />
@@ -257,6 +276,7 @@ export function DealKalkulation({ deal, leistenPlatz }: { deal: DealDetail; leis
             <Kb label="Bruttorendite Kunde" wert={prozent(r.global.kaufpreisrendite, 2)} farbe="orange.8" />
             <Kb label="Gewinn Global" wert={euro(r.global.gewinn)} stark farbe="green.7" k="global.gewinn" />
             <Kb label="Marge auf Verkaufserlöse" wert={prozent(r.global.marge, 2)} />
+            <GlobalBeiSollRendite gik={r.global.gik} jahresmieteSoll={r.jahresnettokaltmieteSoll} sollRendite={ziel.werte.sollRenditeGlobal} />
           </ExitBox>
         </SimpleGrid>
       </Abschnitt>
@@ -265,6 +285,38 @@ export function DealKalkulation({ deal, leistenPlatz }: { deal: DealDetail; leis
 }
 
 /* ───────────── Bausteine der Darstellung ───────────── */
+
+/** Knopf „Kaufpreis für Zielmarge“: zeigt den Vorschlag gleich mit; ohne Vorschlag ausgegraut mit Grund. */
+function ZielKnopf({ weg, marge, z, setzen }: { weg: string; marge: number; z: ZielKaufpreis; setzen: (kaufpreis: number) => void }) {
+  const text = `${weg} ${de1(marge).replace(',0', '')} %`;
+  if (!z.ok) {
+    return (
+      <Button size="compact-sm" variant="light" color="gray" disabled title={z.grund} aria-label={`Kaufpreis für ${text}: ${z.grund}`}>
+        → {text}
+      </Button>
+    );
+  }
+  return (
+    <Button size="compact-sm" variant="light" onClick={() => setzen(z.kaufpreis)} aria-label={`Kaufpreis für ${text}`}
+      title={`Kaufpreis auf ${euro(z.kaufpreis)} setzen: Verkauf ${euro(z.verkaufspreis)}, GIK ${euro(z.gik)}, Marge ${prozent(z.marge, 2)}`}>
+      → {text}: {euro(z.kaufpreis)}
+    </Button>
+  );
+}
+
+/** Zusatz der Global-Box: Ergebnis, wenn zur Soll-Rendite verkauft wird (Grundlage des Global-Knopfs). */
+function GlobalBeiSollRendite({ gik, jahresmieteSoll, sollRendite }: { gik: number; jahresmieteSoll: number; sollRendite: number }) {
+  if (!jahresmieteSoll || !(sollRendite > 0)) return null;
+  const g = globalBeiSollRendite(gik, jahresmieteSoll, sollRendite);
+  return (
+    <div aria-label="Global bei Soll-Rendite">
+      <Gruppe>BEI SOLL-RENDITE {prozent(sollRendite, 2)} (FAKTOR {de1(g.faktor)})</Gruppe>
+      <Kb label="Verkaufserlöse (JNKM ÷ Rendite)" wert={euro(g.verkaufspreis)} />
+      <Kb label="Gewinn" wert={euro(g.gewinn)} farbe={g.gewinn >= 0 ? 'green.7' : 'red.7'} />
+      <Kb label="Marge auf Verkaufserlöse" wert={prozent(g.marge, 2)} stark />
+    </div>
+  );
+}
 
 /** Was ein Eingabefeld der Kalkulation braucht: aktueller Wert, Setzen und die Standardwerte der Einstellungen. */
 interface FeldKontext { zahlAus: (feld: string) => number | ''; setzeFeld: (feld: string, v: number | string) => void; standard: KalkStandard }
@@ -541,12 +593,12 @@ function EinheitenTabelle({
                       {...ZAHL} hideControls={false} step={0.1} min={0} decimalScale={1} />
                   </Table.Td>
                   <Table.Td>
-                    <NumberInput
+                    <Zahlfeld
                       size="xs"
                       w={110}
                       placeholder={z?.verkaufspreis ? z.verkaufspreis.toLocaleString('de-DE') : ''}
                       value={e.verkaufspreis ?? ''}
-                      onChange={(v) => preis(i, 'vkp', alsZahl(v))}
+                      onWert={(v) => preis(i, 'vkp', v)}
                       aria-label="Verkaufspreis"
                       {...ZAHL}
                     />
@@ -554,8 +606,8 @@ function EinheitenTabelle({
                   <Table.Td>
                     {/* KP/m² eingeben setzt den VKP (× Fläche); errechnete Werte stehen grau als Platzhalter wie beim VKP */}
                     {stpl || !e.flaeche ? <Text size="xs" c="dimmed">{z?.verkaufspreisProQm ? z.verkaufspreisProQm.toLocaleString('de-DE') : '–'}</Text> : (
-                      <NumberInput size="xs" w={84} placeholder={z?.verkaufspreisProQm ? z.verkaufspreisProQm.toLocaleString('de-DE') : ''}
-                        value={e.verkaufspreis && z?.verkaufspreisProQm ? z.verkaufspreisProQm : ''} onChange={(v) => preis(i, 'kpm2', alsZahl(v))} aria-label="KP/m²" {...ZAHL} />
+                      <Zahlfeld size="xs" w={84} placeholder={z?.verkaufspreisProQm ? z.verkaufspreisProQm.toLocaleString('de-DE') : ''}
+                        value={e.verkaufspreis && z?.verkaufspreisProQm ? z.verkaufspreisProQm : ''} onWert={(v) => preis(i, 'kpm2', v)} aria-label="KP/m²" {...ZAHL} />
                     )}
                   </Table.Td>
                   <Table.Td>

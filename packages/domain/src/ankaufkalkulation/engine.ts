@@ -26,11 +26,16 @@ export interface KalkStandard {
   rend_k: number;
   auf_h: number;
   auf_e: number;
+  /** Zielwerte der Knöpfe „Kaufpreis für Zielmarge“ (zielkaufpreis.ts); der Rechenkern selbst nutzt sie nicht. */
+  ziel_auf: number;
+  ziel_glo: number;
+  rend_glo: number;
 }
 
 export const KALK_STANDARD: KalkStandard = {
   notar: 2, gest: 5, makler: 4.76, fk_p: 80, ek_p: 20, euribor: 2, margeB: 2.5, bank_abgeb: 2,
   ek_r: 15, halt: 12, vprov: 4.76, glo_m: 15, rp_pct: 10, rend_k: 4.5, auf_h: 1, auf_e: 6,
+  ziel_auf: 15, ziel_glo: 20, rend_glo: 5,
 };
 
 /** Eingabewerte je Deal (alte App: deal.kalk). Fehlende Felder → Standardwerte. */

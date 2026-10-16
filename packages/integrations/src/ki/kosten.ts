@@ -1,12 +1,17 @@
-// Kosten eines KI-Aufrufs. Übernommen aus gg-immohandel server/ki-kosten.ts (Preistabelle und Rechnung unverändert).
+// Kosten eines KI-Aufrufs. Übernommen aus gg-immohandel server/ki-kosten.ts (Rechnung unverändert).
+// Preistabelle um die wählbaren neuen Modelle ergänzt (Einstellungen → KI-Modelle; Anthropic-Preisliste 10/2026).
 
 interface Preis { ein: number; aus: number }
 
-/** Sonnet/Opus wie ihre Vorgänger, Haiku und Unbekanntes als billigste Stufe. */
+/** US-$ je Million Token. Neue Modelle mit eigenem Preis zuerst; sonst Sonnet/Opus wie ihre Vorgänger, Haiku und Unbekanntes als billigste alte Stufe. */
 function preisFuer(model: string): Preis {
   const m = (model || '').toLowerCase();
+  if (m.includes('opus-5-5')) return { ein: 4, aus: 20 };
   if (m.includes('opus')) return { ein: 5, aus: 25 };
+  if (m.includes('sonnet-5')) return { ein: 2, aus: 10 };
   if (m.includes('sonnet')) return { ein: 3, aus: 15 };
+  // Haiku 5.5 bis 100.000 Token Eingabe; darüber teurer — so lange Eingaben schicken wir nicht
+  if (m.includes('haiku-5')) return { ein: 0.1, aus: 0.5 };
   return { ein: 1, aus: 5 };
 }
 

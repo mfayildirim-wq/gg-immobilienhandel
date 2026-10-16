@@ -1,1 +1,0 @@
-ALTER TABLE "fach"."dokumente" ADD COLUMN "sp_fehlt_seit" timestamp with time zone;

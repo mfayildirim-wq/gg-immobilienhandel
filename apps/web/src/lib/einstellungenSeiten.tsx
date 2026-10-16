@@ -1,14 +1,14 @@
-import { IconFolderShare, IconBriefcase, IconBuildingBank, IconCalculator, IconChecklist, IconTableShare, IconTemplate, IconTrash, IconCopy, IconHistory, IconTool, IconKey, IconDatabaseExport, IconBook, IconShieldLock, IconMail } from '@tabler/icons-react';
+import { IconBriefcase, IconBuildingBank, IconCalculator, IconChecklist, IconTableShare, IconTemplate, IconTrash, IconCopy, IconHistory, IconTool, IconKey, IconDatabaseExport, IconBook, IconShieldLock, IconMail, IconRobot } from '@tabler/icons-react';
 import type { ComponentType } from 'react';
 import { BegleitscheinEinstellungen } from '../components/begleitschein/BegleitscheinEinstellungen.tsx';
 import { PraesentationStandards } from '../components/praesentation/PraesentationStandards.tsx';
 import { VertriebslistenEinstellungen } from '../components/VertriebslistenEinstellungen.tsx';
 import { M365Einstellungen } from '../components/M365Einstellungen.tsx';
-import { SharepointEinstellungen } from '../components/SharepointEinstellungen.tsx';
 import { FreigabenEinstellungen } from '../components/FreigabenEinstellungen.tsx';
 import { AnleitungenEinstellungen } from '../components/AnleitungenEinstellungen.tsx';
 import { SicherungEinstellungen } from '../components/SicherungEinstellungen.tsx';
 import { ZugaengeEinstellungen } from '../components/ZugaengeEinstellungen.tsx';
+import { KiModelleEinstellungen } from '../components/KiModelleEinstellungen.tsx';
 import { WerkzeugeEinstellungen } from '../components/WerkzeugeEinstellungen.tsx';
 import { AuditEinstellungen } from '../components/AuditEinstellungen.tsx';
 import { DublettenEinstellungen } from '../components/DublettenEinstellungen.tsx';
@@ -28,12 +28,12 @@ export const EINSTELLUNGEN_SEITEN: { pfad: string; label: string; icon: Componen
   { pfad: 'dd', label: 'DD-Dokumentenliste', icon: IconChecklist, komponente: DdEinstellungen },
   { pfad: 'sicherung', label: 'Sicherung', icon: IconDatabaseExport, komponente: SicherungEinstellungen },
   { pfad: 'zugaenge', label: 'Zugänge', icon: IconKey, komponente: ZugaengeEinstellungen },
+  { pfad: 'ki-modelle', label: 'KI-Modelle', icon: IconRobot, komponente: KiModelleEinstellungen },
   { pfad: 'werkzeuge', label: 'Werkzeuge', icon: IconTool, komponente: WerkzeugeEinstellungen },
   { pfad: 'audit', label: 'Audit-Log', icon: IconHistory, komponente: AuditEinstellungen },
   { pfad: 'dubletten', label: 'Dubletten', icon: IconCopy, komponente: DublettenEinstellungen },
   { pfad: 'papierkorb', label: 'Papierkorb', icon: IconTrash, komponente: PapierkorbEinstellungen },
   { pfad: 'm365', label: 'Microsoft 365', icon: IconMail, komponente: M365Einstellungen },
-  { pfad: 'sharepoint', label: 'SharePoint', icon: IconFolderShare, komponente: SharepointEinstellungen },
   { pfad: 'freigaben', label: 'Aktionen nach außen', icon: IconShieldLock, komponente: FreigabenEinstellungen },
   { pfad: 'anleitungen', label: 'Anleitungen', icon: IconBook, komponente: AnleitungenEinstellungen },
 ];

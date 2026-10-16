@@ -6,8 +6,6 @@ export { EXTRACT_TOOL as EXPOSE_TOOL, SYSTEM_PROMPT as EXPOSE_SYSTEM_PROMPT } fr
 export { extractExposeFromText, hasCompleteAddress, missingCoreFields, type ExtractedExpose } from './expose/mailtext.ts';
 export * from './ki/attrappe.ts';
 export * from './speicher/speicher.ts';
-export * from './sharepoint/graphDrive.ts';
-export * from './sharepoint/speicher.ts';
 export * from './speicher/bild.ts';
 export * from './test/pdf-basteln.ts';
 export * from './expose/triage.ts';
@@ -16,6 +14,8 @@ export * from './ki/persona.ts';
 export * from './ki/anreicherung.ts';
 export * from './ki/einheiten.ts';
 export * from './ki/praesentation.ts';
+export * from './ki/modelle.ts';
+export * from './geo/nominatim.ts';
 export * from './geheimnis.ts';
 export * from './tabelle.ts';
 export * from './propstack.ts';
