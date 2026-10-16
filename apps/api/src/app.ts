@@ -1212,8 +1212,8 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, prop
     async (c) => c.json(await dokumenteUebernehmen(db, ablage(), c.req.valid('param').id, c.req.valid('json').dateien), 201),
   );
   app.openapi(
-    createRoute({ method: 'post', path: '/api/expose/analyse', ...{ request: body(z.object({ key: z.string(), dateiname: z.string().max(300) })) }, responses: { 200: json(ExposeAnalyseAntwort, 'ausgewertet'), 404: fehler('Datei fehlt'), 422: fehler('nicht auswertbar') } }),
-    async (c) => { const b = c.req.valid('json'); return c.json(await exposeAnalysieren(db, await exposeMitKi(), b.key, b.dateiname), 200); },
+    createRoute({ method: 'post', path: '/api/expose/analyse', ...{ request: body(z.object({ key: z.string(), dateiname: z.string().max(300), bilder: z.boolean().optional() })) }, responses: { 200: json(ExposeAnalyseAntwort, 'ausgewertet'), 404: fehler('Datei fehlt'), 422: fehler('nicht auswertbar') } }),
+    async (c) => { const b = c.req.valid('json'); return c.json(await exposeAnalysieren(db, await exposeMitKi(), b.key, b.dateiname, { bilder: b.bilder ?? true }), 200); },
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/expose/uebernehmen', request: body(ExposeUebernehmen), responses: { 201: json(ExposeUebernahmeErgebnis, 'angelegt'), 404: fehler('nicht gefunden'), 409: fehler('Deal bereits vorhanden'), 422: fehler('ungültig') } }),

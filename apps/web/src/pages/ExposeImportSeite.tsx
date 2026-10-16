@@ -82,6 +82,9 @@ export function ExposeImportSeite() {
   const [idx, setIdx] = useState(0);
   const [phase, setPhase] = useState<Phase>({ art: 'upload' });
   const [kostenOk, setKostenOk] = useState(false);
+  /** Fotos aus dem Exposé herauslösen? Abgewählt entfällt der Schritt „Fotos“ (16.10.2026); die Wahl bleibt im Browser gemerkt. */
+  const [fotosAn, setFotosAnRoh] = useState(() => { try { return localStorage.getItem('expose-fotos') !== '0'; } catch { return true; } });
+  const setFotosAn = (v: boolean) => { setFotosAnRoh(v); try { localStorage.setItem('expose-fotos', v ? '1' : '0'); } catch { /* ohne Speicher */ } };
   const [status, setStatus] = useState<{ text: string; fehler?: boolean } | null>(null);
   const [laeuft, setLaeuft] = useState(false);
   const [a, setA] = useState<(ExposeAnalyseAntwort & { key: string }) | null>(null);
@@ -113,7 +116,7 @@ export function ExposeImportSeite() {
     setLaeuft(true);
     try {
       setStatus({ text: 'Claude liest das Exposé …' });
-      const r = await exposeAnalysieren(key, name);
+      const r = await exposeAnalysieren(key, name, fotosAn);
       setA({ ...r, key });
       setObjekt(r.objekt);
       setObjektBestehend(null);
@@ -153,7 +156,7 @@ export function ExposeImportSeite() {
       setStatus({ text: `Lade Exposé hoch${label} …` });
       const { key } = await exposeHochladen(datei);
       setStatus({ text: `Claude liest das Exposé${label} …` });
-      const r = await exposeAnalysieren(key, datei.name);
+      const r = await exposeAnalysieren(key, datei.name, fotosAn);
       setA({ ...r, key });
       setObjekt(r.objekt);
       setObjektBestehend(null);
@@ -235,14 +238,17 @@ export function ExposeImportSeite() {
   const zahl = (o: Feldfehler) => Object.keys(o).length;
   const offeneFehler = zahl(fehlerJeSchritt[1]) + zahl(fehlerJeSchritt[3]) + zahl(fehlerJeSchritt[4]);
   const SCHRITT_NAME: Record<Schritt, string> = { 1: 'Objekt', 2: 'Fotos', 3: 'Makler', 4: 'Deal & Kalkulation' };
-  const SCHRITTE = [1, 2, 3, 4] as const;
+  // Ohne Fotos gibt es den Schritt „Fotos“ nicht — die Reihenfolge bleibt, nur die Nummer 2 entfällt
+  const SCHRITTE: readonly Schritt[] = fotosAn ? [1, 2, 3, 4] : [1, 3, 4];
+  const WEITER: Record<Schritt, string> = { 1: 'Objekt', 2: 'Fotos', 3: 'Makler', 4: 'Deal' };
+  const nachbar = (s: Schritt, richtung: 1 | -1): Schritt => SCHRITTE[SCHRITTE.indexOf(s) + richtung] ?? s;
 
   return (
     <Stack maw={960} mx="auto">
       <Group justify="flex-end">
         <Button variant="subtle" color="red" leftSection={<IconX size={16} />} onClick={() => navigate({ to: '/deals' })}>Abbrechen</Button>
       </Group>
-      <Stepper active={schritt} size="sm">
+      <Stepper active={schritt ? SCHRITTE.indexOf(schritt) + 1 : 0} size="sm">
         <Stepper.Step label="Upload" description="📄" />
         {/* Ein Schritt mit Beanstandung ist schon am Balken erkennbar, nicht erst nach dem Hineinklicken. */}
         {SCHRITTE.map((nr) => {
@@ -269,6 +275,7 @@ export function ExposeImportSeite() {
           hinzufuegen={(fs) => setStapel((s) => [...s, ...fs.filter((f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'))])}
           entfernen={(i) => setStapel((s) => s.filter((_, j) => j !== i))}
           analysieren={analysieren} kiBereit={!!ki?.verfuegbar}
+          fotosAn={fotosAn} setFotosAn={setFotosAn}
         />
       )}
 
@@ -310,13 +317,13 @@ export function ExposeImportSeite() {
 
       {phase.art === 'pruefen' && (
         <Group justify="space-between">
-          <Button variant="default" disabled={phase.schritt === 1} onClick={() => setPhase({ art: 'pruefen', schritt: (phase.schritt - 1) as Schritt })}>← Zurück</Button>
+          <Button variant="default" disabled={phase.schritt === 1} onClick={() => setPhase({ art: 'pruefen', schritt: nachbar(phase.schritt, -1) })}>← Zurück</Button>
           {phase.schritt < 4 ? (
             <Button
               color={zahl(fehlerJeSchritt[phase.schritt]) ? 'orange' : undefined}
-              onClick={() => setPhase({ art: 'pruefen', schritt: (phase.schritt + 1) as Schritt })}
+              onClick={() => setPhase({ art: 'pruefen', schritt: nachbar(phase.schritt, 1) })}
             >
-              {{ 1: 'Weiter: Fotos →', 2: 'Weiter: Makler →', 3: 'Weiter: Deal →' }[phase.schritt as 1 | 2 | 3]}
+              Weiter: {WEITER[nachbar(phase.schritt, 1)]} →
             </Button>
           ) : (
             <Button
@@ -359,7 +366,7 @@ export function ExposeImportSeite() {
 function UploadSchritt(p: {
   stapel: File[]; idx: number; bekannt: string[]; schaetzung: { seiten: number; eur: number }[]; summe: number; bestaetigen: boolean;
   kostenOk: boolean; setKostenOk: (v: boolean) => void; laeuft: boolean; hinzufuegen: (f: File[]) => void; entfernen: (i: number) => void;
-  analysieren: () => void; kiBereit: boolean;
+  analysieren: () => void; kiBereit: boolean; fotosAn: boolean; setFotosAn: (v: boolean) => void;
 }) {
   const eingabe = useRef<HTMLInputElement>(null);
   const [ueber, setUeber] = useState(false);
@@ -395,7 +402,8 @@ function UploadSchritt(p: {
           {p.bestaetigen && <Checkbox mt="xs" label="Kosten bestätigen" checked={p.kostenOk} onChange={(e) => p.setKostenOk(e.currentTarget.checked)} />}
         </Paper>
       )}
-      <Group justify="flex-end">
+      <Group justify="space-between">
+        <Checkbox label="Fotos aus dem Exposé übernehmen" description="Abgewählt entfällt der Schritt „Fotos“, das Objekt bekommt keine Bilder aus dem PDF" checked={p.fotosAn} onChange={(e) => p.setFotosAn(e.currentTarget.checked)} />
         <Button size="md" loading={p.laeuft} disabled={!p.stapel[p.idx] || !p.kiBereit || (p.bestaetigen && !p.kostenOk)} onClick={p.analysieren}>Analysieren →</Button>
       </Group>
     </Stack>
