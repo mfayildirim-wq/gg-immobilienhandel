@@ -259,6 +259,21 @@ export async function analysiereExpose(pdf: Uint8Array, dateiname: string, a: An
   ]);
   if (zuordnung) for (const [i, z] of zuordnung) { const x = roh0.angaben[i]; if (x) { x.pfad ??= z.pfad; x.gg ??= z.gg; } }
 
+  // Haiku lässt die Gruppen `makler`/`kalkulation` manchmal ganz weg (kein Pflichtfeld; Paritätstest 16.10.2026, E7a):
+  // dann einmal wiederholen (≈ 1 ct), bevor die Rohdaten allein gelten. Beide Antworten werden gebucht.
+  let fehlend = teilAFehlt(a0.extrahiert);
+  if (fehlend.length && a0.modus === 'text') {
+    try {
+      const a1 = await teilA(dokText, dokTraegt);
+      for (const k of fehlend) if (a1.extrahiert?.[k] && typeof a1.extrahiert[k] === 'object') a0.extrahiert[k] = a1.extrahiert[k];
+      fehlend = teilAFehlt(a0.extrahiert);
+    } catch (e) {
+      if (endgueltig(e)) throw e;
+      warnungen.push(`Wiederholung der KI-Auswertung fehlgeschlagen: ${fehlerText(e)}`);
+    }
+  }
+  if (fehlend.length) warnungen.push(`KI lieferte keine Angaben zu ${fehlend.map((k) => (k === 'makler' ? 'Makler' : 'Kalkulation')).join(' und ')} — nur die Rohdaten gelten`);
+
   const roh: Record<string, any> = { ...roh0, einheiten_vollstaendig: true, ...pickeTeilA(a0.extrahiert), dokument: dok };
 
   // Einheiten-Nachfass wie in der alten App (extract_einheiten): nur wenn das Dokument mehr Einheiten nennt als erfasst
@@ -298,6 +313,14 @@ export function einheitenAusNachfass(wert: { typ: string; lage?: string; zimmer?
     for (let i = 0; i < n; i++) aus.push({ typ, lage: e.lage ?? null, zimmer: e.zimmer ?? null, flaeche: e.flaeche ?? null, kaltmiete: e.kaltmiete ?? null, vermiet });
   }
   return aus;
+}
+
+/** Gruppen, die Teil A weggelassen oder leer geliefert hat (`makler`, `kalkulation`). */
+export function teilAFehlt(ex: any): ('makler' | 'kalkulation')[] {
+  return (['makler', 'kalkulation'] as const).filter((k) => {
+    const g = ex?.[k];
+    return !g || typeof g !== 'object' || Object.values(g).every((v) => v === null || v === undefined || v === '');
+  });
 }
 
 /** Teil A in die Rohdaten: die Gruppen des bisherigen Werkzeugs. */

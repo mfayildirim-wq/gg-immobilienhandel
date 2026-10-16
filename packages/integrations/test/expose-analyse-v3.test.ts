@@ -58,6 +58,28 @@ describe('Analyse v3', () => {
     expect(aufrufe.find(istA).messages[0].content[0].type).toBe('document');
   });
 
+  it('E7a: fehlt in Teil A Makler oder Kalkulation, wird einmal wiederholt und die Gruppe aus der Wiederholung übernommen', async () => {
+    const ohne = { objekt: TEIL_A.objekt, makler: { name: null, firma: null }, _konfidenz: {} };
+    let n = 0;
+    antwort = (b) => (istA(b) ? aAntwort(++n === 1 ? ohne : TEIL_A) : aAntwort());
+    const r = await analysiereExpose(pdf(), 'e.pdf', abh());
+    expect(aufrufe.filter(istA)).toHaveLength(2);
+    expect(gebucht.filter((q) => q === 'expose-analyse/text-schnell')).toHaveLength(2);
+    expect(r.v2?.felder).toMatchObject({ makler: { name: 'Anna' }, kalkulation: { kaufpreis: 500000 } });
+    expect(r.warnungen.some((w) => w.startsWith('KI lieferte keine Angaben'))).toBe(false);
+  });
+
+  it('E7a: bleibt die Gruppe auch nach der Wiederholung leer, gelten die Rohdaten und die Prüfseite sieht eine Warnung', async () => {
+    antwort = (b) => (istA(b) ? aAntwort({ objekt: TEIL_A.objekt, _konfidenz: {} }) : aAntwort());
+    const r = await analysiereExpose(pdf(), 'e.pdf', abh());
+    expect(aufrufe.filter(istA)).toHaveLength(2);
+    expect(r.warnungen).toContain('KI lieferte keine Angaben zu Makler und Kalkulation — nur die Rohdaten gelten');
+    // vollständige Antwort: kein zweiter Aufruf
+    aufrufe = []; antwort = () => aAntwort();
+    await analysiereExpose(pdf(), 'e.pdf', abh());
+    expect(aufrufe.filter(istA)).toHaveLength(1);
+  });
+
   it('per Texterkennung gelesene Seiten werden gemeldet; mehr Seiten als gelesen → Hinweis', async () => {
     dok = { ...dok, seitenGesamt: 80, seiten: [...dok.seiten, { nr: 4, typ: 'bild', zeilen: [zeile('Kaufpreis: 1.000 €')], ocr: { sicherheit: 88, woerter: 3 } }] };
     const r = await analysiereExpose(pdf(), 'e.pdf', abh());

@@ -200,7 +200,7 @@ describe('Exposé v2: Mapping Standard → gg (Protokoll 28)', () => {
       expect(adresseZerlegen('Tübingen-Lustnau, Adresse auf Anfrage')).toEqual([null, undefined]);
     });
 
-    it('Mobil nur bei Mobilnummer; Ist-Miete über 40 €/m² gilt als Jahresmiete', () => {
+    it('Mobil nur bei Mobilnummer; Ist-Miete über 40 €/m² wird nur gewarnt, nicht umgerechnet (E8)', () => {
       const v2 = exposeV2Leer();
       v2.angaben = [
         { bezeichnung: 'Mobil', wert: '07031-624258', seite: 1, pfad: 'kontaktperson.tel_handy', kontakt: 1, gg: null },
@@ -210,8 +210,37 @@ describe('Exposé v2: Mapping Standard → gg (Protokoll 28)', () => {
       ];
       const r = zuordnen(v2);
       expect(r.pruefdaten.makler).toMatchObject({ festnetztel: '07031-624258', mobiltel: '+49 171 1234567' });
-      expect(r.pruefdaten.objekt.istmiete).toBeCloseTo(6016.67, 2);
-      expect(r.warnungen.some((w) => w.includes('als Jahresmiete gelesen'))).toBe(true);
+      // Wohn- und Geschäftshaus: 100 m² Wohnen + Gewerbe, die Ist-Miete enthält die Gewerbemiete — ÷ 12 wäre falsch (Protokoll 31, B4)
+      expect(r.pruefdaten.objekt.istmiete).toBe(72200);
+      expect(r.pruefdaten._konfidenz.istmiete).toBe('niedrig');
+      expect(r.warnungen.some((w) => w.includes('Jahresmiete oder Gewerbeanteil') && w.includes('6016.67'))).toBe(true);
+    });
+
+    it('E8: Jahreswert nur am Wortlaut — „Jahresmiete 2.320 €/Monat“ bleibt der Monatswert', () => {
+      const v2 = exposeV2Leer();
+      v2.angaben = [
+        { bezeichnung: 'Jahresnettokaltmiete', wert: '27.840 € p.a.', seite: 1, pfad: 'preise.mieteinnahmen_ist_jahr', kontakt: null, gg: null },
+      ];
+      expect(zuordnen(v2).pruefdaten.objekt.istmiete).toBe(2320);
+      v2.angaben = [
+        { bezeichnung: 'Jahresmiete', wert: '2.320 €/Monat', seite: 1, pfad: 'preise.mieteinnahmen_ist_jahr', kontakt: null, gg: null },
+      ];
+      const r = zuordnen(v2);
+      expect(r.pruefdaten.objekt.istmiete).toBe(2320);
+      expect(r.zeilen.find((z) => z.ziel === 'objekt.istmiete')?.hinweis).toBeUndefined();
+    });
+
+    it('E7b: Energieausweis aus per Texterkennung gelesenen Seiten gilt als „niedrig“ und wird gewarnt', () => {
+      const v2 = exposeV2MitFeldern();
+      (v2.felder!.objekt as { energieausweis: unknown }).energieausweis = { klasse: 'A', kennwert: 75, art: null };
+      v2.dokument = { version: 'gg-dokument-v1', seitenGesamt: 1, seiten: [{ nr: 1, typ: 'bild', zeilen: [['Energieausweis (Effizienzklasse)']], ocr: { sicherheit: 80, woerter: 2 } }] };
+      const r = zuordnen(v2);
+      expect(r.pruefdaten.objekt.energieausweis).toMatchObject({ klasse: 'A', kennwert: 75 });
+      expect(r.pruefdaten._konfidenz).toMatchObject({ energieklasse: 'niedrig', energiekennwert: 'niedrig' });
+      expect(r.warnungen).toContain('Energieausweis aus per Texterkennung gelesenen Seiten — bitte im Exposé prüfen');
+      // ohne Texterkennung: keine Abwertung
+      v2.dokument = { version: 'gg-dokument-v1', seitenGesamt: 1, seiten: [{ nr: 1, typ: 'text', zeilen: [['Energieklasse A']], ocr: null }] };
+      expect(zuordnen(v2).pruefdaten._konfidenz.energieklasse).toBeUndefined();
     });
 
     it('Adresse mit Kontaktnummer gehört zum Kontakt; Vorname mit Nachnamen; Festnetz aus Teil A im Feld Mobil', () => {

@@ -182,12 +182,17 @@ function gleich(a: NormWert | string[] | undefined, b: NormWert): boolean {
   return a === b;
 }
 
+/** Schlüssel in `_konfidenz` für einen Prüfpfad: `objekt.istmiete` → `istmiete`, `objekt.energieausweis.klasse` → `energieklasse` (wie die Prüfseite). */
+export const konfidenzSchluessel = (pruef: string) => pruef.startsWith('objekt.energieausweis.') ? `energie${pruef.split('.').at(-1)}` : pruef.split('.').at(-1)!;
+
 /** Wert einer Angabe für ein Ziel, mit den Sonderregeln. */
 export function zielWert(ziel: string, wort: string, pfad: string | null): { wert: NormWert; hinweis?: string } {
   const z = GG_ZIELE[ziel];
   if (!z) return { wert: null };
-  // Jahreswert: am Pfad oder am Wortlaut („72.200 € p.a.“, „Jahresnettokaltmiete“) — Prüfung 12.10.2026
-  const jahr = pfad?.endsWith('_jahr') || /p\.\s?a\.|pro jahr|jährl|jahres|\/\s?jahr|im jahr/i.test(wort);
+  // Jahreswert: am Pfad oder am Wortlaut („72.200 € p.a.“, „Jahresnettokaltmiete“) — Prüfung 12.10.2026.
+  // Steht ein Monatshinweis daneben („Jahresmiete 2.320 €/Monat“), gilt der Monat (E8, 16.10.2026).
+  const monat = /monat|mtl\.?|p\.\s?m\.|\/\s?mo\b/i.test(wort);
+  const jahr = !monat && (pfad?.endsWith('_jahr') || /p\.\s?a\.|pro jahr|jährl|jahres|\/\s?jahr|im jahr/i.test(wort));
   if (jahr && (ziel === 'objekt.istmiete' || ziel === 'objekt.sollmiete')) {
     const n = zahlAusText(wort, false);
     return n === null ? { wert: null } : { wert: +(n / 12).toFixed(2), hinweis: 'Jahreswert ÷ 12' };
@@ -597,14 +602,15 @@ export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null, geler
     const wert = Array.isArray(w) ? w.join('\n') : w;
     setzePfad(p as unknown as Record<string, unknown>, z.pruef, wert);
   }
-  // Plausibilität: Miete je m² über 40 € und der Zwölftel-Wert liegt bei 2–40 € → es war eine Jahresmiete (Prüfung 12.10.2026)
+  // Plausibilität: Miete je m² über 40 € und der Zwölftel-Wert liegt bei 2–40 € → vermutlich eine Jahresmiete.
+  // Nur Warnung, keine stille Umrechnung (E8, 16.10.2026): bei Wohn- und Geschäftshäusern enthält die Ist-Miete die
+  // Gewerbemiete, die Wohnfläche aber nicht die Gewerbefläche (Protokoll 31, B4) — die Umrechnung wäre dort falsch.
   const wfl = p.objekt.wohnflaeche;
   if (typeof p.objekt.istmiete === 'number' && typeof wfl === 'number' && wfl > 0) {
     const jeQm = p.objekt.istmiete / wfl;
     if (jeQm > 40 && jeQm / 12 >= 2 && jeQm / 12 <= 40) {
-      warnungen.push(`Ist-Miete ${p.objekt.istmiete} € wären ${jeQm.toFixed(0)} €/m² im Monat — als Jahresmiete gelesen, auf Monat umgerechnet`);
-      p.objekt.istmiete = +(p.objekt.istmiete / 12).toFixed(2);
-      werte['objekt.istmiete'] = p.objekt.istmiete;
+      warnungen.push(`Ist-Miete ${p.objekt.istmiete} € wären ${jeQm.toFixed(0)} €/m² im Monat — Jahresmiete oder Gewerbeanteil? Bitte prüfen (Monat wären ${+(p.objekt.istmiete / 12).toFixed(2)} €)`);
+      p._konfidenz.istmiete = 'niedrig';
     }
   }
   const ausTabellen = einheitenAusTabellen(v2.einheiten_tabellen);
@@ -641,7 +647,17 @@ export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null, geler
       const z = GG_ZIELE[ziel];
       if (!z?.pruef?.startsWith('objekt.') || ausFeldern.has(ziel)) continue;
       const b = belegt[i];
-      p._konfidenz[z.pruef.split('.').at(-1)!] = b === true ? 'hoch' : b === false ? 'niedrig' : 'mittel';
+      p._konfidenz[konfidenzSchluessel(z.pruef)] = b === true ? 'hoch' : b === false ? 'niedrig' : 'mittel';
+    }
+  }
+  // Energieausweis aus per Texterkennung gelesenen Seiten gilt als unsicher (E7b, Paritätstest 16.10.2026: beim Scan
+  // „A“/75 statt E/142,7 — die OCR-Zeilen trugen Überschriften ohne Werte)
+  if (v2.dokument?.seiten.some((s) => s.ocr)) {
+    const ea = p.objekt.energieausweis;
+    const gesetzt = (['klasse', 'kennwert', 'art'] as const).filter((k) => ea[k] !== null && ea[k] !== undefined);
+    if (gesetzt.length) {
+      for (const k of gesetzt) p._konfidenz[konfidenzSchluessel(`objekt.energieausweis.${k}`)] = 'niedrig';
+      warnungen.push('Energieausweis aus per Texterkennung gelesenen Seiten — bitte im Exposé prüfen');
     }
   }
 

@@ -139,32 +139,34 @@ richtig). Vorher lief beides online leer, weil `@napi-rs/canvas` dem API-Paket f
 - [x] Übernehmen: Import-Zeile gesperrt, zweite Übernahme → 409; PDF vor den Fotos; Knopf während des Laufs gesperrt
 - [x] Aus dem Test auf privat (14.10.2026): Häkchen „für künftige Importe merken“ erst mit gewähltem Ziel (PR #33);
       `@napi-rs/canvas` als Abhängigkeit von `apps/api`, sonst keine Fotos und keine Texterkennung online (PR #34)
-- [ ] Aus dem Test auf privat: „Wohneinheiten: 8 (6 Wohn- und 2 Gewerbeeinheiten)“ wird nur als Vorschlag angeboten, weil
-      mehrere Zahlen im Wert stehen; getrennte Wohn-/Gewerbeeinheiten gibt es nicht als Feld (Fachfrage, ggf. Folgeschritt)
-- [ ] **Bewusste Abweichungen von der alten App** (Fachentscheidung 12.10.2026, Protokoll 30 §12, noch ohne Paritätstest):
-      Jahresmiete am Wortlaut („p.a.“) und per Plausibilität (> 40 €/m² → ÷ 12 mit Warnung) als Monatsmiete; Platzhalter
+- [x] **Bewusste Abweichungen von der alten App** (Fachentscheidung 12.10.2026, Protokoll 30 §12; Paritätstest 16.10.2026,
+      Protokoll 31 §8.2): Jahresmiete nur am Wortlaut („p.a.“, „/Jahr“, ohne Monatshinweis daneben) ÷ 12; Platzhalter
       („auf Anfrage“) gelten als leer; Mobil nur bei Mobilnummer; längerer wörtlicher Freitext ersetzt die Kurzfassung.
-      **Offen E8:** die €/m²-Plausibilität bei Mischobjekten nur als Warnung (Protokoll 31, B4).
-- [ ] **Teil A bekommt im Produktivweg den Dokument-Text** statt des pdfjs-Textlayers wie vor v3, und Scans gehen nach OCR
-      als Text an Haiku statt als PDF an Sonnet (Protokoll 31, B7; Entscheidung E7 offen). Paritätstest 16.10.2026
-      (`pnpm paritaet:expose`, Protokoll 31 §8.2): Dokument-Text und pdfjs-Text sind praktisch gleich (Postplatz 1530/1534 Zeichen),
-      die Abweichungen alt ↔ v2 sind KI-Rauschen (Haiku lässt ganze Gruppen `makler`/`kalkulation` mal weg — auch in der alten App)
-      und gewollte Korrekturen (Jahresmiete ÷ 12). Beim nachgestellten Scan liest OCR → Haiku Adresse, Einheiten und Mieten besser als
-      Sonnet mit dem PDF, verliert aber den Energieausweis (Klasse E/142,7 → „A“/75). Empfehlung: v2 behalten; bei fehlender
-      `makler`-/`kalkulation`-Gruppe in Teil A einmal wiederholen (Rauschen dämpfen); OCR-Ergebnis des Energieblocks prüfen.
+      **E8 entschieden (16.10.2026):** die €/m²-Plausibilität (> 40 €/m²) ist nur noch eine Warnung mit Konfidenz
+      „niedrig“, keine stille Umrechnung — bei Wohn- und Geschäftshäusern wäre sie falsch (Protokoll 31, B4). Die alte App
+      rechnet gar nicht um; sie nimmt, was die KI als „monatlich“ liefert.
+- [x] **E7 entschieden (16.10.2026, Paritätstest):** Teil A bleibt auf dem Dokument-Text, Scans gehen nach Texterkennung als
+      Text an Haiku (gleiche Texte wie der pdfjs-Textlayer; beim Scan Adresse und Einheiten besser, ein Drittel der Kosten).
+      Folgeschritte umgesetzt: fehlt in Teil A die Gruppe Makler oder Kalkulation, wird der Aufruf einmal wiederholt;
+      Energieausweis aus per Texterkennung gelesenen Seiten gilt als „niedrig“ mit Warnung.
+- [x] **E2–E6 entschieden (16.10.2026):** Messwerkzeuge (`gold.ts`, `kennzahlen.ts`) bleiben weg (E2, der Paritätstest
+      `pnpm paritaet:expose` misst stattdessen); `import_korrekturen` wird nicht weiter verfolgt, die Tabelle bleibt ungenutzt
+      stehen (E3); Provision „zzgl. MwSt.“ bleibt wie gelesen, keine Umrechnung (E4); `temperature: 0` entfällt, die neuen
+      Modelle lehnen es ab (E5); unerwartete 500er tragen nur noch eine Referenz, die Ursache steht im Log (E6).
+- [x] **Fachfrage Wohn-/Gewerbeeinheiten (16.10.2026):** kein eigenes Feld. „Anzahl Einheiten“ bleibt die Gesamtzahl, die
+      Aufteilung steht in den Einheiten selbst (Typ Wohnung/Gewerbe/Stellplatz), wie in der alten App.
 - [x] Paritätstest Exposé-Import: Zahl „1.900000 Euro“ (Tausenderpunkte im Textlayer verloren) wurde 1,9 — auf der privaten
       Produktion steht der Postplatz-Deal vom 14.10. 14:03 mit Kaufpreis 1,9 € in der Kalkulation (von Hand auf 1.950.000 setzen);
       `tokenLesen` liest Dreiergruppen hinter einem einzelnen Trennzeichen jetzt als Tausender.
 - [ ] **KI gesperrt bis 01.11.2026:** Der Anthropic-Schlüssel der privaten Produktion (derselbe wie in der lokalen `.env`) hat sein
       Nutzungslimit erreicht — jede Analyse endet mit „Nutzungslimit erreicht“. Limit in der Anthropic-Konsole (Settings → Limits)
       erhöhen. Der Paritätslauf für McMakler (v2) fehlt deshalb; nach der Freigabe `pnpm paritaet:expose --nur McMakler_Expose` nachholen.
-- [ ] Folgeschritte (Protokoll 31, 7.5): „Abbrechen“ räumt den Import auf; Ergänzen-Modus ohne Deal-Schritt; Prüfseite
-      nutzt `uebernahmeWert` aus der Domain und fragt vor dem Überschreiben; Toleranz je Typ (Jahr, Stückzahl exakt);
-      Kaufpreis mit zwei Zielen; Leerstand „frei ab“; Typerkennung nur auf dem Typ-Feld; Datum nicht als Zahl;
+- [ ] Folgeschritte (Protokoll 31, 7.5), nicht dringend: „Abbrechen“ räumt den Import auf; Ergänzen-Modus ohne Deal-Schritt;
+      Prüfseite nutzt `uebernahmeWert` aus der Domain und fragt vor dem Überschreiben; Toleranz je Typ (Jahr, Stückzahl
+      exakt); Kaufpreis mit zwei Zielen; Leerstand „frei ab“; Typerkennung nur auf dem Typ-Feld; Datum nicht als Zahl;
       `bezeichnungen.ts` mit Wörterbuch vor dem KI-Aufruf und `stop_reason`; Gesamt-Zeitbudget; Pixelobergrenze beim
       Rendern; Rohdaten-Heuristik nach `integrations`; tote Reste (`pruefung.ts`, Werkzeug-Schema v2, Kostengrenze,
-      Einstellung `expose-extraktion`); Messwerkzeuge (`gold.ts`, `kennzahlen.ts`) neu schneiden oder entfernen (E2);
-      `import_korrekturen` behalten oder weglassen (E3); Provision „zzgl. MwSt.“ × 1,19 mit Warnung (E4).
+      Einstellung `expose-extraktion`).
 
 ## Erledigt (21.09.2026)
 
