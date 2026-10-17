@@ -41,6 +41,17 @@ describe('Impressum holen', () => {
     expect(protokoll.at(-1)).toBe('https://www.beispiel-immo.test/rechtliches/anbieter');
   });
 
+  it('nimmt 443 nichts an, leitet http auf eine andere Adresse um: der Umleitung folgen, dort den Link suchen', async () => {
+    const protokoll: string[] = [];
+    const abruf = abrufAus({
+      'http://kurz.test/': { body: START.replace('/rechtliches/anbieter', 'https://www.lang-immobilien.test/impressum'), endUrl: 'https://www.lang-immobilien.test/de/home.html' },
+      'https://www.lang-immobilien.test/impressum': IMPRESSUM,
+    }, protokoll);
+    const s = await impressumHolen('kurz.test', { abruf });
+    expect(s?.url).toBe('https://www.lang-immobilien.test/impressum');
+    expect(protokoll.at(-2)).toBe('http://kurz.test/');
+  });
+
   it('null ohne Impressum; kein Abruf interner Ziele; Umleitung ins Interne und Nicht-HTML werden verworfen', async () => {
     expect(await impressumHolen('beispiel-immo.test', { abruf: abrufAus({}) })).toBeNull();
     const protokoll: string[] = [];

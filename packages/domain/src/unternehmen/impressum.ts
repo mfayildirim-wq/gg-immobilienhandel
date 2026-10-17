@@ -232,7 +232,11 @@ export function firmenFelderVergleichen(aktuell: Partial<Record<FirmenFeld, stri
   return v;
 }
 
-/** Die Adressen, unter denen ein Impressum üblicherweise liegt — in Prüfreihenfolge; die Startseite zum Schluss (Link suchen). */
+/**
+ * Die Adressen, unter denen ein Impressum üblicherweise liegt — in Prüfreihenfolge; die Startseiten zum Schluss (Link suchen).
+ * Ganz am Ende die Startseite über `http://`: manche Hosts (z. B. Sparkassen-Kurzdomains) nehmen auf 443 nichts an und leiten
+ * nur über HTTP auf ihre eigentliche Adresse um — der Umleitung wird gefolgt, das Ziel noch einmal geprüft.
+ */
 export function impressumKandidaten(domain: string): string[] {
   const d = domain.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
   const hosts = d.startsWith('www.') ? [d, d.slice(4)] : [d, `www.${d}`];
@@ -240,5 +244,6 @@ export function impressumKandidaten(domain: string): string[] {
   const aus: string[] = [];
   for (const h of hosts) for (const p of pfade) aus.push(`https://${h}${p}`);
   for (const h of hosts) aus.push(`https://${h}/`);
+  for (const h of hosts) aus.push(`http://${h}/`);
   return aus;
 }

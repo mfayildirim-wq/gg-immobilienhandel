@@ -24,11 +24,11 @@ describe('HTML zu Text', () => {
     expect(siehtNachImpressumAus('Willkommen bei Beispiel Immobilien — Ihr Partner in Stuttgart')).toBe(false);
   });
 
-  it('Kandidaten: Impressum-Pfade je Host, Startseite zuletzt, www. und ohne', () => {
+  it('Kandidaten: Impressum-Pfade je Host, Startseiten zuletzt (zum Schluss über http), www. und ohne', () => {
     const k = impressumKandidaten('Beispiel-Immo.de');
     expect(k[0]).toBe('https://beispiel-immo.de/impressum');
     expect(k).toContain('https://www.beispiel-immo.de/impressum');
-    expect(k.slice(-2)).toEqual(['https://beispiel-immo.de/', 'https://www.beispiel-immo.de/']);
+    expect(k.slice(-4)).toEqual(['https://beispiel-immo.de/', 'https://www.beispiel-immo.de/', 'http://beispiel-immo.de/', 'http://www.beispiel-immo.de/']);
     expect(impressumKandidaten('https://www.beispiel-immo.de/team')[0]).toBe('https://www.beispiel-immo.de/impressum');
   });
 });

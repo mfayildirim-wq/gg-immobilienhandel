@@ -141,8 +141,8 @@ aus dem Impressum automatisch füllen, Maklerfelder nur als Vorschlag; Sammellau
       `unternehmen/impressum`. Oberfläche: Knopf „🌐 Impressum prüfen“ im Dialog unter Einstellungen → Unternehmen, Abweichungen
       mit „Übernehmen“ je Feld, „neu holen“ übergeht den Zwischenspeicher; Liste zeigt das Prüfdatum. Für C steht
       `unternehmenAusDomain` bereit (vorhandenes Unternehmen über die Domain, sonst aus dem Impressum anlegen, Quelle `impressum`).
-      Nicht geprüft: echte Maklerseiten (kein Netz im Test, Anthropic-Limit bis 01.11.) — erster Lauf online zeigt, welche
-      Seitenformen die Regeln verfehlen.
+      Nicht im Test geprüft: echte Maklerseiten (kein Netz im Test) — der Probelauf der HubSpot-Übernahme mit Netz zeigt,
+      welche Seitenformen die Regeln verfehlen.
 - [x] **C · HubSpot-Übernahme** (17.10.2026, Branch `firmenermittlung-impressum`): `pnpm hubspot <datei.xlsx> [--trocken] [--ohne-netz]`
       (Skript `apps/api/src/skripte/hubspot.ts`, Regeln `packages/domain/src/makler/hubspot.ts`, Service `services/hubspotUebernahme.ts`).
       Abgleich HubSpot-ID → E-Mail (auch Zusatzadressen, weitere Kontakte) → Telefon (Haupt/Mobil/Festnetz) → gleicher Name ohne
@@ -154,9 +154,13 @@ aus dem Impressum automatisch füllen, Maklerfelder nur als Vorschlag; Sammellau
       vorhanden → aus dem Impressum (B, Zwischenspeicher bleibt auch im Probelauf) → Platzhalter aus „Unternehmensname“ bzw. Domain
       mit Quelle `hubspot` („Name prüfen“ in der Liste, HubSpot-Anschrift in den Notizen); Freemail → kein Unternehmen. Probelauf
       schreibt in einer Transaktion und rollt zurück, Bericht gleich (`berichte/hubspot-<zeit>.md/.json`, mit Namenstreffern zum Ansehen).
-      Probelauf lokal ohne Netz (17.10.): 771 gelesen, 33 bekannt (30 Telefon, 3 Name), 738 neu (A 83, B 70, C 585, Nie 12),
-      433 Platzhalter-Unternehmen, 14 ohne. **Offen:** Probelauf mit Netz und KI gegen die private Prod (Anthropic-Limit bis 01.11.),
-      Bericht sichten (Namenstreffer, Platzhalter), dann `UMZUG_ZIEL_FREIGABE=ja pnpm hubspot <datei>`.
+      Probelauf lokal **mit Netz und Haiku** (17.10., ~5 min, 1,21 € KI): 771 gelesen, 33 bekannt (30 Telefon, 3 Name), 738 neu
+      (A 83, B 70, C 585, Nie 12); Unternehmen je Domain: 331 aus dem Impressum, 102 Platzhalter, 14 Makler ohne (9 Freemail).
+      432 Domains abgefragt, 338 Impressen gefunden (331 mit Firmennamen, 321 mit Telefon, 330 mit PLZ; 106 ohne Rechtsform =
+      Einzelunternehmen), Stichprobe der Namen sauber. 94 ohne Treffer: Bot-Sperre 403 (von Poll, McMakler, CBRE, Colliers),
+      Hosts ohne 443, die nur per HTTP umleiten (Sparkassen-Kurzdomains → HTTP-Startseite als letzter Kandidat nachgerüstet),
+      unvollständige Zertifikatsketten, 500/404. **Offen:** Probelauf gegen die private Prod (dort sind 149 Makler bekannt statt
+      38 lokal), Bericht sichten (Namenstreffer, Platzhalter), dann `UMZUG_ZIEL_FREIGABE=ja pnpm hubspot <datei>`.
 - [ ] **D · Prüfroutine „Maklerdaten prüfen“:** Knopf im Makler-Dialog (Impressum + Team-Seite + DuckDuckGo, Abweichungen als
       Vorschlagsknöpfe am Feld), Sammellauf unter Einstellungen → Werkzeuge in Paketen mit Fortschritt und Ergebnisliste
       (`geprueft_am` je Makler und Unternehmen). Nichts wird automatisch überschrieben.
@@ -211,9 +215,9 @@ richtig). Vorher lief beides online leer, weil `@napi-rs/canvas` dem API-Paket f
 - [x] Paritätstest Exposé-Import: Zahl „1.900000 Euro“ (Tausenderpunkte im Textlayer verloren) wurde 1,9 — auf der privaten
       Produktion steht der Postplatz-Deal vom 14.10. 14:03 mit Kaufpreis 1,9 € in der Kalkulation (von Hand auf 1.950.000 setzen);
       `tokenLesen` liest Dreiergruppen hinter einem einzelnen Trennzeichen jetzt als Tausender.
-- [ ] **KI gesperrt bis 01.11.2026:** Der Anthropic-Schlüssel der privaten Produktion (derselbe wie in der lokalen `.env`) hat sein
-      Nutzungslimit erreicht — jede Analyse endet mit „Nutzungslimit erreicht“. Limit in der Anthropic-Konsole (Settings → Limits)
-      erhöhen. Der Paritätslauf für McMakler (v2) fehlt deshalb; nach der Freigabe `pnpm paritaet:expose --nur McMakler_Expose` nachholen.
+- [x] ~~KI gesperrt bis 01.11.2026~~ — erledigt (17.10.2026, Auftraggeber): das Nutzungslimit des Anthropic-Schlüssels gilt nicht mehr,
+      die KI läuft wieder (Impressum-Deutung mit Haiku am 17.10. lokal gelaufen).
+- [ ] Paritätslauf für McMakler (v2) nachholen: `pnpm paritaet:expose --nur McMakler_Expose` (fehlte wegen des damaligen Limits).
 - [ ] Folgeschritte (Protokoll 31, 7.5), nicht dringend: „Abbrechen“ räumt den Import auf; Ergänzen-Modus ohne Deal-Schritt;
       Prüfseite nutzt `uebernahmeWert` aus der Domain und fragt vor dem Überschreiben; Toleranz je Typ (Jahr, Stückzahl
       exakt); Kaufpreis mit zwei Zielen; Leerstand „frei ab“; Typerkennung nur auf dem Typ-Feld; Datum nicht als Zahl;
