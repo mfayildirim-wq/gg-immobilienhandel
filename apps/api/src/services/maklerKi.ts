@@ -11,7 +11,7 @@ import { maklerMitFirma } from './unternehmen.ts';
 
 const PERSONA_PROFIL = 'persona-profil';
 
-async function kostenBuchen(db: Db, a: KiAntwort<unknown>, quelle: string, metadata: Record<string, unknown>) {
+export async function kostenBuchen(db: Db, a: KiAntwort<unknown>, quelle: string, metadata: Record<string, unknown>) {
   try {
     const b = kostenBuchung(a.model, a.usage, quelle, metadata);
     await auditSchreiben(db, { type: b.type, aiModel: b.ai_model, aiFunction: quelle, source: quelle, inputTokens: b.input_tokens, outputTokens: b.output_tokens, costEur: b.cost_eur, metadata: b.metadata });

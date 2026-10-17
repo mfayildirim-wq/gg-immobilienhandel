@@ -100,6 +100,7 @@ import {
   ObjektDetail,
   StatusHistorieEintrag,
   StatusWechsel,
+  FirmendatenErgebnis, FirmendatenPruefen,
 } from '@gg/api-contract';
 import type { Db } from '@gg/db';
 import { AUFBEWAHRUNG, DealStatus, geplanteStufe, type KiBereich, kiModellFuer, rueckwegPruefen, type RueckwegRegeln } from '@gg/domain';
@@ -135,7 +136,7 @@ import { autoSicherungDatei, autoSicherungEinspielen, autoSicherungErstellen, au
 import { filterAnlegen, filterListe, filterLoeschen, filterUmbenennen, filterVorlagenEinrichten, listenAltformat } from './services/listen.ts';
 import { projektAnlegen, projektDealAuswahl, projektDetail, projekteListe, projektLoeschen, projektSpeichern } from './services/projekte.ts';
 import { fotoDatei, fotoHochladen, fotoLoeschen, fotoPort, fotosListe, fotosSortieren } from './services/fotos.ts';
-import { type Dateispeicher, type Geocoder, type GraphClient, AnalyseFehler, type KiClient, KiDienstFehler, KiSchluesselFehler, type PropstackClient, nachrichtenSuche, webSuche, anthropicClient, anthropicSchluesselPruefen, kiMitModell } from '@gg/integrations';
+import { type Dateispeicher, type Geocoder, type GraphClient, AnalyseFehler, type ImpressumAbrufOptionen, type KiClient, KiDienstFehler, KiSchluesselFehler, type PropstackClient, nachrichtenSuche, webSuche, anthropicClient, anthropicSchluesselPruefen, kiMitModell } from '@gg/integrations';
 import { bekannteExposeDateien, exposeAnalysieren, exposeEingang, exposeEingangUebernehmen, type ExposeKontext, exposeUebernehmen, importVerwerfen, MAX_EXPOSE_BYTES, exposeBild } from './services/expose.ts';
 import { maklerAngaben, maklerUebernahme, objektAngaben, objektUebernahme } from './services/exposeAngaben.ts';
 import { auth, type AuthOptionen } from './middleware/auth.ts';
@@ -173,6 +174,7 @@ import {
 } from './services/ankauf.ts';
 import { kommunikationAnlegen, maklerAendern, maklerAnlegen, maklerDetail, maklerErledigt, maklerListe, maklerLoeschen, maklerPersoenlichSpeichern } from './services/makler.ts';
 import { unternehmenAendern, unternehmenAnlegen, unternehmenDetail, unternehmenListe, unternehmenLoeschen, unternehmenZusammenfuehren } from './services/unternehmen.ts';
+import { unternehmenFirmendatenPruefen } from './services/firmendaten.ts';
 import { beziehungsprofilErstellen, entwurfErstellen, erwaehnungenErgaenzen, gespraechsoeffnerErstellen, kontaktAnlaesseErmitteln, osintAusfuehren, personaAnalysieren, type Suchdienste, personaStand, persoenlichesErgaenzen, transkription, zusammenfassungErstellen } from './services/maklerKi.ts';
 import { mcpAnmelden, mcpSchluesselAusKopfOderNull, mcpStand, mcpVerarbeiten } from './services/mcp.ts';
 import { m365Client, m365OrdnerLesen, m365Entsperren, m365Anhang, m365AnmeldungStarten, m365KonfigurationSpeichern, m365OrdnerSpeichern, m365Posteingang, m365Rueckweg, m365Sperren, m365Stand, m365Trennen } from './services/m365.ts';
@@ -219,6 +221,8 @@ export interface AppKontext {
   oauthRueckweg?: RueckwegRegeln;
   /** Dateiablage (Supabase Storage); ohne sie antworten Foto-Routen mit 422. */
   speicher?: Dateispeicher;
+  /** Impressumsabruf für die Firmendaten (Baustein B); Tests setzen einen Ersatz-fetch. */
+  firmendaten?: ImpressumAbrufOptionen;
   /** PDF-Druck; Standard: lokales Chrome hinter der Render-Schleuse. Tests setzen einen Ersatz. */
   pdf?: {
     drucken: (p: BankgespraechPayload, fotos: BilderPorts) => Promise<Uint8Array>;
@@ -238,7 +242,7 @@ const Version = z.object({ version: z.number().int() });
 const Geaendert = json(z.object({ id: z.string(), version: z.number().int() }), 'geändert');
 const konflikt = { 400: fehler('Eingabe ungültig'), 404: fehler('nicht gefunden'), 409: fehler('Versionskonflikt') };
 
-export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, cronGeheimnis, kiSchluesselPruefen = anthropicSchluesselPruefen, autoImport, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
+export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, firmendaten: firmendatenOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, cronGeheimnis, kiSchluesselPruefen = anthropicSchluesselPruefen, autoImport, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
   const autoImportAktiv = autoImport?.aktiv ?? true;
   const exposeKontext = () => {
     if (!expose) throw new FachFehler(422, 'Dateiablage ist nicht eingerichtet (SUPABASE_SERVICE_ROLE_KEY).');
@@ -321,6 +325,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, prop
 
   // Begrenzung der teuren und der zugangsnahen Wege (alt: rate-limits.ts) — nach der Anmeldeprüfung, vor den Routen
   app.use('/api/makler/:id/ki/*', begrenzung(GRENZEN.ki));
+  app.use('/api/unternehmen/:id/firmendaten', begrenzung(GRENZEN.abruf));
   app.use('/api/persona/analyse', begrenzung(GRENZEN.ki));
   app.use('/api/expose/analyse', begrenzung(GRENZEN.ki));
   app.use('/api/deals/:id/einheiten-aus-pdf', begrenzung(GRENZEN.ki));
@@ -370,6 +375,10 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, prop
   app.openapi(
     createRoute({ method: 'post', path: '/api/unternehmen/{id}/zusammenfuehren', request: { params: IdParam, ...body(UnternehmenZusammenfuehren) }, responses: { 200: json(z.object({ id: z.string(), makler: z.number().int() }), 'zusammengeführt'), 404: fehler('nicht gefunden') } }),
     async (c) => c.json(await unternehmenZusammenfuehren(db, c.req.valid('param').id, c.req.valid('json').wegId), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/unternehmen/{id}/firmendaten', request: { params: IdParam, ...body(FirmendatenPruefen) }, responses: { 200: json(FirmendatenErgebnis, 'Impressum gelesen; leere Felder gefüllt, Abweichungen als Vorschläge'), 404: fehler('nicht gefunden'), 422: fehler('keine Domain bekannt') } }),
+    async (c) => c.json(await unternehmenFirmendatenPruefen(db, await kiAktuell('makler'), c.req.valid('param').id, { ...firmendatenOpt, erneut: c.req.valid('json').erneut }), 200),
   );
 
   // ── Objekte ──────────────────────────────────────────────

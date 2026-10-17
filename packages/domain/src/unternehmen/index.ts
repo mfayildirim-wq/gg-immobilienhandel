@@ -52,9 +52,17 @@ const RECHTSFORM_MUSTER: readonly [RegExp, string][] = [
 
 /** Rechtsform aus dem Firmennamen („Immobilien Rienhardt GmbH“ → „GmbH“); null, wenn keine erkennbar ist. */
 export function rechtsformAusName(name: string | null | undefined): string | null {
+  return rechtsformTreffer(name)?.form ?? null;
+}
+
+/** Rechtsform mit Fundstelle im Text (für das Herauslösen des Firmennamens aus einer Impressum-Zeile). */
+export function rechtsformTreffer(name: string | null | undefined): { form: string; index: number; laenge: number } | null {
   const n = (name ?? '').replace(/\s+/g, ' ').trim();
   if (!n) return null;
-  for (const [muster, form] of RECHTSFORM_MUSTER) if (muster.test(n)) return form;
+  for (const [muster, form] of RECHTSFORM_MUSTER) {
+    const m = muster.exec(n);
+    if (m) return { form, index: m.index, laenge: m[0].length };
+  }
   return null;
 }
 

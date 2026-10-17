@@ -37,4 +37,12 @@ test('Unternehmen: Firma im Makler-Dialog verknüpft oder legt an, Einstellungen
   await expect(tabelle.locator('[data-unternehmen]')).toHaveCount(1);
   await expect(tabelle.locator(`[data-unternehmen="${m1.unternehmenId}"]`)).toContainText('2');
   expect((await (await page.request.get(`/api/makler/${m2.id}`)).json()).unternehmenId).toBe(m1.unternehmenId);
+
+  // Bearbeiten: Impressum-Prüfung (Baustein B) steht bereit und nennt die Domain aus der E-Mail der Makler nicht — das Unternehmen hat keine
+  await tabelle.locator(`[data-unternehmen="${m1.unternehmenId}"]`).getByRole('button', { name: 'Bearbeiten' }).click();
+  const bearbeiten = page.getByRole('dialog', { name: 'Unternehmen bearbeiten' });
+  await expect(bearbeiten.getByRole('button', { name: 'Impressum prüfen' })).toBeVisible();
+  await expect(bearbeiten.getByText('Noch nicht gegen das Impressum geprüft')).toBeVisible();
+  await bearbeiten.getByRole('button', { name: 'Schließen' }).click();
+  await expect(bearbeiten).toBeHidden();
 });

@@ -92,6 +92,13 @@
       "when": 1792249032291,
       "tag": "20261017145712_makler_ohne_firma",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792253665269,
+      "tag": "20261017161425_firmen_auskuenfte",
+      "breakpoints": true
     }
   ]
 }

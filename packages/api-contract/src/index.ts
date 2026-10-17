@@ -60,6 +60,43 @@ export type UnternehmenAendern = z.infer<typeof UnternehmenAendern>;
 export const UnternehmenZusammenfuehren = z.object({ wegId: z.string() });
 export type UnternehmenZusammenfuehren = z.infer<typeof UnternehmenZusammenfuehren>;
 
+/** Firmendaten aus dem Impressum (Baustein B, 17.10.2026): die acht Felder, die ein Impressum liefern kann. */
+export const FirmenFelder = z.object({
+  name: z.string().nullable(), rechtsform: z.string().nullable(), strasse: z.string().nullable(), plz: z.string().nullable(),
+  ort: z.string().nullable(), tel: z.string().nullable(), fax: z.string().nullable(), email: z.string().nullable(),
+});
+export type FirmenFelder = z.infer<typeof FirmenFelder>;
+export const FirmenFeld = FirmenFelder.keyof();
+export type FirmenFeld = z.infer<typeof FirmenFeld>;
+
+export const FirmendatenPruefen = z.object({
+  /** Zwischenspeicher übergehen und das Impressum neu holen */
+  erneut: z.boolean().optional(),
+});
+export type FirmendatenPruefen = z.infer<typeof FirmendatenPruefen>;
+
+/**
+ * Ergebnis der Prüfung eines Unternehmens gegen sein Impressum: leere Felder wurden automatisch gefüllt (`uebernommen`),
+ * Abweichungen zu gefüllten Feldern sind Vorschläge (`abweichend`), `unternehmen` ist der Stand danach.
+ */
+export const FirmendatenErgebnis = z.object({
+  domain: z.string(),
+  gefunden: z.boolean(),
+  /** Seite, aus der gelesen wurde */
+  url: z.string().nullable(),
+  /** aus dem Zwischenspeicher (Abruf-Zeitpunkt in `abgerufenAt`) */
+  ausCache: z.boolean(),
+  abgerufenAt: z.string(),
+  /** ob eine KI mitgelesen hat (sonst nur Regel) */
+  mitKi: z.boolean(),
+  ermittelt: FirmenFelder.nullable(),
+  uebernommen: z.array(FirmenFeld),
+  abweichend: z.array(z.object({ feld: FirmenFeld, aktuell: z.string(), ermittelt: z.string() })),
+  gleich: z.array(FirmenFeld),
+  unternehmen: Unternehmen,
+});
+export type FirmendatenErgebnis = z.infer<typeof FirmendatenErgebnis>;
+
 export const Makler = z.object({
   id: z.string(),
   name: z.string().nullable(),

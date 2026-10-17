@@ -122,6 +122,8 @@ Nicht setzen: `AUTH_LOCAL_OPEN`, `KI_ATTRAPPE`, `M365_ATTRAPPE`, `PROPSTACK_ATTR
    Branch `makler-unternehmen` (17.10.2026) bringt drei weitere: `unternehmen`, `unternehmen_daten` (verschiebt `makler.firma`
    in die neue Tabelle, Prod: 143 Makler → 117 Unternehmen) und `makler_ohne_firma` — in dieser Reihenfolge, der
    Probelauf zeigt alle drei. Danach 13 Migrationen, 41 Tabellen.
+   Branch `firmenermittlung-impressum` (17.10.2026) bringt `firmen_auskuenfte` (Zwischenspeicher der Impressumsabfrage, leer). Danach
+   14 Migrationen, 42 Tabellen.
 4. Storage-Buckets anlegen (lokal macht das `server.ts` beim Start, online niemand).
 5. In Azure AD die Redirect-URI `https://<adresse>/m365/rueckweg` registrieren.
 6. Erst danach: `pnpm umzug:probe` gegen die Produktion (nur lesend), dann der Umzug.

@@ -30,6 +30,8 @@ import type {
   Unternehmen,
   UnternehmenAendern,
   UnternehmenAnlegen,
+  FirmendatenErgebnis,
+  FirmendatenPruefen,
   KalkVariante,
   KalkVarianteAnlegen,
   NachrichtEntwurf,
@@ -179,6 +181,9 @@ export const useUnternehmenAendern = (id: string) => useUnternehmenAendernAllgem
 export const useUnternehmenLoeschen = () => useUnternehmenAendernAllgemein((id: string) => anfrage<{ id: string }>(`/api/unternehmen/${id}`, { method: 'DELETE' }));
 export const useUnternehmenZusammenfuehren = () =>
   useUnternehmenAendernAllgemein((e: { behaltenId: string; wegId: string }) => anfrage<{ id: string; makler: number }>(`/api/unternehmen/${e.behaltenId}/zusammenfuehren`, senden('POST', { wegId: e.wegId })));
+/** Firmendaten aus dem Impressum (Baustein B): leere Felder werden serverseitig gefüllt, Abweichungen kommen als Vorschläge zurück. */
+export const useFirmendatenPruefen = (id: string) =>
+  useUnternehmenAendernAllgemein((e: FirmendatenPruefen) => anfrage<FirmendatenErgebnis>(`/api/unternehmen/${id}/firmendaten`, senden('POST', e)));
 
 // ── Details ───────────────────────────────────────────────
 

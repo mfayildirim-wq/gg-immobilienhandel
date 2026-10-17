@@ -131,8 +131,18 @@ aus dem Impressum automatisch füllen, Maklerfelder nur als Vorschlag; Sammellau
 - [x] **A · Unternehmen als Tabelle** (`fach.unternehmen`, `makler.unternehmen_id`; `firma`/`webseite` am Makler weg, nach außen
       abgeleitet). Migration in drei Schritten, Daten-Migration gegen die Prod-Kopie geprüft (117 Unternehmen, 72 mit Rechtsform,
       103 mit Domain). Makler-Dialog mit Vorschlagsfeld, Einstellungen → Unternehmen mit Zusammenführen.
-- [ ] **B · Firmenermittlung aus Domain und Webseite:** Impressum holen (`/impressum`, `/imprint`, Link „Impressum“), Felder per
-      Regel und Haiku herauslesen, Ergebnis je Domain zwischenspeichern; Unternehmensfelder dürfen leere Felder automatisch füllen.
+- [x] **B · Firmenermittlung aus Domain und Webseite** (17.10.2026, Branch `firmenermittlung-impressum`): Impressum holen (übliche
+      Pfade `/impressum`, `/imprint` … je Host mit und ohne `www.`, sonst Link „Impressum“ von der Startseite; nur HTTPS, keine
+      internen Ziele wie beim Auto-Import, 8 s je Seite, 1 MB), Felder per Regel (`impressumFelder` in `@gg/domain`) **und**
+      Haiku (Werkzeug `firmendaten_speichern`, nur aus dem Text; KI hat Vorrang bei Name und Rechtsform, Regel füllt Lücken; ohne
+      KI gilt die Regel allein). Zwischenspeicher je Domain in `fach.firmen_auskuenfte` (Treffer 30 Tage, Fehlschlag 7 Tage;
+      Migration `20261017161425_firmen_auskuenfte`, nicht in der Sicherung). `POST /api/unternehmen/{id}/firmendaten` füllt leere
+      Felder (auch Domain/Webseite), setzt `geprueft_am`, liefert Abweichungen als Vorschläge; Kosten im Audit
+      `unternehmen/impressum`. Oberfläche: Knopf „🌐 Impressum prüfen“ im Dialog unter Einstellungen → Unternehmen, Abweichungen
+      mit „Übernehmen“ je Feld, „neu holen“ übergeht den Zwischenspeicher; Liste zeigt das Prüfdatum. Für C steht
+      `unternehmenAusDomain` bereit (vorhandenes Unternehmen über die Domain, sonst aus dem Impressum anlegen, Quelle `impressum`).
+      Nicht geprüft: echte Maklerseiten (kein Netz im Test, Anthropic-Limit bis 01.11.) — erster Lauf online zeigt, welche
+      Seitenformen die Regeln verfehlen.
 - [ ] **C · HubSpot-Übernahme** `pnpm umzug --hubspot <datei>` mit Probelauf und Bericht: Abgleich E-Mail → Telefon → Name; bekannte
       Makler nur in leeren Feldern ergänzen; 700 neue anlegen (HubSpot-ID als Herkunft); Unternehmen über Domain, sonst B, sonst
       Platzhalter „Name prüfen“. Prio aus Klassifizierung (VIP → A, B, C, Test → C, Exit → Frequenz „Nie“); Anrede, Du/Sie,
