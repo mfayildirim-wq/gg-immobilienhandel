@@ -1,7 +1,7 @@
 import { schema } from '@gg/db';
 import { STANDARD_ABSCHLUSS_BILD, STANDARD_ORGANIGRAMM_BILD } from '@gg/documents';
 import { dokumentSchluessel, fotoSchluessel } from '@gg/integrations';
-import { bsSeedAktionen, bsSeedVorlage, DealStatus, EXPOSE_V0_SCHEMA, normalisiereFrequenz, weitereKontakte, SLIDE_TYP_WERTE, STANDARDBILD_ABSCHLUSS, STANDARDBILD_ORGANIGRAMM, START_STATUS } from '@gg/domain';
+import { bsSeedAktionen, bsSeedVorlage, DealStatus, domainAusAdresse, EXPOSE_V0_SCHEMA, normalisiereFrequenz, rechtsformAusName, unternehmenNameNormieren, webseiteNormieren, weitereKontakte, SLIDE_TYP_WERTE, STANDARDBILD_ABSCHLUSS, STANDARDBILD_ORGANIGRAMM, START_STATUS } from '@gg/domain';
 import {
   datum,
   ganzzahl,
@@ -20,6 +20,7 @@ import {
 type Zeile<T extends { $inferInsert: unknown }> = T['$inferInsert'];
 
 export interface Zeilen {
+  unternehmen: Zeile<typeof schema.unternehmen>[];
   makler: Zeile<typeof schema.makler>[];
   maklerKommunikation: Zeile<typeof schema.maklerKommunikation>[];
   objekte: Zeile<typeof schema.objekte>[];
@@ -241,13 +242,34 @@ export function umformen(kv: KvDaten, stichtag = new Date().toISOString()): Umfo
   const befunde: Befund[] = [];
   const unbekannteFelder: Record<string, Record<string, number>> = {};
   const z: Zeilen = {
-    makler: [], maklerKommunikation: [], objekte: [], objektEinheiten: [], deals: [],
+    unternehmen: [], makler: [], maklerKommunikation: [], objekte: [], objektEinheiten: [], deals: [],
     dealEinheiten: [], dealSanierungen: [], dealKommentare: [], dealKalkVarianten: [], dealStatusHistorie: [], exposeImporte: [],
     kundenkalkulationen: [], objektFotos: [], dealDokumente: [], finanzpraesentationen: [], praesentationFolien: [],
     begleitscheinVorlagen: [], vordrucke: [], begleitscheinAktionen: [], begleitscheine: [], vertriebslisten: [], vertriebslisteZeilen: [],
     projekte: [], projektEinheiten: [], projektMieterhistorie: [], projektAufgaben: [], projektGebaeudeMassnahmen: [], gespeicherteFilter: [], textvorlagen: [], ddChecklisteVorlage: [], einstellungen: [],
   };
   const waisen = { objekte: 0, makler: 0 };
+
+  // Unternehmen (Normalform 17.10.2026): je normiertem Firmennamen eine Zeile; der Makler verweist darauf.
+  // Webseite und Domain kommen vom ersten Makler, der sie nennt; Rechtsform aus dem Namen.
+  const unternehmenNachName = new Map<string, Zeile<typeof schema.unternehmen>>();
+  const unternehmenFuer = (firma: string | null, webseite: string | null, email: string | null): string | null => {
+    const name = (firma ?? '').replace(/\s+/g, ' ').trim();
+    if (!name) return null;
+    const normiert = unternehmenNameNormieren(name);
+    let u = unternehmenNachName.get(normiert);
+    const web = webseiteNormieren(webseite);
+    const domain = domainAusAdresse(webseite) ?? domainAusAdresse(email);
+    if (!u) {
+      u = { id: eindeutig('unternehmen', `u:${normiert}`), name, nameNormiert: normiert, rechtsform: rechtsformAusName(name), webseite: web, domain, quelle: 'umzug' };
+      unternehmenNachName.set(normiert, u);
+      z.unternehmen.push(u);
+    } else {
+      if (!u.webseite && web) u.webseite = web;
+      if (!u.domain && domain) u.domain = domain;
+    }
+    return u.id!;
+  };
 
   const befund = (b: Befund) => befunde.push(b);
   const notizFuer = (entitaet: string, id: string): Notiz => (feld, wert, hinweis) =>
@@ -297,12 +319,11 @@ export function umformen(kv: KvDaten, stichtag = new Date().toISOString()): Umfo
     z.makler.push({
       id,
       name: haupt.name,
-      firma: text(m.firma),
+      unternehmenId: unternehmenFuer(text(m.firma), text(m.webseite ?? m.website), haupt.email),
       tel: haupt.tel,
       mobil: haupt.mobil,
       festnetz: haupt.festnetz,
       email: haupt.email,
-      webseite: text(m.webseite ?? m.website),
       strasse: text(m.strasse),
       plz: text(m.plz),
       ort: text(m.stadt),
@@ -447,7 +468,7 @@ export function umformen(kv: KvDaten, stichtag = new Date().toISOString()): Umfo
     if (maklerId && !maklerNachId.has(maklerId)) {
       const waise = {
         id: eindeutig('makler', maklerId),
-        name: text(d.maklerName), firma: text(d.maklerFirma), tel: text(d.maklerTel), email: text(d.maklerEmail),
+        name: text(d.maklerName), unternehmenId: unternehmenFuer(text(d.maklerFirma), null, text(d.maklerEmail)), tel: text(d.maklerTel), email: text(d.maklerEmail),
       };
       z.makler.push(waise);
       maklerNachId.set(waise.id, waise);

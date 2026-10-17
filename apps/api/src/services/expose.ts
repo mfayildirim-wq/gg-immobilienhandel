@@ -13,6 +13,7 @@ import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { PDFDocument } from 'pdf-lib';
 import { auditSchreiben } from './audit.ts';
 import { FachFehler } from '../fehler.ts';
+import { maklerFirma, maklerMitFirma, unternehmenFuerFirma } from './unternehmen.ts';
 import { exposeExtraktionLesen, kalkStandardLesen } from './einstellungen.ts';
 import { detailsLesen, detailsSetzen, fuerAngaben, listeAnhaengen } from './exposeAngaben.ts';
 import { fotoHochladen } from './fotos.ts';
@@ -148,7 +149,7 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
 
   // Dubletten gegen den aktiven Bestand, neueste zuerst (Reihenfolge wie die alte Liste)
   const objekte = await db.select().from(schema.objekte).where(isNull(schema.objekte.deletedAt)).orderBy(desc(schema.objekte.createdAt));
-  const makler = await db.select().from(schema.makler).where(isNull(schema.makler.deletedAt)).orderBy(desc(schema.makler.createdAt));
+  const makler = await db.select(maklerMitFirma).from(schema.makler).where(isNull(schema.makler.deletedAt)).orderBy(desc(schema.makler.createdAt));
   const dObj = dublettenObjekt(objekte, v.objekt);
   const dMk = dublettenMakler(makler, v.makler);
 
@@ -158,7 +159,7 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
 
   // Hat das erkannte Objekt schon Deals? Dann kann dieses PDF einen davon ergänzen (Fotos, Makler, Exposé) statt einen zweiten anzulegen
   const bestehendeDeals = dObj
-    ? (await db.select({ id: schema.deals.id, status: schema.deals.status, makler: schema.makler.name, firma: schema.makler.firma })
+    ? (await db.select({ id: schema.deals.id, status: schema.deals.status, makler: schema.makler.name, firma: maklerFirma })
       .from(schema.deals).leftJoin(schema.makler, eq(schema.makler.id, schema.deals.maklerId))
       .where(and(eq(schema.deals.objektId, dObj.match.id), isNull(schema.deals.deletedAt))).orderBy(desc(schema.deals.createdAt)))
       .map((d) => ({ id: d.id, status: d.status, makler: [d.makler, d.firma].filter(Boolean).join(' · ') || null }))
@@ -427,7 +428,7 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
     } else if (maklerHatDaten({ ...m, tel })) {
       maklerId = crypto.randomUUID();
       await tx.insert(schema.makler).values({
-        id: maklerId, name: text(m.name), firma: text(m.firma), tel: text(tel), email: text(m.email), webseite: text(m.webseite),
+        id: maklerId, name: text(m.name), unternehmenId: await unternehmenFuerFirma(tx, m.firma, { webseite: m.webseite, email: m.email, quelle: 'expose' }), tel: text(tel), email: text(m.email),
         mobil: text(m.mobiltel ? telefonNormalisieren(m.mobiltel) : ''), festnetz: text(m.festnetztel ? telefonNormalisieren(m.festnetztel) : ''),
         // Anschrift aus der Zuordnung; manuelle Zuordnung nur, wo die Zuordnung nichts gefunden hat
         ...Object.fromEntries((['strasse', 'plz', 'ort'] as const).map((s) => [s, wertText(zuordnung?.werte[`makler.${s}`]) ?? wertText(manuell?.makler.spalten[s])])),

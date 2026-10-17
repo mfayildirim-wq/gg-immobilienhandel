@@ -123,6 +123,24 @@ Die alte App verhält sich genauso; eine Änderung ist eine bewusste Abweichung 
       (`tests/e2e/ankauf.spec.ts`, Begründung steht dort). Beim Neuentwurf ohne Durchklicken durch die
       Warteschlange testen — der alte Test war davon abhängig, was vorherige Tests hinterlassen hatten.
 
+## Makler-Unternehmen und HubSpot (17.10.2026, Branch `makler-unternehmen`, Protokoll 32)
+
+Entscheidungen des Auftraggebers (17.10.): alle 700 neuen HubSpot-Kontakte übernehmen („Test“ = Prio C); Unternehmensfelder
+aus dem Impressum automatisch füllen, Maklerfelder nur als Vorschlag; Sammellauf nur von Hand, kein Cron.
+
+- [x] **A · Unternehmen als Tabelle** (`fach.unternehmen`, `makler.unternehmen_id`; `firma`/`webseite` am Makler weg, nach außen
+      abgeleitet). Migration in drei Schritten, Daten-Migration gegen die Prod-Kopie geprüft (117 Unternehmen, 72 mit Rechtsform,
+      103 mit Domain). Makler-Dialog mit Vorschlagsfeld, Einstellungen → Unternehmen mit Zusammenführen.
+- [ ] **B · Firmenermittlung aus Domain und Webseite:** Impressum holen (`/impressum`, `/imprint`, Link „Impressum“), Felder per
+      Regel und Haiku herauslesen, Ergebnis je Domain zwischenspeichern; Unternehmensfelder dürfen leere Felder automatisch füllen.
+- [ ] **C · HubSpot-Übernahme** `pnpm umzug --hubspot <datei>` mit Probelauf und Bericht: Abgleich E-Mail → Telefon → Name; bekannte
+      Makler nur in leeren Feldern ergänzen; 700 neue anlegen (HubSpot-ID als Herkunft); Unternehmen über Domain, sonst B, sonst
+      Platzhalter „Name prüfen“. Prio aus Klassifizierung (VIP → A, B, C, Test → C, Exit → Frequenz „Nie“); Anrede, Du/Sie,
+      Jobbezeichnung, Mailing-Status nach `persoenlich`. Lauf gegen die private Prod nach Sicht auf den Bericht.
+- [ ] **D · Prüfroutine „Maklerdaten prüfen“:** Knopf im Makler-Dialog (Impressum + Team-Seite + DuckDuckGo, Abweichungen als
+      Vorschlagsknöpfe am Feld), Sammellauf unter Einstellungen → Werkzeuge in Paketen mit Fortschritt und Ergebnisliste
+      (`geprueft_am` je Makler und Unternehmen). Nichts wird automatisch überschrieben.
+
 ## Exposé-Import v3 (14.10.2026, Branch `expose-import-v3`, Protokoll 31)
 
 Übernommen aus `expose-extraktion-v1` mit den sieben Pflichtpunkten; die Bereinigung (Abschnitt 4 und 7.5 in Protokoll 31)

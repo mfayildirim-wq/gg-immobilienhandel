@@ -7,7 +7,7 @@ const tabellen: PgTable[] = Object.values(schema as Record<string, unknown>).fil
 
 describe('Fachschema', () => {
   it('enthält die 37 Tabellen aus Protokoll 07, die Zwischenspeicher für Anlässe (23.09.2026) und Verortung (13.10.2026), die Exposé-Importe (10.10.2026; Wörterbuch und Korrekturen am 16.10.2026 wieder entfernt)', () => {
-    expect(tabellen).toHaveLength(40);
+    expect(tabellen).toHaveLength(41);
     expect(tabellen.map((t) => getTableConfig(t).name)).toEqual(expect.arrayContaining(['makler_anlaesse', 'geo_verortungen', 'expose_importe']));
   });
 

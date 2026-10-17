@@ -88,6 +88,10 @@ import {
   Makler,
   MaklerAendern,
   MaklerAnlegen,
+  Unternehmen,
+  UnternehmenAendern,
+  UnternehmenAnlegen,
+  UnternehmenZusammenfuehren,
   MaklerDetail,
   MaklerKommunikation,
   Objekt,
@@ -168,6 +172,7 @@ import {
   whatsappProtokollieren,
 } from './services/ankauf.ts';
 import { kommunikationAnlegen, maklerAendern, maklerAnlegen, maklerDetail, maklerErledigt, maklerListe, maklerLoeschen, maklerPersoenlichSpeichern } from './services/makler.ts';
+import { unternehmenAendern, unternehmenAnlegen, unternehmenDetail, unternehmenListe, unternehmenLoeschen, unternehmenZusammenfuehren } from './services/unternehmen.ts';
 import { beziehungsprofilErstellen, entwurfErstellen, erwaehnungenErgaenzen, gespraechsoeffnerErstellen, kontaktAnlaesseErmitteln, osintAusfuehren, personaAnalysieren, type Suchdienste, personaStand, persoenlichesErgaenzen, transkription, zusammenfassungErstellen } from './services/maklerKi.ts';
 import { mcpAnmelden, mcpSchluesselAusKopfOderNull, mcpStand, mcpVerarbeiten } from './services/mcp.ts';
 import { m365Client, m365OrdnerLesen, m365Entsperren, m365Anhang, m365AnmeldungStarten, m365KonfigurationSpeichern, m365OrdnerSpeichern, m365Posteingang, m365Rueckweg, m365Sperren, m365Stand, m365Trennen } from './services/m365.ts';
@@ -339,6 +344,32 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, prop
       responses: { 201: json(Makler, 'angelegt'), 400: fehler('Eingabe ungültig') },
     }),
     async (c) => c.json(await maklerAnlegen(db, c.req.valid('json')), 201),
+  );
+
+  // ── Unternehmen der Makler (Normalform 17.10.2026) ──────
+  app.openapi(
+    createRoute({ method: 'get', path: '/api/unternehmen', responses: { 200: json(z.array(Unternehmen), 'Unternehmen') } }),
+    async (c) => c.json(await unternehmenListe(db), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/unternehmen', request: body(UnternehmenAnlegen), responses: { 201: json(Unternehmen.extend({ neu: z.boolean() }), 'angelegt oder vorhanden'), 400: fehler('Eingabe ungültig') } }),
+    async (c) => c.json(await unternehmenAnlegen(db, c.req.valid('json')), 201),
+  );
+  app.openapi(
+    createRoute({ method: 'get', path: '/api/unternehmen/{id}', request: { params: IdParam }, responses: { 200: json(Unternehmen, 'Unternehmen'), 404: fehler('nicht gefunden') } }),
+    async (c) => c.json(await unternehmenDetail(db, c.req.valid('param').id), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'patch', path: '/api/unternehmen/{id}', request: { params: IdParam, ...body(UnternehmenAendern) }, responses: { 200: Geaendert, ...konflikt } }),
+    async (c) => c.json(await unternehmenAendern(db, c.req.valid('param').id, c.req.valid('json')), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'delete', path: '/api/unternehmen/{id}', request: { params: IdParam }, responses: { 200: json(z.object({ id: z.string() }), 'gelöscht'), 404: fehler('nicht gefunden'), 409: fehler('hat noch Makler') } }),
+    async (c) => c.json(await unternehmenLoeschen(db, c.req.valid('param').id), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/unternehmen/{id}/zusammenfuehren', request: { params: IdParam, ...body(UnternehmenZusammenfuehren) }, responses: { 200: json(z.object({ id: z.string(), makler: z.number().int() }), 'zusammengeführt'), 404: fehler('nicht gefunden') } }),
+    async (c) => c.json(await unternehmenZusammenfuehren(db, c.req.valid('param').id, c.req.valid('json').wegId), 200),
   );
 
   // ── Objekte ──────────────────────────────────────────────

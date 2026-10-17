@@ -1,5 +1,5 @@
 import { einheitAlsEingabe, sanierungAlsEingabe, schema } from '@gg/db';
-import { berechneAnkauf, computeKKalk, type KKalkInputs, DEAL_STATUS, DealStatus, EXPOSE_V0_SCHEMA, KALK_STANDARD, type KalkStandard, START_STATUS, weitereKontakte, type WeitereKontakte } from '@gg/domain';
+import { berechneAnkauf, computeKKalk, type KKalkInputs, DEAL_STATUS, DealStatus, EXPOSE_V0_SCHEMA, KALK_STANDARD, type KalkStandard, START_STATUS, weitereKontakte, type WeitereKontakte, unternehmenNameNormieren } from '@gg/domain';
 import { and, asc, count, eq, isNotNull, like, sql } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
 import type { Tx } from './schreiben.ts';
@@ -43,6 +43,8 @@ export async function pruefen(tx: Tx, kv: KvDaten, u: Umformung): Promise<Pruefu
 
   vergleiche(`Makler (+${u.waisen.makler} aus Deal-Kopie)`, makler.length + u.waisen.makler, await anzahl(schema.makler));
   vergleiche(`Objekte (+${u.waisen.objekte} aus Deal-Kopie)`, objekte.length + u.waisen.objekte, await anzahl(schema.objekte));
+  const firmen = new Set([...makler.map((m) => text(m.firma)), ...deals.map((d) => text(d.maklerFirma))].map((f) => unternehmenNameNormieren(f)).filter(Boolean));
+  vergleiche('Unternehmen (verschiedene Firmennamen der Makler und Deal-Kopien)', firmen.size, await anzahl(schema.unternehmen));
   vergleiche('Deals', deals.length, await anzahl(schema.deals));
   vergleiche('Deals im Papierkorb', deals.filter((d) => d._deleted).length,
     (await tx.select({ n: count() }).from(schema.deals).where(isNotNull(schema.deals.deletedAt)))[0]!.n);
