@@ -143,10 +143,20 @@ aus dem Impressum automatisch füllen, Maklerfelder nur als Vorschlag; Sammellau
       `unternehmenAusDomain` bereit (vorhandenes Unternehmen über die Domain, sonst aus dem Impressum anlegen, Quelle `impressum`).
       Nicht geprüft: echte Maklerseiten (kein Netz im Test, Anthropic-Limit bis 01.11.) — erster Lauf online zeigt, welche
       Seitenformen die Regeln verfehlen.
-- [ ] **C · HubSpot-Übernahme** `pnpm umzug --hubspot <datei>` mit Probelauf und Bericht: Abgleich E-Mail → Telefon → Name; bekannte
-      Makler nur in leeren Feldern ergänzen; 700 neue anlegen (HubSpot-ID als Herkunft); Unternehmen über Domain, sonst B, sonst
-      Platzhalter „Name prüfen“. Prio aus Klassifizierung (VIP → A, B, C, Test → C, Exit → Frequenz „Nie“); Anrede, Du/Sie,
-      Jobbezeichnung, Mailing-Status nach `persoenlich`. Lauf gegen die private Prod nach Sicht auf den Bericht.
+- [x] **C · HubSpot-Übernahme** (17.10.2026, Branch `firmenermittlung-impressum`): `pnpm hubspot <datei.xlsx> [--trocken] [--ohne-netz]`
+      (Skript `apps/api/src/skripte/hubspot.ts`, Regeln `packages/domain/src/makler/hubspot.ts`, Service `services/hubspotUebernahme.ts`).
+      Abgleich HubSpot-ID → E-Mail (auch Zusatzadressen, weitere Kontakte) → Telefon (Haupt/Mobil/Festnetz) → gleicher Name ohne
+      Titel (bewusst nicht die unscharfe Dubletten-Ähnlichkeit). Bekannte Makler nur in leeren Feldern ergänzt (Telefon, Mobil, E-Mail,
+      Anschrift, `persoenlich`, fehlendes Unternehmen); neue mit Prio aus der Klassifizierung (VIP/High Potential → A, B → B, sonst C),
+      Frequenz Monatlich (Exit → Nie), Tag „HubSpot“, `lastContact` aus „Letzte Kontaktaufnahme“; Anrede, Du/Sie, Jobbezeichnung
+      (sonst Beruf), Mailing-Status und Herkunft (HubSpot-ID, Klassifizierung, zuständig, Warnhinweis) in `persoenlich`. Telefon
+      bereinigt (Excel-Hochkomma, „49…“ ohne Plus, Platzhalter „…0000000“ und „'+“ verworfen). Unternehmen je E-Mail-Domain:
+      vorhanden → aus dem Impressum (B, Zwischenspeicher bleibt auch im Probelauf) → Platzhalter aus „Unternehmensname“ bzw. Domain
+      mit Quelle `hubspot` („Name prüfen“ in der Liste, HubSpot-Anschrift in den Notizen); Freemail → kein Unternehmen. Probelauf
+      schreibt in einer Transaktion und rollt zurück, Bericht gleich (`berichte/hubspot-<zeit>.md/.json`, mit Namenstreffern zum Ansehen).
+      Probelauf lokal ohne Netz (17.10.): 771 gelesen, 33 bekannt (30 Telefon, 3 Name), 738 neu (A 83, B 70, C 585, Nie 12),
+      433 Platzhalter-Unternehmen, 14 ohne. **Offen:** Probelauf mit Netz und KI gegen die private Prod (Anthropic-Limit bis 01.11.),
+      Bericht sichten (Namenstreffer, Platzhalter), dann `UMZUG_ZIEL_FREIGABE=ja pnpm hubspot <datei>`.
 - [ ] **D · Prüfroutine „Maklerdaten prüfen“:** Knopf im Makler-Dialog (Impressum + Team-Seite + DuckDuckGo, Abweichungen als
       Vorschlagsknöpfe am Feld), Sammellauf unter Einstellungen → Werkzeuge in Paketen mit Fortschritt und Ergebnisliste
       (`geprueft_am` je Makler und Unternehmen). Nichts wird automatisch überschrieben.

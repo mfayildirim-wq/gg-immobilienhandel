@@ -13,7 +13,10 @@ import { firmendatenErmitteln, type ImpressumAbrufOptionen, type KiClient } from
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { FachFehler } from '../fehler.ts';
 import { kostenBuchen } from './maklerKi.ts';
+import type { Tx } from './tx.ts';
 import { unternehmenDetail, unternehmenFuerFirma } from './unternehmen.ts';
+
+type DbOderTx = Db | Tx;
 
 const TAG_MS = 86_400_000;
 /** Ein Impressum ändert sich selten; ein Fehlschlag (Seite im Umbau, Zeitüberschreitung) wird nach einer Woche neu versucht. */
@@ -114,13 +117,21 @@ export async function unternehmenAusDomain(db: Db, ki: KiClient | null | undefin
   if (!d) return null;
   const [vorhanden] = await db.select({ id: schema.unternehmen.id }).from(schema.unternehmen).where(and(eq(schema.unternehmen.domain, d), isNull(schema.unternehmen.deletedAt))).limit(1);
   if (vorhanden) return vorhanden.id;
-  const a = await firmenauskunft(db, ki, d, o);
+  return unternehmenAusAuskunft(db, d, await firmenauskunft(db, ki, d, o));
+}
+
+/**
+ * Unternehmen aus einer Firmenauskunft anlegen oder (gleicher Name) ergänzen: Quelle „impressum“, leere Felder aus dem Impressum,
+ * `geprueft_am` gesetzt. Null ohne Firmennamen. Getrennt von `firmenauskunft`, damit die HubSpot-Übernahme den Zwischenspeicher
+ * außerhalb ihrer Transaktion füllen kann (ein Probelauf rollt die Unternehmen zurück, nicht die teuren Abrufe).
+ */
+export async function unternehmenAusAuskunft(db: DbOderTx, domain: string, a: Firmenauskunft): Promise<string | null> {
   if (!a.felder?.name) return null;
-  const id = await unternehmenFuerFirma(db, a.felder.name, { webseite: a.url ? (domainAusAdresse(a.url) ?? d) : d, quelle: 'impressum' });
+  const id = await unternehmenFuerFirma(db, a.felder.name, { webseite: a.url ? (domainAusAdresse(a.url) ?? domain) : domain, quelle: 'impressum' });
   if (!id) return null;
   const u = await unternehmenDetail(db, id);
   const werte: Partial<typeof schema.unternehmen.$inferInsert> = {};
-  if (!u.domain) werte.domain = d;
+  if (!u.domain) werte.domain = domain;
   for (const k of firmenFelderVergleichen(u, a.felder).leer) if (k !== 'name') werte[k] = a.felder[k];
   await db.update(schema.unternehmen).set({ ...werte, geprueftAm: sql`now()`, updatedAt: sql`now()` }).where(eq(schema.unternehmen.id, id));
   return id;
