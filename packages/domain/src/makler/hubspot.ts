@@ -7,7 +7,7 @@
  * Entscheidungen des Auftraggebers (17.10.): alle Kontakte übernehmen („Test“ = Prio C), bekannte Makler nur in leeren Feldern
  * ergänzen, Exit → Frequenz „Nie“, Anrede/Du-Sie/Jobbezeichnung/Mailing-Status nach `persoenlich`.
  */
-import { telefonNormalisieren, telefonPruefen } from '../expose/uebernahme.ts';
+import { nameSimilar, telefonNormalisieren, telefonPruefen } from '../expose/uebernahme.ts';
 import type { Frequenz } from '../nachfassen.ts';
 import { telefonSchluessel } from './kontakte.ts';
 import type { MaklerPersonal } from './persona.ts';
@@ -185,7 +185,9 @@ export interface BestandsMakler {
   persoenlich?: unknown;
 }
 
-export type HubspotTreffer = { id: string; ueber: 'hubspot-id' | 'email' | 'telefon' | 'name' };
+export type HubspotNamePasst = 'gleich' | 'aehnlich' | 'fehlt' | 'anders';
+
+export type HubspotTreffer = { id: string; ueber: 'hubspot-id' | 'email' | 'telefon' | 'name'; name: Exclude<HubspotNamePasst, 'anders'> };
 
 /** Telefon in Vergleichsform (wie `telefonSchluessel` der weiteren Kontakte); zu kurze Nummern zählen nicht. */
 const telSchluessel = (t: string | null | undefined): string => {
@@ -195,41 +197,97 @@ const telSchluessel = (t: string | null | undefined): string => {
 
 const listeAus = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
 
+/** Name ohne akademische Titel, ein Leerzeichen, Groß/Klein egal. */
+const nameSchluessel = (n: string | null | undefined): string =>
+  (n ?? '').replace(/\b(prof|dr|dipl|ing|mag|med|jur|rer|nat|h\.?\s?c|phil|habil)\.?(-\w+\.?)?\s*/gi, '').replace(/\s+/g, ' ').trim().toLowerCase();
+
 /**
- * Abgleich mit dem Bestand in dieser Reihenfolge: HubSpot-ID (schon einmal übernommen) → E-Mail (auch Zusatzadressen und
- * weitere Kontakte) → Telefon (Haupt-, Mobil-, Festnetznummer) → gleicher Name (ohne akademische Titel, Groß/Klein egal).
- * Der Treffer sagt, worüber — der Bericht zeigt Namenstreffer gesondert, damit man sie ansehen kann.
+ * Passt der Name des Bestandsmaklers zum HubSpot-Kontakt? `fehlt`, wenn einer keinen Namen hat; `gleich` ohne Titel und
+ * Groß/Klein; `aehnlich` im Sinn der Dublettenprüfung (`nameSimilar`: Tippfehler, „Wolff“/„Wolf“); sonst `anders`.
+ * Schutz für Treffer über E-Mail und Telefon: Kollegen teilen Zentralnummern, Sammelpostfächer („info@“) und stehen in den
+ * weiteren Kontakten des anderen. Der Probelauf gegen die Produktion (17.10.2026) hätte ohne diese Prüfung 24 Personen in
+ * 13 andere Makler gemischt (Engel & Völkers, McMakler, hust-immobilien …).
  */
-export function hubspotAbgleich(k: HubspotKontakt, bestand: readonly BestandsMakler[]): HubspotTreffer | null {
-  for (const m of bestand) {
-    const herkunft = (m.persoenlich as MaklerPersonal | null | undefined)?.herkunft;
-    if (herkunft?.quelle === 'hubspot' && (herkunft.id === k.id || k.zusammengefuehrteIds.includes(herkunft.id))) return { id: m.id, ueber: 'hubspot-id' };
-  }
+export function hubspotNamePasst(hubspotName: string | null | undefined, maklerName: string | null | undefined): HubspotNamePasst {
+  const a = nameSchluessel(hubspotName), b = nameSchluessel(maklerName);
+  if (!a || !b) return 'fehlt';
+  if (a === b) return 'gleich';
+  // Vor- und Nachname getrennt: bei langen gemeinsamen Nachnamen („Anna“ und „Tom Hengstler-Schmidtbauer“) wäre der ganze
+  // Name sonst „ähnlich“. Vorname gleich, Tippfehler oder Kurzform (Max/Maximilian) oder Initiale (L. Schweitzer); Nachname gleich oder Tippfehler;
+  // zweite Vornamen zählen nicht; Reihenfolge „Nachname Vorname“ geht auch.
+  const ta = a.split(' '), tb = b.split(' ');
+  if (ta.length < 2 || tb.length < 2) return nameSimilar(a, b) ? 'aehnlich' : 'anders';
+  const initiale = (x: string, y: string) => /^[a-zäöü]\.?$/.test(x) && y.startsWith(x[0]!);
+  const vorname = (x: string, y: string) => x === y || nameSimilar(x, y) || (x.length >= 3 && y.length >= 3 && (x.startsWith(y) || y.startsWith(x))) || initiale(x, y) || initiale(y, x);
+  const nachname = (x: string, y: string) => x === y || nameSimilar(x, y);
+  const [va, na] = [ta[0]!, ta[ta.length - 1]!], [vb, nb] = [tb[0]!, tb[tb.length - 1]!];
+  const passt = (vorname(va, vb) && nachname(na, nb)) || (vorname(va, nb) && nachname(na, vb));
+  return passt ? 'aehnlich' : 'anders';
+}
+
+/** Treffer über Kontaktdaten: E-Mail (auch Zusatzadressen und weitere Kontakte) vor Telefon (Haupt-, Mobil-, Festnetznummer). */
+function kontaktdatenTreffer(k: HubspotKontakt, bestand: readonly BestandsMakler[], namePruefen: boolean): HubspotTreffer | null {
+  const passt = (m: BestandsMakler): Exclude<HubspotNamePasst, 'anders'> | null => {
+    const n = hubspotNamePasst(k.name, m.name);
+    return n === 'anders' && namePruefen ? null : n === 'anders' ? 'fehlt' : n;
+  };
   const emails = new Set([k.email, ...k.zusatzEmails].filter((e): e is string => !!e));
   if (emails.size) {
     for (const m of bestand) {
       const eigene = [m.email, ...listeAus(m.weitereKontakte?.emails)].map((e) => (e ?? '').toLowerCase()).filter(Boolean);
-      if (eigene.some((e) => emails.has(e))) return { id: m.id, ueber: 'email' };
+      if (!eigene.some((e) => emails.has(e))) continue;
+      const name = passt(m);
+      if (name) return { id: m.id, ueber: 'email', name };
     }
   }
   const nummern = new Set([k.tel, k.mobil].map(telSchluessel).filter(Boolean));
   if (nummern.size) {
     for (const m of bestand) {
       const eigene = [m.tel, m.mobil, m.festnetz, ...listeAus(m.weitereKontakte?.telefonnummern)].map(telSchluessel).filter(Boolean);
-      if (eigene.some((n) => nummern.has(n))) return { id: m.id, ueber: 'telefon' };
+      if (!eigene.some((n) => nummern.has(n))) continue;
+      const name = passt(m);
+      if (name) return { id: m.id, ueber: 'telefon', name };
     }
-  }
-  if (k.vorname && k.nachname) {
-    const ohneTitel = (n: string) => n.replace(/\b(prof|dr|dipl|ing|mag|med|jur|rer|nat|h\.?\s?c|phil|habil)\.?(-\w+\.?)?\s*/gi, '').replace(/\s+/g, ' ').trim();
-    // Gleicher Name (ohne Titel, Groß/Klein egal) — bewusst nicht die unscharfe Dubletten-Ähnlichkeit: bei 771 Kontakten wären
-    // „Anna Müller“ und „Anne Müller“ sonst dieselbe Person. Namenstreffer stehen im Bericht zum Ansehen.
-    const name = ohneTitel(k.name).toLowerCase();
-    for (const m of bestand) if (m.name && ohneTitel(m.name).toLowerCase() === name) return { id: m.id, ueber: 'name' };
   }
   return null;
 }
 
-export type MaklerFeld = 'tel' | 'mobil' | 'email' | 'strasse' | 'plz' | 'ort';
+/**
+ * Abgleich mit dem Bestand in dieser Reihenfolge: HubSpot-ID (schon einmal übernommen) → E-Mail (auch Zusatzadressen und
+ * weitere Kontakte) → Telefon (Haupt-, Mobil-, Festnetznummer) → gleicher Name (ohne akademische Titel, Groß/Klein egal).
+ * E-Mail- und Telefon-Treffer gelten nur, wenn der Name passt (`hubspotNamePasst`, nicht `anders`) — sonst ist es ein Kollege
+ * mit derselben Firmennummer, und der Abgleich sucht weiter. Der Treffer sagt, worüber und wie gut der Name passt — der
+ * Bericht zeigt Namenstreffer und Treffer mit nur ähnlichem oder fehlendem Namen gesondert, damit man sie ansehen kann.
+ */
+export function hubspotAbgleich(k: HubspotKontakt, bestand: readonly BestandsMakler[]): HubspotTreffer | null {
+  for (const m of bestand) {
+    const herkunft = (m.persoenlich as MaklerPersonal | null | undefined)?.herkunft;
+    if (herkunft?.quelle === 'hubspot' && (herkunft.id === k.id || k.zusammengefuehrteIds.includes(herkunft.id))) {
+      const n = hubspotNamePasst(k.name, m.name);
+      return { id: m.id, ueber: 'hubspot-id', name: n === 'anders' ? 'fehlt' : n };
+    }
+  }
+  const ueberKontaktdaten = kontaktdatenTreffer(k, bestand, true);
+  if (ueberKontaktdaten) return ueberKontaktdaten;
+  if (k.vorname && k.nachname) {
+    // Gleicher Name (ohne Titel, Groß/Klein egal) — bewusst nicht die unscharfe Dubletten-Ähnlichkeit: bei 771 Kontakten wären
+    // „Anna Müller“ und „Anne Müller“ sonst dieselbe Person. Namenstreffer stehen im Bericht zum Ansehen.
+    const name = nameSchluessel(k.name);
+    for (const m of bestand) if (m.name && nameSchluessel(m.name) === name) return { id: m.id, ueber: 'name', name: 'gleich' };
+  }
+  return null;
+}
+
+/**
+ * Für einen Kontakt, den der Abgleich nicht kennt: der Bestandsmakler, der dieselbe E-Mail oder Telefonnummer hat, aber anders
+ * heißt (Kollege, Zentralnummer, Sammelpostfach). Nur für den Bericht — der Kontakt wird trotzdem neu angelegt.
+ */
+export function hubspotKollege(k: HubspotKontakt, bestand: readonly BestandsMakler[]): { id: string; ueber: 'email' | 'telefon' } | null {
+  const t = kontaktdatenTreffer(k, bestand, false);
+  return t && (t.ueber === 'email' || t.ueber === 'telefon') ? { id: t.id, ueber: t.ueber } : null;
+}
+
+export type MaklerFeld = 'name' | 'tel' | 'mobil' | 'email' | 'strasse' | 'plz' | 'ort';
 
 /**
  * Bekannter Makler: nur leere Felder ergänzen. Haupttelefon aus Telefonnummer, sonst Handynummer; Mobil nur, wenn die Handynummer
@@ -239,6 +297,7 @@ export function hubspotErgaenzung(k: HubspotKontakt, m: BestandsMakler & { stras
   const felder: Partial<Record<MaklerFeld, string>> = {};
   const leer = (v: string | null | undefined) => !v || !v.trim();
   const haupt = k.tel ?? k.mobil;
+  if (leer(m.name) && k.name) felder.name = k.name; // Bestandsmakler ohne Namen (über E-Mail erkannt) bekommt den HubSpot-Namen
   if (leer(m.tel) && haupt) felder.tel = haupt;
   if (leer(m.mobil) && k.mobil && telSchluessel(k.mobil) !== telSchluessel(felder.tel ?? m.tel)) felder.mobil = k.mobil;
   if (leer(m.email) && k.email) felder.email = k.email;

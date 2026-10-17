@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  excelDatum, hubspotAbgleich, hubspotErgaenzung, hubspotFehlendeSpalten, hubspotFrequenz, hubspotKontaktLesen, hubspotPersoenlich, hubspotPrio, hubspotSpalten, hubspotTelefon, HUBSPOT_SPALTEN, telefonSchluessel,
+  excelDatum, hubspotAbgleich, hubspotErgaenzung, hubspotFehlendeSpalten, hubspotFrequenz, hubspotKollege, hubspotKontaktLesen, hubspotNamePasst, hubspotPersoenlich, hubspotPrio, hubspotSpalten, hubspotTelefon, HUBSPOT_SPALTEN, telefonSchluessel,
 } from '../src/index.ts';
 
 /** HubSpot-Übernahme (Baustein C, 17.10.2026): reine Regeln ohne Datenbank. */
@@ -78,15 +78,61 @@ describe('Abgleich und Ergänzung', () => {
   const kontakt = (w: Partial<Record<string, unknown>>) => hubspotKontaktLesen(zeile({ 'Datensatz-ID': '42', Vorname: 'X', Nachname: 'Y', ...w }), s)!;
 
   it('E-Mail (auch Zusatz und weitere Kontakte) → Telefon (auch Mobil) → gleicher Name ohne Titel; HubSpot-ID zuerst; ähnlich reicht nicht', () => {
-    expect(hubspotAbgleich(kontakt({ 'E-Mail': 'ANNA@beispiel-immo.de' }), bestand)).toEqual({ id: 'm1', ueber: 'email' });
-    expect(hubspotAbgleich(kontakt({ 'E-Mail': 'neu@x.de', 'Zusätzliche E-Mail-Adressen': 'buero@bauer.de' }), bestand)).toEqual({ id: 'm2', ueber: 'email' });
-    expect(hubspotAbgleich(kontakt({ Telefonnummer: "'+497112272470" }), bestand)).toEqual({ id: 'm1', ueber: 'telefon' });
-    expect(hubspotAbgleich(kontakt({ Handynummer: '0173-8025886' }), bestand)).toEqual({ id: 'm2', ueber: 'telefon' });
-    expect(hubspotAbgleich(kontakt({ Vorname: 'Carla', Nachname: 'Cem' }), bestand)).toEqual({ id: 'm3', ueber: 'name' });
+    expect(hubspotAbgleich(kontakt({ Vorname: 'Anna', Nachname: 'Beispiel', 'E-Mail': 'ANNA@beispiel-immo.de' }), bestand)).toEqual({ id: 'm1', ueber: 'email', name: 'gleich' });
+    expect(hubspotAbgleich(kontakt({ Vorname: 'Bernd', Nachname: 'Bauer', 'E-Mail': 'neu@x.de', 'Zusätzliche E-Mail-Adressen': 'buero@bauer.de' }), bestand)).toEqual({ id: 'm2', ueber: 'email', name: 'gleich' });
+    expect(hubspotAbgleich(kontakt({ Vorname: 'Anna', Nachname: 'Beispiel', Telefonnummer: "'+497112272470" }), bestand)).toEqual({ id: 'm1', ueber: 'telefon', name: 'gleich' });
+    expect(hubspotAbgleich(kontakt({ Vorname: 'Bernd', Nachname: 'Bauer', Handynummer: '0173-8025886' }), bestand)).toEqual({ id: 'm2', ueber: 'telefon', name: 'gleich' });
+    expect(hubspotAbgleich(kontakt({ Vorname: 'Carla', Nachname: 'Cem' }), bestand)).toEqual({ id: 'm3', ueber: 'name', name: 'gleich' });
     expect(hubspotAbgleich(kontakt({ Vorname: 'Anne', Nachname: 'Beispiel' }), bestand)).toBeNull();
-    expect(hubspotAbgleich(kontakt({ 'Datensatz-ID': '999', Vorname: 'Ganz', Nachname: 'Anders' }), bestand)).toEqual({ id: 'm3', ueber: 'hubspot-id' });
-    expect(hubspotAbgleich(kontakt({ 'Zusammengeführte Kontakt-IDs': '999' }), bestand)).toEqual({ id: 'm3', ueber: 'hubspot-id' });
+    expect(hubspotAbgleich(kontakt({ 'Datensatz-ID': '999', Vorname: 'Ganz', Nachname: 'Anders' }), bestand)).toEqual({ id: 'm3', ueber: 'hubspot-id', name: 'fehlt' });
+    expect(hubspotAbgleich(kontakt({ 'Zusammengeführte Kontakt-IDs': '999', Vorname: 'Carla', Nachname: 'Cem' }), bestand)).toEqual({ id: 'm3', ueber: 'hubspot-id', name: 'gleich' });
     expect(hubspotAbgleich(kontakt({ Vorname: 'Niemand', Nachname: 'Neu', 'E-Mail': 'n@n.de' }), bestand)).toBeNull();
+  });
+
+  it('E-Mail- und Telefon-Treffer nur mit passendem Namen: Kollegen an der Zentralnummer oder am Sammelpostfach werden neu angelegt (Befund Probelauf Prod 17.10.2026)', () => {
+    // Zentralnummer von Anna Beispiel, aber eine andere Person → kein Treffer, dafür Kollege für den Bericht
+    const kollege = kontakt({ Vorname: 'Verena', Nachname: 'Köhler', 'E-Mail': 'v.koehler@beispiel-immo.de', Telefonnummer: '0711 2272470' });
+    expect(hubspotAbgleich(kollege, bestand)).toBeNull();
+    expect(hubspotKollege(kollege, bestand)).toEqual({ id: 'm1', ueber: 'telefon' });
+    // Sammelpostfach in den weiteren Kontakten von Bernd Bauer → ebenfalls Kollege
+    const postfach = kontakt({ Vorname: 'Nicolo', Nachname: 'Mazzola', 'E-Mail': 'buero@bauer.de' });
+    expect(hubspotAbgleich(postfach, bestand)).toBeNull();
+    expect(hubspotKollege(postfach, bestand)).toEqual({ id: 'm2', ueber: 'email' });
+    // Kollege an der Zentralnummer, der aber mit dem Namen auf einen anderen Makler passt → Namenstreffer
+    expect(hubspotAbgleich(kontakt({ Vorname: 'Carla', Nachname: 'Cem', Telefonnummer: '0711 2272470' }), bestand)).toEqual({ id: 'm3', ueber: 'name', name: 'gleich' });
+    // Ähnlicher Name (Tippfehler) reicht als Schutz: Treffer, aber als „ähnlich“ gekennzeichnet
+    expect(hubspotAbgleich(kontakt({ Vorname: 'Anna', Nachname: 'Beispiehl', 'E-Mail': 'anna@beispiel-immo.de' }), bestand)).toEqual({ id: 'm1', ueber: 'email', name: 'aehnlich' });
+    // Ohne Namen gilt der Kontaktdaten-Treffer, als „fehlt“ gekennzeichnet; Kollege dann keiner
+    const ohneName = kontakt({ Vorname: '', Nachname: '', 'E-Mail': 'anna@beispiel-immo.de' });
+    expect(hubspotAbgleich(ohneName, bestand)).toEqual({ id: 'm1', ueber: 'email', name: 'fehlt' });
+    // Ganz Unbekannter ohne gemeinsame Kontaktdaten → kein Kollege
+    expect(hubspotKollege(kontakt({ Vorname: 'Niemand', Nachname: 'Neu', 'E-Mail': 'n@n.de', Telefonnummer: '030 1' }), bestand)).toBeNull();
+  });
+
+  it('hubspotNamePasst: Titel und Groß/Klein egal, Tippfehler ähnlich, Kollegen anders, fehlender Name', () => {
+    expect(hubspotNamePasst('Carla Cem', 'Dr. Carla Cem')).toBe('gleich');
+    expect(hubspotNamePasst('Alexander Wolff', 'Alexander Wolf')).toBe('aehnlich');
+    expect(hubspotNamePasst('Verena Köhler', 'Maximilian Da Val')).toBe('anders');
+    expect(hubspotNamePasst('Dirk Karge', 'Julian Karge')).toBe('anders');
+    expect(hubspotNamePasst('Nicolo Mazzola', 'Nico Presthofer')).toBe('anders');
+    // Vor- und Nachname getrennt: langer gemeinsamer Nachname macht nicht ähnlich; Kurzform, zweiter Vorname und Reihenfolge schon
+    expect(hubspotNamePasst('Anna Hengstler-Schmidtbauer', 'Tom Hengstler-Schmidtbauer')).toBe('anders');
+    expect(hubspotNamePasst('Markus Hengsteler', 'Tom Hengstler')).toBe('anders');
+    expect(hubspotNamePasst('Max Mustermann', 'Maximilian Mustermann')).toBe('aehnlich');
+    expect(hubspotNamePasst('Ralph Thomas Goebel', 'Ralph Goebel')).toBe('aehnlich');
+    expect(hubspotNamePasst('Mustermann Max', 'Max Mustermann')).toBe('aehnlich');
+    expect(hubspotNamePasst('Lukas Schweitzer', 'L. Schweitzer')).toBe('aehnlich');
+    expect(hubspotNamePasst('Bernd Zondler', 'B. Eng. Bernd Zondler')).toBe('aehnlich');
+    expect(hubspotNamePasst('Matthias Zondler', 'B. Eng. Bernd Zondler')).toBe('anders');
+    expect(hubspotNamePasst('Gusinjac', 'Gusinjac')).toBe('gleich');
+    expect(hubspotNamePasst('', 'Anna Beispiel')).toBe('fehlt');
+    expect(hubspotNamePasst('Anna Beispiel', null)).toBe('fehlt');
+  });
+
+  it('Ergänzung: Bestandsmakler ohne Namen bekommt den HubSpot-Namen, mit Namen nicht', () => {
+    const ohne = { id: 'm9', name: null, email: 'x@y.de', tel: null, mobil: null, festnetz: null };
+    expect(hubspotErgaenzung(kontakt({ Vorname: 'Bernd', Nachname: 'Schmucker', 'E-Mail': 'x@y.de' }), ohne, '2026-10-17').felder).toMatchObject({ name: 'Bernd Schmucker' });
+    expect(hubspotErgaenzung(kontakt({ Vorname: 'Bernd', Nachname: 'Schmucker' }), { ...ohne, name: 'B. Schmucker' }, '2026-10-17').felder.name).toBeUndefined();
   });
 
   it('Ergänzung nur in leeren Feldern; Mobil nicht doppelt zum Haupttelefon; persönlich nur fehlende Schlüssel', () => {

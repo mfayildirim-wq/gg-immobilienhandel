@@ -159,8 +159,21 @@ aus dem Impressum automatisch füllen, Maklerfelder nur als Vorschlag; Sammellau
       432 Domains abgefragt, 338 Impressen gefunden (331 mit Firmennamen, 321 mit Telefon, 330 mit PLZ; 106 ohne Rechtsform =
       Einzelunternehmen), Stichprobe der Namen sauber. 94 ohne Treffer: Bot-Sperre 403 (von Poll, McMakler, CBRE, Colliers),
       Hosts ohne 443, die nur per HTTP umleiten (Sparkassen-Kurzdomains → HTTP-Startseite als letzter Kandidat nachgerüstet),
-      unvollständige Zertifikatsketten, 500/404. **Offen:** Probelauf gegen die private Prod (dort sind 149 Makler bekannt statt
-      38 lokal), Bericht sichten (Namenstreffer, Platzhalter), dann `UMZUG_ZIEL_FREIGABE=ja pnpm hubspot <datei>`.
+      unvollständige Zertifikatsketten, 500/404.
+      **Probelauf gegen die private Prod (17.10., 149 Makler bekannt, Migrationen vorher eingespielt):** erster Lauf deckte einen
+      Fehler im Abgleich auf — 24 Kontakte wären in 13 andere Makler gemischt worden, weil Kollegen die Zentralnummer (Engel &
+      Völkers, McMakler, hust-immobilien), ein Sammelpostfach („info@“, „mail@“) oder einen Eintrag in den weiteren Kontakten teilen;
+      fünf davon auf Makler, die im selben Lauf gerade erst angelegt wurden. **Regel seither (Branch `hubspot-namensschutz`):**
+      E-Mail- und Telefon-Treffer gelten nur, wenn der Name passt (`hubspotNamePasst`: gleich ohne Titel; ähnlich = Vor- und
+      Nachname getrennt — Tippfehler, Kurzform Max/Maximilian, Initiale L. Schweitzer, Reihenfolge; einer fehlt), sonst sucht der
+      Abgleich weiter (Namenstreffer) oder legt neu an. Der Bericht nennt Treffer mit nur ähnlichem oder fehlendem Namen und die
+      „Kollegen“ (neu trotz gleicher Kontaktdaten) zum Ansehen; ein Bestandsmakler ohne Namen bekommt den HubSpot-Namen.
+      Endstand Prod-Probelauf: 771 gelesen, 69 bekannt (E-Mail 52, Telefon 5, Name 12; 67 ergänzt: Anschrift 34–37, `persoenlich` 66,
+      Mobil 6, Name 1), 702 neu (A 52, B 57, C 593, Nie 13); Unternehmen vorhanden 36, Impressum 302, Platzhalter 69, 13 Makler ohne
+      (9 Freemail); 37 Kollegen, 8 Kontaktdaten-Treffer mit ähnlichem/fehlendem Namen (alle gesichtet, dieselbe Person), 12
+      Namenstreffer (alle exakt). Bekannt und bewusst neu: „Nitay“ neben „Nityanand Trampler“ (Kurzform, mit Regeln nicht
+      sauber zu treffen → Dubletten-Prüfung); Impressum von `li-mmo.de` liefert den Hoster „checkdomain GmbH“ (geparkte Domain).
+      **Offen:** scharf schreiben `UMZUG_ZIEL_FREIGABE=ja pnpm hubspot <datei>` nach Freigabe (Sicherung vorher).
 - [ ] **D · Prüfroutine „Maklerdaten prüfen“:** Knopf im Makler-Dialog (Impressum + Team-Seite + DuckDuckGo, Abweichungen als
       Vorschlagsknöpfe am Feld), Sammellauf unter Einstellungen → Werkzeuge in Paketen mit Fortschritt und Ergebnisliste
       (`geprueft_am` je Makler und Unternehmen). Nichts wird automatisch überschrieben.

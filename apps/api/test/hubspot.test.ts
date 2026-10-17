@@ -31,6 +31,8 @@ describe.skipIf(!url)('HubSpot-Übernahme', () => {
       zeile({ 'Datensatz-ID': `${kennung}-5`, Vorname: 'Emil', Nachname: `${kennung}`, 'E-Mail': `emil.${dom}@gmail.com`, Telefonnummer: '0711 0000005', Klassifizierung: 'B' }),
       // 6: ohne alles → übersprungen
       zeile({ 'Datensatz-ID': `${kennung}-6`, Klassifizierung: 'C' }),
+      // 7: Annas Telefonnummer (Zentralnummer), anderer Name → kein Treffer, neu angelegt, im Bericht als Kollege von Anna
+      zeile({ 'Datensatz-ID': `${kennung}-7`, Vorname: 'Frieda', Nachname: `${kennung}`, 'E-Mail': `frieda@${dom}-bekannt.test`, Telefonnummer: '0711 0000001', Klassifizierung: 'C' }),
     ],
   };
   const impressum = `<html><body><h1>Impressum</h1><p>Angaben gemäß § 5 TMG</p><p>Firma: ${kennung} Impressum GmbH<br>Straße: Weg 2<br>PLZ: 70173<br>Ort: Stuttgart<br>Telefon: 0711 2</p></body></html>`;
@@ -54,9 +56,14 @@ describe.skipIf(!url)('HubSpot-Übernahme', () => {
     const [bekannt] = await db.insert(schema.makler).values({ id: crypto.randomUUID(), name: `Anna ${kennung}`, email: `anna@${dom}-bekannt.test` }).returning({ id: schema.makler.id });
     bekanntId = bekannt!.id;
     const b = await hubspotUebernehmen(db, ki, tabelle, 'test.xlsx', { trocken: true, abruf, heute: '2026-10-17' });
-    expect(b).toMatchObject({ trocken: true, gelesen: 6, uebersprungen: 1, mitKi: true });
+    expect(b).toMatchObject({ trocken: true, gelesen: 7, uebersprungen: 1, mitKi: true });
     expect(b.bekannt).toMatchObject({ gesamt: 1, ueber: { email: 1, telefon: 0, name: 0, 'hubspot-id': 0 }, ergaenzt: 1 });
-    expect(b.neu).toEqual({ gesamt: 4, prio: { A: 1, B: 1, C: 2 }, frequenzNie: 1 });
+    expect(b.neu).toEqual({ gesamt: 5, prio: { A: 1, B: 1, C: 3 }, frequenzNie: 1 });
+    // Kollege: gleiche Telefonnummer wie Anna (eben erst ergänzt), anderer Name → neu, nicht in Anna hineingemischt
+    expect(b.kollegen).toEqual([{ hubspot: `Frieda ${kennung}`, makler: `Anna ${kennung}`, maklerId: bekanntId, ueber: 'telefon' }]);
+    expect(b.zeilen.find((z) => z.id === `${kennung}-7`)).toMatchObject({ ergebnis: 'neu', kollege: { maklerId: bekanntId, ueber: 'telefon' } });
+    expect(b.kontaktdatenTreffer).toEqual([]);
+    expect(hubspotBerichtText(b)).toContain(`HubSpot „Frieda ${kennung}“ neben Makler „Anna ${kennung}“`);
     // je Domain: Impressum-Domain einmal (Bernd + Carla), Platzhalter für Annas Domain (kein Impressum, kein Name) und Doras „Unternehmensname“
     expect(b.unternehmen).toEqual({ vorhanden: 0, impressum: 1, platzhalter: 2, ohne: 1 });
     // zurückgerollt: nur der vorher angelegte Makler ist da, kein Unternehmen mit der Kennung
@@ -65,7 +72,7 @@ describe.skipIf(!url)('HubSpot-Übernahme', () => {
     // der Abruf ist gespeichert und wird beim echten Lauf nicht wiederholt
     expect(await db.select({ domain: schema.firmenAuskuenfte.domain }).from(schema.firmenAuskuenfte).where(eq(schema.firmenAuskuenfte.domain, `${dom}-impressum.test`))).toHaveLength(1);
     expect(hubspotBerichtText(b)).toContain('Probelauf (zurückgerollt)');
-    expect(hubspotBerichtText(b)).toContain('Neu: 4 (Prio A 1, B 1, C 2; Frequenz „Nie“ 1)');
+    expect(hubspotBerichtText(b)).toContain('Neu: 5 (Prio A 1, B 1, C 3; Frequenz „Nie“ 1)');
   });
 
   it('Schreiben: bekannte Makler ergänzt, neue angelegt mit Unternehmen, Prio, Frequenz und Herkunft', async () => {
@@ -74,7 +81,7 @@ describe.skipIf(!url)('HubSpot-Übernahme', () => {
     expect(b.trocken).toBe(false);
     expect(abrufe.length).toBe(vorher); // Impressum aus dem Zwischenspeicher
     const alle = await db.select().from(schema.makler).where(like(schema.makler.name, `%${kennung}%`));
-    expect(alle).toHaveLength(5);
+    expect(alle).toHaveLength(6);
     const nach = (v: string) => alle.find((m) => m.name?.startsWith(v))!;
     // bekannt: Telefon und Ort ergänzt, Anrede + Herkunft in persönlich, Unternehmen aus der Domain (Platzhalter aus Domain, da kein Impressum)
     const anna = nach('Anna');
@@ -104,6 +111,10 @@ describe.skipIf(!url)('HubSpot-Übernahme', () => {
     expect(emil).toMatchObject({ prio: 'B', unternehmenId: null, email: `emil.${dom}@gmail.com` });
     expect(b.zeilen.find((z) => z.id === `${kennung}-5`)?.grund).toContain('Freemail');
     expect(b.zeilen.find((z) => z.id === `${kennung}-6`)).toMatchObject({ ergebnis: 'uebersprungen' });
+    // Kollege eigenständig angelegt, mit Annas Nummer, im selben Platzhalter-Unternehmen (gleiche Domain)
+    const frieda = nach('Frieda');
+    expect(frieda.id).not.toBe(bekanntId);
+    expect(frieda).toMatchObject({ tel: '0711 0000001', unternehmenId: anna.unternehmenId });
     // Audit
     const [audit] = await db.select().from(schema.auditLog).where(eq(schema.auditLog.action, 'hubspot-uebernahme')).orderBy(schema.auditLog.id).limit(1);
     expect(audit).toBeTruthy();
@@ -112,7 +123,7 @@ describe.skipIf(!url)('HubSpot-Übernahme', () => {
   it('zweiter Lauf: alle über die HubSpot-ID bekannt, nichts Neues, nichts verändert', async () => {
     const b = await hubspotUebernehmen(db, ki, tabelle, 'test.xlsx', { trocken: true, abruf, heute: '2026-10-18' });
     expect(b.neu.gesamt).toBe(0);
-    expect(b.bekannt).toMatchObject({ gesamt: 5, ueber: { 'hubspot-id': 5 }, ergaenzt: 0, unveraendert: 5 });
+    expect(b.bekannt).toMatchObject({ gesamt: 6, ueber: { 'hubspot-id': 6 }, ergaenzt: 0, unveraendert: 6 });
   });
 
   it('kein HubSpot-Export → 422 mit den fehlenden Spalten', async () => {
