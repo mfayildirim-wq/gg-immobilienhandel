@@ -687,6 +687,20 @@ export const geoVerortungen = fach
   })
   .enableRLS();
 
+/**
+ * Zwischenspeicher der Impressumsabfrage je Domain (Baustein B, 17.10.2026, Protokoll 32). `felder` null = kein Impressum
+ * gefunden; `url` die Seite, aus der gelesen wurde. Treffer gelten 30 Tage, Fehlschläge 7 — danach wird neu geholt.
+ * Nutzen Prüfung am Unternehmen (Einstellungen → Unternehmen) und die HubSpot-Übernahme (Baustein C) gemeinsam.
+ */
+export const firmenAuskuenfte = fach
+  .table('firmen_auskuenfte', {
+  domain: text('domain').primaryKey(),
+  url: text('url'),
+  felder: jsonb('felder'),
+  abgerufenAt: timestamp('abgerufen_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+  })
+  .enableRLS();
+
 export const archiveLedger = fach
   .table(
     'archive_ledger',
