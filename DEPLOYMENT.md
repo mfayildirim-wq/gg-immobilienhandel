@@ -8,7 +8,7 @@ von der echten Produktion der alten App). Offene Punkte stehen in `OFFEN.md` unt
 | | |
 |---|---|
 | GitHub | `mfayildirim-wq/gg-immobilienhandel`, privat |
-| Supabase | Projekt `gg-immobilienhandel`, Ref `zbqdkfqsqdocrxxrtjow`, Frankfurt (`eu-central-1`), Organisation MFY. 10 Migrationen angewendet (40 Tabellen in `fach`; `expose_importe` am 14.10.2026 eingespielt. Die Migration wurde am 16.10.2026 ohne `expose_bezeichnungen` und `import_korrekturen` neu erzeugt — auf dieser Datenbank sind die beiden leeren Tabellen von Hand zu löschen: `DROP TABLE fach.import_korrekturen, fach.expose_bezeichnungen;`), Buckets `pdfs`, `deal-docs`, `obj-photos` privat angelegt. Echter Bestand umgezogen am 21.09.2026. |
+| Supabase | Projekt `gg-immobilienhandel`, Ref `zbqdkfqsqdocrxxrtjow`, Frankfurt (`eu-central-1`), Organisation MFY. 14 Migrationen angewendet (42 Tabellen in `fach`; `expose_importe` am 14.10.2026, `unternehmen`, `unternehmen_daten`, `makler_ohne_firma` und `firmen_auskuenfte` am 17.10.2026 eingespielt — 149 Makler → 117 Unternehmen, 143 mit Firma. Die Migration wurde am 16.10.2026 ohne `expose_bezeichnungen` und `import_korrekturen` neu erzeugt — auf dieser Datenbank sind die beiden leeren Tabellen von Hand zu löschen: `DROP TABLE fach.import_korrekturen, fach.expose_bezeichnungen;`), Buckets `pdfs`, `deal-docs`, `obj-photos` privat angelegt. Echter Bestand umgezogen am 21.09.2026. |
 | Vercel | Team `mfy` (Hobby), Projekt `gg-immobilienhandel`, mit dem Repo verbunden, 7 Variablen für Production gesetzt |
 | Zugangsdaten | nur lokal in `~/Documents/ivtag/immohandel-doks/.geheim/cloud.env` (Rechte 600) und verschlüsselt bei Vercel — nicht im Repo |
 
@@ -118,12 +118,11 @@ Nicht setzen: `AUTH_LOCAL_OPEN`, `KI_ATTRAPPE`, `M365_ATTRAPPE`, `PROPSTACK_ATTR
 1. Vercel-Projekt anlegen, Repository verbinden, Root = Wurzel des Repos (die `vercel.json` liegt dort).
 2. Variablen oben eintragen.
 3. Migrationen gegen die Zieldatenbank anwenden — **laufen nicht mit dem Deploy mit**, bewusst von Hand:
-   `npx supabase db push --dry-run`, dann ohne `--dry-run`. Stand 14.10.2026: alle 9 Migrationen in der Produktion.
-   Branch `makler-unternehmen` (17.10.2026) bringt drei weitere: `unternehmen`, `unternehmen_daten` (verschiebt `makler.firma`
-   in die neue Tabelle, Prod: 143 Makler → 117 Unternehmen) und `makler_ohne_firma` — in dieser Reihenfolge, der
-   Probelauf zeigt alle drei. Danach 13 Migrationen, 41 Tabellen.
-   Branch `firmenermittlung-impressum` (17.10.2026) bringt `firmen_auskuenfte` (Zwischenspeicher der Impressumsabfrage, leer). Danach
-   14 Migrationen, 42 Tabellen.
+   `npx supabase db push --db-url "$DATABASE_URL_SESSION" --dry-run` (Variable aus `cloud.env`), dann ohne `--dry-run`.
+   Stand 17.10.2026: alle 14 Migrationen in der Produktion (42 Tabellen). Zuletzt eingespielt: `unternehmen`, `unternehmen_daten`
+   (verschiebt `makler.firma` in die neue Tabelle: 149 Makler → 117 Unternehmen, 72 mit Rechtsform, 103 mit Domain, 143 Makler
+   mit Firma) und `makler_ohne_firma` aus PR #41 sowie `firmen_auskuenfte` (Zwischenspeicher der Impressumsabfrage) aus PR #42 —
+   der Probelauf zeigte genau diese vier, Nachzählung per `psql` stimmte mit der Probe gegen die Prod-Kopie überein.
 4. Storage-Buckets anlegen (lokal macht das `server.ts` beim Start, online niemand).
 5. In Azure AD die Redirect-URI `https://<adresse>/m365/rueckweg` registrieren.
 6. Erst danach: `pnpm umzug:probe` gegen die Produktion (nur lesend), dann der Umzug.
