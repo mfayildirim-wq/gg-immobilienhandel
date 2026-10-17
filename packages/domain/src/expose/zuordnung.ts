@@ -12,7 +12,7 @@
 import type { EinheitenTabelle, ExposeV2 } from './erfassung.ts';
 import type { EinheitFeld } from './katalog.ts';
 import { jahrAusText, leerraum, type NormWert, plzOrtTrennen, strasseTrennen, wertNormalisieren, zahlAusText } from './normalisieren.ts';
-import { bezeichnungSchluessel, zeitraum } from './rohdaten.ts';
+import { zeitraum } from './rohdaten.ts';
 import { istMobilnummer } from './uebernahme.ts';
 import { GG_ZIELE, type GgZiel } from './ziele.ts';
 
@@ -139,8 +139,6 @@ export interface ZuordnungZeile {
   /** Wert für `ziel ?? vorschlag` im Zieltyp; null, wenn nicht lesbar. */
   wert: NormWert;
   hinweis?: string;
-  /** Ziel stammt aus dem Wörterbuch gelernter Zuordnungen (Bezeichnung → Ziel), nicht aus der Mapping-Tabelle. */
-  gelernt?: true;
 }
 
 export interface EinheitDetails {
@@ -202,13 +200,24 @@ export function zielWert(ziel: string, wort: string, pfad: string | null): { wer
     if (!/%/.test(wort)) return { wert: null };
   }
   if (ziel === 'objekt.heizungsbaujahr' || ziel === 'objekt.baujahr') return { wert: jahrAusText(wort) };
+  // Energieklasse: nur die Klasse selbst (A+ bis H); „Endenergiebedarf kWh/(m²*a)“ aus der Nachbarzelle ist keine (16.10.2026)
+  if (ziel === 'objekt.energieausweis.klasse') return { wert: energieklasseAusText(wort) };
   // Zahlen nur aus eindeutigen Angaben: „7 WE · 500 m² · 5.737 €“ ist kein Zahlwert (Prüfung 12.10.2026)
   if (z.typ === 'zahl' || z.typ === 'ganzzahl') {
     const n = zahlAusText(wort, ziel === 'kalkulation.makler');
     return { wert: n === null ? null : z.typ === 'ganzzahl' ? Math.round(n) : n };
   }
-  return { wert: istPlatzhalter(wort) ? null : wertNormalisieren(wort, z.typ) };
+  return { wert: istPlatzhalter(wort) || istUeberschrift(wort) ? null : wertNormalisieren(wort, z.typ) };
 }
+
+/** „Energieeffizienzklasse: E“, „Klasse A+ (Bedarf)“ → „E“, „A+“; ohne Klasse null. */
+export function energieklasseAusText(wort: string): string | null {
+  const m = /(?:^|[^A-Za-z])(A\+{1,3}|[A-H])(?![A-Za-z+])/.exec(wort.trim());
+  return m ? m[1]!.toUpperCase() : null;
+}
+
+/** Eine Zelle, die selbst eine Beschriftung ist („Endenergiebedarf kWh/(m²*a)“, „Preis in €“): Einheit, aber keine Zahl. */
+export const istUeberschrift = (v: string) => !/\d/.test(v) && /kWh|m²|\bm2\b|€|\bEUR\b|%/.test(v);
 
 function setzePfad(o: Record<string, unknown>, pfad: string, wert: unknown) {
   const teile = pfad.split('.');
@@ -263,6 +272,11 @@ export function einheitenAusTabellen(tabellen: EinheitenTabelle[]): { einheiten:
       if (zeile.slice(0, 2).some((c) => SUMME.test(c.trim()))) continue;
       const zelle = (f: EinheitFeld) => { const i = idx.get(f); return i === undefined ? undefined : (zeile[i] ?? '').trim() || undefined; };
       const zahl = (f: EinheitFeld) => { const c = zelle(f); return c === undefined ? null : zahlAusText(c); };
+      // Kachel-Raster („Wohnfläche | Zimmer | Grundstück“, darunter „Kaufpreis | CO₂ | Heizung“ und „550.000 € | 63,2 | Gas“) sieht aus
+      // wie eine Einheitentabelle: Zeilen, deren Zellen nicht zu den Spalten passen, sind keine Einheiten (Test auf privat, 16.10.2026)
+      if (/€|EUR\b/.test(zelle('flaeche') ?? '') || /m²|\bm2\b/.test(zelle('kaltmiete') ?? '')) continue;
+      if (zelle('flaeche') !== undefined && !/\d/.test(zelle('flaeche')!)) continue;
+      if (zahl('flaeche') === null && zahl('zimmer') === null && zahl('kaltmiete') === null && !zelle('lage') && !zelle('nr') && !zelle('typ')) continue;
       // Jahresspalten („Jahresnettokaltmiete“, „NK p.a.“, „Miete/Jahr“) → Monatswert (Protokoll 31, B9)
       const betrag = (f: EinheitFeld) => { const n = zahl(f); const i = idx.get(f); return n !== null && i !== undefined && zeitraum(t.spalten[i]!.ueberschrift) === 'jahr' ? +(n / 12).toFixed(2) : n; };
       const statusText = zelle('status');
@@ -355,9 +369,9 @@ function feldWert(v: unknown, typ: GgZiel['typ']): NormWert {
   return null;
 }
 
-/** Platzhalter der KI statt eines Werts („nicht angegeben“, „Adresse auf Anfrage“) gelten als leer. */
+/** Platzhalter statt eines Werts („nicht angegeben“, „Adresse auf Anfrage“, „liegt vor“, „vorhanden“) gelten als leer. */
 export const istPlatzhalter = (v: unknown) => typeof v === 'string' && v.trim().length <= 40
-  && /^(nicht (angegeben|genannt|bekannt)|k\.?\s?a\.?|keine angabe|unbekannt|n\/a|-+|–)(\b|$)|\bauf anfrage\b/i.test(v.trim());
+  && /^(nicht (angegeben|genannt|bekannt)|k\.?\s?a\.?|keine angabe|unbekannt|n\/a|-+|–|liegt (vor|bei)|vorhanden|vorh\.|wird (nachgereicht|erstellt)|in erstellung|folgt)(\b|$)|\bauf anfrage\b/i.test(v.trim());
 
 /** Teil A über das leere Gerüst legen: bekannte Gruppen flach zusammenführen, Energieausweis verschachtelt. */
 function mitFeldern(p: ExtrahiertV0, felder: Record<string, unknown> | null): ExtrahiertV0 {
@@ -408,10 +422,7 @@ const kontaktVon = (a: ExposeV2['angaben'][number]) => a.kontakt ?? (a.pfad?.sta
 /**
  * Erfassung v2 → gg. `belegt` (optional, je Angabe) setzt die Konfidenz der Prüfseite: belegt → hoch, nicht belegt → niedrig.
  */
-/** Gelernte Zuordnungen: Bezeichnungsschlüssel (`bezeichnungSchluessel`) → gg-Ziel. */
-export type Gelernt = Record<string, string>;
-
-export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null, gelernt: Gelernt = {}): ZuordnungsErgebnis {
+export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null): ZuordnungsErgebnis {
   const werte: Record<string, NormWert | string[]> = {};
   const quelleIndex: Record<string, number> = {};
   const zeilen: ZuordnungZeile[] = [];
@@ -519,17 +530,6 @@ export function zuordnen(v2: ExposeV2, belegt?: (boolean | null)[] | null, geler
 
     const ziele = a.pfad ? MAPPING[a.pfad] : undefined;
     if (!ziele?.length) {
-      // gelernte Zuordnung (Wörterbuch): gilt wie ein Mapping-Ziel; Teil A behält über `belegen` den Vorrang
-      const gz = gelernt[bezeichnungSchluessel(a.bezeichnung)];
-      if (gz && GG_ZIELE[gz]) {
-        const { wert, hinweis } = zielWert(gz, a.wert, a.pfad);
-        if (wert === null) { zeilen.push(ohneZiel('keinMapping')); return; }
-        const eintrag = GG_ZIELE[gz]!.liste && typeof wert === 'string' && !a.pfad?.startsWith('freitexte.') && !wert.toLowerCase().startsWith(a.bezeichnung.toLowerCase())
-          ? `${a.bezeichnung}: ${wert}` : wert;
-        const grund = belegen(gz, eintrag, i, a.wert);
-        zeilen.push(grund === 'zugeordnet' ? { index: i, ziel: gz, grund, vorschlag: null, wert, gelernt: true, ...(hinweis ? { hinweis } : {}) } : ohneZiel(grund, hinweis));
-        return;
-      }
       zeilen.push(ohneZiel('keinMapping'));
       return;
     }

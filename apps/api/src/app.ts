@@ -1,7 +1,6 @@
 import {
   ExposeAnalyseAntwort,
   ExposeAngabenAntwort,
-  ExposeBezeichnung,
   ExposeUebernahme,
   ExposeUebernahmeErgebnis,
   ExposeUebernehmen,
@@ -135,7 +134,6 @@ import { fotoDatei, fotoHochladen, fotoLoeschen, fotoPort, fotosListe, fotosSort
 import { type Dateispeicher, type Geocoder, type GraphClient, AnalyseFehler, type KiClient, KiDienstFehler, KiSchluesselFehler, type PropstackClient, nachrichtenSuche, webSuche, anthropicClient, anthropicSchluesselPruefen, kiMitModell } from '@gg/integrations';
 import { bekannteExposeDateien, exposeAnalysieren, exposeEingang, exposeEingangUebernehmen, type ExposeKontext, exposeUebernehmen, importVerwerfen, MAX_EXPOSE_BYTES, exposeBild } from './services/expose.ts';
 import { maklerAngaben, maklerUebernahme, objektAngaben, objektUebernahme } from './services/exposeAngaben.ts';
-import { bezeichnungenListe, bezeichnungLoeschen } from './services/exposeBezeichnungen.ts';
 import { auth, type AuthOptionen } from './middleware/auth.ts';
 import {
   dealAnlegen,
@@ -1249,15 +1247,6 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, prop
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/expose-uebernahme', request: { params: IdParam, ...body(ExposeUebernahme) }, responses: uebernahmeAntworten }),
     async (c) => c.json(await maklerUebernahme(db, c.req.valid('param').id, c.req.valid('json')), 200),
-  );
-  // ── Exposé-Wörterbuch (gelernt) ───────────────────────────
-  app.openapi(
-    createRoute({ method: 'get', path: '/api/expose/bezeichnungen', responses: { 200: json(z.array(ExposeBezeichnung), 'gelernte Bezeichnungen') } }),
-    async (c) => c.json(await bezeichnungenListe(db), 200),
-  );
-  app.openapi(
-    createRoute({ method: 'delete', path: '/api/expose/bezeichnungen/{schluessel}', request: { params: z.object({ schluessel: z.string().min(1).max(300) }) }, responses: { 200: json(z.object({ schluessel: z.string() }), 'gelöscht'), 404: fehler('nicht gefunden') } }),
-    async (c) => c.json(await bezeichnungLoeschen(db, c.req.valid('param').schluessel), 200),
   );
   app.get('/api/expose/bekannte-dateien', async (c) => c.json(await bekannteExposeDateien(db)));
 

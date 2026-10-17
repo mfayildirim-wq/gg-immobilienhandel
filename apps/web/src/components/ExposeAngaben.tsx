@@ -1,5 +1,5 @@
 import type { ExposeAngabe, ExposeAngabenAntwort } from '@gg/api-contract';
-import { Alert, Badge, Button, Checkbox, Group, Loader, Modal, Select, Spoiler, Stack, Table, Text } from '@mantine/core';
+import { Alert, Badge, Button, Group, Loader, Modal, Select, Stack, Table, Text, Tooltip } from '@mantine/core';
 import { useState } from 'react';
 import { ApiFehler, ExposeKonflikt, useExposeAngaben, useExposeUebernahme } from '../lib/api.ts';
 import { datumDe } from '../lib/format.ts';
@@ -39,13 +39,23 @@ export const wertText = (w: Wert | undefined, einheit?: string | null): string =
   return einheit ? `${t} ${einheit}` : t;
 };
 
-/** Wert wörtlich aus dem Exposé; lange Texte eingeklappt. */
+/** Lange Texte auf wenige Wörter gekürzt; der ganze Text erscheint beim Darüberfahren (Rückmeldung 16.10.2026). */
+export const KURZ_ZEICHEN = 80;
+export function kurzText(text: string, max = KURZ_ZEICHEN): string {
+  const t = text.replace(/\s+/g, ' ').trim();
+  if (t.length <= max) return t;
+  const schnitt = t.lastIndexOf(' ', max);
+  return `${t.slice(0, schnitt > max / 2 ? schnitt : max)} …`;
+}
+
+/** Wert wörtlich aus dem Exposé; lange Texte gekürzt, ganzer Text als Tooltip. */
 export function Wortlaut({ text }: { text: string }) {
-  if (text.length <= 160) return <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>{text || '–'}</Text>;
+  const kurz = kurzText(text);
+  if (kurz === text.replace(/\s+/g, ' ').trim()) return <Text size="sm">{text || '–'}</Text>;
   return (
-    <Spoiler maxHeight={44} showLabel="mehr" hideLabel="weniger" styles={{ control: { fontSize: 12 } }}>
-      <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>{text}</Text>
-    </Spoiler>
+    <Tooltip label={<Text size="sm" style={{ whiteSpace: 'pre-wrap', maxWidth: 520 }}>{text}</Text>} multiline withArrow position="top-start" openDelay={200}>
+      <Text size="sm" data-gekuerzt style={{ cursor: 'help' }}>{kurz}</Text>
+    </Tooltip>
   );
 }
 
@@ -108,8 +118,6 @@ export function ExposeAngaben({ art, id, version }: { art: Art; id: string; vers
   const [auswahl, setAuswahl] = useState<Record<string, string | null>>({});
   const [ersetzen, setErsetzen] = useState<Ersetzen | null>(null);
   const [meldung, setMeldung] = useState<string | null>(null);
-  /** Zeilen, deren Zuordnung nicht im Wörterbuch gemerkt werden soll (Standard: merken) */
-  const [nichtMerken, setNichtMerken] = useState<Record<string, boolean>>({});
 
   if (isLoading) return <Loader size="sm" />;
   if (error || !data) return <Alert color="red">{error?.message ?? 'Exposé-Angaben nicht geladen'}</Alert>;
@@ -123,7 +131,7 @@ export function ExposeAngaben({ art, id, version }: { art: Art; id: string; vers
 
   const senden = (a: ExposeAngabe, ziel: string, ersetzt = false) => {
     setMeldung(null);
-    uebernahme.mutate({ version, importId: a.importId, feld: a.feld, ziel, ersetzen: ersetzt, ...(nichtMerken[`${a.importId}:${a.feld}`] ? { merken: false } : {}) }, {
+    uebernahme.mutate({ version, importId: a.importId, feld: a.feld, ziel, ersetzen: ersetzt }, {
       onSuccess: () => setErsetzen(null),
       onError: (e) => {
         if (e instanceof ExposeKonflikt && e.aktuell !== undefined) {
@@ -175,11 +183,6 @@ export function ExposeAngaben({ art, id, version }: { art: Art; id: string; vers
                   data={zielOptionen(data.ziele, vorschlag)} value={wahl} onChange={(v) => setAuswahl((s) => ({ ...s, [schluessel]: v }))} />
                 <Button size="compact-xs" variant="light" disabled={!wahl || uebernahme.isPending} onClick={() => wahl && senden(a, wahl)}>Übernehmen</Button>
               </Group>
-              {/* Gelernt wird nur eine gewählte Zuordnung — ohne Ziel wirkt das Häkchen nicht, also auch nicht zeigen (Rückmeldung 14.10.2026) */}
-              {wahl && (
-                <Checkbox size="xs" data-merken={a.feld} label="für künftige Importe merken" checked={!nichtMerken[schluessel]}
-                  onChange={(e) => setNichtMerken((m) => ({ ...m, [schluessel]: !e.currentTarget.checked }))} />
-              )}
               {a.ziel.hinweis && <Text fz={11} c="dimmed">{a.ziel.hinweis}</Text>}
             </Stack>
           )}

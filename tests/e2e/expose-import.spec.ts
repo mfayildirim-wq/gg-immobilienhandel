@@ -63,7 +63,7 @@ test('Exposé importieren: Objekt, Makler, Deal anlegen; zweiter Import erkennt 
 
 /**
  * Test-Exposé für die Erfassung v2 (Attrappe-Zweig erfasse_expose): Kernwerte mit Standard-Pfad (automatisch zugeordnet),
- * „Erhaltungsreserve“ ohne Wörterbucheintrag mit KI-Vorschlag, „Verbrauchswert Gebäude“, „Dachzustand“ und „Besichtigung“ ohne Zuordnung und ohne
+ * „Erhaltungsreserve“ ohne Katalogeintrag mit KI-Vorschlag, „Verbrauchswert Gebäude“, „Dachzustand“ und „Besichtigung“ ohne Zuordnung und ohne
  * Vorschlag, zweiter Kontakt auf Seite 2.
  */
 function testExposeV2(kennung: string): Uint8Array {
@@ -93,17 +93,27 @@ function testExposeV2(kennung: string): Uint8Array {
 }
 
 test('Exposé v2: weitere Angaben per Dropdown auf der Prüfseite und im Reiter „Aus dem Exposé“', async ({ page }, info) => {
-  // Was frühere Läufe ins Wörterbuch gelernt haben, würde die Zeilen hier automatisch zuordnen
-  const gelernt = (await (await page.request.get('/api/expose/bezeichnungen')).json()) as { schluessel: string }[];
-  for (const g of gelernt) await page.request.delete(`/api/expose/bezeichnungen/${encodeURIComponent(g.schluessel)}`);
   const kennung = `V${Date.now()}${info.project.name.slice(0, 1)}`;
   const datei = join(tmpdir(), `${kennung}.pdf`);
   writeFileSync(datei, testExposeV2(kennung));
 
   await durchWizard(page, datei);
-  await expect(page.locator('[data-erfassung]')).toHaveText(/\d+ Angaben erfasst · \d+ automatisch zugeordnet · \d+ weitere/);
+  await expect(page.locator('[data-erfassung]')).toHaveText(/\d+ Angaben erfasst · \d+ automatisch zugeordnet( · \d+ als Vorschlag am Feld)? · \d+ weitere/);
+  // Die zweite E-Mail (Seite 2) widerspricht dem KI-Makler („doppelt“): als Knopf am Feld, nicht in der Tabelle unten (16.10.2026)
+  const anna = `anna.${kennung.toLowerCase()}@beispiel.test`;
+  await page.getByRole('button', { name: 'Weiter: Fotos →' }).click();
+  await page.getByRole('button', { name: 'Weiter: Makler →' }).click();
+  await page.getByRole('button', { name: 'max@beispiel.test' }).click();
+  await expect(page.getByRole('textbox', { name: /^E-Mail/ })).toHaveValue('max@beispiel.test');
+  await page.getByRole('button', { name: anna }).click();
+  await expect(page.getByRole('textbox', { name: /^E-Mail/ })).toHaveValue(anna);
+  await page.getByRole('button', { name: '← Zurück' }).click();
+  await page.getByRole('button', { name: '← Zurück' }).click();
+  // Angaben ohne Formularfeld: eingeklappt, mit Dropdown
+  await page.getByRole('button', { name: /^Weitere Angaben aus dem Exposé \(\d+\)$/ }).click();
   const weitere = page.getByLabel('Weitere Angaben', { exact: true });
-  await expect(weitere.getByRole('heading', { name: /^Weitere Angaben aus dem Exposé \(\d+\)$/ })).toBeVisible();
+  await expect(weitere).toBeVisible();
+  await expect(weitere.locator('tr[data-feld]').filter({ hasText: 'max@beispiel.test' })).toHaveCount(0);
   const zeile = (text: string) => weitere.locator('tr[data-feld]').filter({ hasText: text });
   await expect(zeile('Besichtigung')).toContainText('nach Vereinbarung');
   await expect(zeile('Besichtigung').getByRole('combobox', { name: 'Übernehmen in …' })).toHaveValue('');

@@ -159,9 +159,15 @@ richtig). Vorher lief beides online leer, weil `@napi-rs/canvas` dem API-Paket f
       Folgeschritte umgesetzt: fehlt in Teil A die Gruppe Makler oder Kalkulation, wird der Aufruf einmal wiederholt;
       Energieausweis aus per Texterkennung gelesenen Seiten gilt als „niedrig“ mit Warnung.
 - [x] **E2–E6 entschieden (16.10.2026):** Messwerkzeuge (`gold.ts`, `kennzahlen.ts`) bleiben weg (E2, der Paritätstest
-      `pnpm paritaet:expose` misst stattdessen); `import_korrekturen` wird nicht weiter verfolgt, die Tabelle bleibt ungenutzt
-      stehen (E3); Provision „zzgl. MwSt.“ bleibt wie gelesen, keine Umrechnung (E4); `temperature: 0` entfällt, die neuen
+      `pnpm paritaet:expose` misst stattdessen); `import_korrekturen` wird nicht weiter verfolgt — Tabelle und Code am 16.10.2026
+      wieder entfernt (E3); Provision „zzgl. MwSt.“ bleibt wie gelesen, keine Umrechnung (E4); `temperature: 0` entfällt, die neuen
       Modelle lehnen es ab (E5); unerwartete 500er tragen nur noch eine Referenz, die Ursache steht im Log (E6).
+- [x] **Rückbau nach dem Test auf privat (16.10.2026, Auftraggeber):** Wörterbuch (`expose_bezeichnungen`, Einstellungsseite, Häkchen
+      „für künftige Importe merken“) und Korrekturprotokoll (`import_korrekturen`) komplett raus; die Migration `20261014121320_expose_importe`
+      ist neu erzeugt, als hätte es beide nie gegeben (noch nicht beim Kunden). Auf der privaten Prod die zwei leeren Tabellen von Hand löschen.
+      Prüfseite: „doppelte“ Werte als Knopf unter dem Feld, „Weitere Angaben“ und „Hinweise der Analyse“ eingeklappt, lange Texte gekürzt
+      mit Tooltip. Lesefehler aus dem Test: Energieklasse nur A+–H, Nachbar-Beschriftung („Endenergiebedarf kWh/(m²*a)“) und „liegt vor“
+      kein Wert, Kachel-Raster (Wohnfläche/Zimmer/Grundstück + Kaufpreis-Zeile) keine Einheitentabelle (Summe war 550.170 m²).
 - [x] **Fachfrage Wohn-/Gewerbeeinheiten (16.10.2026):** kein eigenes Feld. „Anzahl Einheiten“ bleibt die Gesamtzahl, die
       Aufteilung steht in den Einheiten selbst (Typ Wohnung/Gewerbe/Stellplatz), wie in der alten App.
 - [x] Paritätstest Exposé-Import: Zahl „1.900000 Euro“ (Tausenderpunkte im Textlayer verloren) wurde 1,9 — auf der privaten

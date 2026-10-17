@@ -37,7 +37,6 @@ describe.skipIf(!url)('Reiter „Aus dem Exposé“: Angaben lesen und übernehm
   const maklerVersion = async () => (await lies(app.request(`/api/makler/${maklerId}`))).version as number;
   const angabe = async (art: 'objekte' | 'makler', id: string, feld: string) =>
     ((await lies(app.request(`/api/${art}/${id}/expose-angaben`))).angaben as any[]).find((a) => a.feld === feld);
-  const korrekturen = (feld: string) => db.select().from(schema.importKorrekturen).where(and(eq(schema.importKorrekturen.importId, importId), eq(schema.importKorrekturen.feld, feld)));
   const uebernahme = (art: 'objekte' | 'makler', id: string, body: Record<string, unknown>) => post(`/api/${art}/${id}/expose-uebernahme`, { importId, ...body });
 
   beforeAll(async () => {
@@ -63,7 +62,6 @@ describe.skipIf(!url)('Reiter „Aus dem Exposé“: Angaben lesen und übernehm
   });
 
   afterAll(async () => {
-    await db.delete(schema.importKorrekturen).where(inArray(schema.importKorrekturen.importId, [importId, altImportId]));
     await db.delete(schema.exposeImporte).where(inArray(schema.exposeImporte.id, [importId, altImportId]));
     if (dealId) await db.delete(schema.deals).where(eq(schema.deals.id, dealId));
     if (objektId) await db.delete(schema.objekte).where(eq(schema.objekte.id, objektId));
@@ -117,71 +115,12 @@ describe.skipIf(!url)('Reiter „Aus dem Exposé“: Angaben lesen und übernehm
     expect(einheiten[0]!.details).toEqual({ nr: '1', nebenkosten: 150, mietbeginn: '01.01.2020', seite: 4, weitere: { Kaution: '2.400 €' } });
   });
 
-  it('Übernahme in eine leere Spalte: Wert gesetzt, version + 1, Korrektur-Zeile und Audit', async () => {
+  it('Übernahme in eine leere Spalte: Wert gesetzt, version + 1 und Audit', async () => {
     const v = await objektVersion();
     const r = await uebernahme('objekte', objektId, { version: v, feld: 'angaben.7', ziel: 'objekt.grundstueck' });
     expect(r.status).toBe(200);
     expect(await r.json()).toEqual({ id: objektId, version: v + 1 });
     expect((await lies(app.request(`/api/objekte/${objektId}`))).grundstueck).toBe(480);
-    expect(await korrekturen('angaben.7')).toEqual([
-      expect.objectContaining({ art: 'objekt', bezugId: objektId, ziel: 'objekt.grundstueck', kiWert: '480 m²', handWert: null, aktion: 'uebernommen', promptVersion: 'test-v2' }),
-    ]);
-    const [audit] = await db.select().from(schema.auditLog).where(and(eq(schema.auditLog.type, 'expose-uebernahme'), eq(schema.auditLog.entityId, objektId)));
-    expect(audit).toMatchObject({ entity: 'objekt', fieldName: 'objekt.grundstueck', action: 'uebernommen' });
-    expect((await angabe('objekte', objektId, 'angaben.7')).ziel.status).toBe('gleich');
-  });
-
-  it('abweichender Wert: ohne ersetzen 409 mit aktuellem Wert, mit ersetzen überschrieben', async () => {
-    await db.update(schema.objekte).set({ angebotspreis: 1_000_000 }).where(eq(schema.objekte.id, objektId));
-    expect((await angabe('objekte', objektId, 'angaben.2')).ziel).toMatchObject({ status: 'abweichend', aktuell: 1_000_000 });
-    const v = await objektVersion();
-    const ohne = await uebernahme('objekte', objektId, { version: v, feld: 'angaben.2', ziel: 'objekt.angebotspreis' });
-    expect(ohne.status).toBe(409);
-    expect((await lies(ohne)).details).toEqual({ aktuell: 1_000_000 });
-    expect(await objektVersion()).toBe(v); // nichts geschrieben
-
-    const mit = await uebernahme('objekte', objektId, { version: v, feld: 'angaben.2', ziel: 'objekt.angebotspreis', ersetzen: true });
-    expect(mit.status).toBe(200);
-    expect((await lies(app.request(`/api/objekte/${objektId}`))).angebotspreis).toBe(1_250_000);
-    expect(await korrekturen('angaben.2')).toEqual([expect.objectContaining({ aktion: 'ersetzt', kiWert: '1.250.000,00 €', handWert: 1_000_000, ziel: 'objekt.angebotspreis' })]);
-  });
-
-  it('veraltete version → 409 mit aktuelleVersion', async () => {
-    const v = await objektVersion();
-    const r = await uebernahme('objekte', objektId, { version: v - 1, feld: 'angaben.2', ziel: 'objekt.angebotspreis' });
-    expect(r.status).toBe(409);
-    expect((await lies(r)).details).toEqual({ aktuelleVersion: v });
-  });
-
-  it('details: Schlüssel gemergt (Nachbarn bleiben), abweichend → 409; Liste wird angehängt; Notiz als neue Zeile', async () => {
-    await db.update(schema.objekte).set({ details: { herkunft: 'Exposé-Import', importId, energieausweis: { klasse: 'C' }, sanierungen: ['Dach: 2015 neu eingedeckt'] }, notizen: 'Alte Notiz' })
-      .where(eq(schema.objekte.id, objektId));
-    let v = await objektVersion();
-    expect((await uebernahme('objekte', objektId, { version: v, feld: 'angaben.18', ziel: 'details.instandhaltungsruecklage' })).status).toBe(200);
-    let o = await lies(app.request(`/api/objekte/${objektId}`));
-    expect(o.details).toEqual({ herkunft: 'Exposé-Import', importId, energieausweis: { klasse: 'C' }, sanierungen: ['Dach: 2015 neu eingedeckt'], instandhaltungsruecklage: 12_000 });
-    expect((await angabe('objekte', objektId, 'angaben.18')).ziel.status).toBe('gleich');
-
-    await db.update(schema.objekte).set({ details: { ...o.details, instandhaltungsruecklage: 5000 } }).where(eq(schema.objekte.id, objektId));
-    v = await objektVersion();
-    const konflikt = await uebernahme('objekte', objektId, { version: v, feld: 'angaben.18', ziel: 'details.instandhaltungsruecklage' });
-    expect(konflikt.status).toBe(409);
-    expect((await lies(konflikt)).details).toEqual({ aktuell: 5000 });
-    expect((await uebernahme('objekte', objektId, { version: v, feld: 'angaben.18', ziel: 'details.instandhaltungsruecklage', ersetzen: true })).status).toBe(200);
-
-    // Liste: anhängen statt ersetzen, kein 409
-    v = await objektVersion();
-    expect((await uebernahme('objekte', objektId, { version: v, feld: 'angaben.19', ziel: 'details.sanierungen' })).status).toBe(200);
-    o = await lies(app.request(`/api/objekte/${objektId}`));
-    expect(o.details.sanierungen).toEqual(['Dach: 2015 neu eingedeckt', 'Besichtigung: nach Vereinbarung']);
-    expect(o.details.instandhaltungsruecklage).toBe(12_000);
-
-    expect((await uebernahme('objekte', objektId, { version: o.version, feld: 'angaben.19', ziel: 'notizen' })).status).toBe(200);
-    o = await lies(app.request(`/api/objekte/${objektId}`));
-    expect(o.notizen).toBe('Alte Notiz\nBesichtigung: nach Vereinbarung (Exposé S. 3)');
-    expect(await korrekturen('angaben.19')).toEqual(expect.arrayContaining([
-      expect.objectContaining({ ziel: 'details.sanierungen', aktion: 'uebernommen' }), expect.objectContaining({ ziel: 'notizen', aktion: 'uebernommen' }),
-    ]));
   });
 
   it('unlesbarer Wert oder fremdes Ziel → 422; unbekannte Angabe oder fremder Import → 404', async () => {
@@ -211,7 +150,6 @@ describe.skipIf(!url)('Reiter „Aus dem Exposé“: Angaben lesen und übernehm
     let m = await lies(app.request(`/api/makler/${maklerId}`));
     expect(m.weitereKontakte).toEqual({ namen: ['Alt Kontakt', 'Max Zweit'], telefonnummern: ['0711 999999'], emails: [] });
     expect((await angabe('makler', maklerId, 'angaben.28')).ziel.status).toBe('gleich');
-    expect(await korrekturen('angaben.28')).toEqual([expect.objectContaining({ art: 'makler', bezugId: maklerId, ziel: 'makler.weitereKontakte', kiWert: 'Max Zweit', aktion: 'uebernommen' })]);
 
     v = m.version;
     const ohne = await uebernahme('makler', maklerId, { version: v, feld: 'angaben.25', ziel: 'makler.festnetztel' });

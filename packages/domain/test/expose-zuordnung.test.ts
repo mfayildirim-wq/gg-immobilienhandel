@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adresseZerlegen, einheitenAusTabellen, einheitTyp, istPlatzhalter, pfadBerichtigen, exposeV2Leer, exposeVorbereiten, GG_ZIELE, KATALOG, MAPPING, v2Traegt, zuordnen } from '../src/index.ts';
+import { adresseZerlegen, einheitenAusTabellen, einheitTyp, energieklasseAusText, istPlatzhalter, istUeberschrift, pfadBerichtigen, exposeV2Leer, exposeVorbereiten, GG_ZIELE, KATALOG, MAPPING, v2Traegt, zielWert, zuordnen } from '../src/index.ts';
 import { exposeV2Beispiel, exposeV2MitFeldern } from './fixtures/expose-v2-beispiel.ts';
 
 describe('Exposé v2: Mapping Standard → gg (Protokoll 28)', () => {
@@ -266,41 +266,6 @@ describe('Exposé v2: Mapping Standard → gg (Protokoll 28)', () => {
       expect(pfadBerichtigen('voellig.anders')).toBeNull();
     });
   });
-
-  describe('gelernte Zuordnungen (Wörterbuch)', () => {
-    const gelernt = { besichtigung: 'details.denkmalschutz', erhaltungsreserve: 'objekt.baujahr' };
-
-    it('eine Angabe ohne Ziel bekommt das gelernte Ziel, mit Wertumwandlung', () => {
-      const v2 = exposeV2Beispiel();
-      const ohne = zuordnen(v2);
-      expect(ohne.zeilen[19]).toMatchObject({ ziel: null, grund: 'keinMapping' });
-      const r = zuordnen(v2, null, { besichtigung: 'details.denkmalschutz' });
-      expect(r.zeilen[19]).toMatchObject({ ziel: 'details.denkmalschutz', grund: 'zugeordnet', gelernt: true });
-      expect(r.werte['details.denkmalschutz']).toBe('nach Vereinbarung');
-    });
-
-    it('nicht lesbarer Wert bleibt weitere Angabe', () => {
-      const r = zuordnen(exposeV2Beispiel(), null, gelernt);
-      // „Erhaltungsreserve: 12.000 €“ ist kein Jahr
-      expect(r.zeilen[18]).toMatchObject({ ziel: null, grund: 'keinMapping' });
-      expect(r.zeilen[18]!.gelernt).toBeUndefined();
-    });
-
-    it('ungültiges gelerntes Ziel wird ignoriert; Mapping-Angaben bleiben unberührt', () => {
-      const r = zuordnen(exposeV2Beispiel(), null, { besichtigung: 'gibt.es.nicht', kaufpreis: 'objekt.baujahr' });
-      expect(r.zeilen[19]).toMatchObject({ ziel: null });
-      expect(r.zeilen[2]).toMatchObject({ ziel: 'objekt.angebotspreis' });
-      expect(r.zeilen[2]!.gelernt).toBeUndefined();
-    });
-
-    it('Teil A hat Vorrang vor dem gelernten Ziel', () => {
-      const v2 = exposeV2MitFeldern();
-      v2.angaben[19]!.wert = '1.300.000 €';
-      const r = zuordnen(v2, null, { besichtigung: 'objekt.angebotspreis' });
-      expect(r.zeilen[19]).toMatchObject({ ziel: null, grund: 'doppelt' });
-      expect(r.pruefdaten.objekt.angebotspreis).toBe(1_250_000);
-    });
-  });
 });
 
 describe('Einheiten-Abgleich Teil A ↔ Mietliste (Protokoll 31, B8): über Fläche und Lage, nicht über die Reihenfolge', () => {
@@ -352,5 +317,45 @@ describe('Einheiten-Abgleich Teil A ↔ Mietliste (Protokoll 31, B8): über Flä
     expect(e.find((x) => x.lage === 'EG')).toMatchObject({ kaltmiete: 800, zimmer: 3 });
     expect(e.find((x) => x.lage === 'OG')).toMatchObject({ kaltmiete: 820 });
     expect(e.find((x) => x.lage === 'DG')).toMatchObject({ kaltmiete: null });
+  });
+});
+
+describe('Müll aus Nachbarzellen und Platzhalter (16.10.2026, Rückmeldung aus dem Test auf privat)', () => {
+  it('Energieklasse: nur die Klasse selbst, A+ bis H', () => {
+    expect(energieklasseAusText('E')).toBe('E');
+    expect(energieklasseAusText('Energieeffizienzklasse: A+')).toBe('A+');
+    expect(energieklasseAusText('Klasse D (Bedarf)')).toBe('D');
+    expect(energieklasseAusText('Klasse d')).toBeNull();
+    expect(energieklasseAusText('Endenergiebedarf kWh/(m²*a)')).toBeNull();
+    expect(energieklasseAusText('Bedarfsausweis')).toBeNull();
+    expect(zielWert('objekt.energieausweis.klasse', 'Endenergiebedarf kWh/(m²*a)', null)).toEqual({ wert: null });
+    expect(zielWert('objekt.energieausweis.klasse', 'E', null)).toEqual({ wert: 'E' });
+  });
+
+  it('eine Zelle, die selbst eine Beschriftung ist (Einheit ohne Zahl), wird kein Textwert', () => {
+    expect(istUeberschrift('Endenergiebedarf kWh/(m²*a)')).toBe(true);
+    expect(istUeberschrift('Preis in €')).toBe(true);
+    expect(istUeberschrift('128,5 kWh/m²a')).toBe(false);
+    expect(istUeberschrift('Gas-Zentralheizung')).toBe(false);
+    expect(zielWert('details.energietraeger', 'Endenergiebedarf kWh/(m²*a)', null)).toEqual({ wert: null });
+  });
+
+  it('„liegt vor“, „vorhanden“, „wird nachgereicht“ sind Platzhalter, „nein“ und „gepflegt“ nicht', () => {
+    for (const w of ['liegt vor', 'Liegt bei', 'vorhanden', 'vorh.', 'wird nachgereicht', 'in Erstellung', 'folgt']) expect(istPlatzhalter(w), w).toBe(true);
+    for (const w of ['nein', 'ja', 'gepflegt', 'Verbrauchsausweis', 'vorhandene Mieter zahlen pünktlich']) expect(istPlatzhalter(w), w).toBe(false);
+    expect(zielWert('objekt.energieausweis.art', 'liegt vor', null)).toEqual({ wert: null });
+  });
+});
+
+describe('Kachel-Raster ist keine Einheitentabelle (Engel & Völkers, Test auf privat 16.10.2026)', () => {
+  it('nur die Zeile mit Fläche und Zimmern wird eine Einheit; Beschriftungs- und Preiszeile fallen weg', () => {
+    const t = {
+      seite: 2, titel: null,
+      spalten: [{ feld: 'flaeche' as const, ueberschrift: 'Wohnfläche' }, { feld: 'zimmer' as const, ueberschrift: 'Anzahl Zimmer' }, { feld: null, ueberschrift: 'Grundstücksfläche' }],
+      zeilen: [['~170 m²', '7', '~1.000 m²'], ['Kaufpreis', 'CO2-Emissionsergebnis kg/(m²*a)', 'Heizung'], ['550.000 €', '63,2', 'Zentralheizung, Gas (Heizkörper)']],
+    };
+    const { einheiten } = einheitenAusTabellen([t]);
+    expect(einheiten).toHaveLength(1);
+    expect(einheiten[0]).toMatchObject({ flaeche: 170, zimmer: 7 });
   });
 });

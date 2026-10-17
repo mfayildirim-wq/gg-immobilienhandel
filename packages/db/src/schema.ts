@@ -708,39 +708,3 @@ export const exposeImporte = fach
   )
   .enableRLS();
 
-/** Jede Übernahme/Ersetzung aus dem Reiter „Aus dem Exposé“ und jede Korrektur eines Importwerts — Grundlage fürs Lernen. */
-export const importKorrekturen = fach
-  .table('import_korrekturen', {
-  id: text('id').primaryKey(),
-  importId: text('import_id').notNull().references((): AnyPgColumn => exposeImporte.id, { onDelete: 'cascade' }),
-  /** objekt | makler | einheit */
-  art: text('art').notNull(),
-  bezugId: text('bezug_id').notNull(),
-  /** Angabe des Imports, z. B. 'angaben.12' */
-  feld: text('feld').notNull(),
-  ziel: text('ziel'),
-  kiWert: jsonb('ki_wert'),
-  handWert: jsonb('hand_wert'),
-  /** uebernommen | ersetzt | korrigiert */
-  aktion: text('aktion').notNull(),
-  konfidenz: text('konfidenz'),
-  promptVersion: text('prompt_version'),
-  createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
-  })
-  .enableRLS();
-
-/**
- * Exposé-Wörterbuch (Protokoll 30): wächst beim Zuordnen auf der Prüfseite und im Reiter „Aus dem Exposé“.
- * Schlüssel = normalisierte Bezeichnung (`bezeichnungSchluessel`), Ziel = gg-Ziel-Schlüssel.
- */
-export const exposeBezeichnungen = fach
-  .table('expose_bezeichnungen', {
-    schluessel: text('schluessel').primaryKey(),
-    /** Schreibweise, wie sie zuletzt im Exposé stand */
-    bezeichnung: text('bezeichnung').notNull(),
-    ziel: text('ziel').notNull(),
-    anzahl: integer('anzahl').notNull().default(1),
-    zuletzt: timestamp('zuletzt', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
-    erstelltVon: text('erstellt_von'),
-  })
-  .enableRLS();
