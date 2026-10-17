@@ -1,7 +1,13 @@
 -- Demodaten für die lokale Entwicklung (keine echten Personen oder Objekte).
-insert into fach.makler (id, name, firma, tel, prio, kontakt_frequenz, last_contact, next_contact) values
-  ('demo-makler-1', 'Anna Beispiel', 'Beispiel Immobilien GmbH', '+49 30 1234567', 'A', 'Monatlich', current_date - 35, current_date - 2),
-  ('demo-makler-2', 'Bernd Muster', 'Muster & Partner', '+49 40 7654321', 'B', 'Wöchentlich', current_date - 7, current_date),
+-- Firmen sind seit 17.10.2026 eine eigene Tabelle (Normalform); der Makler verweist per unternehmen_id darauf.
+-- name_normiert wie @gg/domain unternehmenNameNormieren (lower · ein Leerzeichen · ohne Satzzeichen am Ende).
+insert into fach.unternehmen (id, name, name_normiert, rechtsform, domain, webseite, quelle) values
+  ('demo-unternehmen-1', 'Beispiel Immobilien GmbH', 'beispiel immobilien gmbh', 'GmbH', 'beispiel-immobilien.test', 'https://www.beispiel-immobilien.test', 'hand'),
+  ('demo-unternehmen-2', 'Muster & Partner', 'muster & partner', null, null, null, 'hand');
+
+insert into fach.makler (id, name, unternehmen_id, tel, prio, kontakt_frequenz, last_contact, next_contact) values
+  ('demo-makler-1', 'Anna Beispiel', 'demo-unternehmen-1', '+49 30 1234567', 'A', 'Monatlich', current_date - 35, current_date - 2),
+  ('demo-makler-2', 'Bernd Muster', 'demo-unternehmen-2', '+49 40 7654321', 'B', 'Wöchentlich', current_date - 7, current_date),
   ('demo-makler-3', 'Clara Demo', null, '+49 89 555000', 'C', 'Alle 3 Monate', current_date - 10, current_date + 80);
 
 insert into fach.objekte (id, strasse, hausnr, plz, stadt, einheiten_anzahl, wohnflaeche, angebotspreis, status, erfasst_am) values
