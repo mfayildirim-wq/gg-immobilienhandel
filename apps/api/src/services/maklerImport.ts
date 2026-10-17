@@ -2,9 +2,10 @@ import type { MaklerImportVorschau } from '@gg/api-contract';
 import { type Db, schema } from '@gg/db';
 import { xlsxMaklerLesen, xlsxSpaltenErkennen } from '@gg/domain';
 import { istTabelle, tabelleLesen } from '@gg/integrations';
-import { isNull } from 'drizzle-orm';
+import { isNull, sql } from 'drizzle-orm';
 import { FachFehler } from '../fehler.ts';
 import { auditSchreiben } from './audit.ts';
+import { unternehmenFuerFirma } from './unternehmen.ts';
 
 function tabelle(datei: { name: string; bytes: Uint8Array } | null) {
   if (!datei) throw new FachFehler(400, 'Keine Datei hochgeladen');
@@ -33,10 +34,17 @@ export async function maklerImportUebernehmen(db: Db, datei: { name: string; byt
   const vorhanden = await db.select({ email: schema.makler.email }).from(schema.makler).where(isNull(schema.makler.deletedAt));
   const { makler, uebersprungen } = xlsxMaklerLesen(zeilen, karte, vorhanden.map((m) => m.email ?? ''));
   if (makler.length) {
-    await db.insert(schema.makler).values(makler.map((m) => ({
-      id: crypto.randomUUID(), name: m.name, firma: m.firma || null, tel: m.tel || null, email: m.email || null,
-      prio: m.prio, kontaktFrequenz: m.kontaktFrequenz, adresse: m.adresse || null, stadt: m.stadt || null, notizen: m.notizen || null,
-    })));
+    await db.transaction(async (tx) => {
+      for (const m of makler) {
+        // Adresse und Notiz landeten bisher in Spalten, die es im Neubau nicht gibt (unbemerkt verworfen) — jetzt Anschrift und Notiz-Eintrag
+        const id = crypto.randomUUID();
+        await tx.insert(schema.makler).values({
+          id, name: m.name, unternehmenId: await unternehmenFuerFirma(tx, m.firma, { email: m.email, quelle: 'tabelle' }), tel: m.tel || null, email: m.email || null,
+          prio: m.prio, kontaktFrequenz: m.kontaktFrequenz, strasse: m.adresse || null, ort: m.stadt || null,
+        });
+        if (m.notizen) await tx.insert(schema.maklerKommunikation).values({ id: `${id}:${crypto.randomUUID()}`, maklerId: id, zeitpunkt: sql`now()`, kanal: 'notiz', text: m.notizen });
+      }
+    });
   }
   await auditSchreiben(db, {
     type: 'import', entity: 'makler', action: 'create-bulk', collection: 'makler', source: '/api/import/makler-tabelle',

@@ -4,13 +4,16 @@ import { type Db, schema } from '@gg/db';
 import { type DealStatus, erledigtTermin, kommZeitstempel, letzterKontaktNachEintrag, telefonNormalisieren } from '@gg/domain';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { FachFehler } from '../fehler.ts';
+import type { Tx } from './tx.ts';
 import { objektTitel } from './objekte.ts';
+import { maklerFirma, unternehmenDetail, unternehmenFuerFirma } from './unternehmen.ts';
 import { versionFortschreiben } from './version.ts';
 
 const spalten = {
   id: schema.makler.id,
   name: schema.makler.name,
-  firma: schema.makler.firma,
+  firma: maklerFirma,
+  unternehmenId: schema.makler.unternehmenId,
   tel: schema.makler.tel,
   email: schema.makler.email,
   prio: schema.makler.prio,
@@ -28,11 +31,18 @@ export async function maklerListe(db: Db) {
   return zeilen.map((z) => ({ ...z, prio: z.prio as 'A' | 'B' | 'C' | null }));
 }
 
+/** Firma aus der Eingabe auflösen: ID hat Vorrang (muss es geben), sonst Text → vorhandenes Unternehmen oder neues. */
+async function unternehmenAusEingabe(db: Db | Tx, e: { firma?: string | null; unternehmenId?: string | null; email?: string | null }): Promise<string | null> {
+  if (e.unternehmenId) { await unternehmenDetail(db, e.unternehmenId); return e.unternehmenId; }
+  return unternehmenFuerFirma(db, e.firma, { email: e.email });
+}
+
 export async function maklerAnlegen(db: Db, eingabe: MaklerAnlegen) {
-  const daten = MaklerAnlegenSchema.parse(eingabe);
+  const { firma, unternehmenId: gewaehlt, ...daten } = MaklerAnlegenSchema.parse(eingabe);
+  const unternehmenId = await unternehmenAusEingabe(db, { firma, unternehmenId: gewaehlt, email: daten.email });
   const [neu] = await db
     .insert(schema.makler)
-    .values({ id: crypto.randomUUID(), ...daten, ...(daten.tel ? { tel: telefonNormalisieren(daten.tel) } : {}) })
+    .values({ id: crypto.randomUUID(), ...daten, unternehmenId, ...(daten.tel ? { tel: telefonNormalisieren(daten.tel) } : {}) })
     .returning(spalten);
   return { ...neu!, prio: neu!.prio as 'A' | 'B' | 'C' | null };
 }
@@ -53,9 +63,10 @@ export async function maklerDetail(db: Db, id: string): Promise<MaklerDetail> {
     .from(schema.deals)
     .innerJoin(schema.objekte, eq(schema.objekte.id, schema.deals.objektId))
     .where(and(eq(schema.deals.maklerId, id), isNull(schema.deals.deletedAt)));
+  const unternehmen = m.unternehmenId ? await unternehmenDetail(db, m.unternehmenId).catch(() => null) : null;
   return {
-    id: m.id, name: m.name, firma: m.firma, tel: m.tel, email: m.email, prio: m.prio as 'A' | 'B' | 'C' | null,
-    kontaktFrequenz: m.kontaktFrequenz, nextContact: m.nextContact, version: m.version, webseite: m.webseite,
+    id: m.id, name: m.name, firma: unternehmen?.name ?? null, unternehmenId: unternehmen?.id ?? null, unternehmen, tel: m.tel, email: m.email, prio: m.prio as 'A' | 'B' | 'C' | null,
+    kontaktFrequenz: m.kontaktFrequenz, nextContact: m.nextContact, version: m.version,
     mobil: m.mobil, festnetz: m.festnetz, strasse: m.strasse, plz: m.plz, ort: m.ort,
     weitereKontakte: (m.weitereKontakte as MaklerDetail['weitereKontakte']) ?? null,
     persoenlich: (m.persoenlich as Record<string, unknown> | null) ?? null,
@@ -66,9 +77,16 @@ export async function maklerDetail(db: Db, id: string): Promise<MaklerDetail> {
 }
 
 export async function maklerAendern(db: Db, id: string, eingabe: MaklerAendern) {
-  const { version, ...felder } = eingabe;
+  const { version, firma, unternehmenId: gewaehlt, ...rest } = eingabe;
   return db.transaction(async (tx) => {
     const neu = await versionFortschreiben(tx, schema.makler, id, version, 'Makler');
+    const felder: Partial<typeof schema.makler.$inferInsert> = { ...rest };
+    // Firma: ID gewinnt, sonst Text (vorhanden → verknüpfen, sonst anlegen), leer → kein Unternehmen
+    if (gewaehlt !== undefined || firma !== undefined) {
+      felder.unternehmenId = gewaehlt === null || (gewaehlt === undefined && !firma?.trim())
+        ? null
+        : await unternehmenAusEingabe(tx, { firma, unternehmenId: gewaehlt, email: rest.email });
+    }
     // mkSave: Telefon normalisiert (0049→+49, ohne Klammern)
     if (felder.tel) felder.tel = telefonNormalisieren(felder.tel);
     for (const k of ['mobil', 'festnetz'] as const) if (felder[k]) felder[k] = telefonNormalisieren(felder[k]);

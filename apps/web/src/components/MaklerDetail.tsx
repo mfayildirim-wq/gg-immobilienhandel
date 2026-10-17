@@ -18,6 +18,7 @@ import {
 import { heuteIso, useEinstellung } from '../lib/ansicht.ts';
 import { datumDe } from '../lib/format.ts';
 import { ExposeAngaben } from './ExposeAngaben.tsx';
+import { UnternehmenFeld } from './UnternehmenFeld.tsx';
 import { StatusBadge } from './StatusBadge.tsx';
 
 const REITER = ['profil', 'komm', 'persoenlich', 'deals', 'expose'] as const;
@@ -60,8 +61,9 @@ function Profil({ m, geloescht }: { m: Detail; geloescht?: () => void }) {
   const aendern = useMaklerAendern(m.id);
   const erledigt = useMaklerErledigt(m.id);
   const loeschen = useMaklerLoeschen();
+  const navigate = useNavigate();
   const [f, setF] = useState({
-    name: m.name ?? '', firma: m.firma ?? '', tel: m.tel ?? '', email: m.email ?? '', webseite: m.webseite ?? '',
+    name: m.name ?? '', firma: m.firma ?? '', tel: m.tel ?? '', email: m.email ?? '',
     mobil: m.mobil ?? '', festnetz: m.festnetz ?? '', strasse: m.strasse ?? '', plz: m.plz ?? '', ort: m.ort ?? '',
   });
   const [prio, setPrio] = useState<'A' | 'B' | 'C'>(m.prio ?? 'B');
@@ -85,13 +87,28 @@ function Profil({ m, geloescht }: { m: Detail; geloescht?: () => void }) {
       <Title order={6}>👤 Kontaktdaten</Title>
       <SimpleGrid cols={2} spacing="xs">
         <TextInput label="Name" placeholder="Max Müller" value={f.name} onChange={(e) => setF({ ...f, name: e.currentTarget.value })} />
-        <TextInput label="Firma" placeholder="Immobilien GmbH" value={f.firma} onChange={(e) => setF({ ...f, firma: e.currentTarget.value })} />
+        <UnternehmenFeld value={f.firma} onChange={(v) => setF({ ...f, firma: v })} />
         <TextInput label="Telefon" type="tel" placeholder="+49 711 123456" value={f.tel} error={telFehler} onChange={(e) => setF({ ...f, tel: e.currentTarget.value })} />
         <TextInput label="E-Mail" type="email" placeholder="name@firma.de" value={f.email} error={mailFehler} onChange={(e) => setF({ ...f, email: e.currentTarget.value })} />
-        <TextInput label="Webseite" value={f.webseite} onChange={(e) => setF({ ...f, webseite: e.currentTarget.value })} />
         <TextInput label="Mobil" type="tel" placeholder="+49 171 1234567" value={f.mobil} onChange={(e) => setF({ ...f, mobil: e.currentTarget.value })} />
         <TextInput label="Festnetz" type="tel" placeholder="+49 711 123456" value={f.festnetz} onChange={(e) => setF({ ...f, festnetz: e.currentTarget.value })} />
       </SimpleGrid>
+      {m.unternehmen && (
+        <Paper withBorder p="xs" aria-label="Unternehmen">
+          <Group justify="space-between" align="flex-start" wrap="nowrap">
+            <div>
+              <Text size="xs" fw={700} c="dimmed" mb={2}>🏢 {m.unternehmen.name}{m.unternehmen.rechtsform ? '' : ''}</Text>
+              <Group gap={8}>
+                {m.unternehmen.webseite && <Anchor size="xs" href={`https://${m.unternehmen.webseite.replace(/^https?:\/\//, '')}`} target="_blank" rel="noreferrer">🌐 {m.unternehmen.webseite}</Anchor>}
+                {m.unternehmen.tel && <Anchor size="xs" href={`tel:${m.unternehmen.tel}`}>📞 {m.unternehmen.tel}</Anchor>}
+                {(m.unternehmen.strasse || m.unternehmen.ort) && <Text size="xs" c="dimmed">📍 {[m.unternehmen.strasse, [m.unternehmen.plz, m.unternehmen.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ')}</Text>}
+                <Text size="xs" c="dimmed">{m.unternehmen.maklerAnzahl} Makler</Text>
+              </Group>
+            </div>
+            <Anchor size="xs" onClick={() => navigate({ to: '/einstellungen/unternehmen' as '/' })}>Bearbeiten</Anchor>
+          </Group>
+        </Paper>
+      )}
       <Title order={6}>📍 Anschrift</Title>
       <TextInput label="Straße und Hausnummer" value={f.strasse} onChange={(e) => setF({ ...f, strasse: e.currentTarget.value })} />
       <SimpleGrid cols={2} spacing="xs">

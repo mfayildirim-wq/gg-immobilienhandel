@@ -40,6 +40,7 @@ export * from './papierkorb.ts';
 export * from './dubletten/index.ts';
 export * from './audit/kette.ts';
 export * from './makler/xlsxImport.ts';
+export * from './unternehmen/index.ts';
 export * from './outward/gate.ts';
 export * from './outward/oauthRueckweg.ts';
 export * from './propstack.ts';

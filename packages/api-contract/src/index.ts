@@ -6,10 +6,66 @@ import { z } from 'zod';
 const IsoDatum = z.iso.date();
 const Text = z.string().trim().max(2000);
 
+/** Unternehmen des Maklers (Normalform 17.10.2026): eigene Tabelle, `firma` am Makler ist der abgeleitete Name. */
+export const Unternehmen = z.object({
+  id: z.string(),
+  name: z.string(),
+  rechtsform: z.string().nullable(),
+  domain: z.string().nullable(),
+  webseite: z.string().nullable(),
+  strasse: z.string().nullable(),
+  plz: z.string().nullable(),
+  ort: z.string().nullable(),
+  tel: z.string().nullable(),
+  fax: z.string().nullable(),
+  email: z.string().nullable(),
+  notizen: z.string().nullable(),
+  /** umzug · hand · expose · tabelle · hubspot · impressum */
+  quelle: z.string().nullable(),
+  geprueftAm: z.string().nullable(),
+  maklerAnzahl: z.number().int(),
+  version: z.number().int(),
+});
+export type Unternehmen = z.infer<typeof Unternehmen>;
+
+export const UnternehmenAnlegen = z.object({
+  name: Text.min(1),
+  webseite: Text.optional(),
+  strasse: Text.optional(),
+  plz: Text.optional(),
+  ort: Text.optional(),
+  tel: Text.optional(),
+  fax: Text.optional(),
+  email: Text.optional(),
+  notizen: Text.optional(),
+});
+export type UnternehmenAnlegen = z.input<typeof UnternehmenAnlegen>;
+
+/** Leer heißt „keine Angabe“ und wird als null gespeichert. */
+export const UnternehmenAendern = z.object({
+  version: z.number().int(),
+  name: Text.optional(),
+  domain: Text.nullable().optional(),
+  webseite: Text.nullable().optional(),
+  strasse: Text.nullable().optional(),
+  plz: Text.nullable().optional(),
+  ort: Text.nullable().optional(),
+  tel: Text.nullable().optional(),
+  fax: Text.nullable().optional(),
+  email: Text.nullable().optional(),
+  notizen: Text.nullable().optional(),
+});
+export type UnternehmenAendern = z.infer<typeof UnternehmenAendern>;
+
+export const UnternehmenZusammenfuehren = z.object({ wegId: z.string() });
+export type UnternehmenZusammenfuehren = z.infer<typeof UnternehmenZusammenfuehren>;
+
 export const Makler = z.object({
   id: z.string(),
   name: z.string().nullable(),
+  /** Name des verknüpften Unternehmens (abgeleitet) */
   firma: z.string().nullable(),
+  unternehmenId: z.string().nullable(),
   tel: z.string().nullable(),
   email: z.string().nullable(),
   prio: z.enum(['A', 'B', 'C']).nullable(),
@@ -22,7 +78,9 @@ export type Makler = z.infer<typeof Makler>;
 /** Makler ohne Pflichtfelder (Nutzerwunsch, 09). Anlage-Default: Prio B, Monatlich. */
 export const MaklerAnlegen = z.object({
   name: Text.optional(),
+  /** Firmenname als Text: vorhandenes Unternehmen wird gefunden, sonst angelegt */
   firma: Text.optional(),
+  unternehmenId: z.string().optional(),
   tel: Text.optional(),
   email: Text.optional(),
   prio: z.enum(['A', 'B', 'C']).default('B'),
@@ -219,7 +277,7 @@ export const WeitereKontakte = z.object({ namen: z.array(z.string()), telefonnum
 
 export const MaklerDetail = Makler.extend({
   persoenlich: z.record(z.string(), z.unknown()).nullable(),
-  webseite: z.string().nullable(),
+  unternehmen: Unternehmen.nullable(),
   mobil: z.string().nullable(),
   festnetz: z.string().nullable(),
   strasse: z.string().nullable(),
@@ -241,12 +299,13 @@ export type MaklerDetail = z.infer<typeof MaklerDetail>;
 export const MaklerAendern = z.object({
   version: z.number().int(),
   name: Text.optional(),
-  firma: Text.optional(),
+  /** Firmenname als Text (vorhanden → verknüpfen, sonst anlegen); leer oder null → kein Unternehmen */
+  firma: Text.nullable().optional(),
+  unternehmenId: z.string().nullable().optional(),
   tel: Text.optional(),
   email: Text.optional(),
   prio: z.enum(['A', 'B', 'C']).optional(),
   kontaktFrequenz: Frequenz.optional(),
-  webseite: Text.optional(),
   /** Leer heißt „keine Angabe" und wird als null gespeichert. `tel` bleibt die Nummer, die gewählt wird. */
   mobil: Text.nullable().optional(),
   festnetz: Text.nullable().optional(),

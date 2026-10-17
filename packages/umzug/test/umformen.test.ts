@@ -310,3 +310,30 @@ describe('Textvorlagen', () => {
     expect(u.zeilen.einstellungen.find((e) => e.schluessel === 'textvorlagen-gespeichert')?.wert).toBe(true);
   });
 });
+
+describe('Unternehmen (Normalform 17.10.2026)', () => {
+  it('macht aus jedem Firmennamen genau ein Unternehmen und verknüpft die Makler; Rechtsform und Domain kommen aus Name, Webseite und E-Mail', () => {
+    const firmen = u.zeilen.unternehmen;
+    const anna = u.zeilen.makler.find((m) => m.id === 'mk-1')!;
+    const alt = firmen.find((f) => f.name === 'Alt Immobilien');
+    expect(alt).toMatchObject({ nameNormiert: 'alt immobilien', rechtsform: null, quelle: 'umzug', domain: 'example.test' });
+    expect(anna.unternehmenId).toBe(alt!.id);
+    expect('firma' in anna).toBe(false);
+    // keine doppelten normierten Namen
+    expect(new Set(firmen.map((f) => f.nameNormiert)).size).toBe(firmen.length);
+    // jeder Verweis zeigt auf ein Unternehmen der Zeilen
+    const ids = new Set(firmen.map((f) => f.id));
+    for (const m of u.zeilen.makler) if (m.unternehmenId) expect(ids.has(m.unternehmenId)).toBe(true);
+  });
+
+  it('Makler aus einer Deal-Kopie (Waise) bekommt dasselbe Unternehmen wie ein Makler mit gleichem Firmennamen', () => {
+    const z = umformen({
+      'immo-makler': [{ id: 'm-a', name: 'A', firma: 'Gleich GmbH', email: 'a@gleich-immo.de' }],
+      'immo-deals': [{ id: 'd-w', objId: 'o-x', maklerId: 'm-fehlt', maklerName: 'Waise', maklerFirma: 'gleich gmbh', status: 'Neu' }],
+      'immo-objects': [{ id: 'o-x', strasse: 'Weg', hausnr: '1' }],
+    }, STICHTAG).zeilen;
+    expect(z.unternehmen).toHaveLength(1);
+    expect(z.unternehmen[0]).toMatchObject({ name: 'Gleich GmbH', rechtsform: 'GmbH', domain: 'gleich-immo.de' });
+    expect(z.makler.map((m) => m.unternehmenId)).toEqual([z.unternehmen[0]!.id, z.unternehmen[0]!.id]);
+  });
+});

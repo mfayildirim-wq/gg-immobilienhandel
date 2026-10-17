@@ -34,7 +34,9 @@ export async function schreiben(tx: Tx, z: Zeilen) {
   await tx.delete(schema.deals);
   await tx.delete(schema.objekte);
   await tx.delete(schema.makler);
+  await tx.delete(schema.unternehmen);
 
+  await einfuegen(tx, schema.unternehmen, z.unternehmen);
   await einfuegen(tx, schema.makler, z.makler);
   await einfuegen(tx, schema.maklerKommunikation, z.maklerKommunikation);
   await einfuegen(tx, schema.objekte, z.objekte);

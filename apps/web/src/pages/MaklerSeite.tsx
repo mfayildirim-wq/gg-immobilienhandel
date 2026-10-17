@@ -6,6 +6,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useState } from 'react';
 import { GeteilteAnsicht } from '../components/GeteilteAnsicht.tsx';
 import { MaklerDetail, maklerDublettenFrage } from '../components/MaklerDetail.tsx';
+import { UnternehmenFeld } from '../components/UnternehmenFeld.tsx';
 import { Listenzeile } from '../components/Listenzeile.tsx';
 import { AnsichtMenue } from '../components/AnsichtMenue.tsx';
 import { useAktiverFilter } from '../components/GespeicherteFilterLeiste.tsx';
@@ -120,7 +121,7 @@ function MaklerDialog({ offen, schliessen, bestand }: { offen: boolean; schliess
     <Modal opened={offen} onClose={schliessen} title="Neuer Makler" closeButtonProps={{ 'aria-label': 'Schließen' }}>
       <Stack>
         <TextInput label="Name" value={f.name} onChange={(e) => setF({ ...f, name: e.currentTarget.value })} />
-        <TextInput label="Firma" value={f.firma} onChange={(e) => setF({ ...f, firma: e.currentTarget.value })} />
+        <UnternehmenFeld value={f.firma} onChange={(v) => setF({ ...f, firma: v })} />
         <Group grow>
           <TextInput label="Telefon" value={f.tel} onChange={(e) => setF({ ...f, tel: e.currentTarget.value })} />
           <TextInput label="E-Mail" value={f.email} onChange={(e) => setF({ ...f, email: e.currentTarget.value })} />
