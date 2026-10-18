@@ -17,6 +17,7 @@ import { exposeExtraktionLesen, kalkStandardLesen } from './einstellungen.ts';
 import { detailsLesen, detailsSetzen, fuerAngaben, listeAnhaengen } from './exposeAngaben.ts';
 import { fotoHochladen } from './fotos.ts';
 import { objektTitel } from './objekte.ts';
+import { MAKLER_AUFGELOEST, MAKLER_FIRMA, maklerInsUnternehmen, UNTERNEHMEN_JOIN } from './unternehmen.ts';
 
 export interface ExposeKontext {
   speicher: Dateispeicher;
@@ -148,7 +149,7 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
 
   // Dubletten gegen den aktiven Bestand, neueste zuerst (Reihenfolge wie die alte Liste)
   const objekte = await db.select().from(schema.objekte).where(isNull(schema.objekte.deletedAt)).orderBy(desc(schema.objekte.createdAt));
-  const makler = await db.select().from(schema.makler).where(isNull(schema.makler.deletedAt)).orderBy(desc(schema.makler.createdAt));
+  const makler = await db.select(MAKLER_AUFGELOEST).from(schema.makler).leftJoin(schema.unternehmen, UNTERNEHMEN_JOIN).where(isNull(schema.makler.deletedAt)).orderBy(desc(schema.makler.createdAt));
   const dObj = dublettenObjekt(objekte, v.objekt);
   const dMk = dublettenMakler(makler, v.makler);
 
@@ -158,8 +159,8 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
 
   // Hat das erkannte Objekt schon Deals? Dann kann dieses PDF einen davon ergänzen (Fotos, Makler, Exposé) statt einen zweiten anzulegen
   const bestehendeDeals = dObj
-    ? (await db.select({ id: schema.deals.id, status: schema.deals.status, makler: schema.makler.name, firma: schema.makler.firma })
-      .from(schema.deals).leftJoin(schema.makler, eq(schema.makler.id, schema.deals.maklerId))
+    ? (await db.select({ id: schema.deals.id, status: schema.deals.status, makler: schema.makler.name, firma: MAKLER_FIRMA })
+      .from(schema.deals).leftJoin(schema.makler, eq(schema.makler.id, schema.deals.maklerId)).leftJoin(schema.unternehmen, UNTERNEHMEN_JOIN)
       .where(and(eq(schema.deals.objektId, dObj.match.id), isNull(schema.deals.deletedAt))).orderBy(desc(schema.deals.createdAt)))
       .map((d) => ({ id: d.id, status: d.status, makler: [d.makler, d.firma].filter(Boolean).join(' · ') || null }))
     : [];
@@ -441,6 +442,7 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
         prio: m.prio ?? 'B', kontaktFrequenz: normalisiereFrequenz(m.kontaktFreq || 'Monatlich'),
       });
       maklerNeu = true;
+      await maklerInsUnternehmen(tx, maklerId);
       if (text(m.notizen)) {
         await tx.insert(schema.maklerKommunikation).values({ id: `${maklerId}:${crypto.randomUUID()}`, maklerId, zeitpunkt: sql`now()`, kanal: 'notiz', text: text(m.notizen) });
       }

@@ -4,6 +4,7 @@ import { fehlendeVorlagen, type Module, type SavedFilter } from '@gg/domain';
 import { asc, eq, isNull, sql } from 'drizzle-orm';
 import { FachFehler } from '../fehler.ts';
 import { exposeDokumentIds } from './dealDokumente.ts';
+import { MAKLER_AUFGELOEST, UNTERNEHMEN_JOIN } from './unternehmen.ts';
 
 /** Felder ohne Wert weglassen: die alte Sammlung kannte sie dann nicht (wichtig für is_set/is_empty der Filter). */
 const ohneLeer = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null && v !== undefined));
@@ -18,7 +19,7 @@ const gruppieren = <T, K>(liste: T[], schluessel: (x: T) => K) => {
  * Grundlage der Listenregeln und der gespeicherten Filter (Feldpfade wie `kalk.kaufpreis`, `adresse`, `prio`).
  */
 export async function listenAltformat(db: Db): Promise<ListenAltformat> {
-  const makler = await db.select().from(schema.makler).where(isNull(schema.makler.deletedAt)).orderBy(asc(schema.makler.reihenfolge), asc(schema.makler.id));
+  const makler = await db.select(MAKLER_AUFGELOEST).from(schema.makler).leftJoin(schema.unternehmen, UNTERNEHMEN_JOIN).where(isNull(schema.makler.deletedAt)).orderBy(asc(schema.makler.reihenfolge), asc(schema.makler.id));
   const objekte = await db.select().from(schema.objekte).where(isNull(schema.objekte.deletedAt)).orderBy(asc(schema.objekte.reihenfolge), asc(schema.objekte.id));
   const deals = await db.select().from(schema.deals).where(isNull(schema.deals.deletedAt)).orderBy(asc(schema.deals.reihenfolge), asc(schema.deals.id));
   const objEinheiten = gruppieren(await db.select().from(schema.objektEinheiten).orderBy(asc(schema.objektEinheiten.sort)), (e) => e.objektId);

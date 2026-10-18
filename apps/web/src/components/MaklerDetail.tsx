@@ -4,7 +4,7 @@ import {
   normalisiereFrequenz, personaDetectAnrede, resolveVorlage, telefonPruefen, vorlagenFuerKanal, vorlagenKontext, whatsappNummer,
 } from '@gg/domain';
 import {
-  Alert, Anchor, Badge, Button, Group, Loader, Paper, SegmentedControl, Select, SimpleGrid, Stack, Tabs, Text, Textarea, TextInput, Title,
+  Alert, Anchor, Autocomplete, Badge, Button, Group, Loader, Paper, SegmentedControl, Select, SimpleGrid, Stack, Tabs, Text, Textarea, TextInput, Title,
 } from '@mantine/core';
 import { ListeUmschalter } from './GeteilteAnsicht.tsx';
 import { Reiterleiste } from './Reiterleiste.tsx';
@@ -12,7 +12,7 @@ import { IconCheck, IconDeviceFloppy, IconTrash } from '@tabler/icons-react';
 import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 import {
-  transkribieren, useKommunikationAnlegen, useListen, useMaklerAendern, useMaklerDetail, useMaklerErledigt, useMaklerKi, useMaklerLoeschen, useMaklerPersoenlich,
+  transkribieren, useKommunikationAnlegen, useListen, useMakler, useMaklerAendern, useMaklerDetail, useMaklerErledigt, useMaklerKi, useMaklerLoeschen, useMaklerPersoenlich,
   useOsint, useVorlagen, useWhatsappProtokoll,
 } from '../lib/api.ts';
 import { heuteIso, useEinstellung } from '../lib/ansicht.ts';
@@ -44,7 +44,8 @@ export function MaklerDetail({ id, geloescht, start = 'profil' }: { id: string; 
           </Reiterleiste>
         </div>
       </Group>
-      <Tabs.Panel value="profil" pt="md"><Profil key={m.version} m={m} geloescht={geloescht} /></Tabs.Panel>
+      {/* Firmenwerte ändern sich auch über Kollegen (Unternehmen) — dann ohne eigene neue Version */}
+      <Tabs.Panel value="profil" pt="md"><Profil key={[m.version, m.firma, m.webseite, m.strasse, m.plz, m.ort].join('|')} m={m} geloescht={geloescht} /></Tabs.Panel>
       <Tabs.Panel value="komm" pt="md"><Kommunikation m={m} /></Tabs.Panel>
       <Tabs.Panel value="persoenlich" pt="md"><Persoenlich key={m.version} m={m} /></Tabs.Panel>
       <Tabs.Panel value="deals" pt="md"><Deals maklerId={m.id} /></Tabs.Panel>
@@ -57,6 +58,9 @@ function Profil({ m, geloescht }: { m: Detail; geloescht?: () => void }) {
   const aendern = useMaklerAendern(m.id);
   const erledigt = useMaklerErledigt(m.id);
   const loeschen = useMaklerLoeschen();
+  const navigate = useNavigate();
+  const { data: alleMakler } = useMakler();
+  const firmen = [...new Set((alleMakler ?? []).map((x) => x.firma?.trim()).filter((x): x is string => !!x))].sort((a, b) => a.localeCompare(b, 'de'));
   const [f, setF] = useState({
     name: m.name ?? '', firma: m.firma ?? '', tel: m.tel ?? '', email: m.email ?? '', webseite: m.webseite ?? '',
     mobil: m.mobil ?? '', festnetz: m.festnetz ?? '', strasse: m.strasse ?? '', plz: m.plz ?? '', ort: m.ort ?? '',
@@ -82,14 +86,25 @@ function Profil({ m, geloescht }: { m: Detail; geloescht?: () => void }) {
       <Title order={6}>👤 Kontaktdaten</Title>
       <SimpleGrid cols={2} spacing="xs">
         <TextInput label="Name" placeholder="Max Müller" value={f.name} onChange={(e) => setF({ ...f, name: e.currentTarget.value })} />
-        <TextInput label="Firma" placeholder="Immobilien GmbH" value={f.firma} onChange={(e) => setF({ ...f, firma: e.currentTarget.value })} />
         <TextInput label="Telefon" type="tel" placeholder="+49 711 123456" value={f.tel} error={telFehler} onChange={(e) => setF({ ...f, tel: e.currentTarget.value })} />
         <TextInput label="E-Mail" type="email" placeholder="name@firma.de" value={f.email} error={mailFehler} onChange={(e) => setF({ ...f, email: e.currentTarget.value })} />
-        <TextInput label="Webseite" value={f.webseite} onChange={(e) => setF({ ...f, webseite: e.currentTarget.value })} />
         <TextInput label="Mobil" type="tel" placeholder="+49 171 1234567" value={f.mobil} onChange={(e) => setF({ ...f, mobil: e.currentTarget.value })} />
         <TextInput label="Festnetz" type="tel" placeholder="+49 711 123456" value={f.festnetz} onChange={(e) => setF({ ...f, festnetz: e.currentTarget.value })} />
       </SimpleGrid>
-      <Title order={6}>📍 Anschrift</Title>
+      <Title order={6}>🏢 Unternehmen</Title>
+      <SimpleGrid cols={2} spacing="xs">
+        <Autocomplete label="Firma" placeholder="Immobilien GmbH" data={firmen} limit={8} value={f.firma}
+          description="Bestehende Firma wählen oder neue eintragen" onChange={(v) => setF({ ...f, firma: v })} />
+        <TextInput label="Webseite" value={f.webseite} onChange={(e) => setF({ ...f, webseite: e.currentTarget.value })} />
+      </SimpleGrid>
+      {m.unternehmen && (
+        <Text size="xs" c="dimmed" data-unternehmen-kollegen>
+          Webseite und Anschrift gelten für alle Makler dieses Unternehmens
+          {m.unternehmen.makler.length > 0 && <>{' — außerdem: '}{m.unternehmen.makler.map((k, i) => (
+            <span key={k.id}>{i > 0 && ', '}<Anchor size="xs" onClick={() => navigate({ to: '/makler', search: { makler: k.id } })}>{k.name || 'ohne Namen'}</Anchor></span>
+          ))}</>}
+        </Text>
+      )}
       <TextInput label="Straße und Hausnummer" value={f.strasse} onChange={(e) => setF({ ...f, strasse: e.currentTarget.value })} />
       <SimpleGrid cols={2} spacing="xs">
         <TextInput label="PLZ" value={f.plz} maxLength={10} onChange={(e) => setF({ ...f, plz: e.currentTarget.value })} />
@@ -97,7 +112,7 @@ function Profil({ m, geloescht }: { m: Detail; geloescht?: () => void }) {
       </SimpleGrid>
       {m.weitereKontakte && (
         <Paper withBorder p="xs">
-          <Text size="xs" fw={700} c="dimmed" mb={4}>Weitere Kontakte aus Exposés</Text>
+          <Text size="xs" fw={700} c="dimmed" mb={4}>{m.unternehmen ? 'Weitere Kontakte im Unternehmen (aus Exposés)' : 'Weitere Kontakte aus Exposés'}</Text>
           {m.weitereKontakte.namen.length > 0 && <Text size="xs">👤 {m.weitereKontakte.namen.join(' · ')}</Text>}
           {m.weitereKontakte.telefonnummern.length > 0 && (
             <Group gap={6}>{m.weitereKontakte.telefonnummern.map((t) => <Anchor key={t} size="xs" href={`tel:${t}`}>📞 {t}</Anchor>)}</Group>

@@ -9,11 +9,12 @@ import {
   type Angabe, type AngabeWert, angabenAusImport, type DatensatzFuerAngaben, EXPOSE_V2_SCHEMA, type ExposeV2, GG_ZIELE, type ImportFuerAngaben,
   telefonNormalisieren, telefonSchluessel, uebernahmeWert, vergleichsStatus, type WeitereKontakte, weitereKontakte, zieleMitStand,
 } from '@gg/domain';
-import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { FachFehler } from '../fehler.ts';
 import { auditSchreiben } from './audit.ts';
 import type { Tx } from './tx.ts';
 import { versionFortschreiben } from './version.ts';
+import { MAKLER_AUFGELOEST, maklerFirmaSetzen, UNTERNEHMEN_JOIN } from './unternehmen.ts';
 
 type Art = 'objekt' | 'makler';
 type ImportZeile = typeof schema.exposeImporte.$inferSelect;
@@ -79,13 +80,14 @@ async function objektLesen(db: Db | Tx, id: string) {
 }
 
 async function maklerLesen(db: Db | Tx, id: string) {
-  const [m] = await db.select().from(schema.makler).where(and(eq(schema.makler.id, id), isNull(schema.makler.deletedAt)));
+  const [m] = await db.select(MAKLER_AUFGELOEST).from(schema.makler).leftJoin(schema.unternehmen, UNTERNEHMEN_JOIN)
+    .where(and(eq(schema.makler.id, id), isNull(schema.makler.deletedAt)));
   if (!m) throw new FachFehler(404, 'Makler nicht gefunden');
   return m;
 }
 
 const alsObjektWerte = (o: typeof schema.objekte.$inferSelect): DatensatzFuerAngaben => ({ ...o, details: (o.details as Record<string, unknown> | null) ?? null });
-const alsMaklerWerte = (m: typeof schema.makler.$inferSelect): DatensatzFuerAngaben => ({ ...m, weitereKontakte: (m.weitereKontakte as WeitereKontakte | null) ?? null });
+const alsMaklerWerte = (m: Awaited<ReturnType<typeof maklerLesen>>): DatensatzFuerAngaben => ({ ...m, weitereKontakte: (m.weitereKontakte as WeitereKontakte | null) ?? null });
 
 export async function objektAngaben(db: Db, objektId: string): Promise<ExposeAngabenAntwort> {
   const o = alsObjektWerte(await objektLesen(db, objektId));
@@ -170,6 +172,8 @@ export async function objektUebernahme(db: Db, objektId: string, e: ExposeUebern
 const zielLabel = (ziel: string) => GG_ZIELE[ziel]?.label ?? ziel;
 
 const TELEFON = new Set(['tel', 'mobil', 'festnetz']);
+/** Gehören dem Unternehmen, geschrieben über `maklerFirmaSetzen`. */
+const FIRMEN_SPALTEN = new Set(['firma', 'webseite', 'strasse', 'plz', 'ort']);
 
 export async function maklerUebernahme(db: Db, maklerId: string, e: ExposeUebernahme) {
   const { ergebnis, protokoll, neu } = await db.transaction(async (tx) => {
@@ -196,7 +200,12 @@ export async function maklerUebernahme(db: Db, maklerId: string, e: ExposeUebern
       if (telefon && typeof wert === 'string') wert = telefonNormalisieren(wert);
       aktion = freiOderErsetzen(zielLabel(e.ziel), wert, vorher, e.ersetzen ?? false, telefon);
     }
-    await tx.update(schema.makler).set({ [u.spalte]: wert }).where(eq(schema.makler.id, maklerId));
+    if (u.spalte === 'weitereKontakte' && m.unternehmenId) {
+      // Kollegen gehören dem Unternehmen (18.10.2026)
+      await tx.update(schema.unternehmen).set({ weitereKontakte: wert, version: sql`${schema.unternehmen.version} + 1`, updatedAt: sql`now()` }).where(eq(schema.unternehmen.id, m.unternehmenId));
+      await tx.update(schema.makler).set({ weitereKontakte: null }).where(eq(schema.makler.id, maklerId));
+    } else if (FIRMEN_SPALTEN.has(u.spalte)) await maklerFirmaSetzen(tx, maklerId, { [u.spalte]: wert as string | null });
+    else await tx.update(schema.makler).set({ [u.spalte]: wert }).where(eq(schema.makler.id, maklerId));
     const protokoll: Protokoll = { art: 'makler', bezugId: maklerId, imp, angabe, ziel: e.ziel, vorher, aktion };
     return { ergebnis: { id: maklerId, version }, protokoll, neu: wert };
   });

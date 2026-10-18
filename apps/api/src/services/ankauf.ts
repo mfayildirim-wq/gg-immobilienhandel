@@ -14,9 +14,10 @@ import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { FachFehler } from '../fehler.ts';
 import { objektTitel } from './objekte.ts';
 import { versionFortschreiben } from './version.ts';
+import { MAKLER_AUFGELOEST, MAKLER_FIRMA, UNTERNEHMEN_JOIN } from './unternehmen.ts';
 
 const aktiveMakler = (db: Db) =>
-  db.select().from(schema.makler).where(isNull(schema.makler.deletedAt)).orderBy(desc(schema.makler.createdAt));
+  db.select(MAKLER_AUFGELOEST).from(schema.makler).leftJoin(schema.unternehmen, UNTERNEHMEN_JOIN).where(isNull(schema.makler.deletedAt)).orderBy(desc(schema.makler.createdAt));
 
 type Merker = { ts: string; thema: string; detail: string };
 const merkerAus = (persoenlich: unknown): Merker[] => {
@@ -39,10 +40,11 @@ export async function terminloseEinplanen(db: Db, heute: string) {
 
 export async function ankaufCockpit(db: Db, heute: string): Promise<AnkaufCockpit> {
   const zeilen = await db
-    .select({ deal: schema.deals, objekt: schema.objekte, makler: schema.makler })
+    .select({ deal: schema.deals, objekt: schema.objekte, makler: schema.makler, maklerFirma: MAKLER_FIRMA })
     .from(schema.deals)
     .innerJoin(schema.objekte, eq(schema.objekte.id, schema.deals.objektId))
     .leftJoin(schema.makler, eq(schema.makler.id, schema.deals.maklerId))
+    .leftJoin(schema.unternehmen, UNTERNEHMEN_JOIN)
     .where(isNull(schema.deals.deletedAt));
   const alleMakler = await aktiveMakler(db);
 
@@ -66,7 +68,7 @@ export async function ankaufCockpit(db: Db, heute: string): Promise<AnkaufCockpi
   const deals: CockpitDeal[] = cockpitDeals(
     zeilen.map((z) => ({ ...z, id: z.deal.id, status: z.deal.status as DealStatus, nachfassFrequenz: z.deal.nachfassFrequenz, nextContact: z.deal.nextContact, lastContact: z.deal.lastContact })),
     heute,
-  ).map(({ deal, objekt, makler, termin, faellig }) => {
+  ).map(({ deal, objekt, makler, maklerFirma, termin, faellig }) => {
     const kalk = (deal.kalkulation ?? {}) as { kaufpreis?: unknown };
     // wie vtDealCard: Jahresmiete aus Objekt-Einheiten, sonst aus Deal-Einheiten
     const monat = hatObjektEinheiten.has(objekt.id) ? objMiete.get(objekt.id) ?? 0 : dealMiete.get(deal.id) ?? 0;
@@ -77,7 +79,7 @@ export async function ankaufCockpit(db: Db, heute: string): Promise<AnkaufCockpi
       kaufpreis: typeof kalk.kaufpreis === 'number' && kalk.kaufpreis ? kalk.kaufpreis : null,
       wohnflaeche: objekt.wohnflaeche,
       jahresmiete: monat ? monat * 12 : null,
-      makler: makler ? { id: makler.id, name: makler.name, firma: makler.firma, tel: makler.tel, email: makler.email } : null,
+      makler: makler ? { id: makler.id, name: makler.name, firma: maklerFirma, tel: makler.tel, email: makler.email } : null,
     };
   });
 
@@ -116,9 +118,10 @@ export async function ankaufCockpit(db: Db, heute: string): Promise<AnkaufCockpi
 async function tageslog(db: Db): Promise<TageslogEintrag[]> {
   const heuteBerlin = sql`(now() at time zone 'Europe/Berlin')::date`;
   const komm = await db
-    .select({ zeitpunkt: schema.maklerKommunikation.zeitpunkt, text: schema.maklerKommunikation.text, kanal: schema.maklerKommunikation.kanal, name: schema.makler.name, firma: schema.makler.firma })
+    .select({ zeitpunkt: schema.maklerKommunikation.zeitpunkt, text: schema.maklerKommunikation.text, kanal: schema.maklerKommunikation.kanal, name: schema.makler.name, firma: MAKLER_FIRMA })
     .from(schema.maklerKommunikation)
     .innerJoin(schema.makler, eq(schema.makler.id, schema.maklerKommunikation.maklerId))
+    .leftJoin(schema.unternehmen, UNTERNEHMEN_JOIN)
     .where(sql`(${schema.maklerKommunikation.zeitpunkt} at time zone 'Europe/Berlin')::date = ${heuteBerlin}`);
   const kommentare = await db
     .select({ zeitpunkt: schema.dealKommentare.zeitpunkt, text: schema.dealKommentare.text, objekt: schema.objekte })

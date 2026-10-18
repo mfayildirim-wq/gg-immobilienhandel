@@ -344,9 +344,10 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
     });
     expect(o.details).not.toHaveProperty('stellplaetze');
     expect(o.notizen).toBe(`Von der Prüfseite\nBesichtigung: nach Vereinbarung (Exposé S. 2)`);
-    const [makler] = await db.select().from(schema.makler).where(eq(schema.makler.id, erg.maklerId));
-
-    expect((makler!.weitereKontakte as any).emails).toEqual(expect.arrayContaining(['max@beispiel.test']));
+    // Kollegen aus dem Exposé stehen am Unternehmen des Maklers (18.10.2026)
+    const makler = await lies(app.request(`/api/makler/${erg.maklerId}`));
+    expect(makler.unternehmen).not.toBeNull();
+    expect(makler.weitereKontakte.emails).toEqual(expect.arrayContaining(['max@beispiel.test']));
 
     const einheiten = await db.select().from(schema.objektEinheiten).where(eq(schema.objektEinheiten.objektId, erg.objektId)).orderBy(schema.objektEinheiten.sort);
     expect(einheiten).toHaveLength(3);

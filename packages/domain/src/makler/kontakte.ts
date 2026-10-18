@@ -27,11 +27,13 @@ function ohneDoppel(werte: unknown, schluessel: (v: string) => string, bekannt: 
 }
 
 /** `null`, wenn außer dem Hauptkontakt nichts bekannt ist — ein leeres Objekt wäre eine Angabe, die keine ist. */
-export function weitereKontakte(haupt: Hauptkontakt, alle: { namen?: unknown; telefonnummern?: unknown; emails?: unknown }): WeitereKontakte | null {
+/** Mehrere Hauptkontakte: alle Makler eines Unternehmens — was einer von ihnen ist, ist kein weiterer Kontakt. */
+export function weitereKontakte(haupt: Hauptkontakt | Hauptkontakt[], alle: { namen?: unknown; telefonnummern?: unknown; emails?: unknown }): WeitereKontakte | null {
+  const h = Array.isArray(haupt) ? haupt : [haupt];
   const k: WeitereKontakte = {
-    namen: ohneDoppel(alle.namen, (v) => v.toLowerCase(), [haupt.name]),
-    telefonnummern: ohneDoppel(alle.telefonnummern, telefonSchluessel, [haupt.tel, haupt.mobil, haupt.festnetz]),
-    emails: ohneDoppel(alle.emails, (v) => v.toLowerCase(), [haupt.email]),
+    namen: ohneDoppel(alle.namen, (v) => v.toLowerCase(), h.map((x) => x.name)),
+    telefonnummern: ohneDoppel(alle.telefonnummern, telefonSchluessel, h.flatMap((x) => [x.tel, x.mobil, x.festnetz])),
+    emails: ohneDoppel(alle.emails, (v) => v.toLowerCase(), h.map((x) => x.email)),
   };
   return k.namen.length || k.telefonnummern.length || k.emails.length ? k : null;
 }

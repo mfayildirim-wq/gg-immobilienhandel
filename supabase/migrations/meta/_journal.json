@@ -71,6 +71,13 @@
       "when": 1791980000851,
       "tag": "20261014121320_expose_importe",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792318053769,
+      "tag": "20261018100733_unternehmen",
+      "breakpoints": true
     }
   ]
 }

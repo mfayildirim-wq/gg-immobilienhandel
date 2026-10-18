@@ -103,7 +103,9 @@ describe.skipIf(!url)('Reiter „Aus dem Exposé“: Angaben lesen und übernehm
   it('Übernehmen hat aus der Zuordnung geschrieben: Makler-Anschrift, details des Objekts, Einheiten-details', async () => {
     const m = await lies(app.request(`/api/makler/${maklerId}`));
     expect(m).toMatchObject({ strasse: 'Hafenstraße 3', plz: '89073', ort: 'Ulm', name: 'Anna Beispiel', mobil: '0171 1234567' });
-    expect(m.weitereKontakte).toMatchObject({ namen: ['Max Zweit'], telefonnummern: ['0731 555'] });
+    // Kollegen stehen am Unternehmen, das sich die Makler derselben Firma teilen (18.10.2026)
+    expect(m.weitereKontakte.namen).toContain('Max Zweit');
+    expect(m.weitereKontakte.telefonnummern).toContain('0731 555');
     const o = await lies(app.request(`/api/objekte/${objektId}`));
     expect(o).toMatchObject({ istMiete: 2320, sollMiete: null });
     expect(o.details).toMatchObject({
@@ -141,7 +143,9 @@ describe.skipIf(!url)('Reiter „Aus dem Exposé“: Angaben lesen und übernehm
     expect(r.angaben.every((a: any) => Number(a.feld.split('.')[1]) >= 21)).toBe(true);
     expect(r.ziele.every((z: any) => z.schluessel.startsWith('makler.'))).toBe(true);
 
-    await db.update(schema.makler).set({ weitereKontakte: { namen: ['Alt Kontakt'], telefonnummern: ['0711 999999'], emails: [] }, festnetz: '0711 111111' }).where(eq(schema.makler.id, maklerId));
+    await db.update(schema.makler).set({ festnetz: '0711 111111' }).where(eq(schema.makler.id, maklerId));
+    const [{ uid }] = await db.select({ uid: schema.makler.unternehmenId }).from(schema.makler).where(eq(schema.makler.id, maklerId)) as [{ uid: string }];
+    await db.update(schema.unternehmen).set({ weitereKontakte: { namen: ['Alt Kontakt'], telefonnummern: ['0711 999999'], emails: [] } }).where(eq(schema.unternehmen.id, uid));
     expect(await angabe('makler', maklerId, 'angaben.28')).toMatchObject({ wert: 'Max Zweit', ziel: { feld: 'makler.weitereKontakte', status: 'leer' } });
     let v = await maklerVersion();
     const k = await uebernahme('makler', maklerId, { version: v, feld: 'angaben.28', ziel: 'makler.weitereKontakte' });

@@ -226,6 +226,8 @@ export const MaklerDetail = Makler.extend({
   plz: z.string().nullable(),
   ort: z.string().nullable(),
   weitereKontakte: WeitereKontakte.nullable(),
+  /** Firma als eigener Datensatz (18.10.2026); `firma`, `webseite`, Anschrift und `weitereKontakte` kommen von dort. */
+  unternehmen: z.object({ id: z.string(), name: z.string(), makler: z.array(z.object({ id: z.string(), name: z.string().nullable() })) }).nullable(),
   lastContact: IsoDatum.nullable(),
   beziehungsNotiz: z.string().nullable(),
   kommunikation: z.array(MaklerKommunikation),

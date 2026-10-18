@@ -14,6 +14,7 @@ import { kalkStandardLesen } from './einstellungen.ts';
 import { versionFortschreiben } from './version.ts';
 import { FachFehler } from '../fehler.ts';
 import { objektTitel } from './objekte.ts';
+import { MAKLER_FIRMA, UNTERNEHMEN_JOIN } from './unternehmen.ts';
 
 export type Quelle = 'ui' | 'wizard' | 'mcp' | 'umzug';
 
@@ -22,11 +23,12 @@ export async function dealListe(db: Db): Promise<DealListenEintrag[]> {
     .select({
       deal: schema.deals,
       objekt: { id: schema.objekte.id, strasse: schema.objekte.strasse, hausnr: schema.objekte.hausnr, stadt: schema.objekte.stadt },
-      makler: { id: schema.makler.id, name: schema.makler.name, firma: schema.makler.firma },
+      makler: { id: schema.makler.id, name: schema.makler.name, firma: MAKLER_FIRMA },
     })
     .from(schema.deals)
     .innerJoin(schema.objekte, eq(schema.objekte.id, schema.deals.objektId))
     .leftJoin(schema.makler, eq(schema.makler.id, schema.deals.maklerId))
+    .leftJoin(schema.unternehmen, UNTERNEHMEN_JOIN)
     .where(isNull(schema.deals.deletedAt));
 
   return zeilen

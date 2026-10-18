@@ -32,7 +32,8 @@
     "bestand:rundgang": "tsx werkzeuge/bestand-rundgang.ts",
     "vercel:probe": "tsx --env-file-if-exists=.env werkzeuge/vercel-probe.ts",
     "extraktion:pruefen": "tsx --env-file-if-exists=.env werkzeuge/extraktion-pruefen.ts",
-    "extraktion:gold": "tsx werkzeuge/extraktion-gold.ts"
+    "extraktion:gold": "tsx werkzeuge/extraktion-gold.ts",
+    "unternehmen:uebernahme": "pnpm --filter @gg/api unternehmen:uebernahme"
   },
   "devDependencies": {
     "@gg/domain": "workspace:*",
