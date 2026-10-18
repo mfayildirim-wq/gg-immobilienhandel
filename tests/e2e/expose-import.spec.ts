@@ -188,12 +188,6 @@ test('Exposé v2: weitere Angaben per Dropdown auf der Prüfseite und im Reiter 
   await besichtigung.getByRole('button', { name: 'Übernehmen' }).click();
   await s.getByRole('tab', { name: '📋 Details' }).click();
   await expect(s.getByLabel('Notizen', { exact: true })).toContainText('Besichtigung');
-
-  // Makler: der zweite Kontakt aus dem Exposé steht im Reiter
-  await page.goto(`/makler?makler=${deal.makler.id}`);
-  const m = page.getByRole('region', { name: 'Makler-Detail' });
-  await m.getByRole('tab', { name: '📄 Aus dem Exposé' }).click();
-  await expect(m.getByRole('region', { name: 'Exposé-Angaben' })).toContainText('max@beispiel.test');
 });
 
 // >>> Fotos aus dem Exposé (Protokoll 30 §4.4, §10): alle gefilterten Bilder gehen automatisch ans Objekt, keine Auswahl

@@ -17,10 +17,9 @@ import {
 } from '../lib/api.ts';
 import { heuteIso, useEinstellung } from '../lib/ansicht.ts';
 import { datumDe } from '../lib/format.ts';
-import { ExposeAngaben } from './ExposeAngaben.tsx';
 import { StatusBadge } from './StatusBadge.tsx';
 
-const REITER = ['profil', 'komm', 'persoenlich', 'deals', 'expose'] as const;
+const REITER = ['profil', 'komm', 'persoenlich', 'deals'] as const;
 type Reiter = (typeof REITER)[number];
 
 /**
@@ -42,7 +41,6 @@ export function MaklerDetail({ id, geloescht, start = 'profil' }: { id: string; 
             <Tabs.Tab value="komm">💬 Kommunikation</Tabs.Tab>
             <Tabs.Tab value="persoenlich">🎯 Persönlich</Tabs.Tab>
             <Tabs.Tab value="deals">🤝 Deals</Tabs.Tab>
-            <Tabs.Tab value="expose">📄 Aus dem Exposé</Tabs.Tab>
           </Reiterleiste>
         </div>
       </Group>
@@ -51,7 +49,6 @@ export function MaklerDetail({ id, geloescht, start = 'profil' }: { id: string; 
       <Tabs.Panel value="komm" pt="md"><Kommunikation m={m} /></Tabs.Panel>
       <Tabs.Panel value="persoenlich" pt="md"><Persoenlich key={m.version} m={m} /></Tabs.Panel>
       <Tabs.Panel value="deals" pt="md"><Deals maklerId={m.id} /></Tabs.Panel>
-      <Tabs.Panel value="expose" pt="md"><ExposeAngaben art="makler" id={m.id} version={m.version} /></Tabs.Panel>
     </Tabs>
   );
 }
