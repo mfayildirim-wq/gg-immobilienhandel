@@ -123,6 +123,21 @@ Nicht setzen: `AUTH_LOCAL_OPEN`, `KI_ATTRAPPE`, `M365_ATTRAPPE`, `PROPSTACK_ATTR
 5. In Azure AD die Redirect-URI `https://<adresse>/m365/rueckweg` registrieren.
 6. Erst danach: `pnpm umzug:probe` gegen die Produktion (nur lesend), dann der Umzug.
 
+## Unternehmen der Makler (Migration `unternehmen`, 18.10.2026)
+
+Je Umgebung einmal, in dieser Reihenfolge — der Code läuft in jedem Zwischenstand, weil er Firma, Webseite und
+Anschrift zuerst aus dem Unternehmen und sonst aus den Altfeldern am Makler liest:
+
+1. Migration anwenden: `npx supabase db push --dry-run`, dann ohne. Rein additiv (neue Tabelle `fach.unternehmen`,
+   Spalte `fach.makler.unternehmen_id`), es wird nichts gelöscht.
+2. Code deployen (Merge nach `main`). Neue und geänderte Makler bekommen ab jetzt ihr Unternehmen.
+3. Bestand übernehmen, mit `DATABASE_URL` auf die Zieldatenbank:
+   `pnpm unternehmen:uebernahme` → Bericht unter `berichte/` prüfen (gleiche Domain, mehrteilige Namen,
+   Webseiten-Konflikte), dann `UNTERNEHMEN_FREIGABE=<db-host> pnpm unternehmen:uebernahme --schreiben`.
+   Eine Transaktion, erneut ausführbar; die Altfelder am Makler bleiben stehen.
+4. Später, nach Abnahme: Aufräum-Migration, die `makler.firma`, `webseite`, `strasse`, `plz`, `ort`,
+   `weitere_kontakte` entfernt (eigener PR).
+
 ## Vor jedem Deployment
 
 ```bash

@@ -5,6 +5,7 @@ import { istTabelle, tabelleLesen } from '@gg/integrations';
 import { isNull } from 'drizzle-orm';
 import { FachFehler } from '../fehler.ts';
 import { auditSchreiben } from './audit.ts';
+import { maklerInsUnternehmen } from './unternehmen.ts';
 
 function tabelle(datei: { name: string; bytes: Uint8Array } | null) {
   if (!datei) throw new FachFehler(400, 'Keine Datei hochgeladen');
@@ -33,10 +34,14 @@ export async function maklerImportUebernehmen(db: Db, datei: { name: string; byt
   const vorhanden = await db.select({ email: schema.makler.email }).from(schema.makler).where(isNull(schema.makler.deletedAt));
   const { makler, uebersprungen } = xlsxMaklerLesen(zeilen, karte, vorhanden.map((m) => m.email ?? ''));
   if (makler.length) {
-    await db.insert(schema.makler).values(makler.map((m) => ({
-      id: crypto.randomUUID(), name: m.name, firma: m.firma || null, tel: m.tel || null, email: m.email || null,
-      prio: m.prio, kontaktFrequenz: m.kontaktFrequenz, adresse: m.adresse || null, stadt: m.stadt || null, notizen: m.notizen || null,
-    })));
+    await db.transaction(async (tx) => {
+      const zeilen = makler.map((m) => ({
+        id: crypto.randomUUID(), name: m.name, firma: m.firma || null, tel: m.tel || null, email: m.email || null,
+        prio: m.prio, kontaktFrequenz: m.kontaktFrequenz, adresse: m.adresse || null, stadt: m.stadt || null, notizen: m.notizen || null,
+      }));
+      await tx.insert(schema.makler).values(zeilen);
+      for (const z of zeilen) if (z.firma) await maklerInsUnternehmen(tx, z.id);
+    });
   }
   await auditSchreiben(db, {
     type: 'import', entity: 'makler', action: 'create-bulk', collection: 'makler', source: '/api/import/makler-tabelle',

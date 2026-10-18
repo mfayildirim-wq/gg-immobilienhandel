@@ -23,13 +23,45 @@ const zeitSpalten = {
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
 };
 
+/** Unternehmen der Makler (18.10.2026): Firma, Webseite, Büroanschrift einmal je Standort; Makler zeigen darauf. */
+export const unternehmen = fach
+  .table(
+    'unternehmen',
+    {
+      id: text('id').primaryKey(),
+      name: text('name').notNull(),
+      /** `unternehmenSchluessel(name)` aus @gg/domain — Zuordnung beim Anlegen/Import, fasst nur Schreibweisen zusammen */
+      nameSchluessel: text('name_schluessel'),
+      webseite: text('webseite'),
+      /** aus Webseite oder Mail, z. B. „eug.de“ — Hinweis, kein Schlüssel */
+      domain: text('domain'),
+      telefonZentrale: text('telefon_zentrale'),
+      emailZentrale: text('email_zentrale'),
+      strasse: text('strasse'),
+      plz: text('plz'),
+      ort: text('ort'),
+      impressum: text('impressum'),
+      /** Kollegen aus Exposés: { namen, telefonnummern, emails } — ohne die, die selbst Makler sind */
+      weitereKontakte: jsonb('weitere_kontakte'),
+      notiz: text('notiz'),
+      ...standardSpalten,
+    },
+    (t) => [
+      index('unternehmen_name_schluessel_idx').on(t.nameSchluessel).where(sql`${t.deletedAt} is null`),
+      index('unternehmen_domain_idx').on(t.domain),
+    ],
+  )
+  .enableRLS();
+
 export const makler = fach
   .table(
     'makler',
     {
   id: text('id').primaryKey(),
       name: text('name'),
+      /** Altfeld bis zur Aufräum-Migration; maßgeblich ist `unternehmen.name` (Lesen: coalesce) */
       firma: text('firma'),
+      unternehmenId: text('unternehmen_id').references((): AnyPgColumn => unternehmen.id, { onDelete: 'set null' }),
       /** Hauptnummer — die, die Wählmaschine und Briefing anrufen (alt: mobiltel || festnetztel || tel) */
       tel: text('tel'),
       mobil: text('mobil'),
@@ -56,6 +88,7 @@ export const makler = fach
     },
     (t) => [
       index('makler_next_contact_idx').on(t.nextContact).where(sql`${t.deletedAt} is null`),
+      index('makler_unternehmen_idx').on(t.unternehmenId),
     ],
   )
   .enableRLS();

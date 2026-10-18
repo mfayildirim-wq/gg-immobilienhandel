@@ -8,7 +8,8 @@
     "start": "tsx --env-file-if-exists=../../.env src/server.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "bau:vercel": "node bau-vercel.mjs"
+    "bau:vercel": "node bau-vercel.mjs",
+    "unternehmen:uebernahme": "tsx --env-file-if-exists=../../.env src/werkzeuge/unternehmen-uebernahme.ts"
   },
   "dependencies": {
     "@gg/api-contract": "workspace:*",
