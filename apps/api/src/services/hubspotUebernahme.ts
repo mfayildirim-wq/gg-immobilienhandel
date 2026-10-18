@@ -1,7 +1,8 @@
 /**
  * HubSpot-Übernahme (Baustein C, 17.10.2026, Protokoll 32): den Kontakt-Export (xlsx) in den Maklerbestand übernehmen.
  *
- * Je Kontakt: Abgleich mit dem Bestand (HubSpot-ID → E-Mail → Telefon → Name, `@gg/domain`). Bekannte Makler werden nur in
+ * Je Kontakt: Abgleich mit dem Bestand (HubSpot-ID → E-Mail → Telefon → Name, `@gg/domain`; E-Mail und Telefon nur bei passendem
+ * Namen — Kollegen teilen Zentralnummer und Sammelpostfach, sie werden neu angelegt und im Bericht genannt). Bekannte Makler werden nur in
  * leeren Feldern ergänzt (Telefon, Mobil, E-Mail, Anschrift, `persoenlich`), nichts wird überschrieben. Unbekannte werden angelegt:
  * Prio aus der Klassifizierung (VIP/High Potential → A, B → B, sonst C), Frequenz Monatlich (Exit → Nie), Anrede/Du-Sie/
  * Jobbezeichnung/Mailing-Status und die Herkunft mit HubSpot-ID in `persoenlich`. Das Unternehmen kommt über die E-Mail-Domain:
@@ -13,7 +14,7 @@
  */
 import { type Db, schema } from '@gg/db';
 import {
-  type BestandsMakler, domainAusAdresse, type HubspotKontakt, hubspotAbgleich, hubspotErgaenzung, hubspotFehlendeSpalten, hubspotFrequenz, hubspotKontaktLesen, hubspotPersoenlich, hubspotPrio,
+  type BestandsMakler, domainAusAdresse, type HubspotKontakt, hubspotAbgleich, hubspotErgaenzung, hubspotKollege, hubspotFehlendeSpalten, hubspotFrequenz, hubspotKontaktLesen, hubspotPersoenlich, hubspotPrio,
   hubspotSpalten, type HubspotTreffer, weitereKontakte,
 } from '@gg/domain';
 import type { KiClient, Tabelle } from '@gg/integrations';
@@ -41,7 +42,11 @@ export interface HubspotZeile {
   klassifizierung: string | null;
   ergebnis: 'neu' | 'ergaenzt' | 'unveraendert' | 'uebersprungen';
   ueber?: HubspotTreffer['ueber'];
+  /** Wie gut der Name zum getroffenen Makler passt (gleich · ähnlich · einer fehlt) */
+  namePasst?: HubspotTreffer['name'];
   maklerId?: string;
+  /** Neu angelegt, obwohl ein Bestandsmakler dieselbe E-Mail oder Telefonnummer hat — anderer Name, also Kollege */
+  kollege?: { maklerId: string; name: string; ueber: 'email' | 'telefon' };
   /** Felder, die beim bekannten Makler gefüllt wurden */
   ergaenzt?: string[];
   unternehmen?: { id: string; name: string; weg: 'vorhanden' | 'impressum' | 'platzhalter' } | null;
@@ -62,6 +67,10 @@ export interface HubspotBericht {
   unternehmen: { vorhanden: number; impressum: number; platzhalter: number; ohne: number };
   /** Namenstreffer gesondert — die sollte man ansehen */
   namenstreffer: { hubspot: string; makler: string; maklerId: string }[];
+  /** Treffer über E-Mail oder Telefon, bei denen der Name nur ähnlich ist oder fehlt — ebenfalls ansehen */
+  kontaktdatenTreffer: { hubspot: string; makler: string; maklerId: string; ueber: 'email' | 'telefon'; name: 'aehnlich' | 'fehlt' }[];
+  /** Neu angelegt trotz gleicher Kontaktdaten eines Bestandsmaklers (anderer Name: Zentralnummer, Sammelpostfach, weitere Kontakte) */
+  kollegen: { hubspot: string; makler: string; maklerId: string; ueber: 'email' | 'telefon' }[];
   zeilen: HubspotZeile[];
 }
 
@@ -133,7 +142,7 @@ export async function hubspotUebernehmen(db: Db, ki: KiClient | null | undefined
     bekannt: { gesamt: 0, ueber: { 'hubspot-id': 0, email: 0, telefon: 0, name: 0 }, ergaenzt: 0, unveraendert: 0, felder: {} },
     neu: { gesamt: 0, prio: { A: 0, B: 0, C: 0 }, frequenzNie: 0 },
     unternehmen: { vorhanden: 0, impressum: 0, platzhalter: 0, ohne: 0 },
-    namenstreffer: [], zeilen: [],
+    namenstreffer: [], kontaktdatenTreffer: [], kollegen: [], zeilen: [],
   };
   const kontakte = tabelle.zeilen.map((z) => hubspotKontaktLesen(z, spalten)).filter((k): k is HubspotKontakt => !!k);
   bericht.gelesen = kontakte.length;
@@ -151,8 +160,11 @@ export async function hubspotUebernehmen(db: Db, ki: KiClient | null | undefined
         const m = bestand.find((b) => b.id === treffer.id)!;
         bericht.bekannt.gesamt++;
         bericht.bekannt.ueber[treffer.ueber]++;
-        zeile.ueber = treffer.ueber; zeile.maklerId = m.id;
+        zeile.ueber = treffer.ueber; zeile.namePasst = treffer.name; zeile.maklerId = m.id;
         if (treffer.ueber === 'name') bericht.namenstreffer.push({ hubspot: k.name, makler: m.name ?? '', maklerId: m.id });
+        if ((treffer.ueber === 'email' || treffer.ueber === 'telefon') && treffer.name !== 'gleich') {
+          bericht.kontaktdatenTreffer.push({ hubspot: k.name, makler: m.name ?? '', maklerId: m.id, ueber: treffer.ueber, name: treffer.name });
+        }
         const e = hubspotErgaenzung(k, m, heute);
         const werte: Record<string, unknown> = { ...e.felder };
         if (e.persoenlich) werte.persoenlich = e.persoenlich;
@@ -170,6 +182,12 @@ export async function hubspotUebernehmen(db: Db, ki: KiClient | null | undefined
           for (const f of zeile.ergaenzt) bericht.bekannt.felder[f] = (bericht.bekannt.felder[f] ?? 0) + 1;
         } else { zeile.ergebnis = 'unveraendert'; bericht.bekannt.unveraendert++; }
       } else {
+        const kollege = hubspotKollege(k, bestand);
+        if (kollege) {
+          const km = bestand.find((b) => b.id === kollege.id)!;
+          zeile.kollege = { maklerId: km.id, name: km.name ?? '', ueber: kollege.ueber };
+          bericht.kollegen.push({ hubspot: k.name, makler: km.name ?? '', maklerId: km.id, ueber: kollege.ueber });
+        }
         const u = await unternehmenFuerKontakt(db, tx, ki, k, o, zwischen);
         const id = crypto.randomUUID();
         const prio = hubspotPrio(k.klassifizierung);
@@ -225,6 +243,16 @@ export function hubspotBerichtText(b: HubspotBericht): string {
     z.push('');
     z.push(`Namenstreffer (bitte ansehen, ${b.namenstreffer.length}):`);
     for (const n of b.namenstreffer) z.push(`  · HubSpot „${n.hubspot}“ → Makler „${n.makler}“ (${n.maklerId})`);
+  }
+  if (b.kontaktdatenTreffer.length) {
+    z.push('');
+    z.push(`Treffer über Kontaktdaten mit nur ähnlichem oder fehlendem Namen (bitte ansehen, ${b.kontaktdatenTreffer.length}):`);
+    for (const n of b.kontaktdatenTreffer) z.push(`  · HubSpot „${n.hubspot}“ → Makler „${n.makler}“ (${n.maklerId}, über ${n.ueber === 'email' ? 'E-Mail' : 'Telefon'}, Name ${n.name === 'aehnlich' ? 'ähnlich' : 'fehlt'})`);
+  }
+  if (b.kollegen.length) {
+    z.push('');
+    z.push(`Neu angelegt trotz gleicher Kontaktdaten eines Bestandsmaklers — anderer Name, also Kollege (${b.kollegen.length}):`);
+    for (const n of b.kollegen) z.push(`  · HubSpot „${n.hubspot}“ neben Makler „${n.makler}“ (${n.maklerId}, gleiche ${n.ueber === 'email' ? 'E-Mail' : 'Telefonnummer'})`);
   }
   const ohne = b.zeilen.filter((x) => x.ergebnis === 'neu' && !x.unternehmen);
   if (ohne.length) {
