@@ -3,7 +3,7 @@
 // Änderungen hier vornehmen, danach `pnpm db:generate` (neue Migration, alte nie ändern).
 import { sql } from 'drizzle-orm';
 import {
-  type AnyPgColumn, bigint, boolean, check, date, doublePrecision, index, integer, jsonb, numeric, pgSchema, primaryKey, text, timestamp, uniqueIndex,
+  type AnyPgColumn, bigint, boolean, check, date, doublePrecision, index, integer, jsonb, numeric, pgSchema, primaryKey, text, timestamp,
 } from 'drizzle-orm/pg-core';
 import { DEAL_STATUS, START_STATUS } from '@gg/domain';
 
@@ -23,56 +23,19 @@ const zeitSpalten = {
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
 };
 
-/**
- * Unternehmen der Makler (Normalform seit 17.10.2026, Protokoll 32). Vorher stand die Firma als Text am Makler
- * (`makler.firma`); jetzt verweist `makler.unternehmen_id` hierher, der Firmenname kommt per Join zurück.
- */
-export const unternehmen = fach
-  .table(
-    'unternehmen',
-    {
-  id: text('id').primaryKey(),
-      name: text('name').notNull(),
-      /** Schlüssel zum Zusammenführen gleicher Firmen (@gg/domain `unternehmenNameNormieren`: lower · ein Leerzeichen · ohne Satzzeichen am Ende) */
-      nameNormiert: text('name_normiert').notNull(),
-      rechtsform: text('rechtsform'),
-      /** Domain aus Webseite oder E-Mail-Adressen der Makler („beispiel-immo.de“), Schlüssel für HubSpot und Impressumsprüfung */
-      domain: text('domain'),
-      webseite: text('webseite'),
-      strasse: text('strasse'),
-      plz: text('plz'),
-      ort: text('ort'),
-      tel: text('tel'),
-      fax: text('fax'),
-      email: text('email'),
-      notizen: text('notizen'),
-      /** Herkunft: umzug · hand · expose · hubspot · impressum */
-      quelle: text('quelle'),
-      /** Letzte Prüfung gegen Impressum und Webseite (Baustein D) */
-      geprueftAm: timestamp('geprueft_am', { withTimezone: true, mode: 'string' }),
-      reihenfolge: bigint('reihenfolge', { mode: 'number' }).notNull().default(sql`(-(extract(epoch from clock_timestamp()) * 1000000))::bigint`),
-          ...standardSpalten,
-    },
-    (t) => [
-      uniqueIndex('unternehmen_name_normiert_idx').on(t.nameNormiert).where(sql`${t.deletedAt} is null`),
-      index('unternehmen_domain_idx').on(t.domain),
-    ],
-  )
-  .enableRLS();
-
 export const makler = fach
   .table(
     'makler',
     {
   id: text('id').primaryKey(),
       name: text('name'),
-      /** Firma des Maklers (Normalform): Name per Join aus `unternehmen` */
-      unternehmenId: text('unternehmen_id').references((): AnyPgColumn => unternehmen.id, { onDelete: 'set null' }),
+      firma: text('firma'),
       /** Hauptnummer — die, die Wählmaschine und Briefing anrufen (alt: mobiltel || festnetztel || tel) */
       tel: text('tel'),
       mobil: text('mobil'),
       festnetz: text('festnetz'),
       email: text('email'),
+      webseite: text('webseite'),
       strasse: text('strasse'),
       plz: text('plz'),
       ort: text('ort'),
@@ -93,7 +56,6 @@ export const makler = fach
     },
     (t) => [
       index('makler_next_contact_idx').on(t.nextContact).where(sql`${t.deletedAt} is null`),
-      index('makler_unternehmen_idx').on(t.unternehmenId),
     ],
   )
   .enableRLS();
@@ -683,20 +645,6 @@ export const geoVerortungen = fach
   .table('geo_verortungen', {
   schluessel: text('schluessel').primaryKey(),
   ergebnis: jsonb('ergebnis'),
-  abgerufenAt: timestamp('abgerufen_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
-  })
-  .enableRLS();
-
-/**
- * Zwischenspeicher der Impressumsabfrage je Domain (Baustein B, 17.10.2026, Protokoll 32). `felder` null = kein Impressum
- * gefunden; `url` die Seite, aus der gelesen wurde. Treffer gelten 30 Tage, Fehlschläge 7 — danach wird neu geholt.
- * Nutzen Prüfung am Unternehmen (Einstellungen → Unternehmen) und die HubSpot-Übernahme (Baustein C) gemeinsam.
- */
-export const firmenAuskuenfte = fach
-  .table('firmen_auskuenfte', {
-  domain: text('domain').primaryKey(),
-  url: text('url'),
-  felder: jsonb('felder'),
   abgerufenAt: timestamp('abgerufen_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
   })
   .enableRLS();

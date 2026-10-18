@@ -12,8 +12,6 @@ import {
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { auditSchreiben } from './audit.ts';
 import { FachFehler } from '../fehler.ts';
-import type { Tx } from './tx.ts';
-import { maklerMitFirma, unternehmenFuerFirma } from './unternehmen.ts';
 
 const IGNORIERT = 'dubletten-ignoriert';
 
@@ -47,7 +45,7 @@ const beschriftung = (typ: DublettenEntitaet, x: any) =>
 /** findAllDuplicates über die aktiven Datensätze. */
 export async function dublettenScan(db: Db): Promise<DublettenPaarSicht[]> {
   // Reihenfolge wie in den Listen (alt: Reihenfolge der Sammlung) — sie bestimmt, welcher Eintrag im Paar vorn steht
-  const makler = await db.select(maklerMitFirma).from(schema.makler).where(isNull(schema.makler.deletedAt)).orderBy(asc(schema.makler.reihenfolge));
+  const makler = await db.select().from(schema.makler).where(isNull(schema.makler.deletedAt)).orderBy(asc(schema.makler.reihenfolge));
   const objekte = await db.select().from(schema.objekte).where(isNull(schema.objekte.deletedAt)).orderBy(asc(schema.objekte.reihenfolge));
   const deals = await db.select({ id: schema.deals.id, objektId: schema.deals.objektId, maklerId: schema.deals.maklerId, adresse: schema.objekte.strasse, maklerName: schema.makler.name })
     .from(schema.deals)
@@ -67,7 +65,7 @@ interface Aggregat { datensatz: any; listen: Record<string, any[]> }
 
 async function aggregat(db: Db, typ: DublettenEntitaet, id: string): Promise<Aggregat> {
   if (typ === 'makler') {
-    const [m] = await db.select(maklerMitFirma).from(schema.makler).where(eq(schema.makler.id, id));
+    const [m] = await db.select().from(schema.makler).where(eq(schema.makler.id, id));
     if (!m) throw new FachFehler(404, 'Makler nicht gefunden');
     const kommunikation = await db.select().from(schema.maklerKommunikation).where(eq(schema.maklerKommunikation.maklerId, id));
     return { datensatz: { ...m, kommunikation }, listen: { kommunikation } };
@@ -127,13 +125,6 @@ const spaltenWerte = (typ: DublettenEntitaet, zusammen: any) => {
   const felder: Record<string, unknown> = {};
   for (const f of FELDER[typ]) if (f in zusammen && f in tabelle) felder[f] = zusammen[f];
   if (typ === 'makler') { felder.tags = zusammen.tags ?? []; felder.persoenlich = zusammen.persoenlich ?? null; felder.kiSummary = null; felder.kiSummaryAt = null; }
-  return felder;
-};
-
-/** Makler: „firma“ und „webseite“ sind abgeleitete Felder — die Wahl wird als Unternehmen verknüpft (vorhanden oder neu). */
-const spaltenWerteMitUnternehmen = async (tx: Tx, typ: DublettenEntitaet, zusammen: any) => {
-  const felder = spaltenWerte(typ, zusammen);
-  if (typ === 'makler') felder.unternehmenId = await unternehmenFuerFirma(tx, zusammen.firma, { webseite: zusammen.webseite, email: zusammen.email });
   if (typ === 'deal') felder.kalkulation = zusammen.kalkulation ?? {};
   return felder;
 };
@@ -176,7 +167,7 @@ export async function dublettenZusammenfuehren(db: Db, typ: DublettenEntitaet, p
   const verweise: { tabelle: string; spalte: string; ids: string[] }[] = [];
 
   await db.transaction(async (tx) => {
-    await tx.update(t).set({ ...(await spaltenWerteMitUnternehmen(tx, typ, zusammen)), version: sql`${t.version} + 1`, updatedAt: sql`now()` }).where(eq(t.id, primaerId));
+    await tx.update(t).set({ ...spaltenWerte(typ, zusammen), version: sql`${t.version} + 1`, updatedAt: sql`now()` }).where(eq(t.id, primaerId));
 
     for (const liste of UNTERLISTEN[typ]) {
       const istWahl = WAHL_LISTEN[typ].includes(liste.name);
@@ -256,7 +247,7 @@ export async function dublettenRueckgaengig(db: Db, protokollId: string, erzwing
   }
 
   await db.transaction(async (tx) => {
-    await tx.update(t).set({ ...(await spaltenWerteMitUnternehmen(tx, typ, primaer.datensatz)), version: sql`${t.version} + 1`, updatedAt: sql`now()` }).where(eq(t.id, p.primaerId!));
+    await tx.update(t).set({ ...spaltenWerte(typ, primaer.datensatz), version: sql`${t.version} + 1`, updatedAt: sql`now()` }).where(eq(t.id, p.primaerId!));
     if (typ === 'makler') await tx.update(schema.makler).set({ kiSummary: primaer.datensatz.kiSummary ?? null, kiSummaryAt: primaer.datensatz.kiSummaryAt ?? null }).where(eq(schema.makler.id, p.primaerId!));
     await tx.update(t).set({ deletedAt: null }).where(eq(t.id, p.sekundaerId!));
 

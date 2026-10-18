@@ -16,7 +16,7 @@ import { auditSchreiben } from './audit.ts';
 
 /** Reihenfolge ist die Einspielreihenfolge: erst die Eltern, dann die Kinder. */
 export const SICHERUNG_TABELLEN = [
-  'unternehmen', 'makler', 'objekte', 'objektEinheiten', 'objektFotos', 'deals', 'dealEinheiten', 'dealSanierungen', 'dealKommentare',
+  'makler', 'objekte', 'objektEinheiten', 'objektFotos', 'deals', 'dealEinheiten', 'dealSanierungen', 'dealKommentare',
   'dealKalkVarianten', 'dealDokumente', 'dealStatusHistorie', 'exposeImporte', 'maklerKommunikation',
   'kundenkalkulationen', 'finanzpraesentationen', 'praesentationFolien', 'vertriebslisten', 'vertriebslisteZeilen',
   'projekte', 'projektEinheiten', 'projektMieterhistorie', 'projektAufgaben', 'projektGebaeudeMassnahmen',
@@ -35,7 +35,6 @@ export const SICHERUNG_AUSGENOMMEN: Record<string, string> = {
   archiveLedger: 'Ablage-Journal; wird aus den Dateien wieder aufgebaut.',
   maklerAnlaesse: 'Zwischenspeicher der KI-Kontaktanlässe, 24 Stunden gültig; entsteht beim nächsten Ansehen neu.',
   geoVerortungen: 'Zwischenspeicher des Kartendienstes (Adresse → Stadtteil); entsteht bei der nächsten Lagebeschreibung neu.',
-  firmenAuskuenfte: 'Zwischenspeicher der Impressumsabfrage je Domain; entsteht bei der nächsten Prüfung neu.',
 };
 
 type Tabellenname = (typeof SICHERUNG_TABELLEN)[number];

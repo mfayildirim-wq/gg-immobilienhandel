@@ -53,13 +53,6 @@ export interface MaklerPersonal {
   geburtstagQuelle?: string;      // 'manuell' | 'KI-extrahiert'
   letzteErwaehnung?: MaklerErwaehnung[];
   personenInfo?: PersonenInfo;    // OSINT: Web-Suche + Handelsregister
-  // ── aus HubSpot (Baustein C, 17.10.2026) ──
-  anrede?: string;                // „Herr“ / „Frau“
-  duSie?: 'Du' | 'Sie';
-  jobbezeichnung?: string;
-  mailingStatus?: string;         // „Makler Status Mailings“ aus HubSpot
-  /** Woher der Makler kam, wenn nicht von Hand oder aus einem Exposé */
-  herkunft?: { quelle: 'hubspot'; id: string; importiertAm: string; klassifizierung?: string; zustaendig?: string; stellung?: string; warnhinweis?: string; erstelltAm?: string };
 }
 
 

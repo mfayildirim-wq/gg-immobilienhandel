@@ -27,11 +27,6 @@ import type {
   MergeAusfuehren,
   MergeProtokollEintrag,
   MergeVorschau,
-  Unternehmen,
-  UnternehmenAendern,
-  UnternehmenAnlegen,
-  FirmendatenErgebnis,
-  FirmendatenPruefen,
   KalkVariante,
   KalkVarianteAnlegen,
   NachrichtEntwurf,
@@ -168,22 +163,6 @@ export function useMaklerAnlegen() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['makler'] }),
   });
 }
-
-// ── Unternehmen der Makler (Normalform 17.10.2026) ───────
-
-export const useUnternehmen = () => useQuery({ queryKey: ['unternehmen'], queryFn: () => anfrage<Unternehmen[]>('/api/unternehmen') });
-function useUnternehmenAendernAllgemein<E, R>(aufruf: (e: E) => Promise<R>) {
-  const qc = useQueryClient();
-  return useMutation({ mutationFn: aufruf, onSuccess: () => { void qc.invalidateQueries({ queryKey: ['unternehmen'] }); void qc.invalidateQueries({ queryKey: ['makler'] }); } });
-}
-export const useUnternehmenAnlegen = () => useUnternehmenAendernAllgemein((e: UnternehmenAnlegen) => anfrage<Unternehmen & { neu: boolean }>('/api/unternehmen', senden('POST', e)));
-export const useUnternehmenAendern = (id: string) => useUnternehmenAendernAllgemein((e: UnternehmenAendern) => anfrage<Geaendert>(`/api/unternehmen/${id}`, senden('PATCH', e)));
-export const useUnternehmenLoeschen = () => useUnternehmenAendernAllgemein((id: string) => anfrage<{ id: string }>(`/api/unternehmen/${id}`, { method: 'DELETE' }));
-export const useUnternehmenZusammenfuehren = () =>
-  useUnternehmenAendernAllgemein((e: { behaltenId: string; wegId: string }) => anfrage<{ id: string; makler: number }>(`/api/unternehmen/${e.behaltenId}/zusammenfuehren`, senden('POST', { wegId: e.wegId })));
-/** Firmendaten aus dem Impressum (Baustein B): leere Felder werden serverseitig gefüllt, Abweichungen kommen als Vorschläge zurück. */
-export const useFirmendatenPruefen = (id: string) =>
-  useUnternehmenAendernAllgemein((e: FirmendatenPruefen) => anfrage<FirmendatenErgebnis>(`/api/unternehmen/${id}/firmendaten`, senden('POST', e)));
 
 // ── Details ───────────────────────────────────────────────
 

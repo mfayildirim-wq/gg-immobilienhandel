@@ -1,4 +1,3 @@
-import { rechtsformAusName } from '@gg/domain';
 import type { KiClient } from './anthropic.ts';
 
 /**
@@ -71,14 +70,6 @@ export function kiAttrappe(): KiClient {
 
       const text = JSON.stringify(body?.messages ?? []).replace(/\\n/g, '\n');
       if (werkzeug === 'bezeichnungen_zuordnen') return antwortBezeichnungen(body);
-      // Firmendaten aus dem Impressum (Baustein B): „Feld: Wert“-Zeilen aus dem mitgeschickten Impressum-Text
-      if (werkzeug === 'firmendaten_speichern') {
-        const text = String(body.messages?.[0]?.content ?? '');
-        const wert = (bez: string) => new RegExp(`^${bez}\\s*[:：]\\s*(.+)$`, 'im').exec(text)?.[1]?.trim() ?? null;
-        const name = wert('Firma');
-        const input = { name, rechtsform: rechtsformAusName(name), strasse: wert('Straße'), plz: wert('PLZ'), ort: wert('Ort'), tel: wert('Telefon'), fax: wert('Fax'), email: wert('E-Mail') };
-        return { content: [{ type: 'tool_use', name: werkzeug, input }], usage: ohneKosten };
-      }
       const input = teilA(text);
       return { content: [{ type: 'tool_use', name: 'extract_expose_data', input }], usage: { input_tokens: 0, output_tokens: 0 } };
     },

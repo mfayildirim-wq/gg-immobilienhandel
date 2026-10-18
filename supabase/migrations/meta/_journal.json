@@ -71,34 +71,6 @@
       "when": 1791980000851,
       "tag": "20261014121320_expose_importe",
       "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1792248945062,
-      "tag": "20261017145545_unternehmen",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "7",
-      "when": 1792249031689,
-      "tag": "20261017145711_unternehmen_daten",
-      "breakpoints": true
-    },
-    {
-      "idx": 12,
-      "version": "7",
-      "when": 1792249032291,
-      "tag": "20261017145712_makler_ohne_firma",
-      "breakpoints": true
-    },
-    {
-      "idx": 13,
-      "version": "7",
-      "when": 1792253665269,
-      "tag": "20261017161425_firmen_auskuenfte",
-      "breakpoints": true
     }
   ]
 }

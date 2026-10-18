@@ -1,4 +1,4 @@
-import { IconBriefcase, IconBuildingBank, IconCalculator, IconChecklist, IconTableShare, IconTemplate, IconTrash, IconCopy, IconHistory, IconTool, IconKey, IconDatabaseExport, IconBook, IconShieldLock, IconMail, IconRobot, IconBuilding } from '@tabler/icons-react';
+import { IconBriefcase, IconBuildingBank, IconCalculator, IconChecklist, IconTableShare, IconTemplate, IconTrash, IconCopy, IconHistory, IconTool, IconKey, IconDatabaseExport, IconBook, IconShieldLock, IconMail, IconRobot } from '@tabler/icons-react';
 import type { ComponentType } from 'react';
 import { BegleitscheinEinstellungen } from '../components/begleitschein/BegleitscheinEinstellungen.tsx';
 import { PraesentationStandards } from '../components/praesentation/PraesentationStandards.tsx';
@@ -12,7 +12,6 @@ import { KiModelleEinstellungen } from '../components/KiModelleEinstellungen.tsx
 import { WerkzeugeEinstellungen } from '../components/WerkzeugeEinstellungen.tsx';
 import { AuditEinstellungen } from '../components/AuditEinstellungen.tsx';
 import { DublettenEinstellungen } from '../components/DublettenEinstellungen.tsx';
-import { UnternehmenEinstellungen } from '../components/UnternehmenEinstellungen.tsx';
 import { PapierkorbEinstellungen } from '../components/PapierkorbEinstellungen.tsx';
 import { VorlagenEinstellungen } from '../components/VorlagenEinstellungen.tsx';
 import { DdEinstellungen } from '../components/DdEinstellungen.tsx';
@@ -33,7 +32,6 @@ export const EINSTELLUNGEN_SEITEN: { pfad: string; label: string; icon: Componen
   { pfad: 'werkzeuge', label: 'Werkzeuge', icon: IconTool, komponente: WerkzeugeEinstellungen },
   { pfad: 'audit', label: 'Audit-Log', icon: IconHistory, komponente: AuditEinstellungen },
   { pfad: 'dubletten', label: 'Dubletten', icon: IconCopy, komponente: DublettenEinstellungen },
-  { pfad: 'unternehmen', label: 'Unternehmen', icon: IconBuilding, komponente: UnternehmenEinstellungen },
   { pfad: 'papierkorb', label: 'Papierkorb', icon: IconTrash, komponente: PapierkorbEinstellungen },
   { pfad: 'm365', label: 'Microsoft 365', icon: IconMail, komponente: M365Einstellungen },
   { pfad: 'freigaben', label: 'Aktionen nach außen', icon: IconShieldLock, komponente: FreigabenEinstellungen },

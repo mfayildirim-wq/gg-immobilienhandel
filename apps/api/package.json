@@ -8,8 +8,7 @@
     "start": "tsx --env-file-if-exists=../../.env src/server.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "bau:vercel": "node bau-vercel.mjs",
-    "hubspot": "tsx --env-file-if-exists=../../.env src/skripte/hubspot.ts"
+    "bau:vercel": "node bau-vercel.mjs"
   },
   "dependencies": {
     "@gg/api-contract": "workspace:*",

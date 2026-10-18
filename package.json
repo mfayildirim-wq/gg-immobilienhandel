@@ -23,7 +23,6 @@
     "umzug:probe": "pnpm --filter @gg/umzug umzug --trocken",
     "umzug:quelle": "pnpm --filter @gg/umzug quelle",
     "umzug:inventar": "pnpm --filter @gg/umzug inventar",
-    "hubspot": "pnpm --filter @gg/api hubspot",
     "golden:erzeugen": "tsx werkzeuge/golden-master/erzeugen.ts",
     "paritaet": "playwright test -c playwright.paritaet.config.ts",
     "paritaet:expose": "tsx --env-file-if-exists=.env tests/paritaet/expose.ts",

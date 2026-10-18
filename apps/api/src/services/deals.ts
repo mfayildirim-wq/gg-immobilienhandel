@@ -13,7 +13,6 @@ import { and, asc, desc, eq, isNull, notInArray, sql } from 'drizzle-orm';
 import { kalkStandardLesen } from './einstellungen.ts';
 import { versionFortschreiben } from './version.ts';
 import { FachFehler } from '../fehler.ts';
-import { maklerFirma } from './unternehmen.ts';
 import { objektTitel } from './objekte.ts';
 
 export type Quelle = 'ui' | 'wizard' | 'mcp' | 'umzug';
@@ -23,7 +22,7 @@ export async function dealListe(db: Db): Promise<DealListenEintrag[]> {
     .select({
       deal: schema.deals,
       objekt: { id: schema.objekte.id, strasse: schema.objekte.strasse, hausnr: schema.objekte.hausnr, stadt: schema.objekte.stadt },
-      makler: { id: schema.makler.id, name: schema.makler.name, firma: maklerFirma },
+      makler: { id: schema.makler.id, name: schema.makler.name, firma: schema.makler.firma },
     })
     .from(schema.deals)
     .innerJoin(schema.objekte, eq(schema.objekte.id, schema.deals.objektId))

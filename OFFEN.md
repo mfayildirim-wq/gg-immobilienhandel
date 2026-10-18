@@ -123,61 +123,6 @@ Die alte App verhält sich genauso; eine Änderung ist eine bewusste Abweichung 
       (`tests/e2e/ankauf.spec.ts`, Begründung steht dort). Beim Neuentwurf ohne Durchklicken durch die
       Warteschlange testen — der alte Test war davon abhängig, was vorherige Tests hinterlassen hatten.
 
-## Makler-Unternehmen und HubSpot (17.10.2026, Branch `makler-unternehmen`, Protokoll 32)
-
-Entscheidungen des Auftraggebers (17.10.): alle 700 neuen HubSpot-Kontakte übernehmen („Test“ = Prio C); Unternehmensfelder
-aus dem Impressum automatisch füllen, Maklerfelder nur als Vorschlag; Sammellauf nur von Hand, kein Cron.
-
-- [x] **A · Unternehmen als Tabelle** (`fach.unternehmen`, `makler.unternehmen_id`; `firma`/`webseite` am Makler weg, nach außen
-      abgeleitet). Migration in drei Schritten, Daten-Migration gegen die Prod-Kopie geprüft (117 Unternehmen, 72 mit Rechtsform,
-      103 mit Domain). Makler-Dialog mit Vorschlagsfeld, Einstellungen → Unternehmen mit Zusammenführen.
-- [x] **B · Firmenermittlung aus Domain und Webseite** (17.10.2026, Branch `firmenermittlung-impressum`): Impressum holen (übliche
-      Pfade `/impressum`, `/imprint` … je Host mit und ohne `www.`, sonst Link „Impressum“ von der Startseite; nur HTTPS, keine
-      internen Ziele wie beim Auto-Import, 8 s je Seite, 1 MB), Felder per Regel (`impressumFelder` in `@gg/domain`) **und**
-      Haiku (Werkzeug `firmendaten_speichern`, nur aus dem Text; KI hat Vorrang bei Name und Rechtsform, Regel füllt Lücken; ohne
-      KI gilt die Regel allein). Zwischenspeicher je Domain in `fach.firmen_auskuenfte` (Treffer 30 Tage, Fehlschlag 7 Tage;
-      Migration `20261017161425_firmen_auskuenfte`, nicht in der Sicherung). `POST /api/unternehmen/{id}/firmendaten` füllt leere
-      Felder (auch Domain/Webseite), setzt `geprueft_am`, liefert Abweichungen als Vorschläge; Kosten im Audit
-      `unternehmen/impressum`. Oberfläche: Knopf „🌐 Impressum prüfen“ im Dialog unter Einstellungen → Unternehmen, Abweichungen
-      mit „Übernehmen“ je Feld, „neu holen“ übergeht den Zwischenspeicher; Liste zeigt das Prüfdatum. Für C steht
-      `unternehmenAusDomain` bereit (vorhandenes Unternehmen über die Domain, sonst aus dem Impressum anlegen, Quelle `impressum`).
-      Nicht im Test geprüft: echte Maklerseiten (kein Netz im Test) — der Probelauf der HubSpot-Übernahme mit Netz zeigt,
-      welche Seitenformen die Regeln verfehlen.
-- [x] **C · HubSpot-Übernahme** (17.10.2026, Branch `firmenermittlung-impressum`): `pnpm hubspot <datei.xlsx> [--trocken] [--ohne-netz]`
-      (Skript `apps/api/src/skripte/hubspot.ts`, Regeln `packages/domain/src/makler/hubspot.ts`, Service `services/hubspotUebernahme.ts`).
-      Abgleich HubSpot-ID → E-Mail (auch Zusatzadressen, weitere Kontakte) → Telefon (Haupt/Mobil/Festnetz) → gleicher Name ohne
-      Titel (bewusst nicht die unscharfe Dubletten-Ähnlichkeit). Bekannte Makler nur in leeren Feldern ergänzt (Telefon, Mobil, E-Mail,
-      Anschrift, `persoenlich`, fehlendes Unternehmen); neue mit Prio aus der Klassifizierung (VIP/High Potential → A, B → B, sonst C),
-      Frequenz Monatlich (Exit → Nie), Tag „HubSpot“, `lastContact` aus „Letzte Kontaktaufnahme“; Anrede, Du/Sie, Jobbezeichnung
-      (sonst Beruf), Mailing-Status und Herkunft (HubSpot-ID, Klassifizierung, zuständig, Warnhinweis) in `persoenlich`. Telefon
-      bereinigt (Excel-Hochkomma, „49…“ ohne Plus, Platzhalter „…0000000“ und „'+“ verworfen). Unternehmen je E-Mail-Domain:
-      vorhanden → aus dem Impressum (B, Zwischenspeicher bleibt auch im Probelauf) → Platzhalter aus „Unternehmensname“ bzw. Domain
-      mit Quelle `hubspot` („Name prüfen“ in der Liste, HubSpot-Anschrift in den Notizen); Freemail → kein Unternehmen. Probelauf
-      schreibt in einer Transaktion und rollt zurück, Bericht gleich (`berichte/hubspot-<zeit>.md/.json`, mit Namenstreffern zum Ansehen).
-      Probelauf lokal **mit Netz und Haiku** (17.10., ~5 min, 1,21 € KI): 771 gelesen, 33 bekannt (30 Telefon, 3 Name), 738 neu
-      (A 83, B 70, C 585, Nie 12); Unternehmen je Domain: 331 aus dem Impressum, 102 Platzhalter, 14 Makler ohne (9 Freemail).
-      432 Domains abgefragt, 338 Impressen gefunden (331 mit Firmennamen, 321 mit Telefon, 330 mit PLZ; 106 ohne Rechtsform =
-      Einzelunternehmen), Stichprobe der Namen sauber. 94 ohne Treffer: Bot-Sperre 403 (von Poll, McMakler, CBRE, Colliers),
-      Hosts ohne 443, die nur per HTTP umleiten (Sparkassen-Kurzdomains → HTTP-Startseite als letzter Kandidat nachgerüstet),
-      unvollständige Zertifikatsketten, 500/404.
-      **Probelauf gegen die private Prod (17.10., 149 Makler bekannt, Migrationen vorher eingespielt):** erster Lauf deckte einen
-      Fehler im Abgleich auf — 24 Kontakte wären in 13 andere Makler gemischt worden, weil Kollegen die Zentralnummer (Engel &
-      Völkers, McMakler, hust-immobilien), ein Sammelpostfach („info@“, „mail@“) oder einen Eintrag in den weiteren Kontakten teilen;
-      fünf davon auf Makler, die im selben Lauf gerade erst angelegt wurden. **Regel seither (Branch `hubspot-namensschutz`):**
-      E-Mail- und Telefon-Treffer gelten nur, wenn der Name passt (`hubspotNamePasst`: gleich ohne Titel; ähnlich = Vor- und
-      Nachname getrennt — Tippfehler, Kurzform Max/Maximilian, Initiale L. Schweitzer, Reihenfolge; einer fehlt), sonst sucht der
-      Abgleich weiter (Namenstreffer) oder legt neu an. Der Bericht nennt Treffer mit nur ähnlichem oder fehlendem Namen und die
-      „Kollegen“ (neu trotz gleicher Kontaktdaten) zum Ansehen; ein Bestandsmakler ohne Namen bekommt den HubSpot-Namen.
-      Endstand Prod-Probelauf: 771 gelesen, 69 bekannt (E-Mail 52, Telefon 5, Name 12; 67 ergänzt: Anschrift 34–37, `persoenlich` 66,
-      Mobil 6, Name 1), 702 neu (A 52, B 57, C 593, Nie 13); Unternehmen vorhanden 36, Impressum 302, Platzhalter 69, 13 Makler ohne
-      (9 Freemail); 37 Kollegen, 8 Kontaktdaten-Treffer mit ähnlichem/fehlendem Namen (alle gesichtet, dieselbe Person), 12
-      Namenstreffer (alle exakt). Bekannt und bewusst neu: „Nitay“ neben „Nityanand Trampler“ (Kurzform, mit Regeln nicht
-      sauber zu treffen → Dubletten-Prüfung); Impressum von `li-mmo.de` liefert den Hoster „checkdomain GmbH“ (geparkte Domain).
-      **Offen:** scharf schreiben `UMZUG_ZIEL_FREIGABE=ja pnpm hubspot <datei>` nach Freigabe (Sicherung vorher).
-- [ ] **D · Prüfroutine „Maklerdaten prüfen“:** Knopf im Makler-Dialog (Impressum + Team-Seite + DuckDuckGo, Abweichungen als
-      Vorschlagsknöpfe am Feld), Sammellauf unter Einstellungen → Werkzeuge in Paketen mit Fortschritt und Ergebnisliste
-      (`geprueft_am` je Makler und Unternehmen). Nichts wird automatisch überschrieben.
-
 ## Exposé-Import v3 (14.10.2026, Branch `expose-import-v3`, Protokoll 31)
 
 Übernommen aus `expose-extraktion-v1` mit den sieben Pflichtpunkten; die Bereinigung (Abschnitt 4 und 7.5 in Protokoll 31)
@@ -228,9 +173,9 @@ richtig). Vorher lief beides online leer, weil `@napi-rs/canvas` dem API-Paket f
 - [x] Paritätstest Exposé-Import: Zahl „1.900000 Euro“ (Tausenderpunkte im Textlayer verloren) wurde 1,9 — auf der privaten
       Produktion steht der Postplatz-Deal vom 14.10. 14:03 mit Kaufpreis 1,9 € in der Kalkulation (von Hand auf 1.950.000 setzen);
       `tokenLesen` liest Dreiergruppen hinter einem einzelnen Trennzeichen jetzt als Tausender.
-- [x] ~~KI gesperrt bis 01.11.2026~~ — erledigt (17.10.2026, Auftraggeber): das Nutzungslimit des Anthropic-Schlüssels gilt nicht mehr,
-      die KI läuft wieder (Impressum-Deutung mit Haiku am 17.10. lokal gelaufen).
-- [ ] Paritätslauf für McMakler (v2) nachholen: `pnpm paritaet:expose --nur McMakler_Expose` (fehlte wegen des damaligen Limits).
+- [ ] **KI gesperrt bis 01.11.2026:** Der Anthropic-Schlüssel der privaten Produktion (derselbe wie in der lokalen `.env`) hat sein
+      Nutzungslimit erreicht — jede Analyse endet mit „Nutzungslimit erreicht“. Limit in der Anthropic-Konsole (Settings → Limits)
+      erhöhen. Der Paritätslauf für McMakler (v2) fehlt deshalb; nach der Freigabe `pnpm paritaet:expose --nur McMakler_Expose` nachholen.
 - [ ] Folgeschritte (Protokoll 31, 7.5), nicht dringend: „Abbrechen“ räumt den Import auf; Ergänzen-Modus ohne Deal-Schritt;
       Prüfseite nutzt `uebernahmeWert` aus der Domain und fragt vor dem Überschreiben; Toleranz je Typ (Jahr, Stückzahl
       exakt); Kaufpreis mit zwei Zielen; Leerstand „frei ab“; Typerkennung nur auf dem Typ-Feld; Datum nicht als Zahl;

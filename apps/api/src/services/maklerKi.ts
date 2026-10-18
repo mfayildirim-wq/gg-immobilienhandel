@@ -7,11 +7,10 @@ import {
 import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { auditSchreiben } from './audit.ts';
 import { FachFehler } from '../fehler.ts';
-import { maklerMitFirma } from './unternehmen.ts';
 
 const PERSONA_PROFIL = 'persona-profil';
 
-export async function kostenBuchen(db: Db, a: KiAntwort<unknown>, quelle: string, metadata: Record<string, unknown>) {
+async function kostenBuchen(db: Db, a: KiAntwort<unknown>, quelle: string, metadata: Record<string, unknown>) {
   try {
     const b = kostenBuchung(a.model, a.usage, quelle, metadata);
     await auditSchreiben(db, { type: b.type, aiModel: b.ai_model, aiFunction: quelle, source: quelle, inputTokens: b.input_tokens, outputTokens: b.output_tokens, costEur: b.cost_eur, metadata: b.metadata });
@@ -27,7 +26,7 @@ const kiPruefen = (ki: KiClient | null | undefined) => {
 
 /** Makler und Kommunikation im Altformat (neueste zuerst, `ts` wie die alte Sammlung). */
 async function maklerMitKomm(db: Db, id: string) {
-  const [m] = await db.select(maklerMitFirma).from(schema.makler).where(and(eq(schema.makler.id, id), isNull(schema.makler.deletedAt)));
+  const [m] = await db.select().from(schema.makler).where(and(eq(schema.makler.id, id), isNull(schema.makler.deletedAt)));
   if (!m) throw new FachFehler(404, 'Makler nicht gefunden');
   const zeilen = await db.select().from(schema.maklerKommunikation).where(eq(schema.maklerKommunikation.maklerId, id)).orderBy(sql`${schema.maklerKommunikation.zeitpunkt} desc nulls last`, desc(schema.maklerKommunikation.id));
   const komm = zeilen.filter((k) => k.text).map((k) => ({ id: k.id, ts: kommZeitstempel(k.zeitpunkt), kanal: k.kanal ?? 'notiz', richtung: k.richtung, betreff: k.betreff, text: k.text! }));

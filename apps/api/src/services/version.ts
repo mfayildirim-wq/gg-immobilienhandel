@@ -3,7 +3,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { FachFehler } from '../fehler.ts';
 import type { Tx } from './tx.ts';
 
-type Versioniert = typeof schema.deals | typeof schema.makler | typeof schema.objekte | typeof schema.unternehmen;
+type Versioniert = typeof schema.deals | typeof schema.makler | typeof schema.objekte;
 
 /**
  * Optimistisches Sperren (07, Regel 6): Zeile sperren, Version vergleichen, Version erhöhen.
