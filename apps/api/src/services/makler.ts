@@ -5,7 +5,7 @@ import { type DealStatus, erledigtTermin, kommZeitstempel, letzterKontaktNachEin
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { FachFehler } from '../fehler.ts';
 import { objektTitel } from './objekte.ts';
-import { MAKLER_AUFGELOEST, MAKLER_FIRMA, MAKLER_NAME, maklerFirmaSetzen, maklerInsUnternehmen, UNTERNEHMEN_JOIN, unternehmenKurz } from './unternehmen.ts';
+import { MAKLER_AUFGELOEST, MAKLER_FIRMA, MAKLER_NAME, maklerFirmaSetzen, maklerInsUnternehmen, UNTERNEHMEN_JOIN, unternehmenFaxSetzen, unternehmenKurz } from './unternehmen.ts';
 import { versionFortschreiben } from './version.ts';
 
 const spalten = {
@@ -64,6 +64,8 @@ export async function maklerDetail(db: Db, id: string): Promise<MaklerDetail> {
     kontaktFrequenz: m.kontaktFrequenz, nextContact: m.nextContact, version: m.version, webseite: m.webseite,
     mobil: m.mobil, festnetz: m.festnetz, strasse: m.strasse, plz: m.plz, ort: m.ort,
     weitereKontakte: (m.weitereKontakte as MaklerDetail['weitereKontakte']) ?? null, unternehmen,
+    anrede: m.anrede, position: m.position, stellung: m.stellung, zustaendig: m.zustaendig, hinweis: m.hinweis,
+    mailingStatus: m.mailingStatus, mailsAbgemeldet: m.mailsAbgemeldet, rechtsgrundlage: m.rechtsgrundlage, quelle: m.quelle, fax: m.fax,
     persoenlich: (m.persoenlich as Record<string, unknown> | null) ?? null,
     lastContact: m.lastContact, beziehungsNotiz: m.beziehungsNotiz, kommunikation,
     kiSummary: m.kiSummary, kiSummaryAt: m.kiSummaryAt ? kommZeitstempel(m.kiSummaryAt) : null, erstellt: m.createdAt.slice(0, 10),
@@ -78,10 +80,13 @@ export async function maklerAendern(db: Db, id: string, eingabe: MaklerAendern) 
     // mkSave: Telefon normalisiert (0049→+49, ohne Klammern)
     if (felder.tel) felder.tel = telefonNormalisieren(felder.tel);
     for (const k of ['mobil', 'festnetz'] as const) if (felder[k]) felder[k] = telefonNormalisieren(felder[k]);
-    for (const k of ['mobil', 'festnetz'] as const) if (felder[k] === '') felder[k] = null;
+    for (const k of ['mobil', 'festnetz', 'anrede', 'position', 'stellung', 'zustaendig', 'hinweis', 'mailingStatus', 'rechtsgrundlage', 'quelle', 'fax'] as const) {
+      if (felder[k] === '') felder[k] = null;
+    }
     // Firma, Webseite, Anschrift gehören dem Unternehmen
-    const { firma, webseite, strasse, plz, ort, nachname, ...rest } = felder;
+    const { firma, webseite, strasse, plz, ort, fax, nachname, ...rest } = felder;
     await maklerFirmaSetzen(tx, id, { firma, webseite, strasse, plz, ort });
+    if (fax !== undefined) await unternehmenFaxSetzen(tx, id, fax);
     // Voller Name in einem Feld leert den Vornamen; getrennt kommen Vorname und Nachname (19.10.2026)
     if (rest.name !== undefined && rest.vorname === undefined) Object.assign(rest, { vorname: null });
     if (nachname !== undefined) Object.assign(rest, { name: nachname });
