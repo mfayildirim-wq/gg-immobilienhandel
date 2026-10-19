@@ -146,10 +146,11 @@ Alles läuft mit `npx supabase db push --dry-run`, dann ohne — kein Skript von
 3. `hubspot_daten`: der HubSpot-Export (`supabase/daten/hubspot-makler-2026-10-05.csv`, als Datenblock in der Migration).
    Vorhandene Makler (E-Mail, sonst Telefon, sonst eindeutiger Name) und Unternehmen (Firmenschlüssel) werden nur
    ergänzt; die Priorität kommt aus der HubSpot-Klassifizierung (VIP/High Potential → A, B, C; sonst bleibt sie). Alle
-   anderen werden neu angelegt (Kontakt-Frequenz „Monatlich“). Ohne Firmennamen kein Unternehmen.
+   anderen werden neu angelegt: Kontakt-Frequenz „Alle 3 Monate“, der nächste Kontakt gleichmäßig auf die 3 Monate ab
+   dem Einspielen verteilt (A zuerst). Ohne Firmennamen kein Unternehmen.
 
 Probe auf einer Kopie der privaten Prod (19.10.2026): 117 Unternehmen aus dem Bestand; danach 68 Makler ergänzt (27 mit
-neuer Priorität), 699 neu, 209 Unternehmen neu, 8 ergänzt. Das Cockpit zeigt danach 785 statt 144 überfällige Makler.
+neuer Priorität), 699 neu, 209 Unternehmen neu, 8 ergänzt.
 
 ## Vor jedem Deployment
 

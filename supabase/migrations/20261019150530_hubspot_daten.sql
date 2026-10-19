@@ -5,7 +5,9 @@
 -- Makler: gesucht über E-Mail, sonst Telefon, sonst vollen Namen (jeweils nur, wenn genau einer passt; ohne Papierkorb).
 --   Vorhanden: nur leere Felder werden gefüllt. Ausnahme Priorität: die HubSpot-Klassifizierung gewinnt
 --   (VIP und High Potential → A, B → B, C → C; sonst bleibt die Priorität).
---   Nicht vorhanden: neu angelegt, Kontakt-Frequenz „Monatlich“, Priorität aus der Klassifizierung (sonst leer).
+--   Nicht vorhanden: neu angelegt, Priorität aus der Klassifizierung (sonst leer), Kontakt-Frequenz „Alle 3 Monate“.
+--   Der nächste Kontakt wird gleichmäßig auf die 3 Monate ab dem Einspielen verteilt (A zuerst), damit das Cockpit
+--   nicht auf einen Schlag Hunderte überfällige Makler zeigt — die letzten Kontakte aus HubSpot liegen meist in 2025.
 --   Ohne E-Mail, Telefon und Namen wird eine Zeile übergangen; doppelte Zeilen (gleiche E-Mail bzw. Name) zählen einmal.
 -- Unternehmen: nur mit Firmennamen, gesucht über den Firmenschlüssel. Vorhanden: nur Lücken füllen, sonst neu.
 --   Ein Makler mit Unternehmen behält es; ohne bekommt er das aus HubSpot; ohne Firmennamen bleibt er ohne.
@@ -1004,11 +1006,13 @@ where m.id = n.id
        n.hinweis, n.mailing_status, n.mails_abgemeldet, n.rechtsgrundlage, n.quelle, n.unternehmen_id);
 
 -- Neue Makler: nur, wenn niemand im Bestand dieselbe E-Mail, Telefonnummer oder denselben Namen hat
-insert into fach.makler (id, vorname, name, email, tel, mobil, prio, kontakt_frequenz, last_contact, persoenlich, anrede, position,
+insert into fach.makler (id, vorname, name, email, tel, mobil, prio, kontakt_frequenz, last_contact, next_contact, persoenlich, anrede, position,
   stellung, zustaendig, hinweis, mailing_status, mails_abgemeldet, rechtsgrundlage, quelle, unternehmen_id, weitere_kontakte)
 select gen_random_uuid()::text,
   case when h.nachname is not null then h.vorname end, coalesce(h.nachname, h.vorname),
-  h.email, coalesce(h.tel, h.mobil), h.mobil, h.prio, 'Monatlich', h.letzter_kontakt,
+  h.email, coalesce(h.tel, h.mobil), h.mobil, h.prio, 'Alle 3 Monate', h.letzter_kontakt,
+  current_date + 1 + floor((row_number() over (order by case h.prio when 'A' then 0 when 'B' then 1 when 'C' then 2 else 3 end, h.zeile) - 1)
+    * 91.0 / count(*) over ())::int,
   case when h.anrede_form is not null then jsonb_build_object('anredeForm', h.anrede_form) end,
   h.anrede, h.position, h.stellung, h.zustaendig, h.hinweis, h.mailing_status, h.mails_abgemeldet, h.rechtsgrundlage, h.quelle, f.id,
   case when f.id is null and cardinality(h.weitere_emails) > 0

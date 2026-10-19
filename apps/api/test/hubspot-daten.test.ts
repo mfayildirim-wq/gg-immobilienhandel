@@ -112,10 +112,15 @@ describe.skipIf(!url)('Migrationen Unternehmen-Übernahme und HubSpot', () => {
     expect(firma(`${k} Firma GmbH`)!.weitereKontakte).toEqual({ namen: [], telefonnummern: [], emails: [`erna.privat@${k}.de`] });
     expect(makler('Zwei')).toMatchObject({ prio: 'B', unternehmenId: `${k}u` });
     expect(firma(`${k} Alt AG`)).toMatchObject({ webseite: 'www.alt.example', fax: '0711 99' });
-    expect(makler('Neu')).toMatchObject({ vorname: 'Nina', email: `nina@${k}.de`, prio: 'C', kontaktFrequenz: 'Monatlich', lastContact: '2026-04-22', mailsAbgemeldet: true, mailingStatus: 'Keine Mails mehr schicken', unternehmenId: firma(`${k} Neu GmbH`)!.id });
+    expect(makler('Neu')).toMatchObject({ vorname: 'Nina', email: `nina@${k}.de`, prio: 'C', kontaktFrequenz: 'Alle 3 Monate', lastContact: '2026-04-22', mailsAbgemeldet: true, mailingStatus: 'Keine Mails mehr schicken', unternehmenId: firma(`${k} Neu GmbH`)!.id });
     expect(firma(`${k} Neu GmbH`)).toMatchObject({ strasse: 'Weg 1', plz: '70173', ort: 'Stuttgart' });
     expect(firma(`${k} Anders GmbH`)).toBeUndefined();
     expect(makler('Ohne')).toMatchObject({ prio: null, unternehmenId: null });
+    // nächster Kontakt verteilt auf die 3 Monate ab heute, A vor C vor leer
+    const heute = new Date().toISOString().slice(0, 10);
+    const naechster = (name: string) => makler(name).nextContact!;
+    for (const n of ['Neu', 'Ohne']) expect(naechster(n) > heute && naechster(n) <= new Date(Date.now() + 92 * 864e5).toISOString().slice(0, 10)).toBe(true);
+    expect(naechster('Neu') <= naechster('Ohne')).toBe(true);
 
     const stand = (x: typeof ist.erst) => [...x.m.map((y) => `${y.id}:${y.version}`), ...x.u.map((y) => `${y.id}:${y.version}`)].sort();
     expect(stand(ist.dann)).toEqual(stand(ist.erst));
