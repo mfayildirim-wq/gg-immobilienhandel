@@ -17,7 +17,7 @@ import { exposeExtraktionLesen, kalkStandardLesen } from './einstellungen.ts';
 import { detailsLesen, detailsSetzen, fuerAngaben, listeAnhaengen } from './exposeAngaben.ts';
 import { fotoHochladen } from './fotos.ts';
 import { objektTitel } from './objekte.ts';
-import { MAKLER_AUFGELOEST, MAKLER_FIRMA, maklerInsUnternehmen, UNTERNEHMEN_JOIN } from './unternehmen.ts';
+import { MAKLER_AUFGELOEST, MAKLER_FIRMA, MAKLER_NAME, maklerInsUnternehmen, UNTERNEHMEN_JOIN } from './unternehmen.ts';
 
 export interface ExposeKontext {
   speicher: Dateispeicher;
@@ -159,7 +159,7 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
 
   // Hat das erkannte Objekt schon Deals? Dann kann dieses PDF einen davon ergänzen (Fotos, Makler, Exposé) statt einen zweiten anzulegen
   const bestehendeDeals = dObj
-    ? (await db.select({ id: schema.deals.id, status: schema.deals.status, makler: schema.makler.name, firma: MAKLER_FIRMA })
+    ? (await db.select({ id: schema.deals.id, status: schema.deals.status, makler: MAKLER_NAME, firma: MAKLER_FIRMA })
       .from(schema.deals).leftJoin(schema.makler, eq(schema.makler.id, schema.deals.maklerId)).leftJoin(schema.unternehmen, UNTERNEHMEN_JOIN)
       .where(and(eq(schema.deals.objektId, dObj.match.id), isNull(schema.deals.deletedAt))).orderBy(desc(schema.deals.createdAt)))
       .map((d) => ({ id: d.id, status: d.status, makler: [d.makler, d.firma].filter(Boolean).join(' · ') || null }))

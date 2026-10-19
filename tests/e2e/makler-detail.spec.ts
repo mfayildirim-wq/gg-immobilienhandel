@@ -61,3 +61,17 @@ test('Makler-Detail: Profil (Prio, Telefon normalisiert, Nicht kontaktieren), No
   await expect(s).not.toContainText(name);
   expect((await page.request.get(`/api/makler/${m.id}`)).status()).toBe(404);
 });
+
+// Vorname (19.10.2026): eigenes Feld; angezeigt wird „Vorname Name“
+test('Makler-Profil: Vorname und Name getrennt bearbeiten, Anzeige mit beidem', async ({ page }) => {
+  const k = `Vorname${Date.now()}`;
+  const m = await (await page.request.post('/api/makler', { data: { name: `Anna ${k}` } })).json();
+  await page.goto(`/makler?makler=${m.id}`);
+  const s = page.getByRole('region', { name: 'Makler-Detail' });
+  await expect(s.getByLabel('Name', { exact: true })).toHaveValue(`Anna ${k}`);
+  await s.getByLabel('Vorname').fill('Anna');
+  await s.getByLabel('Name', { exact: true }).fill(k);
+  await s.getByRole('button', { name: 'Speichern' }).click();
+  await expect.poll(async () => (await (await page.request.get(`/api/makler/${m.id}`)).json())).toMatchObject({ name: `Anna ${k}`, vorname: 'Anna', nachname: k });
+  await page.request.delete(`/api/makler/${m.id}`);
+});

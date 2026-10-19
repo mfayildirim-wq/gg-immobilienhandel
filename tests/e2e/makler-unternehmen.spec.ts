@@ -18,7 +18,7 @@ test('Makler-Profil: Block „Unternehmen“ nennt die Kollegen; die Webseite gi
 
   // Über den Kollegen-Link zum anderen Makler: er zeigt dieselbe Webseite
   await s.locator('[data-unternehmen-kollegen]').getByText(`${k} Bernd`).click();
-  await expect(s.getByLabel('Name')).toHaveValue(`${k} Bernd`);
+  await expect(s.getByLabel('Name', { exact: true })).toHaveValue(`${k} Bernd`);
   await expect(s.getByLabel('Webseite')).toHaveValue('www.gemeinsam.example');
 
   for (const id of [a.id, b.id]) await page.request.delete(`/api/makler/${id}`);

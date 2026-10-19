@@ -7,7 +7,7 @@ import {
 import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { auditSchreiben } from './audit.ts';
 import { FachFehler } from '../fehler.ts';
-import { MAKLER_AUFGELOEST, UNTERNEHMEN_JOIN } from './unternehmen.ts';
+import { MAKLER_AUFGELOEST, MAKLER_NAME, UNTERNEHMEN_JOIN } from './unternehmen.ts';
 
 const PERSONA_PROFIL = 'persona-profil';
 
@@ -87,7 +87,7 @@ export async function persoenlichesErgaenzen(db: Db, ki: KiClient | null | undef
 
 /** Alle Makler mit ihrer Kommunikation im Altformat (für Konfidenz und Stilanalyse). */
 async function alleMaklerMitKomm(db: Db) {
-  const makler = await db.select({ id: schema.makler.id, name: schema.makler.name }).from(schema.makler).where(isNull(schema.makler.deletedAt));
+  const makler = await db.select({ id: schema.makler.id, name: MAKLER_NAME }).from(schema.makler).where(isNull(schema.makler.deletedAt));
   const komm = makler.length ? await db.select().from(schema.maklerKommunikation).where(inArray(schema.maklerKommunikation.maklerId, makler.map((x) => x.id))) : [];
   return makler.map((mk) => ({ name: mk.name, komm: komm.filter((k) => k.maklerId === mk.id).map((k) => ({ ts: kommZeitstempel(k.zeitpunkt), kanal: k.kanal, richtung: k.richtung, betreff: k.betreff, text: k.text })) }));
 }

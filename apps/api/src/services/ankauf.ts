@@ -14,7 +14,7 @@ import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { FachFehler } from '../fehler.ts';
 import { objektTitel } from './objekte.ts';
 import { versionFortschreiben } from './version.ts';
-import { MAKLER_AUFGELOEST, MAKLER_FIRMA, UNTERNEHMEN_JOIN } from './unternehmen.ts';
+import { MAKLER_AUFGELOEST, MAKLER_FIRMA, MAKLER_NAME, UNTERNEHMEN_JOIN } from './unternehmen.ts';
 
 const aktiveMakler = (db: Db) =>
   db.select(MAKLER_AUFGELOEST).from(schema.makler).leftJoin(schema.unternehmen, UNTERNEHMEN_JOIN).where(isNull(schema.makler.deletedAt)).orderBy(desc(schema.makler.createdAt));
@@ -118,7 +118,7 @@ export async function ankaufCockpit(db: Db, heute: string): Promise<AnkaufCockpi
 async function tageslog(db: Db): Promise<TageslogEintrag[]> {
   const heuteBerlin = sql`(now() at time zone 'Europe/Berlin')::date`;
   const komm = await db
-    .select({ zeitpunkt: schema.maklerKommunikation.zeitpunkt, text: schema.maklerKommunikation.text, kanal: schema.maklerKommunikation.kanal, name: schema.makler.name, firma: MAKLER_FIRMA })
+    .select({ zeitpunkt: schema.maklerKommunikation.zeitpunkt, text: schema.maklerKommunikation.text, kanal: schema.maklerKommunikation.kanal, name: MAKLER_NAME, firma: MAKLER_FIRMA })
     .from(schema.maklerKommunikation)
     .innerJoin(schema.makler, eq(schema.makler.id, schema.maklerKommunikation.maklerId))
     .leftJoin(schema.unternehmen, UNTERNEHMEN_JOIN)

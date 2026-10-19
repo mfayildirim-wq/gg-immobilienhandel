@@ -5,12 +5,12 @@ import { type DealStatus, erledigtTermin, kommZeitstempel, letzterKontaktNachEin
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { FachFehler } from '../fehler.ts';
 import { objektTitel } from './objekte.ts';
-import { MAKLER_AUFGELOEST, MAKLER_FIRMA, maklerFirmaSetzen, maklerInsUnternehmen, UNTERNEHMEN_JOIN, unternehmenKurz } from './unternehmen.ts';
+import { MAKLER_AUFGELOEST, MAKLER_FIRMA, MAKLER_NAME, maklerFirmaSetzen, maklerInsUnternehmen, UNTERNEHMEN_JOIN, unternehmenKurz } from './unternehmen.ts';
 import { versionFortschreiben } from './version.ts';
 
 const spalten = {
   id: schema.makler.id,
-  name: schema.makler.name,
+  name: MAKLER_NAME,
   firma: MAKLER_FIRMA,
   tel: schema.makler.tel,
   email: schema.makler.email,
@@ -26,7 +26,7 @@ export async function maklerListe(db: Db) {
     .from(schema.makler)
     .leftJoin(schema.unternehmen, UNTERNEHMEN_JOIN)
     .where(isNull(schema.makler.deletedAt))
-    .orderBy(asc(schema.makler.name));
+    .orderBy(asc(MAKLER_NAME));
   return zeilen.map((z) => ({ ...z, prio: z.prio as 'A' | 'B' | 'C' | null }));
 }
 
@@ -60,7 +60,7 @@ export async function maklerDetail(db: Db, id: string): Promise<MaklerDetail> {
     .innerJoin(schema.objekte, eq(schema.objekte.id, schema.deals.objektId))
     .where(and(eq(schema.deals.maklerId, id), isNull(schema.deals.deletedAt)));
   return {
-    id: m.id, name: m.name, firma: m.firma, tel: m.tel, email: m.email, prio: m.prio as 'A' | 'B' | 'C' | null,
+    id: m.id, name: m.name, vorname: m.vorname, nachname: m.nachname, firma: m.firma, tel: m.tel, email: m.email, prio: m.prio as 'A' | 'B' | 'C' | null,
     kontaktFrequenz: m.kontaktFrequenz, nextContact: m.nextContact, version: m.version, webseite: m.webseite,
     mobil: m.mobil, festnetz: m.festnetz, strasse: m.strasse, plz: m.plz, ort: m.ort,
     weitereKontakte: (m.weitereKontakte as MaklerDetail['weitereKontakte']) ?? null, unternehmen,
@@ -80,8 +80,11 @@ export async function maklerAendern(db: Db, id: string, eingabe: MaklerAendern) 
     for (const k of ['mobil', 'festnetz'] as const) if (felder[k]) felder[k] = telefonNormalisieren(felder[k]);
     for (const k of ['mobil', 'festnetz'] as const) if (felder[k] === '') felder[k] = null;
     // Firma, Webseite, Anschrift gehören dem Unternehmen
-    const { firma, webseite, strasse, plz, ort, ...rest } = felder;
+    const { firma, webseite, strasse, plz, ort, nachname, ...rest } = felder;
     await maklerFirmaSetzen(tx, id, { firma, webseite, strasse, plz, ort });
+    // Voller Name in einem Feld leert den Vornamen; getrennt kommen Vorname und Nachname (19.10.2026)
+    if (rest.name !== undefined && rest.vorname === undefined) Object.assign(rest, { vorname: null });
+    if (nachname !== undefined) Object.assign(rest, { name: nachname });
     if (Object.keys(rest).length) await tx.update(schema.makler).set(rest).where(eq(schema.makler.id, id));
     return { id, version: neu };
   });

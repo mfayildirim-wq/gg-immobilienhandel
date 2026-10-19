@@ -26,8 +26,13 @@ export const UNTERNEHMEN_JOIN = and(eq(u.id, m.unternehmenId), isNull(u.deletedA
 export const MAKLER_FIRMA = sql<string | null>`coalesce(${u.name}, ${m.firma})`;
 
 /** Alle Makler-Spalten, Firmenfelder aus dem Unternehmen (Anschrift nur als Ganzes). */
+/** Anzeigename „Vorname Name“; ohne Vorname steht der volle Name in `name` (19.10.2026). */
+export const MAKLER_NAME = sql<string | null>`nullif(concat_ws(' ', ${m.vorname}, ${m.name}), '')`;
+
 export const MAKLER_AUFGELOEST = {
   ...getTableColumns(m),
+  name: MAKLER_NAME,
+  nachname: m.name,
   firma: MAKLER_FIRMA,
   webseite: sql<string | null>`coalesce(${u.webseite}, ${m.webseite})`,
   strasse: sql<string | null>`case when ${uHatAdresse} then ${u.strasse} else ${m.strasse} end`,
@@ -39,10 +44,11 @@ export const MAKLER_AUFGELOEST = {
 const FIRMEN_FELDER = ['webseite', 'strasse', 'plz', 'ort'] as const;
 type FirmenFeld = (typeof FIRMEN_FELDER)[number];
 
-const alsKollege = (z: typeof m.$inferSelect): MaklerFuerUnternehmen => ({ id: z.id, name: z.name, tel: z.tel, mobil: z.mobil, festnetz: z.festnetz, email: z.email });
+const vollerName = (z: { vorname: string | null; name: string | null }) => [z.vorname, z.name].filter(Boolean).join(' ') || null;
+const alsKollege = (z: typeof m.$inferSelect): MaklerFuerUnternehmen => ({ id: z.id, name: vollerName(z), tel: z.tel, mobil: z.mobil, festnetz: z.festnetz, email: z.email });
 
 const kollegen = (tx: Tx, unternehmenId: string): Promise<MaklerFuerUnternehmen[]> =>
-  tx.select({ id: m.id, name: m.name, tel: m.tel, mobil: m.mobil, festnetz: m.festnetz, email: m.email })
+  tx.select({ id: m.id, name: MAKLER_NAME, tel: m.tel, mobil: m.mobil, festnetz: m.festnetz, email: m.email })
     .from(m).where(and(eq(m.unternehmenId, unternehmenId), isNull(m.deletedAt)));
 
 async function unternehmenAendern(tx: Tx, id: string, felder: object) {
@@ -153,7 +159,7 @@ export async function unternehmenKurz(tx: Db | Tx, unternehmenId: string | null,
   if (!unternehmenId) return null;
   const [x] = await tx.select({ id: u.id, name: u.name }).from(u).where(and(eq(u.id, unternehmenId), isNull(u.deletedAt)));
   if (!x) return null;
-  const alle = await tx.select({ id: m.id, name: m.name }).from(m).where(and(eq(m.unternehmenId, unternehmenId), isNull(m.deletedAt))).orderBy(asc(m.name));
+  const alle = await tx.select({ id: m.id, name: MAKLER_NAME }).from(m).where(and(eq(m.unternehmenId, unternehmenId), isNull(m.deletedAt))).orderBy(asc(MAKLER_NAME));
   return { ...x, makler: alle.filter((k) => k.id !== ohneMaklerId) };
 }
 
@@ -165,7 +171,7 @@ export async function unternehmenKurz(tx: Db | Tx, unternehmenId: string | null,
  */
 export async function unternehmenUebernahme(db: Db, schreiben: boolean) {
   const offen = await db.select().from(m).where(isNull(m.unternehmenId)).orderBy(asc(m.createdAt), asc(m.id));
-  const plan = unternehmenUebernahmePlan(offen.map((z) => ({ ...z, weitereKontakte: z.weitereKontakte as WeitereKontakte | null })));
+  const plan = unternehmenUebernahmePlan(offen.map((z) => ({ ...z, name: vollerName(z), weitereKontakte: z.weitereKontakte as WeitereKontakte | null })));
   const vorhanden = new Map((await db.select({ id: u.id, s: u.nameSchluessel }).from(u).where(isNull(u.deletedAt))).map((x) => [x.s, x.id]));
   const zeilen = plan.unternehmen.map((p) => ({ ...p, vorhandenId: vorhanden.get(p.schluessel) ?? null }));
   if (schreiben) {

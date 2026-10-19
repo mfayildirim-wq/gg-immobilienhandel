@@ -21,6 +21,8 @@ export type Makler = z.infer<typeof Makler>;
 
 /** Makler ohne Pflichtfelder (Nutzerwunsch, 09). Anlage-Default: Prio B, Monatlich. */
 export const MaklerAnlegen = z.object({
+  /** Mit Vorname ist `name` der Nachname, ohne Vorname der volle Name (19.10.2026). */
+  vorname: Text.optional(),
   name: Text.optional(),
   firma: Text.optional(),
   tel: Text.optional(),
@@ -218,6 +220,9 @@ export type MaklerKommunikation = z.infer<typeof MaklerKommunikation>;
 export const WeitereKontakte = z.object({ namen: z.array(z.string()), telefonnummern: z.array(z.string()), emails: z.array(z.string()) });
 
 export const MaklerDetail = Makler.extend({
+  /** `name` ist „Vorname Nachname“ zur Anzeige; zum Bearbeiten die Teile (19.10.2026). */
+  vorname: z.string().nullable(),
+  nachname: z.string().nullable(),
   persoenlich: z.record(z.string(), z.unknown()).nullable(),
   webseite: z.string().nullable(),
   mobil: z.string().nullable(),
@@ -242,7 +247,10 @@ export type MaklerDetail = z.infer<typeof MaklerDetail>;
 /** Bewusst ohne Standardwerte: `MaklerAnlegen.partial()` würde in zod 4 Prio/Frequenz beim Ändern still zurücksetzen. */
 export const MaklerAendern = z.object({
   version: z.number().int(),
+  /** Voller Name in einem Feld: der Vorname wird geleert. Getrennt: `vorname` und `nachname` (19.10.2026). */
   name: Text.optional(),
+  vorname: Text.optional(),
+  nachname: Text.optional(),
   firma: Text.optional(),
   tel: Text.optional(),
   email: Text.optional(),
