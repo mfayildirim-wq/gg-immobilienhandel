@@ -33,6 +33,9 @@ export const KUNDENKALK_STANDARD: KundenkalkStandard = {
 
 export type KundenkalkScope = 'global' | 'aufteiler';
 
+/** Kaufgegenstand im Wording: Globalverkauf = „Haus“, Aufteiler = „Wohnung“ (Kundenwunsch 19.10.2026). */
+export const kundenkalkKaufgegenstand = (scope: KundenkalkScope) => (scope === 'aufteiler' ? 'Wohnung' : 'Haus');
+
 /** Deal-Einheit mit den Feldnamen der alten App; hier gilt Unärplus (`+e.fl`), nicht parseNum. */
 export interface KkEinheit {
   id: string;

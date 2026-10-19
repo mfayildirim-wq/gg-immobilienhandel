@@ -7,6 +7,7 @@ import {
   hinweiseAusText,
   KK_PROZENTFELDER,
   kundenkalkFeldSetzen,
+  kundenkalkKaufgegenstand,
   type SanierungsModus,
   tranche1Schnell,
 } from '@gg/domain';
@@ -87,7 +88,7 @@ function Editor({ start }: { start: Kundenkalkulation }) {
         <Stack gap="sm">
           <Abschnitt titel="Investition">
             <SimpleGrid cols={2} spacing="xs">
-              <Zahlfeld label="Kaufpreis Wohnung" suffix=" €" value={k.kaufpreisWohnung} onWert={(v) => setzeFeld('kaufpreisWohnung', v ?? 0)} {...ZAHL} />
+              <Zahlfeld label={`Kaufpreis ${kundenkalkKaufgegenstand(start.scope)}`} suffix=" €" value={k.kaufpreisWohnung} onWert={(v) => setzeFeld('kaufpreisWohnung', v ?? 0)} {...ZAHL} />
               <Zahlfeld label="Kaufpreis Stellplatz" suffix=" €" value={k.kaufpreisStellplatz} onWert={(v) => setzeFeld('kaufpreisStellplatz', v ?? 0)} {...ZAHL} />
               <Zahlfeld label="Stellplätze (Stk.)" value={k.stellplaetzeAnzahl} onWert={(v) => setzeFeld('stellplaetzeAnzahl', v ?? 0)} {...ZAHL} />
               <Zahlfeld label="Mietfläche" suffix=" m²" value={k.objSnapshot.wohnflaecheGesamt} onWert={(v) => setzeFeld('mietflaeche', v ?? 0)} {...ZAHL} />
