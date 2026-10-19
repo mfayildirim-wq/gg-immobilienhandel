@@ -38,6 +38,7 @@ export const MAKLER_AUFGELOEST = {
   plz: sql<string | null>`case when ${uHatAdresse} then ${u.plz} else ${m.plz} end`,
   ort: sql<string | null>`case when ${uHatAdresse} then ${u.ort} else ${m.ort} end`,
   weitereKontakte: sql<unknown>`coalesce(${u.weitereKontakte}, ${m.weitereKontakte})`,
+  fax: u.fax,
 };
 
 const FIRMEN_FELDER = ['webseite', 'strasse', 'plz', 'ort'] as const;
@@ -151,6 +152,14 @@ export async function maklerFirmaSetzen(tx: Tx, maklerId: string, eingabe: Firma
   }
   if (Object.keys(maklerSetzen).length) await tx.update(m).set(maklerSetzen).where(eq(m.id, maklerId));
   return unternehmenId;
+}
+
+/** Fax gehört nur dem Unternehmen (HubSpot, 19.10.2026); ohne Unternehmen gibt es keinen Ort dafür. */
+export async function unternehmenFaxSetzen(tx: Tx, maklerId: string, fax: string | null) {
+  const [z] = await tx.select({ uid: m.unternehmenId }).from(m).where(eq(m.id, maklerId));
+  if (!z?.uid) return;
+  const [alt] = await tx.select({ fax: u.fax }).from(u).where(eq(u.id, z.uid));
+  if ((alt?.fax ?? null) !== fax) await unternehmenAendern(tx, z.uid, { fax });
 }
 
 /** Die anderen Makler desselben Unternehmens (Profil: „Weitere Makler im Unternehmen“). */

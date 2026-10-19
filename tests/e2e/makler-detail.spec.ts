@@ -75,3 +75,22 @@ test('Makler-Profil: Vorname und Name getrennt bearbeiten, Anzeige mit beidem', 
   await expect.poll(async () => (await (await page.request.get(`/api/makler/${m.id}`)).json())).toMatchObject({ name: `Anna ${k}`, vorname: 'Anna', nachname: k });
   await page.request.delete(`/api/makler/${m.id}`);
 });
+
+// Felder aus HubSpot (19.10.2026): Profil zeigt und speichert sie; „abgemeldet“ steht als Warnung oben
+test('Makler-Profil: Felder aus HubSpot bearbeiten, Fax am Unternehmen, Warnung bei abgemeldet', async ({ page }) => {
+  const k = `HubFeld${Date.now()}`;
+  const m = await (await page.request.post('/api/makler', { data: { name: `Anna ${k}`, firma: `${k} GmbH` } })).json();
+  await page.goto(`/makler?makler=${m.id}`);
+  const s = page.getByRole('region', { name: 'Makler-Detail' });
+  await s.getByLabel('Position').fill('Geschäftsführerin');
+  await s.getByLabel('Fax').fill('0711 1234');
+  await s.getByLabel('Zuständig').fill('Gerry Weyrich');
+  await s.getByLabel('Von allen E-Mails abgemeldet').check();
+  await s.getByRole('button', { name: 'Speichern' }).click();
+  await expect.poll(async () => (await (await page.request.get(`/api/makler/${m.id}`)).json()))
+    .toMatchObject({ position: 'Geschäftsführerin', fax: '0711 1234', zustaendig: 'Gerry Weyrich', mailsAbgemeldet: true });
+  await page.reload();
+  await expect(s.getByText('✉️ Keine Mails schicken — von allen E-Mails abgemeldet')).toBeVisible();
+  await expect(s.getByLabel('Fax')).toHaveValue('0711 1234');
+  await page.request.delete(`/api/makler/${m.id}`);
+});
