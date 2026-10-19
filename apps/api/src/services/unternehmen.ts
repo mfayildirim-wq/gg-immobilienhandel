@@ -3,16 +3,15 @@
  * die gleichnamigen Spalten am Makler sind Altfelder bis zur Aufräum-Migration.
  *
  * Lesen: `MAKLER_AUFGELOEST` + `UNTERNEHMEN_JOIN` liefern Makler-Zeilen mit den Werten des Unternehmens, wo es eins
- * gibt, sonst mit den Altfeldern — so läuft der Code auch vor der Übernahme (`pnpm unternehmen:uebernahme`).
+ * gibt, sonst mit den Altfeldern — so läuft der Code auch vor der Übernahme (Migration `unternehmen_uebernahme`).
  * Schreiben: nur hier. Wer ein Altfeld über das Unternehmen setzt, leert es am Makler, sonst käme der alte Wert über
  * den Rückfall wieder zum Vorschein.
  */
 import { type Db, schema } from '@gg/db';
 import {
   type MaklerFuerUnternehmen, type UnternehmenFelder, type WeitereKontakte, unternehmenDomain, unternehmenErgaenzen, unternehmenSchluessel,
-  unternehmenUebernahmePlan,
 } from '@gg/domain';
-import { and, asc, eq, getTableColumns, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, getTableColumns, isNull, sql } from 'drizzle-orm';
 import { FachFehler } from '../fehler.ts';
 import type { Tx } from './tx.ts';
 
@@ -161,45 +160,4 @@ export async function unternehmenKurz(tx: Db | Tx, unternehmenId: string | null,
   if (!x) return null;
   const alle = await tx.select({ id: m.id, name: MAKLER_NAME }).from(m).where(and(eq(m.unternehmenId, unternehmenId), isNull(m.deletedAt))).orderBy(asc(MAKLER_NAME));
   return { ...x, makler: alle.filter((k) => k.id !== ohneMaklerId) };
-}
-
-/**
- * Übernahme `makler.firma` → `unternehmen` (einmal je Umgebung, nach der Migration; erneut ausführbar).
- * Betrachtet nur Makler ohne Unternehmen — auch die im Papierkorb, damit Wiederherstellen vollständig bleibt.
- * Vorhandene Unternehmen (gleicher Schlüssel) werden weiterverwendet und nur ergänzt. Die Altfelder am Makler bleiben
- * bis zur Aufräum-Migration stehen; gelesen wird ohnehin zuerst das Unternehmen.
- */
-export async function unternehmenUebernahme(db: Db, schreiben: boolean) {
-  const offen = await db.select().from(m).where(isNull(m.unternehmenId)).orderBy(asc(m.createdAt), asc(m.id));
-  const plan = unternehmenUebernahmePlan(offen.map((z) => ({ ...z, name: vollerName(z), weitereKontakte: z.weitereKontakte as WeitereKontakte | null })));
-  const vorhanden = new Map((await db.select({ id: u.id, s: u.nameSchluessel }).from(u).where(isNull(u.deletedAt))).map((x) => [x.s, x.id]));
-  const zeilen = plan.unternehmen.map((p) => ({ ...p, vorhandenId: vorhanden.get(p.schluessel) ?? null }));
-  if (schreiben) {
-    await db.transaction(async (tx) => {
-      for (const p of zeilen) {
-        const felder = { webseite: p.webseite, domain: p.domain, strasse: p.strasse, plz: p.plz, ort: p.ort, weitereKontakte: p.weitereKontakte };
-        let id = p.vorhandenId;
-        if (id) {
-          const [alt] = await tx.select().from(u).where(eq(u.id, id));
-          await unternehmenAendern(tx, id, unternehmenErgaenzen(alt as UnternehmenFelder, felder, [...await kollegen(tx, id), ...offen.filter((z) => p.maklerIds.includes(z.id)).map(alsKollege)]));
-        } else {
-          id = crypto.randomUUID();
-          await tx.insert(u).values({ id, name: p.name, nameSchluessel: p.schluessel, ...felder });
-        }
-        await tx.update(m).set({ unternehmenId: id }).where(and(inArray(m.id, p.maklerIds), isNull(m.unternehmenId)));
-      }
-    });
-  }
-  return {
-    makler: offen.length,
-    neu: zeilen.filter((p) => !p.vorhandenId).length,
-    ergaenzt: zeilen.filter((p) => p.vorhandenId).length,
-    ohneFirma: plan.ohneFirma.length,
-    unternehmen: zeilen.map(({ name, webseite, domain, strasse, plz, ort, weitereKontakte, maklerIds, vorhandenId }) => ({
-      name, webseite, domain, anschrift: [strasse, [plz, ort].filter(Boolean).join(' ')].filter(Boolean).join(', ') || null,
-      makler: maklerIds.length, weitereKontakte: weitereKontakte ? weitereKontakte.namen.length : 0, vorhanden: !!vorhandenId,
-    })),
-    pruefen: plan.pruefen,
-    geschrieben: schreiben,
-  };
 }

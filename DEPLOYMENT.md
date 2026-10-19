@@ -131,12 +131,25 @@ Anschrift zuerst aus dem Unternehmen und sonst aus den Altfeldern am Makler lies
 1. Migration anwenden: `npx supabase db push --dry-run`, dann ohne. Rein additiv (neue Tabelle `fach.unternehmen`,
    Spalte `fach.makler.unternehmen_id`), es wird nichts gelöscht.
 2. Code deployen (Merge nach `main`). Neue und geänderte Makler bekommen ab jetzt ihr Unternehmen.
-3. Bestand übernehmen, mit `DATABASE_URL` auf die Zieldatenbank:
-   `pnpm unternehmen:uebernahme` → Bericht unter `berichte/` prüfen (gleiche Domain, mehrteilige Namen,
-   Webseiten-Konflikte), dann `UNTERNEHMEN_FREIGABE=<db-host> pnpm unternehmen:uebernahme --schreiben`.
-   Eine Transaktion, erneut ausführbar; die Altfelder am Makler bleiben stehen.
+3. Bestand übernehmen: läuft seit 19.10.2026 als SQL-Migration `unternehmen_uebernahme` mit `db push` (vorher war es
+   das Skript `pnpm unternehmen:uebernahme`). Erneut ausführbar; die Altfelder am Makler bleiben stehen.
 4. Später, nach Abnahme: Aufräum-Migration, die `makler.firma`, `webseite`, `strasse`, `plz`, `ort`,
    `weitere_kontakte` entfernt (eigener PR).
+
+## HubSpot-Daten (Migrationen `makler_hubspot_spalten`, `unternehmen_uebernahme`, `hubspot_daten`, 19.10.2026)
+
+Alles läuft mit `npx supabase db push --dry-run`, dann ohne — kein Skript von Hand, in dieser Reihenfolge:
+
+1. `makler_hubspot_spalten`: neue Spalten (`anrede`, `position`, `stellung`, `zustaendig`, `hinweis`, `mailing_status`,
+   `mails_abgemeldet`, `rechtsgrundlage`, `quelle`; `unternehmen.fax`).
+2. `unternehmen_uebernahme`: Unternehmen der vorhandenen Makler aus `makler.firma`.
+3. `hubspot_daten`: der HubSpot-Export (`supabase/daten/hubspot-makler-2026-10-05.csv`, als Datenblock in der Migration).
+   Vorhandene Makler (E-Mail, sonst Telefon, sonst eindeutiger Name) und Unternehmen (Firmenschlüssel) werden nur
+   ergänzt; die Priorität kommt aus der HubSpot-Klassifizierung (VIP/High Potential → A, B, C; sonst bleibt sie). Alle
+   anderen werden neu angelegt (Kontakt-Frequenz „Monatlich“). Ohne Firmennamen kein Unternehmen.
+
+Probe auf einer Kopie der privaten Prod (19.10.2026): 117 Unternehmen aus dem Bestand; danach 68 Makler ergänzt (27 mit
+neuer Priorität), 699 neu, 209 Unternehmen neu, 8 ergänzt. Das Cockpit zeigt danach 785 statt 144 überfällige Makler.
 
 ## Vor jedem Deployment
 

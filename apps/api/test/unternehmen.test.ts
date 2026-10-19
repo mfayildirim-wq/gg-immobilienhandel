@@ -1,12 +1,14 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createDb, schema, verlangeLokaleDatenbank } from '@gg/db';
 import { kiAttrappe, speicherImSpeicher } from '@gg/integrations';
-import { eq, inArray, like, or } from 'drizzle-orm';
+import { eq, inArray, like, or, sql } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.ts';
-import { unternehmenUebernahme } from '../src/services/unternehmen.ts';
 
 // Nie gegen die Cloud: ein Testlauf löscht und überschreibt Zeilen
 const url = process.env.DATABASE_URL ? verlangeLokaleDatenbank(process.env.DATABASE_URL, 'Testlauf') : undefined;
+const UEBERNAHME = readFileSync(join(import.meta.dirname, '../../../supabase/migrations/20261019150529_unternehmen_uebernahme.sql'), 'utf8');
 
 describe.skipIf(!url)('Unternehmen der Makler (18.10.2026)', () => {
   const { db, client } = createDb(url!);
@@ -73,26 +75,26 @@ describe.skipIf(!url)('Unternehmen der Makler (18.10.2026)', () => {
     expect((await detail(c)).firma).toBeNull();
   });
 
-  it('Altbestand (nur makler.firma): wird angezeigt und von der Übernahme zugeordnet — erneut ausgeführt ändert sie nichts', async () => {
+  it('Altbestand (nur makler.firma): wird angezeigt und von der Migration zugeordnet — erneut ausgeführt ändert sie nichts', async () => {
     const alt = [`${k}alt1`, `${k}alt2`];
-    ids.push(...alt);
-    await db.insert(schema.makler).values([
-      { id: alt[0]!, name: 'Dora', firma: `${k} Bestand KG`, webseite: 'www.bestand.de', weitereKontakte: { namen: ['Emil', 'Fritz'], telefonnummern: [], emails: [] } },
-      { id: alt[1]!, name: 'Emil', firma: `${k} bestand kg`, email: 'emil@bestand.de' },
-    ]);
-    expect((await detail(alt[1]!)).firma).toBe(`${k} bestand kg`);
-    const vorschau = await unternehmenUebernahme(db, false);
-    expect((await roh(alt[0]!)).unternehmenId).toBeNull();
-    expect(vorschau.unternehmen.find((x) => x.name === `${k} Bestand KG`)).toMatchObject({ makler: 2, webseite: 'www.bestand.de', domain: 'bestand.de', weitereKontakte: 1 });
-
-    await unternehmenUebernahme(db, true);
-    const uid = (await roh(alt[0]!)).unternehmenId!;
-    expect((await roh(alt[1]!)).unternehmenId).toBe(uid);
-    expect(await unternehmen(uid)).toMatchObject({ name: `${k} Bestand KG`, weitereKontakte: { namen: ['Fritz'], telefonnummern: [], emails: [] } });
-    expect(await detail(alt[1]!)).toMatchObject({ firma: `${k} Bestand KG`, webseite: 'www.bestand.de', weitereKontakte: { namen: ['Fritz'] } });
-
-    const nochmal = await unternehmenUebernahme(db, true);
-    expect(nochmal.unternehmen.find((x) => x.name.includes(k))).toBeUndefined();
+    // In einer Transaktion, die zurückgerollt wird: die Migration betrachtet alle Makler ohne Unternehmen
+    let ergebnis: { m1: any; m2: any; u: any; anzahl: number; nochmal: number } | undefined;
+    await db.transaction(async (tx) => {
+      await tx.insert(schema.makler).values([
+        { id: alt[0]!, name: 'Dora', firma: `${k} Bestand KG`, webseite: 'www.bestand.de', weitereKontakte: { namen: ['Emil', 'Fritz'], telefonnummern: [], emails: [] } },
+        { id: alt[1]!, name: 'Emil', firma: `${k} bestand kg`, email: 'emil@bestand.de' },
+      ]);
+      await tx.execute(sql.raw(UEBERNAHME));
+      const [m1, m2] = await Promise.all(alt.map(async (id) => (await tx.select().from(schema.makler).where(eq(schema.makler.id, id)))[0]!));
+      const [u] = await tx.select().from(schema.unternehmen).where(eq(schema.unternehmen.id, m1!.unternehmenId!));
+      const anzahl = (await tx.select().from(schema.unternehmen)).length;
+      await tx.execute(sql.raw(UEBERNAHME));
+      ergebnis = { m1, m2, u, anzahl, nochmal: (await tx.select().from(schema.unternehmen)).length };
+      tx.rollback();
+    }).catch(() => undefined);
+    expect(ergebnis!.m2.unternehmenId).toBe(ergebnis!.m1.unternehmenId);
+    expect(ergebnis!.u).toMatchObject({ name: `${k} Bestand KG`, webseite: 'www.bestand.de', domain: 'bestand.de', weitereKontakte: { namen: ['Fritz'], telefonnummern: [], emails: [] } });
+    expect(ergebnis!.nochmal).toBe(ergebnis!.anzahl);
   });
 
   it('Makler-Liste und Deals zeigen den Namen aus dem Unternehmen', async () => {
