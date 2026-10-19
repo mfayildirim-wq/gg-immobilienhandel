@@ -2,6 +2,7 @@ import type { KiKostenZeile, NachfassResetSicht } from '@gg/api-contract';
 import { type Db, schema } from '@gg/db';
 import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm';
 import { auditSchreiben } from './audit.ts';
+import { MAKLER_NAME } from './unternehmen.ts';
 
 /**
  * Nachfass-Datum-Reset (alt: Einstellungen → 🔧 Nachfass-Datum-Reset): alle Deals und Makler mit
@@ -11,7 +12,7 @@ export async function nachfassResetVorschau(db: Db, datum: string): Promise<Nach
   const deals = await db.select({ id: schema.deals.id, status: schema.deals.status, lastContact: schema.deals.lastContact, strasse: schema.objekte.strasse, hausnr: schema.objekte.hausnr })
     .from(schema.deals).innerJoin(schema.objekte, eq(schema.objekte.id, schema.deals.objektId))
     .where(and(eq(schema.deals.nextContact, datum), isNull(schema.deals.deletedAt)));
-  const makler = await db.select({ id: schema.makler.id, name: schema.makler.name, frequenz: schema.makler.kontaktFrequenz, lastContact: schema.makler.lastContact })
+  const makler = await db.select({ id: schema.makler.id, name: MAKLER_NAME, frequenz: schema.makler.kontaktFrequenz, lastContact: schema.makler.lastContact })
     .from(schema.makler).where(and(eq(schema.makler.nextContact, datum), isNull(schema.makler.deletedAt)));
   return {
     datum,

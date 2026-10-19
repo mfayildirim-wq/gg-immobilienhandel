@@ -58,6 +58,8 @@ export const makler = fach
     'makler',
     {
   id: text('id').primaryKey(),
+      /** Vorname; `name` ist der Nachname. Angezeigt wird beides zusammen (`MAKLER_NAME`). Ohne Vorname steht der volle Name in `name`. */
+      vorname: text('vorname'),
       name: text('name'),
       /** Altfeld bis zur Aufräum-Migration; maßgeblich ist `unternehmen.name` (Lesen: coalesce) */
       firma: text('firma'),

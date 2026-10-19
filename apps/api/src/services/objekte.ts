@@ -3,6 +3,7 @@ import { type DealStatus, OBJEKT_HAT_DEAL_HINWEIS, START_STATUS } from '@gg/doma
 import { type Db, schema } from '@gg/db';
 import { and, asc, eq, isNull, notInArray, sql } from 'drizzle-orm';
 import { FachFehler } from '../fehler.ts';
+import { MAKLER_NAME } from './unternehmen.ts';
 import { versionFortschreiben } from './version.ts';
 
 const spalten = {
@@ -52,7 +53,7 @@ export async function objektDetail(db: Db, id: string): Promise<ObjektDetail> {
     .where(eq(schema.objektEinheiten.objektId, id))
     .orderBy(asc(schema.objektEinheiten.sort));
   const deals = await db
-    .select({ id: schema.deals.id, status: schema.deals.status, maklerName: schema.makler.name })
+    .select({ id: schema.deals.id, status: schema.deals.status, maklerName: MAKLER_NAME })
     .from(schema.deals)
     .leftJoin(schema.makler, eq(schema.makler.id, schema.deals.maklerId))
     .where(and(eq(schema.deals.objektId, id), isNull(schema.deals.deletedAt)));

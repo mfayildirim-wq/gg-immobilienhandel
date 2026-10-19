@@ -141,6 +141,11 @@ mit `unternehmen_id` darauf (18.10.2026). Jeder Standort ist ein eigenes Unterne
 `apps/api/src/services/unternehmen.ts`. Im Profil steht der Block „🏢 Unternehmen“ mit den Kollegen; Webseite und
 Anschrift gelten für alle Makler der Firma. Übernahme des Bestands: `pnpm unternehmen:uebernahme` (siehe DEPLOYMENT.md).
 
+**Vorname (19.10.2026):** `makler.vorname` steht neben `makler.name` (Nachname). Angezeigt und verglichen wird überall
+„Vorname Name“ (`MAKLER_NAME`); ohne Vorname steht der volle Name in `name`, etwa bei neuen Maklern aus Exposé oder Import.
+Den Bestand hat die SQL-Migration `20261019140056_makler_vorname_aufteilen` aufgeteilt: erstes Wort → Vorname. Anrede
+oder Titel vorn, mehrere Personen und „Nachname, Vorname“ bleiben ganz.
+
 ## Objekt-Detail
 
 Zwei Reiter wie alt: **📋 Details** (Lage, Recherche-Links Google Maps/Street View/ImmoScout/Bodenrichtwert, Gebäude, Kennzahlen mit Bruttorendite und KP-Faktor, Einheitenaufstellung, Notizen) und **✏️ Bearbeiten** (alle Felder, Einheiten mit €/m² je Zeile und Summen). Status-Schnellwahl über dem Reiter, „🗑 Löschen“ legt das Objekt in den Papierkorb (`DELETE /api/objekte/{id}`). **Bewusste Abweichung (Fachentscheidung 02.10.2026):** Hängt ein Deal am Objekt, ist „Löschen“ gesperrt und ein Hinweis nennt den Grund (API: 409). Umgekehrt geht das Objekt von selbst mit in den Papierkorb, wenn sein letzter Deal gelöscht wird (`DELETE /api/deals/{id}`); hängt noch ein anderer Deal daran, bleibt es. Die alte App ließ das Objekt löschen und den Deal stehen und ließ beim Löschen eines Deals das Objekt zurück. Einheiten werden mit dem Objekt gespeichert (`PATCH /api/objekte/{id}` mit `einheiten`) und behalten ihre IDs. Regeln in `packages/domain/src/objekte/detail.ts` (Golden Master aus `objDetailHTML`/`objRenderEinheiten`).

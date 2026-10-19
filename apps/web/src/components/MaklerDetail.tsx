@@ -62,7 +62,7 @@ function Profil({ m, geloescht }: { m: Detail; geloescht?: () => void }) {
   const { data: alleMakler } = useMakler();
   const firmen = [...new Set((alleMakler ?? []).map((x) => x.firma?.trim()).filter((x): x is string => !!x))].sort((a, b) => a.localeCompare(b, 'de'));
   const [f, setF] = useState({
-    name: m.name ?? '', firma: m.firma ?? '', tel: m.tel ?? '', email: m.email ?? '', webseite: m.webseite ?? '',
+    vorname: m.vorname ?? '', nachname: m.nachname ?? '', firma: m.firma ?? '', tel: m.tel ?? '', email: m.email ?? '', webseite: m.webseite ?? '',
     mobil: m.mobil ?? '', festnetz: m.festnetz ?? '', strasse: m.strasse ?? '', plz: m.plz ?? '', ort: m.ort ?? '',
   });
   const [prio, setPrio] = useState<'A' | 'B' | 'C'>(m.prio ?? 'B');
@@ -85,7 +85,8 @@ function Profil({ m, geloescht }: { m: Detail; geloescht?: () => void }) {
       </Group>
       <Title order={6}>👤 Kontaktdaten</Title>
       <SimpleGrid cols={2} spacing="xs">
-        <TextInput label="Name" placeholder="Max Müller" value={f.name} onChange={(e) => setF({ ...f, name: e.currentTarget.value })} />
+        <TextInput label="Vorname" placeholder="Max" value={f.vorname} onChange={(e) => setF({ ...f, vorname: e.currentTarget.value })} />
+        <TextInput label="Name" placeholder="Müller" value={f.nachname} onChange={(e) => setF({ ...f, nachname: e.currentTarget.value })} />
         <TextInput label="Telefon" type="tel" placeholder="+49 711 123456" value={f.tel} error={telFehler} onChange={(e) => setF({ ...f, tel: e.currentTarget.value })} />
         <TextInput label="E-Mail" type="email" placeholder="name@firma.de" value={f.email} error={mailFehler} onChange={(e) => setF({ ...f, email: e.currentTarget.value })} />
         <TextInput label="Mobil" type="tel" placeholder="+49 171 1234567" value={f.mobil} onChange={(e) => setF({ ...f, mobil: e.currentTarget.value })} />

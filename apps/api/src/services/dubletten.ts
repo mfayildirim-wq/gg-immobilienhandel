@@ -12,7 +12,7 @@ import {
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { auditSchreiben } from './audit.ts';
 import { FachFehler } from '../fehler.ts';
-import { MAKLER_AUFGELOEST, maklerFirmaSetzen, UNTERNEHMEN_JOIN } from './unternehmen.ts';
+import { MAKLER_AUFGELOEST, MAKLER_NAME, maklerFirmaSetzen, UNTERNEHMEN_JOIN } from './unternehmen.ts';
 
 const IGNORIERT = 'dubletten-ignoriert';
 
@@ -48,7 +48,7 @@ export async function dublettenScan(db: Db): Promise<DublettenPaarSicht[]> {
   // Reihenfolge wie in den Listen (alt: Reihenfolge der Sammlung) — sie bestimmt, welcher Eintrag im Paar vorn steht
   const makler = await db.select(MAKLER_AUFGELOEST).from(schema.makler).leftJoin(schema.unternehmen, UNTERNEHMEN_JOIN).where(isNull(schema.makler.deletedAt)).orderBy(asc(schema.makler.reihenfolge));
   const objekte = await db.select().from(schema.objekte).where(isNull(schema.objekte.deletedAt)).orderBy(asc(schema.objekte.reihenfolge));
-  const deals = await db.select({ id: schema.deals.id, objektId: schema.deals.objektId, maklerId: schema.deals.maklerId, adresse: schema.objekte.strasse, maklerName: schema.makler.name })
+  const deals = await db.select({ id: schema.deals.id, objektId: schema.deals.objektId, maklerId: schema.deals.maklerId, adresse: schema.objekte.strasse, maklerName: MAKLER_NAME })
     .from(schema.deals)
     .innerJoin(schema.objekte, eq(schema.objekte.id, schema.deals.objektId))
     .leftJoin(schema.makler, eq(schema.makler.id, schema.deals.maklerId))
@@ -127,6 +127,11 @@ const spaltenWerte = (typ: DublettenEntitaet, zusammen: any) => {
   const tabelle = TABELLE[typ] as unknown as Record<string, unknown>;
   const felder: Record<string, unknown> = {};
   for (const f of FELDER[typ]) if (f in zusammen && f in tabelle && !(typ === 'makler' && FIRMA_FELDER.has(f))) felder[f] = zusammen[f];
+  // Name (19.10.2026): passt er zu Vorname + Nachname des Datensatzes, bleiben die Teile; sonst landet er ganz in `name`
+  if (typ === 'makler' && 'name' in felder) {
+    const getrennt = [zusammen.vorname, zusammen.nachname].filter(Boolean).join(' ') || null;
+    Object.assign(felder, getrennt === felder.name ? { vorname: zusammen.vorname ?? null, name: zusammen.nachname ?? null } : { vorname: null });
+  }
   if (typ === 'makler') { felder.tags = zusammen.tags ?? []; felder.persoenlich = zusammen.persoenlich ?? null; felder.kiSummary = null; felder.kiSummaryAt = null; }
   if (typ === 'deal') felder.kalkulation = zusammen.kalkulation ?? {};
   return felder;
