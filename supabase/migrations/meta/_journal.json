@@ -92,6 +92,13 @@
       "when": 1792418456215,
       "tag": "20261019140056_makler_vorname_aufteilen",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792420315186,
+      "tag": "20261019143155_makler_hubspot_spalten",
+      "breakpoints": true
     }
   ]
 }

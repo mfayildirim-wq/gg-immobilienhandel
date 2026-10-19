@@ -37,6 +37,8 @@ export const unternehmen = fach
       domain: text('domain'),
       telefonZentrale: text('telefon_zentrale'),
       emailZentrale: text('email_zentrale'),
+      /** Aus HubSpot (19.10.2026) */
+      fax: text('fax'),
       strasse: text('strasse'),
       plz: text('plz'),
       ort: text('ort'),
@@ -82,6 +84,25 @@ export const makler = fach
       beziehungsNotiz: text('beziehungs_notiz'),
       tags: text('tags').array(),
       persoenlich: jsonb('persoenlich'),
+      // Aus HubSpot (19.10.2026); die HubSpot-„Klassifizierung“ geht in `prio`
+      /** Herr / Frau */
+      anrede: text('anrede'),
+      /** Jobbezeichnung bzw. Beruf, z. B. Geschäftsführer */
+      position: text('position'),
+      /** Unternehmer / Angestellt */
+      stellung: text('stellung'),
+      /** Für den Kontakt zuständiger Mitarbeiter */
+      zustaendig: text('zustaendig'),
+      /** Warnhinweis, z. B. Gebiete, die der Makler nicht bearbeitet */
+      hinweis: text('hinweis'),
+      /** Mailing-Status, z. B. „Keine Mails mehr schicken“ */
+      mailingStatus: text('mailing_status'),
+      /** Von allen E-Mails abgemeldet */
+      mailsAbgemeldet: boolean('mails_abgemeldet').notNull().default(false),
+      /** Rechtliche Grundlage für die Verarbeitung der Kontaktdaten (DSGVO) */
+      rechtsgrundlage: text('rechtsgrundlage'),
+      /** Herkunft des Datensatzes, z. B. „Makler Import März 25“ */
+      quelle: text('quelle'),
       kiSummary: text('ki_summary'),
       kiSummaryAt: timestamp('ki_summary_at', { withTimezone: true, mode: 'string' }),
       /** Listenreihenfolge wie die alte App (neu angelegt = vorn): Umzug setzt den Index, neue Zeilen einen negativen Zeitwert */
