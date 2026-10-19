@@ -139,7 +139,8 @@ Firma, Webseite, Büroanschrift und die weiteren Kontakte aus Exposés stehen in
 mit `unternehmen_id` darauf (18.10.2026). Jeder Standort ist ein eigenes Unternehmen. Zugeordnet wird über
 `unternehmenSchluessel` (`@gg/domain`), der nur Schreibweisen zusammenfasst. Lesen und Schreiben laufen über
 `apps/api/src/services/unternehmen.ts`. Im Profil steht der Block „🏢 Unternehmen“ mit den Kollegen; Webseite und
-Anschrift gelten für alle Makler der Firma. Übernahme des Bestands: `pnpm unternehmen:uebernahme` (siehe DEPLOYMENT.md).
+Anschrift gelten für alle Makler der Firma. Übernahme des Bestands und der HubSpot-Daten: SQL-Migrationen
+`unternehmen_uebernahme` und `hubspot_daten` (siehe DEPLOYMENT.md).
 
 **Vorname (19.10.2026):** `makler.vorname` steht neben `makler.name` (Nachname). Angezeigt und verglichen wird überall
 „Vorname Name“ (`MAKLER_NAME`); ohne Vorname steht der volle Name in `name`, etwa bei neuen Maklern aus Exposé oder Import.
