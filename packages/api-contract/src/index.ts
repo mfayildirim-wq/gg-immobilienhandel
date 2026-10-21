@@ -21,6 +21,8 @@ export type Makler = z.infer<typeof Makler>;
 
 /** Makler ohne Pflichtfelder (Nutzerwunsch, 09). Anlage-Default: Prio B, Monatlich. */
 export const MaklerAnlegen = z.object({
+  /** Mit Vorname ist `name` der Nachname, ohne Vorname der volle Name (19.10.2026). */
+  vorname: Text.optional(),
   name: Text.optional(),
   firma: Text.optional(),
   tel: Text.optional(),
@@ -218,6 +220,9 @@ export type MaklerKommunikation = z.infer<typeof MaklerKommunikation>;
 export const WeitereKontakte = z.object({ namen: z.array(z.string()), telefonnummern: z.array(z.string()), emails: z.array(z.string()) });
 
 export const MaklerDetail = Makler.extend({
+  /** `name` ist „Vorname Nachname“ zur Anzeige; zum Bearbeiten die Teile (19.10.2026). */
+  vorname: z.string().nullable(),
+  nachname: z.string().nullable(),
   persoenlich: z.record(z.string(), z.unknown()).nullable(),
   webseite: z.string().nullable(),
   mobil: z.string().nullable(),
@@ -226,6 +231,19 @@ export const MaklerDetail = Makler.extend({
   plz: z.string().nullable(),
   ort: z.string().nullable(),
   weitereKontakte: WeitereKontakte.nullable(),
+  /** Aus HubSpot (19.10.2026); `fax` gehört dem Unternehmen */
+  anrede: z.string().nullable(),
+  position: z.string().nullable(),
+  stellung: z.string().nullable(),
+  zustaendig: z.string().nullable(),
+  hinweis: z.string().nullable(),
+  mailingStatus: z.string().nullable(),
+  mailsAbgemeldet: z.boolean(),
+  rechtsgrundlage: z.string().nullable(),
+  quelle: z.string().nullable(),
+  fax: z.string().nullable(),
+  /** Firma als eigener Datensatz (18.10.2026); `firma`, `webseite`, Anschrift und `weitereKontakte` kommen von dort. */
+  unternehmen: z.object({ id: z.string(), name: z.string(), makler: z.array(z.object({ id: z.string(), name: z.string().nullable() })) }).nullable(),
   lastContact: IsoDatum.nullable(),
   beziehungsNotiz: z.string().nullable(),
   kommunikation: z.array(MaklerKommunikation),
@@ -240,7 +258,10 @@ export type MaklerDetail = z.infer<typeof MaklerDetail>;
 /** Bewusst ohne Standardwerte: `MaklerAnlegen.partial()` würde in zod 4 Prio/Frequenz beim Ändern still zurücksetzen. */
 export const MaklerAendern = z.object({
   version: z.number().int(),
+  /** Voller Name in einem Feld: der Vorname wird geleert. Getrennt: `vorname` und `nachname` (19.10.2026). */
   name: Text.optional(),
+  vorname: Text.optional(),
+  nachname: Text.optional(),
   firma: Text.optional(),
   tel: Text.optional(),
   email: Text.optional(),
@@ -254,6 +275,17 @@ export const MaklerAendern = z.object({
   plz: z.string().trim().max(10).nullable().optional(),
   ort: Text.nullable().optional(),
   beziehungsNotiz: Text.nullable().optional(),
+  /** Aus HubSpot (19.10.2026); leer heißt null. `fax` gilt für das Unternehmen (ohne Unternehmen wird es nicht gespeichert). */
+  anrede: Text.nullable().optional(),
+  position: Text.nullable().optional(),
+  stellung: Text.nullable().optional(),
+  zustaendig: Text.nullable().optional(),
+  hinweis: Text.nullable().optional(),
+  mailingStatus: Text.nullable().optional(),
+  mailsAbgemeldet: z.boolean().optional(),
+  rechtsgrundlage: Text.nullable().optional(),
+  quelle: Text.nullable().optional(),
+  fax: Text.nullable().optional(),
   nextContact: IsoDatum.nullable().optional(),
   lastContact: IsoDatum.nullable().optional(),
 });
@@ -302,6 +334,8 @@ export const ObjektDetail = Objekt.extend({
   istMiete: ZahlOderLeer,
   sollMiete: ZahlOderLeer,
   notizen: z.string().nullable(),
+  /** Zusatzangaben (Exposé-Import): bruttorendite, heizungsbaujahr, energieausweis, lagebeschreibung, ausstattung, hausgeld … */
+  details: z.record(z.string(), z.unknown()).nullable(),
   einheiten: z.array(ObjektEinheit),
   deals: z.array(z.object({ id: z.string(), status: DealStatus, maklerName: z.string().nullable() })),
 });
@@ -668,6 +702,8 @@ const T = z.string().max(5000).nullable().optional();
 
 export const ExposeEinheitDaten = z.object({
   typ: T, lage: T, zimmer: Nr, flaeche: Nr, kaltmiete: Nr, vermiet: T,
+  // Zeile trägt den Gesamtwert oder den Rest aus dem Gesamtwert (bitte aufteilen); beim Anlegen ohne Bedeutung
+  hinweis: z.enum(['gesamtwert', 'rest']).nullable().optional(),
 });
 
 export const ExposeObjektDaten = z.object({
@@ -696,15 +732,48 @@ export const WizardKalkSchema = z.object({
 
 export const Dublette = z.object({ id: z.string(), titel: z.string(), sicherheit: z.enum(['exact', 'fuzzy']) }).nullable();
 
+// ── Exposé v2: Angaben, Ziele, Zuordnung (Protokoll 28) ─────
+const AngabeWert = z.union([z.string(), z.number(), z.boolean()]).nullable();
+/** Eine erfasste Angabe — wörtlich, mit Standard-Pfad und gg-Ziel (Mapping oder KI-Vorschlag). Struktur = `Angabe` in @gg/domain. */
+export const ExposeAngabe = z.object({
+  importId: z.string(), datum: z.string(), gruppe: z.string(),
+  /** 'angaben.12' oder 'einheiten.3' */
+  feld: z.string(), pfad: z.string().nullable(), bezeichnung: z.string(), standard: z.string().nullable(), wert: z.string(),
+  seite: z.number().nullable(), belegt: z.boolean().nullable(),
+  zuordnung: z.enum(['zugeordnet', 'doppelt', 'keinWert', 'keinMapping']).nullable(),
+  ziel: z.object({
+    feld: z.string().nullable(), label: z.string().nullable(), wert: AngabeWert, aktuell: AngabeWert,
+    status: z.enum(['gleich', 'abweichend', 'leer', 'keinFeld']), quelle: z.enum(['mapping', 'vorschlag']).nullable(), hinweis: z.string().nullable(),
+  }),
+});
+export type ExposeAngabe = z.infer<typeof ExposeAngabe>;
+/** gg-Zielfeld für das Dropdown; `pruef` = Pfad im Formular der Prüfseite (objekt.*, makler.*, kalkulation.*), falls es dort steht. */
+export const ExposeZiel = z.object({ schluessel: z.string(), label: z.string(), einheit: z.string().nullable(), pruef: z.string().nullable() });
+export type ExposeZiel = z.infer<typeof ExposeZiel>;
+
 export const ExposeAnalyseAntwort = z.object({
   modus: z.enum(['text', 'pdf']), modell: z.string(), seiten: z.number(), zeichenProSeite: z.number(), hinweis: z.string().optional(),
   attrappe: z.boolean(),
   extrahiert: z.record(z.string(), z.unknown()),
+  /** Die Analyse liegt serverseitig in expose_importe; Übernehmen verweist auf importId */
+  importId: z.string(),
+  schemaVersion: z.string(),
+  /** v2: alle erfassten Angaben für Objekt und Makler (leer bei v0) */
+  angaben: z.object({ objekt: z.array(ExposeAngabe), makler: z.array(ExposeAngabe) }),
+  /** gg-Ziele für das Dropdown unter „Weitere Angaben“ */
+  ziele: z.object({ objekt: z.array(ExposeZiel), makler: z.array(ExposeZiel) }),
+  /** Anteil der Angaben, deren Wert auf der genannten Seite steht (Textweg), sonst null */
+  belegQuote: z.number().nullable(),
+  warnungen: z.array(z.string()),
   konfidenz: z.record(z.string(), z.string()),
   objekt: ExposeObjektDaten.passthrough(),
   makler: ExposeMaklerDaten.passthrough(),
   deal: z.object({ status: z.string(), nachfassFreq: z.string(), notizen: z.string(), kalk: WizardKalkSchema }),
   dubletten: z.object({ objekt: Dublette, makler: Dublette }),
+  /** Deals des erkannten Objekts — das PDF kann einen davon ergänzen (Fotos, Makler, Exposé), statt einen zweiten anzulegen */
+  bestehendeDeals: z.array(z.object({ id: z.string(), status: z.string(), makler: z.string().nullable() })).default([]),
+  // Fotos aus dem Exposé (Protokoll 30 §4.4): liegen im Eingang, werden beim Anlegen ans Objekt übernommen
+  bilder: z.array(z.object({ nr: z.number().int(), seite: z.number().int(), breite: z.number().int(), hoehe: z.number().int(), url: z.string() })).default([]),
 });
 export type ExposeAnalyseAntwort = z.infer<typeof ExposeAnalyseAntwort>;
 
@@ -712,15 +781,42 @@ export const ExposeUebernehmen = z.object({
   key: z.string(),
   dateiname: z.string().max(300),
   extrahiert: z.record(z.string(), z.unknown()),
+  /** Verweis auf die gespeicherte Analyse (expose_importe); ohne importId wird wie bisher `extrahiert` verwendet */
+  importId: z.string().optional(),
+  /** Auf der Prüfseite per Dropdown zugeordnete weitere Angaben (Ziel: gg-Ziel-Schlüssel oder 'notizen') */
+  zuordnungen: z.array(z.object({ feld: z.string(), ziel: z.string() })).max(500).optional(),
+  /** Im Wizard-Schritt „Fotos“ entfernte Bilder (Nummer wie in `ExposeAnalyseAntwort.bilder[].nr`) — werden nicht übernommen */
+  bilderAusschliessen: z.array(z.number().int().min(0)).max(500).optional(),
   objekt: z.object({ bestehendeId: z.string().optional(), daten: ExposeObjektDaten }),
   makler: z.object({ bestehendeId: z.string().optional(), daten: ExposeMaklerDaten }),
   deal: z.object({ status: DealStatus, nachfassFreq: z.string().max(40), notizen: z.string().max(10000), kalk: WizardKalkSchema }),
+  /** Statt eines neuen Deals diesen bestehenden ergänzen: Fotos ans Objekt, Makler setzen (falls keiner), PDF als Exposé ablegen */
+  ergaenzeDealId: z.string().optional(),
 });
 export type ExposeUebernehmen = z.infer<typeof ExposeUebernehmen>;
 
 export const ExposeUebernahmeErgebnis = z.object({
   dealId: z.string(), objektId: z.string(), maklerId: z.string().nullable(), pdfGespeichert: z.boolean(), warnung: z.string().optional(),
+  /** Der Deal bestand schon und wurde ergänzt (kein neuer Deal) */
+  ergaenzt: z.boolean().default(false),
+  /** Anzahl der aus dem Exposé ans Objekt übernommenen Fotos */
+  fotos: z.number().int().default(0),
 });
+
+// ── Reiter „Aus dem Exposé“ (Objekt/Makler) ───────────────────
+export const ExposeAngabenAntwort = z.object({
+  importe: z.array(z.object({ id: z.string(), datum: z.string(), dateiname: z.string().nullable(), dealId: z.string().nullable(), schemaVersion: z.string() })),
+  angaben: z.array(ExposeAngabe),
+  /** Dropdown: gg-Ziele dieser Art mit aktuellem Wert; `leer` = frei (Listen-Ziele immer) */
+  ziele: z.array(z.object({ schluessel: z.string(), label: z.string(), einheit: z.string().nullable(), aktuell: AngabeWert, leer: z.boolean() })),
+});
+export type ExposeAngabenAntwort = z.infer<typeof ExposeAngabenAntwort>;
+/** `ziel`: gg-Ziel-Schlüssel (z. B. 'objekt.angebotspreis', 'details.hausgeld_monat') oder 'notizen' */
+export const ExposeUebernahme = z.object({
+  version: z.number().int(), importId: z.string(), feld: z.string(), ziel: z.string().min(1).max(80), ersetzen: z.boolean().default(false),
+});
+export type ExposeUebernahme = z.input<typeof ExposeUebernahme>;
+
 
 // ── Bank-Präsentation ──────────────────────────────────────
 

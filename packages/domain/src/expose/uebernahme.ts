@@ -14,13 +14,24 @@ export function normalizeAddr(s: string): string {
 
 const normalizeHausnr = (s: string) => (s || '').toLowerCase().replace(/\s+/g, '').trim();
 
-export function levenshtein(a: string, b: string): number {
+/**
+ * Editierabstand mit zwei Zeilen statt ganzer Tabelle. Mit `grenze`: bricht ab, sobald jede Zelle einer Zeile die
+ * Grenze erreicht (der Abstand kann dann nur noch größer werden) und liefert diesen Zwischenwert (≥ grenze).
+ */
+export function levenshtein(a: string, b: string, grenze = Infinity): number {
   const m = a.length, n = b.length;
-  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) => Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)));
-  for (let i = 1; i <= m; i++)
-    for (let j = 1; j <= n; j++)
-      dp[i]![j] = a[i - 1] === b[j - 1] ? dp[i - 1]![j - 1]! : 1 + Math.min(dp[i - 1]![j]!, dp[i]![j - 1]!, dp[i - 1]![j - 1]!);
-  return dp[m]![n]!;
+  let vorher = Array.from({ length: n + 1 }, (_, j) => j), jetzt = new Array<number>(n + 1);
+  for (let i = 1; i <= m; i++) {
+    jetzt[0] = i;
+    let kleinster = i;
+    for (let j = 1; j <= n; j++) {
+      jetzt[j] = a[i - 1] === b[j - 1] ? vorher[j - 1]! : 1 + Math.min(vorher[j]!, jetzt[j - 1]!, vorher[j - 1]!);
+      if (jetzt[j]! < kleinster) kleinster = jetzt[j]!;
+    }
+    if (kleinster >= grenze) return kleinster;
+    [vorher, jetzt] = [jetzt, vorher];
+  }
+  return vorher[n]!;
 }
 
 export function nameSimilar(a: string | null | undefined, b: string | null | undefined): boolean {
@@ -28,7 +39,14 @@ export function nameSimilar(a: string | null | undefined, b: string | null | und
   const na = a.toLowerCase().trim(), nb = b.toLowerCase().trim();
   if (na === nb) return true;
   const maxLen = Math.max(na.length, nb.length);
-  return maxLen > 0 && levenshtein(na, nb) / maxLen < 0.3;
+  if (maxLen === 0) return false;
+  // kleinster Abstand, der nicht mehr ähnlich ist — in derselben Rechnung wie unten (d / maxLen < 0.3)
+  let grenze = Math.floor(0.3 * maxLen);
+  while (grenze > 0 && (grenze - 1) / maxLen >= 0.3) grenze--;
+  while (grenze / maxLen < 0.3) grenze++;
+  // Der Abstand ist mindestens der Längenunterschied — dann muss nicht gerechnet werden.
+  if (Math.abs(na.length - nb.length) >= grenze) return false;
+  return levenshtein(na, nb, grenze) / maxLen < 0.3;
 }
 
 type Adresse = { strasse?: string | null; hausnr?: string | null; stadt?: string | null; plz?: string | null };
@@ -127,8 +145,8 @@ export const maklerHatDaten = (m: { name?: string | null; firma?: string | null;
 
 /**
  * Eine Einheit aus der Exposé-Auswertung. `null` heißt „im Exposé nicht gefunden" — so liefert es die KI.
- * Die Regeln unten behandeln null und undefined gleich (`!e.flaeche`, `e.typ !== 'Stellplatz'`,
- * `x.typ || 'Wohnung'`); der Typ sagt das jetzt auch.
+ * `hinweis` setzt `exposeVorbereiten`: die Zeile trägt den Gesamtwert oder den Rest aus dem Gesamtwert (Fachentscheidung
+ * 16.10.2026) und ist auf der Prüfseite als „bitte aufteilen" markiert.
  */
 export interface ExposeEinheit {
   typ?: string | null;
@@ -137,48 +155,88 @@ export interface ExposeEinheit {
   flaeche?: number | string | null;
   kaltmiete?: number | string | null;
   vermiet?: string | null;
+  hinweis?: EinheitHinweis | null;
+}
+export type EinheitHinweis = 'gesamtwert' | 'rest';
+
+/** Höchstzahl leerer Zeilen, die aus „Einheiten gesamt: N" entstehen. */
+export const EINHEITEN_ZEILEN_MAX = 200;
+
+const istZahl = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const zahlOderNull = (v: unknown): number | null => (istZahl(v) ? v : typeof v === 'string' && v.trim() !== '' && Number.isFinite(+v) ? +v : null);
+
+/**
+ * Gesamtwert auf die Einheitenzeilen bringen, ohne zu verteilen (Fachentscheidung 16.10.2026, Protokoll 31 §8.4):
+ *  - keine Zeile kennt den Wert → die erste Wohn-/Gewerbezeile bekommt den Gesamtwert (Hinweis „gesamtwert");
+ *  - einige Zeilen kennen ihn → die erste Zeile ohne Wert bekommt den Rest (Gesamt minus bekannte, Hinweis „rest"),
+ *    alle weiteren bleiben leer;
+ *  - alle Zeilen kennen ihn → nichts ändern, bei Abweichung der Summe (> 1 %) eine Warnung;
+ *  - negativer Rest → nichts eintragen, Warnung.
+ * Stellplätze bleiben außen vor. Fläche und Miete laufen unabhängig voneinander. `0` gilt als bekannt (Leerstand).
+ */
+function gesamtwertEintragen(einheiten: ExposeEinheit[], feld: 'flaeche' | 'kaltmiete', gesamt: number | null, label: string, einheit: string, warnungen: string[]) {
+  if (gesamt === null || gesamt <= 0) return;
+  const wohn = einheiten.filter((e) => e.typ !== 'Stellplatz');
+  if (!wohn.length) return;
+  const bekannt = wohn.filter((e) => zahlOderNull(e[feld]) !== null);
+  const offen = wohn.filter((e) => zahlOderNull(e[feld]) === null);
+  const summe = bekannt.reduce((s, e) => s + (zahlOderNull(e[feld]) ?? 0), 0);
+  const zeige = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits: 2 });
+  if (!offen.length) {
+    if (Math.abs(summe - gesamt) > gesamt * 0.01) warnungen.push(`${label}: Einheiten ergeben ${zeige(summe)} ${einheit}, das Exposé nennt ${zeige(gesamt)} ${einheit}`);
+    return;
+  }
+  if (!bekannt.length) {
+    offen[0]![feld] = gesamt;
+    offen[0]!.hinweis = 'gesamtwert';
+    return;
+  }
+  const rest = +(gesamt - summe).toFixed(2);
+  if (rest <= 0) {
+    warnungen.push(`${label}: bekannte Einheiten ergeben schon ${zeige(summe)} ${einheit}, das Exposé nennt ${zeige(gesamt)} ${einheit} — Rest nicht eingetragen`);
+    return;
+  }
+  offen[0]![feld] = rest;
+  offen[0]!.hinweis ??= 'rest';
 }
 
 /**
- * Nach der Analyse: fehlende Einheitenflächen aus der Gesamtwohnfläche verteilen; fehlen alle Mieten,
- * die Ist-Miete nach Fläche (sonst gleichmäßig) aufteilen; Telefon Mobil > Festnetz > allgemein.
+ * Nach der Analyse: Einheitenzeilen wie das Exposé sie nennt (Liste, sonst „Einheiten gesamt", sonst eine Zeile), Gesamtwerte
+ * für Fläche und Ist-Miete ohne Verteilung auf die erste offene Zeile (`gesamtwertEintragen`); Telefon Mobil > Festnetz > allgemein.
+ * Bewusste Abweichung von der alten App, die fehlende Flächen gleichmäßig und fehlende Mieten nach Fläche verteilte
+ * (Fachentscheidung 16.10.2026).
  */
 export function exposeVorbereiten(extrahiert: any) {
+  const warnungen: string[] = [];
   const objekt: Record<string, any> = { ...(extrahiert?.objekt || {}) };
-  const einheiten: ExposeEinheit[] | undefined = objekt.einheiten ? objekt.einheiten.map((e: ExposeEinheit) => ({ ...e })) : undefined;
-  if (einheiten) objekt.einheiten = einheiten;
-
-  if (einheiten?.length && objekt.wohnflaeche) {
-    const ohneFlaeche = einheiten.filter((e) => !e.flaeche && e.typ !== 'Stellplatz');
-    if (ohneFlaeche.length > 0) {
-      const belegt = einheiten.filter((e) => e.flaeche && e.typ !== 'Stellplatz').reduce((s, e) => s + (+e.flaeche! || 0), 0);
-      const rest = +objekt.wohnflaeche - belegt;
-      if (rest > 0) {
-        const jeEinheit = +(rest / ohneFlaeche.length).toFixed(2);
-        ohneFlaeche.forEach((e) => { e.flaeche = jeEinheit; });
-      }
-    }
+  let einheiten: ExposeEinheit[] = Array.isArray(objekt.einheiten) ? objekt.einheiten.map((e: ExposeEinheit) => ({ ...e })) : [];
+  const wohnflaeche = zahlOderNull(objekt.wohnflaeche);
+  const istmiete = zahlOderNull(objekt.istmiete);
+  if (!einheiten.length) {
+    const anzahl = zahlOderNull(objekt.einheitenAnz);
+    const zeilen = anzahl !== null && anzahl >= 1 ? Math.min(Math.round(anzahl), EINHEITEN_ZEILEN_MAX) : wohnflaeche !== null || istmiete !== null ? 1 : 0;
+    einheiten = Array.from({ length: zeilen }, () => ({ typ: 'Wohnung', lage: null, zimmer: null, flaeche: null, kaltmiete: null, vermiet: null }));
   }
-  const mieteGesamt = +objekt.istmiete || 0;
-  if (einheiten?.length && mieteGesamt > 0) {
-    const wohn = einheiten.filter((e) => e.typ !== 'Stellplatz');
-    const ohneMiete = wohn.filter((e) => !e.kaltmiete);
-    if (ohneMiete.length > 0 && ohneMiete.length === wohn.length) {
-      const flaeche = wohn.reduce((s, e) => s + (+e.flaeche! || 0), 0);
-      if (flaeche > 0) {
-        const jeQm = mieteGesamt / flaeche;
-        wohn.forEach((e) => { e.kaltmiete = +((+e.flaeche! || 0) * jeQm).toFixed(0); });
-      } else {
-        const jeEinheit = +(mieteGesamt / wohn.length).toFixed(0);
-        wohn.forEach((e) => { e.kaltmiete = jeEinheit; });
-      }
-    }
-  }
+  if (einheiten.length) objekt.einheiten = einheiten;
+  gesamtwertEintragen(einheiten, 'flaeche', wohnflaeche, 'Wohnfläche', 'm²', warnungen);
+  gesamtwertEintragen(einheiten, 'kaltmiete', istmiete, 'Ist-Miete', '€', warnungen);
 
   const mkRoh = extrahiert?.makler || {};
   const makler = { ...mkRoh, tel: telefonNormalisieren(mkRoh.mobiltel || mkRoh.festnetztel || mkRoh.tel || ''), prio: 'B', kontaktFreq: 'Monatlich' };
   const deal = { status: 'In Prüfung', nachfassFreq: 'Wöchentlich', notizen: extrahiert?.objekt?.notizen || '', kalk: { ...(extrahiert?.kalkulation || {}) } };
-  return { objekt, makler, deal };
+  return { objekt, makler, deal, warnungen };
+}
+
+/**
+ * Summenzeile der Einheitenaufstellung auf der Prüfseite: Summe Fläche und Kaltmiete (ohne Stellplätze bei der Fläche nicht nötig —
+ * Stellplätze haben keine Fläche) und ob sie vom Gesamtwert des Exposés abweicht (> 1 %).
+ */
+export function einheitenSumme(einheiten: readonly ExposeEinheit[], wohnflaeche: number | null | undefined, istmiete: number | null | undefined) {
+  const summe = (feld: 'flaeche' | 'kaltmiete') => einheiten.reduce((s, e) => s + (zahlOderNull(e[feld]) ?? 0), 0);
+  const weicht = (ist: number, soll: number | null | undefined) => istZahl(soll) && soll > 0 && Math.abs(ist - soll) > soll * 0.01;
+  const flaeche = +summe('flaeche').toFixed(2);
+  const miete = +summe('kaltmiete').toFixed(2);
+  return { flaeche, miete, flaecheWeicht: weicht(flaeche, wohnflaeche), mieteWeicht: weicht(miete, istmiete) };
 }
 
 // ── Kalkulationswerte im Wizard ─────────────────────────────

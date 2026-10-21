@@ -4,7 +4,7 @@ import {
   normalisiereFrequenz, personaDetectAnrede, resolveVorlage, telefonPruefen, vorlagenFuerKanal, vorlagenKontext, whatsappNummer,
 } from '@gg/domain';
 import {
-  Alert, Anchor, Badge, Button, Group, Loader, Paper, SegmentedControl, Select, SimpleGrid, Stack, Tabs, Text, Textarea, TextInput, Title,
+  Alert, Anchor, Autocomplete, Badge, Button, Checkbox, Group, Loader, Paper, SegmentedControl, Select, SimpleGrid, Stack, Tabs, Text, Textarea, TextInput, Title,
 } from '@mantine/core';
 import { ListeUmschalter } from './GeteilteAnsicht.tsx';
 import { Reiterleiste } from './Reiterleiste.tsx';
@@ -12,7 +12,7 @@ import { IconCheck, IconDeviceFloppy, IconTrash } from '@tabler/icons-react';
 import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 import {
-  transkribieren, useKommunikationAnlegen, useListen, useMaklerAendern, useMaklerDetail, useMaklerErledigt, useMaklerKi, useMaklerLoeschen, useMaklerPersoenlich,
+  transkribieren, useKommunikationAnlegen, useListen, useMakler, useMaklerAendern, useMaklerDetail, useMaklerErledigt, useMaklerKi, useMaklerLoeschen, useMaklerPersoenlich,
   useOsint, useVorlagen, useWhatsappProtokoll,
 } from '../lib/api.ts';
 import { heuteIso, useEinstellung } from '../lib/ansicht.ts';
@@ -44,7 +44,8 @@ export function MaklerDetail({ id, geloescht, start = 'profil' }: { id: string; 
           </Reiterleiste>
         </div>
       </Group>
-      <Tabs.Panel value="profil" pt="md"><Profil key={m.version} m={m} geloescht={geloescht} /></Tabs.Panel>
+      {/* Firmenwerte ändern sich auch über Kollegen (Unternehmen) — dann ohne eigene neue Version */}
+      <Tabs.Panel value="profil" pt="md"><Profil key={[m.version, m.firma, m.webseite, m.strasse, m.plz, m.ort, m.fax].join('|')} m={m} geloescht={geloescht} /></Tabs.Panel>
       <Tabs.Panel value="komm" pt="md"><Kommunikation m={m} /></Tabs.Panel>
       <Tabs.Panel value="persoenlich" pt="md"><Persoenlich key={m.version} m={m} /></Tabs.Panel>
       <Tabs.Panel value="deals" pt="md"><Deals maklerId={m.id} /></Tabs.Panel>
@@ -53,14 +54,24 @@ export function MaklerDetail({ id, geloescht, start = 'profil' }: { id: string; 
 }
 
 // ── 👤 Profil (mkFormHTML, mkSave, mkDelete) ─────────────────
+/** Vorschläge aus dem HubSpot-Export (19.10.2026); eigene Werte bleiben möglich. */
+const MAILING_STATUS = ['Erstkontakt Sequenz neue Makler', 'Mails für allgemeines im Kontakt bleiben',
+  'Keine autom. Mails, weil in enger persönlicher Betreuung', 'Keine Mails mehr schicken'];
+const RECHTSGRUNDLAGEN = ['Berechtigtes Interesse – Lead', 'Berechtigtes Interesse – Sonstige', 'Freiwillige gegebene Einwilligung von Kontakt', 'Ausführung eines Vertrags'];
 function Profil({ m, geloescht }: { m: Detail; geloescht?: () => void }) {
   const aendern = useMaklerAendern(m.id);
   const erledigt = useMaklerErledigt(m.id);
   const loeschen = useMaklerLoeschen();
+  const navigate = useNavigate();
+  const { data: alleMakler } = useMakler();
+  const firmen = [...new Set((alleMakler ?? []).map((x) => x.firma?.trim()).filter((x): x is string => !!x))].sort((a, b) => a.localeCompare(b, 'de'));
   const [f, setF] = useState({
-    name: m.name ?? '', firma: m.firma ?? '', tel: m.tel ?? '', email: m.email ?? '', webseite: m.webseite ?? '',
+    vorname: m.vorname ?? '', nachname: m.nachname ?? '', firma: m.firma ?? '', tel: m.tel ?? '', email: m.email ?? '', webseite: m.webseite ?? '',
     mobil: m.mobil ?? '', festnetz: m.festnetz ?? '', strasse: m.strasse ?? '', plz: m.plz ?? '', ort: m.ort ?? '',
+    anrede: m.anrede ?? '', position: m.position ?? '', stellung: m.stellung ?? '', zustaendig: m.zustaendig ?? '', hinweis: m.hinweis ?? '',
+    mailingStatus: m.mailingStatus ?? '', rechtsgrundlage: m.rechtsgrundlage ?? '', quelle: m.quelle ?? '', fax: m.fax ?? '',
   });
+  const [abgemeldet, setAbgemeldet] = useState(m.mailsAbgemeldet);
   const [prio, setPrio] = useState<'A' | 'B' | 'C'>(m.prio ?? 'B');
   const [frequenz, setFrequenz] = useState(normalisiereFrequenz(m.kontaktFrequenz));
   const [zuletzt, setZuletzt] = useState(m.lastContact ?? '');
@@ -74,6 +85,10 @@ function Profil({ m, geloescht }: { m: Detail; geloescht?: () => void }) {
     <Stack>
       {fehler && <Alert color="red">{fehler.message}</Alert>}
       {hinweis && <Alert color="yellow" variant="light">{hinweis}</Alert>}
+      {m.hinweis && <Alert color="orange" variant="light" title="Hinweis">{m.hinweis}</Alert>}
+      {(m.mailsAbgemeldet || m.mailingStatus === 'Keine Mails mehr schicken') && (
+        <Alert color="red" variant="light">✉️ Keine Mails schicken{m.mailsAbgemeldet ? ' — von allen E-Mails abgemeldet' : ''}</Alert>
+      )}
       <Group gap="xs">
         <Text size="xs" fw={700} c="dimmed">Priorität</Text>
         <SegmentedControl size="xs" aria-label="Priorität" value={prio} onChange={(v) => setPrio(v as 'A' | 'B' | 'C')}
@@ -81,23 +96,41 @@ function Profil({ m, geloescht }: { m: Detail; geloescht?: () => void }) {
       </Group>
       <Title order={6}>👤 Kontaktdaten</Title>
       <SimpleGrid cols={2} spacing="xs">
-        <TextInput label="Name" placeholder="Max Müller" value={f.name} onChange={(e) => setF({ ...f, name: e.currentTarget.value })} />
-        <TextInput label="Firma" placeholder="Immobilien GmbH" value={f.firma} onChange={(e) => setF({ ...f, firma: e.currentTarget.value })} />
+        <Select label="Anrede" data={['Herr', 'Frau']} clearable value={f.anrede || null} onChange={(v) => setF({ ...f, anrede: v ?? '' })} />
+        <div />
+        <TextInput label="Vorname" placeholder="Max" value={f.vorname} onChange={(e) => setF({ ...f, vorname: e.currentTarget.value })} />
+        <TextInput label="Name" placeholder="Müller" value={f.nachname} onChange={(e) => setF({ ...f, nachname: e.currentTarget.value })} />
         <TextInput label="Telefon" type="tel" placeholder="+49 711 123456" value={f.tel} error={telFehler} onChange={(e) => setF({ ...f, tel: e.currentTarget.value })} />
         <TextInput label="E-Mail" type="email" placeholder="name@firma.de" value={f.email} error={mailFehler} onChange={(e) => setF({ ...f, email: e.currentTarget.value })} />
-        <TextInput label="Webseite" value={f.webseite} onChange={(e) => setF({ ...f, webseite: e.currentTarget.value })} />
         <TextInput label="Mobil" type="tel" placeholder="+49 171 1234567" value={f.mobil} onChange={(e) => setF({ ...f, mobil: e.currentTarget.value })} />
         <TextInput label="Festnetz" type="tel" placeholder="+49 711 123456" value={f.festnetz} onChange={(e) => setF({ ...f, festnetz: e.currentTarget.value })} />
+        <TextInput label="Position" placeholder="Geschäftsführer" value={f.position} onChange={(e) => setF({ ...f, position: e.currentTarget.value })} />
+        <Autocomplete label="Stellung" data={['Unternehmer', 'Angestellt']} value={f.stellung} onChange={(v) => setF({ ...f, stellung: v })} />
       </SimpleGrid>
-      <Title order={6}>📍 Anschrift</Title>
+      <Title order={6}>🏢 Unternehmen</Title>
+      <SimpleGrid cols={2} spacing="xs">
+        <Autocomplete label="Firma" placeholder="Immobilien GmbH" data={firmen} limit={8} value={f.firma}
+          description="Bestehende Firma wählen oder neue eintragen" onChange={(v) => setF({ ...f, firma: v })} />
+        <TextInput label="Webseite" value={f.webseite} onChange={(e) => setF({ ...f, webseite: e.currentTarget.value })} />
+      </SimpleGrid>
+      {m.unternehmen && (
+        <Text size="xs" c="dimmed" data-unternehmen-kollegen>
+          Webseite und Anschrift gelten für alle Makler dieses Unternehmens
+          {m.unternehmen.makler.length > 0 && <>{' — außerdem: '}{m.unternehmen.makler.map((k, i) => (
+            <span key={k.id}>{i > 0 && ', '}<Anchor size="xs" onClick={() => navigate({ to: '/makler', search: { makler: k.id } })}>{k.name || 'ohne Namen'}</Anchor></span>
+          ))}</>}
+        </Text>
+      )}
       <TextInput label="Straße und Hausnummer" value={f.strasse} onChange={(e) => setF({ ...f, strasse: e.currentTarget.value })} />
       <SimpleGrid cols={2} spacing="xs">
         <TextInput label="PLZ" value={f.plz} maxLength={10} onChange={(e) => setF({ ...f, plz: e.currentTarget.value })} />
         <TextInput label="Ort" value={f.ort} onChange={(e) => setF({ ...f, ort: e.currentTarget.value })} />
+        <TextInput label="Fax" type="tel" value={f.fax} disabled={!m.unternehmen}
+          description={m.unternehmen ? undefined : 'Erst mit Firma: das Fax gehört dem Unternehmen'} onChange={(e) => setF({ ...f, fax: e.currentTarget.value })} />
       </SimpleGrid>
       {m.weitereKontakte && (
         <Paper withBorder p="xs">
-          <Text size="xs" fw={700} c="dimmed" mb={4}>Weitere Kontakte aus Exposés</Text>
+          <Text size="xs" fw={700} c="dimmed" mb={4}>{m.unternehmen ? 'Weitere Kontakte im Unternehmen (aus Exposés)' : 'Weitere Kontakte aus Exposés'}</Text>
           {m.weitereKontakte.namen.length > 0 && <Text size="xs">👤 {m.weitereKontakte.namen.join(' · ')}</Text>}
           {m.weitereKontakte.telefonnummern.length > 0 && (
             <Group gap={6}>{m.weitereKontakte.telefonnummern.map((t) => <Anchor key={t} size="xs" href={`tel:${t}`}>📞 {t}</Anchor>)}</Group>
@@ -107,6 +140,17 @@ function Profil({ m, geloescht }: { m: Detail; geloescht?: () => void }) {
           )}
         </Paper>
       )}
+      <Title order={6}>📋 Betreuung und Mailing</Title>
+      <SimpleGrid cols={2} spacing="xs">
+        <TextInput label="Zuständig" placeholder="Mitarbeiter" value={f.zustaendig} onChange={(e) => setF({ ...f, zustaendig: e.currentTarget.value })} />
+        <TextInput label="Quelle" placeholder="z. B. Makler Import März 25" value={f.quelle} onChange={(e) => setF({ ...f, quelle: e.currentTarget.value })} />
+        <Autocomplete label="Mailing-Status" data={MAILING_STATUS} value={f.mailingStatus} onChange={(v) => setF({ ...f, mailingStatus: v })} />
+        <Autocomplete label="Rechtsgrundlage" description="Verarbeitung der Kontaktdaten (DSGVO)" data={RECHTSGRUNDLAGEN} value={f.rechtsgrundlage}
+          onChange={(v) => setF({ ...f, rechtsgrundlage: v })} />
+      </SimpleGrid>
+      <Checkbox label="Von allen E-Mails abgemeldet" checked={abgemeldet} onChange={(e) => setAbgemeldet(e.currentTarget.checked)} />
+      <Textarea label="Hinweis" placeholder="z. B. Gebiete, die der Makler nicht bearbeitet" autosize minRows={1} value={f.hinweis}
+        onChange={(e) => setF({ ...f, hinweis: e.currentTarget.value })} />
       <Title order={6}>📅 Kontakt-Frequenz</Title>
       <SimpleGrid cols={2} spacing="xs">
         <Select label="Frequenz" data={MAKLER_FREQUENZ_OPTIONEN.map((o) => ({ value: o.wert, label: o.label }))} value={frequenz} allowDeselect={false}
@@ -128,7 +172,7 @@ function Profil({ m, geloescht }: { m: Detail; geloescht?: () => void }) {
         <Button leftSection={<IconDeviceFloppy size={16} />} loading={aendern.isPending} onClick={() => {
           // Keine Pflichtfelder; Format-Fehler nur als Warnung (mkSave)
           setHinweis(telFehler || mailFehler ? '⚠️ Tel/E-Mail-Format ungewöhnlich (trotzdem gespeichert)' : null);
-          aendern.mutate({ version: m.version, ...f, prio, kontaktFrequenz: frequenz, lastContact: zuletzt || m.lastContact || null });
+          aendern.mutate({ version: m.version, ...f, mailsAbgemeldet: abgemeldet, prio, kontaktFrequenz: frequenz, lastContact: zuletzt || m.lastContact || null });
         }}>Speichern</Button>
       </Group>
     </Stack>

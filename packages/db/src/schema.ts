@@ -23,13 +23,49 @@ const zeitSpalten = {
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
 };
 
+/** Unternehmen der Makler (18.10.2026): Firma, Webseite, Büroanschrift einmal je Standort; Makler zeigen darauf. */
+export const unternehmen = fach
+  .table(
+    'unternehmen',
+    {
+      id: text('id').primaryKey(),
+      name: text('name').notNull(),
+      /** `unternehmenSchluessel(name)` aus @gg/domain — Zuordnung beim Anlegen/Import, fasst nur Schreibweisen zusammen */
+      nameSchluessel: text('name_schluessel'),
+      webseite: text('webseite'),
+      /** aus Webseite oder Mail, z. B. „eug.de“ — Hinweis, kein Schlüssel */
+      domain: text('domain'),
+      telefonZentrale: text('telefon_zentrale'),
+      emailZentrale: text('email_zentrale'),
+      /** Aus HubSpot (19.10.2026) */
+      fax: text('fax'),
+      strasse: text('strasse'),
+      plz: text('plz'),
+      ort: text('ort'),
+      impressum: text('impressum'),
+      /** Kollegen aus Exposés: { namen, telefonnummern, emails } — ohne die, die selbst Makler sind */
+      weitereKontakte: jsonb('weitere_kontakte'),
+      notiz: text('notiz'),
+      ...standardSpalten,
+    },
+    (t) => [
+      index('unternehmen_name_schluessel_idx').on(t.nameSchluessel).where(sql`${t.deletedAt} is null`),
+      index('unternehmen_domain_idx').on(t.domain),
+    ],
+  )
+  .enableRLS();
+
 export const makler = fach
   .table(
     'makler',
     {
   id: text('id').primaryKey(),
+      /** Vorname; `name` ist der Nachname. Angezeigt wird beides zusammen (`MAKLER_NAME`). Ohne Vorname steht der volle Name in `name`. */
+      vorname: text('vorname'),
       name: text('name'),
+      /** Altfeld bis zur Aufräum-Migration; maßgeblich ist `unternehmen.name` (Lesen: coalesce) */
       firma: text('firma'),
+      unternehmenId: text('unternehmen_id').references((): AnyPgColumn => unternehmen.id, { onDelete: 'set null' }),
       /** Hauptnummer — die, die Wählmaschine und Briefing anrufen (alt: mobiltel || festnetztel || tel) */
       tel: text('tel'),
       mobil: text('mobil'),
@@ -48,6 +84,25 @@ export const makler = fach
       beziehungsNotiz: text('beziehungs_notiz'),
       tags: text('tags').array(),
       persoenlich: jsonb('persoenlich'),
+      // Aus HubSpot (19.10.2026); die HubSpot-„Klassifizierung“ geht in `prio`
+      /** Herr / Frau */
+      anrede: text('anrede'),
+      /** Jobbezeichnung bzw. Beruf, z. B. Geschäftsführer */
+      position: text('position'),
+      /** Unternehmer / Angestellt */
+      stellung: text('stellung'),
+      /** Für den Kontakt zuständiger Mitarbeiter */
+      zustaendig: text('zustaendig'),
+      /** Warnhinweis, z. B. Gebiete, die der Makler nicht bearbeitet */
+      hinweis: text('hinweis'),
+      /** Mailing-Status, z. B. „Keine Mails mehr schicken“ */
+      mailingStatus: text('mailing_status'),
+      /** Von allen E-Mails abgemeldet */
+      mailsAbgemeldet: boolean('mails_abgemeldet').notNull().default(false),
+      /** Rechtliche Grundlage für die Verarbeitung der Kontaktdaten (DSGVO) */
+      rechtsgrundlage: text('rechtsgrundlage'),
+      /** Herkunft des Datensatzes, z. B. „Makler Import März 25“ */
+      quelle: text('quelle'),
       kiSummary: text('ki_summary'),
       kiSummaryAt: timestamp('ki_summary_at', { withTimezone: true, mode: 'string' }),
       /** Listenreihenfolge wie die alte App (neu angelegt = vorn): Umzug setzt den Index, neue Zeilen einen negativen Zeitwert */
@@ -56,6 +111,7 @@ export const makler = fach
     },
     (t) => [
       index('makler_next_contact_idx').on(t.nextContact).where(sql`${t.deletedAt} is null`),
+      index('makler_unternehmen_idx').on(t.unternehmenId),
     ],
   )
   .enableRLS();
@@ -120,6 +176,8 @@ export const objektEinheiten = fach
   kaltmiete: numeric('kaltmiete', { precision: 14, scale: 2, mode: 'number' }),
   vermietung: text('vermietung'),
   sort: integer('sort'),
+  /** Zusatz aus dem Exposé-Import (Erfassung v2): { nr, nebenkosten, warmmiete, sollmiete, mietbeginn, mietende, status, seite, weitere } */
+  details: jsonb('details'),
   ...zeitSpalten,
   })
   .enableRLS();
@@ -664,3 +722,45 @@ export const archiveLedger = fach
     ],
   )
   .enableRLS();
+
+/**
+ * Exposé-Importe (Protokoll 26/27): eine Zeile je Analyse — Rohdaten (Erfassung v2, Protokoll 28; bei Altimporten v0), Messwerte und die
+ * Verknüpfung zu Deal, Objekt und Makler. Der „Stand am Objekt“ wird beim Lesen aus diesen Zeilen gerechnet.
+ */
+export const exposeImporte = fach
+  .table(
+    'expose_importe',
+    {
+  id: text('id').primaryKey(),
+      eingangKey: text('eingang_key'),
+      dateiname: text('dateiname'),
+      dealId: text('deal_id').references((): AnyPgColumn => deals.id, { onDelete: 'set null' }),
+      objektId: text('objekt_id').references((): AnyPgColumn => objekte.id, { onDelete: 'set null' }),
+      maklerId: text('makler_id').references((): AnyPgColumn => makler.id, { onDelete: 'set null' }),
+      /** 'gg-expose-v2' | 'gg-expose-v0' */
+      schemaVersion: text('schema_version').notNull(),
+      promptVersion: text('prompt_version'),
+      modell: text('modell'),
+      weg: text('weg'),
+      seitenGelesen: integer('seiten_gelesen'),
+      seitenGesamt: integer('seiten_gesamt'),
+      stopReason: text('stop_reason'),
+      inputTokens: integer('input_tokens'),
+      outputTokens: integer('output_tokens'),
+      dauerMs: integer('dauer_ms'),
+      kostenEur: numeric('kosten_eur', { precision: 10, scale: 4, mode: 'number' }),
+      /** analysiert | uebernommen | verworfen */
+      status: text('status').notNull().default('analysiert'),
+      rohdaten: jsonb('rohdaten').notNull(),
+      /** { nachfass, wiederholung, belegt: Record<string, boolean>, warnungen: string[] } */
+      analyse: jsonb('analyse'),
+      ...zeitSpalten,
+    },
+    (t) => [
+      index('expose_importe_objekt_idx').on(t.objektId),
+      index('expose_importe_makler_idx').on(t.maklerId),
+      index('expose_importe_deal_idx').on(t.dealId),
+    ],
+  )
+  .enableRLS();
+

@@ -1,17 +1,17 @@
 /**
  * Tabellen (.xlsx/.xls) lesen — dasselbe Vorgehen wie in der alten App (XLSX.utils.sheet_to_json mit header: 1):
- * das erste Blatt, erste Zeile sind die Überschriften, leere Zellen werden zu leeren Zeichenketten.
+ * das erste Blatt (oder das genannte), erste Zeile sind die Überschriften, leere Zellen werden zu leeren Zeichenketten.
  */
 import * as XLSX from 'xlsx';
 
 export interface Tabelle { ueberschriften: string[]; zeilen: unknown[][] }
 
-export function tabelleLesen(bytes: Uint8Array): Tabelle {
+export function tabelleLesen(bytes: Uint8Array, blatt?: string): Tabelle {
   const mappe = XLSX.read(bytes, { type: 'array' });
-  const blattName = mappe.SheetNames[0];
-  const blatt = blattName ? mappe.Sheets[blattName] : undefined;
-  if (!blatt) return { ueberschriften: [], zeilen: [] };
-  const alle = XLSX.utils.sheet_to_json<unknown[]>(blatt, { header: 1, defval: '' });
+  const blattName = blatt ?? mappe.SheetNames[0];
+  const daten = blattName ? mappe.Sheets[blattName] : undefined;
+  if (!daten) return { ueberschriften: [], zeilen: [] };
+  const alle = XLSX.utils.sheet_to_json<unknown[]>(daten, { header: 1, defval: '' });
   const [kopf = [], ...rest] = alle;
   return { ueberschriften: (kopf as unknown[]).map((h) => String(h ?? '')), zeilen: rest };
 }

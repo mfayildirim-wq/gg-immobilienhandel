@@ -51,6 +51,10 @@ test('Bankgespräch: Live-Vorschau folgt der Eingabe, PDF-Export liefert ein PDF
   const vorschau = page.frameLocator('iframe[title="Bankgespräch-Vorschau"]');
   await expect(vorschau.getByText('Projekt:', { exact: false }).first()).toBeVisible();
   await expect(vorschau.getByText('240.000 €').first()).toBeVisible(); // Kaufpreis 800 × 12 / 4 %
+  // Globalverkauf: „Haus“ statt „Wohnung“ (Kundenwunsch 19.10.2026)
+  await expect(page.getByRole('textbox', { name: 'Kaufpreis Haus' })).toHaveValue('240.000 €');
+  await expect(vorschau.getByText('Kaufpreis Haus pro m²')).toBeVisible();
+  await expect(vorschau.getByText('IVT Wohnen GmbH', { exact: true })).toBeVisible();
 
   // Impression aus den Objektfotos: erscheint in der Vorschau und wird ins PDF eingebettet
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');

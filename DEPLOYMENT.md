@@ -8,9 +8,9 @@ von der echten Produktion der alten App). Offene Punkte stehen in `OFFEN.md` unt
 | | |
 |---|---|
 | GitHub | `mfayildirim-wq/gg-immobilienhandel`, privat |
-| Supabase | Projekt `gg-immobilienhandel`, Ref `zbqdkfqsqdocrxxrtjow`, Frankfurt (`eu-central-1`), Organisation MFY. 7 Migrationen angewendet (37 Tabellen in `fach`), Buckets `pdfs`, `deal-docs`, `obj-photos` privat angelegt. Echter Bestand umgezogen am 21.09.2026. |
+| Supabase | Projekt `gg-immobilienhandel`, Ref `zbqdkfqsqdocrxxrtjow`, Frankfurt (`eu-central-1`), Organisation MFY. 10 Migrationen angewendet (40 Tabellen in `fach`; `expose_importe` am 14.10.2026 eingespielt. Die Migration wurde am 16.10.2026 ohne `expose_bezeichnungen` und `import_korrekturen` neu erzeugt — auf dieser Datenbank sind die beiden leeren Tabellen von Hand zu löschen: `DROP TABLE fach.import_korrekturen, fach.expose_bezeichnungen;`), Buckets `pdfs`, `deal-docs`, `obj-photos` privat angelegt. Echter Bestand umgezogen am 21.09.2026. |
 | Vercel | Team `mfy` (Hobby), Projekt `gg-immobilienhandel`, mit dem Repo verbunden, 7 Variablen für Production gesetzt |
-| Zugangsdaten | nur lokal in `~/Documents/ivtag/.geheim/cloud.env` (Rechte 600) und verschlüsselt bei Vercel — nicht im Repo |
+| Zugangsdaten | nur lokal in `~/Documents/ivtag/immohandel-doks/.geheim/cloud.env` (Rechte 600) und verschlüsselt bei Vercel — nicht im Repo |
 
 **Online seit 21.09.2026:** <https://gg-immobilienhandel.vercel.app> — geprüft: Oberfläche, Anmeldung
 (Supabase Auth, Registrierung geschlossen, E-Mail-Allowlist), API (ohne Token 401), Sicherheits-Header,
@@ -28,7 +28,7 @@ Zweite, vollständig getrennte Umgebung zum Prüfen vor dem Produktivgang — **
 | Branch | `test` — Sammelbranch: `main` plus alle offenen Pull Requests, die geprüft werden sollen |
 | Vercel | Projekt `gg-immobilienhandel-test` (Team `mfy`), Produktions-Branch `test`, Node 24, eigene 8 Variablen (nur Production) |
 | Supabase | Projekt `gg-immobilienhandel-test`, Ref `kpvlmvkyvickqtdswzmh`, Frankfurt, Organisation MFY; 8 Migrationen, 38 Tabellen, 5 Buckets, Registrierung geschlossen |
-| Zugangsdaten | `~/Documents/ivtag/.geheim/cloud-test.env` (eigenes Passwort, eigener `GG_ENCRYPTION_KEY`, eigenes `CRON_SECRET`) |
+| Zugangsdaten | `~/Documents/ivtag/immohandel-doks/.geheim/cloud-test.env` (eigenes Passwort, eigener `GG_ENCRYPTION_KEY`, eigenes `CRON_SECRET`) |
 | Alle Adressen | Dev, Test, Prod mit Konsolen: `../immohandel-doks/protokoll/18-umgebungen-mfayildirim.md` |
 | Bestand | per `pnpm umzug` aus der alten lokalen DB (55/55 Prüfungen); Fotos und Dokumente fehlen wie online |
 
@@ -39,7 +39,7 @@ online prüfen → erst dann Pull Request nach `main` mergen. **Migrationen** la
 Was dort anders ist: kein KI-Schlüssel (KI-Funktionen aus), kein M365, Auto-Import aus. Die nächtlichen Crons laufen
 auch dort (sichern nur Testdaten). Supabase Free pausiert das Projekt nach einer Woche ohne Zugriff — im Dashboard wecken.
 
-**Drei Stolpersteine des ersten Deployments — für das nächste Mal:**
+**Vier Stolpersteine der ersten Deployments — für das nächste Mal:**
 
 1. **`BLOCKED / COMMIT_AUTHOR_REQUIRED`** (auch per CLI): Vercel braucht zum Commit-Autor ein GitHub-Konto.
    Das Vercel-Konto muss mit GitHub verbunden sein **und** die Commit-Adresse muss GitHub einem Konto zuordnen.
@@ -49,6 +49,16 @@ auch dort (sichern nur Testdaten). Supabase Free pausiert das Projekt nach einer
    das Paket fehlte in der Function. Jetzt wird pdfjs erst beim ersten PDF geladen, und `includeFiles` nimmt
    Canvas und pdfjs mit. Lokal unsichtbar — dort ist das Paket installiert.
 3. **`vercel link` schreibt `.env*` in die `.gitignore`** — das verschluckt `.env.example`. Eingegrenzt auf `.vercel`.
+4. **`Cannot find package '@napi-rs/canvas' imported from /var/task/apps/api/dist/vercel.mjs`** (14.10.2026): Das Bündel lädt
+   Pakete, die es nicht einbettet (`EXTERN` in `bau-vercel.mjs`), zur Laufzeit aus `node_modules` — aufgelöst **von `apps/api`
+   aus**. Ein Paket, das nur ein Arbeitsbereichs-Paket (z. B. `packages/integrations`) als Abhängigkeit hat, findet Node dort
+   nicht; lokal mit tsx fällt das nicht auf, weil jede Datei aus ihrem eigenen Paket auflöst. Folge online: Fotos aus dem Exposé
+   und Texterkennung liefen leer („Bild übersprungen“, „OCR fehlgeschlagen“ im Log), die Analyse selbst lief durch. Regel:
+   **jedes Paket in `EXTERN` steht auch in `apps/api/package.json`** (`pdfjs-dist`, `@napi-rs/canvas`, `playwright-core`,
+   `@sparticuz/chromium`, dazu `tesseract.js-core` für den OCR-Worker). Laufzeit-Logs: `npx vercel logs --deployment gg-immobilienhandel.vercel.app --json` (keine Live-Verfolgung, sondern
+   eine Abfrage über ein Zeitfenster, Standard die letzten 30 Minuten; im Hobby-Tarif reicht die Aufbewahrung nicht weiter, und
+   am 15.10.2026 kam die Abfrage trotz frischer Aufrufe leer zurück). Verlässlicher Nachweis ist die Antwort von
+   `POST /api/expose/analyse`: `bilder` gefüllt und bei Scans die Warnung „… Bild-Seite(n) per Texterkennung gelesen“.
 
 **Noch offen:** `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` bei Vercel (ohne sie kein Exposé-Import, kein Diktat),
 Azure-Redirect-URI für M365, Fotos und Dokumente der Produktion (nicht im Export), Direkt-Upload über 4,5 MB,
@@ -74,6 +84,16 @@ das direkt aus, der Node-Builder von Vercel nicht. `apps/api/bau-vercel.mjs` bü
 **Nur Produktion wird gebaut** (`ignoreCommand`, wie in der alten App): Vorschau-Deployments liefen sonst mit dem
 Code eines Branches gegen die echte Datenbank.
 
+**Texterkennung auf Vercel (14.10.2026, Exposé-Import v3):** `tesseract.js` startet einen Worker-Thread aus einer Datei. Im
+Bündel zeigte der Standardpfad ins Leere, und Node beendet bei einer fehlenden Worker-Datei den Prozess — jede Analyse mit
+Fotoseiten wäre online abgestürzt (Protokoll 31, B6). Deshalb bündelt `bau-vercel.mjs` den Worker als zweite Datei
+`dist/ocr-worker.cjs` (alle Abhängigkeiten drin, nur `tesseract.js-core` mit dem WASM bleibt in `node_modules` und steht in
+`includeFiles`), `kontext.ts` prüft, ob die Datei da ist, und die deutschen Sprachdaten liegen in `apps/api/assets`
+(`includeFiles`), damit online nichts vom CDN geladen und nichts geschrieben wird. Fehlt etwas, läuft die Analyse **ohne**
+OCR weiter (Warnung im Log) statt abzubrechen. Nachweis vor dem Produktivgang: ein eingescanntes Exposé auf der
+Testumgebung importieren und im Log „Bild-Seite(n) per Texterkennung gelesen“ sehen; andernfalls `OCR=aus` setzen.
+Die Analyse läuft über `/api/render` (300 s); das OCR-Zeitbudget je Dokument ist 120 s.
+
 ## Umgebungsvariablen (Vercel → Settings → Environment Variables, nur „Production")
 
 | Variable | Pflicht | Wofür |
@@ -89,6 +109,7 @@ Code eines Branches gegen die echte Datenbank.
 | `CRON_SECRET` | ja | schützt `/api/cron/sicherung` und `/api/cron/archiv`; Vercel hängt es als `Authorization: Bearer …` an. Ohne Wert antworten beide immer mit 401 |
 | `OAUTH_HOSTS` | bei eigener Domain | zusätzliche Adressen für die Microsoft-Anmeldung; die Vercel-Domains gelten von selbst |
 | `AUTO_IMPORT_AKTIV` | zum Freischalten | Auto-Import-Bot. **Online ist er aus, bis hier `ja` steht** — dann antworten `/api/auto-import/lauf` und `…/abbrechen` mit 503 und die Oberfläche zeigt keine Bot-Knöpfe. Braucht zusätzlich `ANTHROPIC_API_KEY`, die M365-Verbindung und für AGB-Seiten die Freigabe unter Einstellungen → Freigaben |
+| `OCR` | zum Abschalten | Texterkennung für Bild-Seiten im Exposé-Import (tesseract.js, deutsch). Standard an; `aus` lässt Bild-Seiten ohne Text und schickt Scans wie früher komplett an das gründliche Modell. Siehe „Texterkennung auf Vercel“ unten |
 
 Nicht setzen: `AUTH_LOCAL_OPEN`, `KI_ATTRAPPE`, `M365_ATTRAPPE`, `PROPSTACK_ATTRAPPE` (in Produktion ohnehin wirkungslos).
 
@@ -97,11 +118,44 @@ Nicht setzen: `AUTH_LOCAL_OPEN`, `KI_ATTRAPPE`, `M365_ATTRAPPE`, `PROPSTACK_ATTR
 1. Vercel-Projekt anlegen, Repository verbinden, Root = Wurzel des Repos (die `vercel.json` liegt dort).
 2. Variablen oben eintragen.
 3. Migrationen gegen die Zieldatenbank anwenden — **laufen nicht mit dem Deploy mit**, bewusst von Hand:
-   `npx supabase db push --dry-run`, dann ohne `--dry-run`. **Offen online:** `20260923094658_makler_anlaesse`
-   (Zwischenspeicher der KI-Anlässe) — ohne sie antwortet `/api/makler/{id}/ki/anlaesse` mit 500.
+   `npx supabase db push --dry-run`, dann ohne `--dry-run`. Stand 14.10.2026: alle 9 Migrationen in der Produktion.
 4. Storage-Buckets anlegen (lokal macht das `server.ts` beim Start, online niemand).
 5. In Azure AD die Redirect-URI `https://<adresse>/m365/rueckweg` registrieren.
 6. Erst danach: `pnpm umzug:probe` gegen die Produktion (nur lesend), dann der Umzug.
+
+## Unternehmen der Makler (Migration `unternehmen`, 18.10.2026)
+
+Je Umgebung einmal, in dieser Reihenfolge — der Code läuft in jedem Zwischenstand, weil er Firma, Webseite und
+Anschrift zuerst aus dem Unternehmen und sonst aus den Altfeldern am Makler liest:
+
+1. Migration anwenden: `npx supabase db push --dry-run`, dann ohne. Rein additiv (neue Tabelle `fach.unternehmen`,
+   Spalte `fach.makler.unternehmen_id`), es wird nichts gelöscht.
+2. Code deployen (Merge nach `main`). Neue und geänderte Makler bekommen ab jetzt ihr Unternehmen.
+3. Bestand übernehmen: läuft seit 19.10.2026 als SQL-Migration `unternehmen_uebernahme` mit `db push` (vorher war es
+   das Skript `pnpm unternehmen:uebernahme`). Erneut ausführbar; die Altfelder am Makler bleiben stehen.
+4. Später, nach Abnahme: Aufräum-Migration, die `makler.firma`, `webseite`, `strasse`, `plz`, `ort`,
+   `weitere_kontakte` entfernt (eigener PR).
+
+## HubSpot-Daten (Migrationen `makler_hubspot_spalten`, `unternehmen_uebernahme`, `hubspot_daten`, 19.10.2026)
+
+Alles läuft mit `npx supabase db push --dry-run`, dann ohne — kein Skript von Hand, in dieser Reihenfolge:
+
+1. `makler_hubspot_spalten`: neue Spalten (`anrede`, `position`, `stellung`, `zustaendig`, `hinweis`, `mailing_status`,
+   `mails_abgemeldet`, `rechtsgrundlage`, `quelle`; `unternehmen.fax`).
+2. `unternehmen_uebernahme`: Unternehmen der vorhandenen Makler aus `makler.firma`.
+3. `hubspot_daten`: der HubSpot-Export (`supabase/daten/hubspot-makler-2026-10-05.csv`, als Datenblock in der Migration).
+   Vorhandene Makler (E-Mail, sonst Telefon, sonst eindeutiger Name) und Unternehmen (Firmenschlüssel) werden nur
+   ergänzt; die Priorität kommt aus der HubSpot-Klassifizierung (VIP/High Potential → A, B, C; sonst bleibt sie). Alle
+   anderen werden neu angelegt: Kontakt-Frequenz „Alle 3 Monate“, der nächste Kontakt gleichmäßig auf die 3 Monate ab
+   dem Einspielen verteilt (A zuerst). Ohne Firmennamen kein Unternehmen.
+
+Probe auf einer Kopie der privaten Prod (19.10.2026): 117 Unternehmen aus dem Bestand; danach 68 Makler ergänzt (27 mit
+neuer Priorität), 699 neu, 209 Unternehmen neu, 8 ergänzt.
+
+Nachtrag 21.10.2026, Migration `makler_telefon_bereinigen`: Der Export enthielt Excel-Reste in der Telefonnummer (`'` vorn,
+nur `'+`, `49…` ohne `+`, `4.97E+12`). Die Migration entfernt den Marker, ergänzt das `+` und leert Werte ohne Ziffer
+oder in Exponentialschreibweise. Auf der privaten Prod: 343 Nummern, davon 30 geleert. Die Dubletten „gleiche
+Telefonnummer“ gehen dadurch von 441 auf 107 Paare zurück (27 Makler mit `'+` galten untereinander als Dubletten).
 
 ## Vor jedem Deployment
 

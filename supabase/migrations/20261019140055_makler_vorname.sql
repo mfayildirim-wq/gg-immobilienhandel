@@ -1,0 +1,1 @@
+ALTER TABLE "fach"."makler" ADD COLUMN "vorname" text;

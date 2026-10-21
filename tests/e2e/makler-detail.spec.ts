@@ -50,6 +50,9 @@ test('Makler-Detail: Profil (Prio, Telefon normalisiert, Nicht kontaktieren), No
   await expect(s.getByText('Aktive Deals (1)')).toBeVisible();
   await expect(s.locator('[data-makler-deal]')).toContainText(`${name} Str, Ulm`);
 
+  // Kein Reiter „Aus dem Exposé“ beim Makler (entfernt 18.10.2026, nur noch beim Objekt)
+  await expect(s.getByRole('tab', { name: /Aus dem Exposé/ })).toHaveCount(0);
+
   // Löschen → Papierkorb
   await s.getByRole('tab', { name: '👤 Profil' }).click();
   await s.getByRole('button', { name: 'Löschen' }).click();
@@ -57,4 +60,37 @@ test('Makler-Detail: Profil (Prio, Telefon normalisiert, Nicht kontaktieren), No
   await expect(page.locator('[data-makler]').filter({ hasText: name })).toHaveCount(0);
   await expect(s).not.toContainText(name);
   expect((await page.request.get(`/api/makler/${m.id}`)).status()).toBe(404);
+});
+
+// Vorname (19.10.2026): eigenes Feld; angezeigt wird „Vorname Name“
+test('Makler-Profil: Vorname und Name getrennt bearbeiten, Anzeige mit beidem', async ({ page }) => {
+  const k = `Vorname${Date.now()}`;
+  const m = await (await page.request.post('/api/makler', { data: { name: `Anna ${k}` } })).json();
+  await page.goto(`/makler?makler=${m.id}`);
+  const s = page.getByRole('region', { name: 'Makler-Detail' });
+  await expect(s.getByLabel('Name', { exact: true })).toHaveValue(`Anna ${k}`);
+  await s.getByLabel('Vorname').fill('Anna');
+  await s.getByLabel('Name', { exact: true }).fill(k);
+  await s.getByRole('button', { name: 'Speichern' }).click();
+  await expect.poll(async () => (await (await page.request.get(`/api/makler/${m.id}`)).json())).toMatchObject({ name: `Anna ${k}`, vorname: 'Anna', nachname: k });
+  await page.request.delete(`/api/makler/${m.id}`);
+});
+
+// Felder aus HubSpot (19.10.2026): Profil zeigt und speichert sie; „abgemeldet“ steht als Warnung oben
+test('Makler-Profil: Felder aus HubSpot bearbeiten, Fax am Unternehmen, Warnung bei abgemeldet', async ({ page }) => {
+  const k = `HubFeld${Date.now()}`;
+  const m = await (await page.request.post('/api/makler', { data: { name: `Anna ${k}`, firma: `${k} GmbH` } })).json();
+  await page.goto(`/makler?makler=${m.id}`);
+  const s = page.getByRole('region', { name: 'Makler-Detail' });
+  await s.getByLabel('Position').fill('Geschäftsführerin');
+  await s.getByLabel('Fax').fill('0711 1234');
+  await s.getByLabel('Zuständig').fill('Gerry Weyrich');
+  await s.getByLabel('Von allen E-Mails abgemeldet').check();
+  await s.getByRole('button', { name: 'Speichern' }).click();
+  await expect.poll(async () => (await (await page.request.get(`/api/makler/${m.id}`)).json()))
+    .toMatchObject({ position: 'Geschäftsführerin', fax: '0711 1234', zustaendig: 'Gerry Weyrich', mailsAbgemeldet: true });
+  await page.reload();
+  await expect(s.getByText('✉️ Keine Mails schicken — von allen E-Mails abgemeldet')).toBeVisible();
+  await expect(s.getByLabel('Fax')).toHaveValue('0711 1234');
+  await page.request.delete(`/api/makler/${m.id}`);
 });

@@ -117,11 +117,71 @@ Die alte App verhält sich genauso; eine Änderung ist eine bewusste Abweichung 
 - [x] **KI-Anlässe sparsam** (23.09.2026, Branch `ki-anlaesse-sparsam`): Anlässe werden nur noch für die gewählte
       Makler-Karte und im Anruf-Briefing geladen (die alte App fragte für jede fällige Karte Web-Suche + KI ab — mit echtem
       Bestand >100 Aufrufe beim Öffnen, ab 60/min 429). Zwischenspeicher 24 h in der Tabelle `makler_anlaesse` statt im
-      Prozess (online startet jede Function-Instanz leer). Gemessen: 1 Aufruf beim Öffnen statt >100. **Migration
-      `20260923094658_makler_anlaesse` muss online von Hand eingespielt werden** (`npx supabase db push`).
+      Prozess (online startet jede Function-Instanz leer). Gemessen: 1 Aufruf beim Öffnen statt >100. Migration
+      `20260923094658_makler_anlaesse` online eingespielt am 24.09.2026 (Prod und Test).
 - [ ] **Wählmaschine neu entwerfen.** Bis dahin ist ihr Klicktest übersprungen
       (`tests/e2e/ankauf.spec.ts`, Begründung steht dort). Beim Neuentwurf ohne Durchklicken durch die
       Warteschlange testen — der alte Test war davon abhängig, was vorherige Tests hinterlassen hatten.
+
+## Exposé-Import v3 (14.10.2026, Branch `expose-import-v3`, Protokoll 31)
+
+Übernommen aus `expose-extraktion-v1` mit den sieben Pflichtpunkten; die Bereinigung (Abschnitt 4 und 7.5 in Protokoll 31)
+folgt schrittweise auf `main`. Migration `20261014121320_expose_importe` ist auf der privaten Produktion eingespielt
+(14.10.2026). Online-Nachweis am 15.10.2026 auf der privaten Produktion: Fotos kommen an (Postplatz-Exposé: 2 Bilder) und
+ein reines Bild-PDF wird per Texterkennung gelesen (Warnung „1 Bild-Seite(n) per Texterkennung gelesen“, alle Felder
+richtig). Vorher lief beides online leer, weil `@napi-rs/canvas` dem API-Paket fehlte (PR #34, `DEPLOYMENT.md` Stolperstein 4).
+
+- [x] Texterkennung auf Vercel (Worker gebündelt, Sprachdaten mitgeliefert, Absturz abgefangen, Schalter `OCR`)
+- [x] Migration neu erzeugt nach `geo_verortungen`; Konflikte mit `main` (Modellwahl, `genutztesModell`, Nachfasstermin) gelöst
+- [x] Einheiten Teil A ↔ Mietliste über Fläche/Lage/Art/Miete statt Position; Tabelle gilt nur mit Mieten aus Teil A ergänzt
+- [x] Jahresspalten (`Jahresnettokaltmiete`, `p.a.`, `/Jahr`) ÷ 12; doppelte Mietliste (Übersicht + Anhang) zählt einmal
+- [x] Mieternamen entfallen auch ohne Kopfzeile; „Gewerbemieter/Hauptmieter“ im Kopf ebenso
+- [x] **Einheiten ohne Verteilung (Fachentscheidung 16.10.2026, Protokoll 31 §8.4, bewusste Abweichung von der alten App):**
+      Gesamtwohnfläche und Ist-Miete werden nicht mehr auf die Einheiten verteilt. Kennt keine Zeile den Wert, trägt die erste
+      Wohn-/Gewerbezeile den Gesamtwert; kennen ihn einige, bekommt die erste offene Zeile den Rest, alle weiteren bleiben leer.
+      Beide Zeilen sind auf der Prüfseite markiert („bitte aufteilen“). Zeilenzahl aus der Einheitenliste, sonst aus „Einheiten
+      gesamt“, sonst eine Zeile. Summenzeile unter der Aufstellung vergleicht mit dem Exposé; Abweichung > 1 % nur als Warnung.
+      Golden Master `expose-uebernahme.json` bleibt, der Vergleich lässt die Einheiten aus.
+- [x] **Häkchen „Fotos aus dem Exposé übernehmen“ (16.10.2026)** auf der Upload-Seite, voreingestellt an, Wahl bleibt im
+      Browser gemerkt. Abgewählt: `POST /api/expose/analyse { bilder: false }` löst keine Bilder heraus, der Schritt „Fotos“
+      entfällt im Wizard (Objekt → Makler → Deal).
+- [x] Übernehmen: Import-Zeile gesperrt, zweite Übernahme → 409; PDF vor den Fotos; Knopf während des Laufs gesperrt
+- [x] Aus dem Test auf privat (14.10.2026): Häkchen „für künftige Importe merken“ erst mit gewähltem Ziel (PR #33);
+      `@napi-rs/canvas` als Abhängigkeit von `apps/api`, sonst keine Fotos und keine Texterkennung online (PR #34)
+- [x] **Bewusste Abweichungen von der alten App** (Fachentscheidung 12.10.2026, Protokoll 30 §12; Paritätstest 16.10.2026,
+      Protokoll 31 §8.2): Jahresmiete nur am Wortlaut („p.a.“, „/Jahr“, ohne Monatshinweis daneben) ÷ 12; Platzhalter
+      („auf Anfrage“) gelten als leer; Mobil nur bei Mobilnummer; längerer wörtlicher Freitext ersetzt die Kurzfassung.
+      **E8 entschieden (16.10.2026):** die €/m²-Plausibilität (> 40 €/m²) ist nur noch eine Warnung mit Konfidenz
+      „niedrig“, keine stille Umrechnung — bei Wohn- und Geschäftshäusern wäre sie falsch (Protokoll 31, B4). Die alte App
+      rechnet gar nicht um; sie nimmt, was die KI als „monatlich“ liefert.
+- [x] **E7 entschieden (16.10.2026, Paritätstest):** Teil A bleibt auf dem Dokument-Text, Scans gehen nach Texterkennung als
+      Text an Haiku (gleiche Texte wie der pdfjs-Textlayer; beim Scan Adresse und Einheiten besser, ein Drittel der Kosten).
+      Folgeschritte umgesetzt: fehlt in Teil A die Gruppe Makler oder Kalkulation, wird der Aufruf einmal wiederholt;
+      Energieausweis aus per Texterkennung gelesenen Seiten gilt als „niedrig“ mit Warnung.
+- [x] **E2–E6 entschieden (16.10.2026):** Messwerkzeuge (`gold.ts`, `kennzahlen.ts`) bleiben weg (E2, der Paritätstest
+      `pnpm paritaet:expose` misst stattdessen); `import_korrekturen` wird nicht weiter verfolgt — Tabelle und Code am 16.10.2026
+      wieder entfernt (E3); Provision „zzgl. MwSt.“ bleibt wie gelesen, keine Umrechnung (E4); `temperature: 0` entfällt, die neuen
+      Modelle lehnen es ab (E5); unerwartete 500er tragen nur noch eine Referenz, die Ursache steht im Log (E6).
+- [x] **Rückbau nach dem Test auf privat (16.10.2026, Auftraggeber):** Wörterbuch (`expose_bezeichnungen`, Einstellungsseite, Häkchen
+      „für künftige Importe merken“) und Korrekturprotokoll (`import_korrekturen`) komplett raus; die Migration `20261014121320_expose_importe`
+      ist neu erzeugt, als hätte es beide nie gegeben (noch nicht beim Kunden). Auf der privaten Prod die zwei leeren Tabellen von Hand löschen.
+      Prüfseite: „doppelte“ Werte als Knopf unter dem Feld, „Weitere Angaben“ und „Hinweise der Analyse“ eingeklappt, lange Texte gekürzt
+      mit Tooltip. Lesefehler aus dem Test: Energieklasse nur A+–H, Nachbar-Beschriftung („Endenergiebedarf kWh/(m²*a)“) und „liegt vor“
+      kein Wert, Kachel-Raster (Wohnfläche/Zimmer/Grundstück + Kaufpreis-Zeile) keine Einheitentabelle (Summe war 550.170 m²).
+- [x] **Fachfrage Wohn-/Gewerbeeinheiten (16.10.2026):** kein eigenes Feld. „Anzahl Einheiten“ bleibt die Gesamtzahl, die
+      Aufteilung steht in den Einheiten selbst (Typ Wohnung/Gewerbe/Stellplatz), wie in der alten App.
+- [x] Paritätstest Exposé-Import: Zahl „1.900000 Euro“ (Tausenderpunkte im Textlayer verloren) wurde 1,9 — auf der privaten
+      Produktion steht der Postplatz-Deal vom 14.10. 14:03 mit Kaufpreis 1,9 € in der Kalkulation (von Hand auf 1.950.000 setzen);
+      `tokenLesen` liest Dreiergruppen hinter einem einzelnen Trennzeichen jetzt als Tausender.
+- [ ] **KI gesperrt bis 01.11.2026:** Der Anthropic-Schlüssel der privaten Produktion (derselbe wie in der lokalen `.env`) hat sein
+      Nutzungslimit erreicht — jede Analyse endet mit „Nutzungslimit erreicht“. Limit in der Anthropic-Konsole (Settings → Limits)
+      erhöhen. Der Paritätslauf für McMakler (v2) fehlt deshalb; nach der Freigabe `pnpm paritaet:expose --nur McMakler_Expose` nachholen.
+- [ ] Folgeschritte (Protokoll 31, 7.5), nicht dringend: „Abbrechen“ räumt den Import auf; Ergänzen-Modus ohne Deal-Schritt;
+      Prüfseite nutzt `uebernahmeWert` aus der Domain und fragt vor dem Überschreiben; Toleranz je Typ (Jahr, Stückzahl
+      exakt); Kaufpreis mit zwei Zielen; Leerstand „frei ab“; Typerkennung nur auf dem Typ-Feld; Datum nicht als Zahl;
+      `bezeichnungen.ts` mit Wörterbuch vor dem KI-Aufruf und `stop_reason`; Gesamt-Zeitbudget; Pixelobergrenze beim
+      Rendern; Rohdaten-Heuristik nach `integrations`; tote Reste (`pruefung.ts`, Werkzeug-Schema v2, Kostengrenze,
+      Einstellung `expose-extraktion`).
 
 ## Erledigt (21.09.2026)
 

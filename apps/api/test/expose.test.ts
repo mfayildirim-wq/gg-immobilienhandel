@@ -1,7 +1,8 @@
 import { createDb, schema, verlangeLokaleDatenbank } from '@gg/db';
 import { KALK_STANDARD } from '@gg/domain';
-import { KiSchluesselFehler, kiAttrappe, speicherImSpeicher, testExpose } from '@gg/integrations';
+import { KiDienstFehler, KiSchluesselFehler, kiAttrappe, speicherImSpeicher, testExpose, testExposeV2 } from '@gg/integrations';
 import { eq, inArray, like } from 'drizzle-orm';
+import { PDFDocument } from 'pdf-lib';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.ts';
 import { mitAusgeliefertenStandards } from './standardwerte.ts';
@@ -12,12 +13,13 @@ const url = process.env.DATABASE_URL ? verlangeLokaleDatenbank(process.env.DATAB
 describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, Ablage im Speicher)', () => {
   const { db, client } = createDb(url!);
   const speicher = speicherImSpeicher();
-  const app = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, expose: { speicher, ki: kiAttrappe(), attrappe: true } });
+  const app = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, expose: { speicher, ki: kiAttrappe(), attrappe: true, texterkennung: null } });
   const kennung = `Imp${Date.now()}`;
-  const angelegt = { deals: [] as string[], objekte: [] as string[], makler: [] as string[] };
+  const angelegt = { deals: [] as string[], objekte: [] as string[], makler: [] as string[], importe: [] as string[] };
   mitAusgeliefertenStandards(url!);
 
   afterAll(async () => {
+    if (angelegt.importe.length) await db.delete(schema.exposeImporte).where(inArray(schema.exposeImporte.id, angelegt.importe));
     if (angelegt.deals.length) await db.delete(schema.deals).where(inArray(schema.deals.id, angelegt.deals));
     if (angelegt.objekte.length) await db.delete(schema.objekte).where(inArray(schema.objekte.id, angelegt.objekte));
     if (angelegt.makler.length) await db.delete(schema.makler).where(inArray(schema.makler.id, angelegt.makler));
@@ -25,13 +27,17 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
     await client.end();
   });
 
-  const lies = async (r: Response | Promise<Response>): Promise<any> => (await r).json();
+  const lies = async (r: Response | Promise<Response>): Promise<any> => {
+    const b: any = await (await r).json();
+    if (typeof b?.importId === 'string' && !angelegt.importe.includes(b.importId)) angelegt.importe.push(b.importId);
+    return b;
+  };
   const json = (pfad: string, body: unknown) => app.request(pfad, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const eingang = (bytes: Uint8Array) => app.request('/api/expose/eingang', { method: 'POST', body: bytes });
 
   it('KI-Schlüssel aus Einstellungen → Zugänge gilt auch für den Exposé-Import — ohne Neustart, vor der Umgebung', async () => {
     // Wie online: keine Attrappe, kein Schlüssel in der Umgebung
-    const online = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, expose: { speicher, ki: null, attrappe: false } });
+    const online = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, expose: { speicher, ki: null, attrappe: false, texterkennung: null } });
     const zugang = (wert: string) => online.request('/api/zugaenge/anthropic-api-key', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ wert }) });
     try {
       expect((await zugang('')).status).toBe(200);
@@ -50,7 +56,7 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
   it('abgelehnter KI-Schlüssel: klare Meldung mit Quelle statt „Interner Fehler“; „Schlüssel testen“ prüft den verwendeten Schlüssel', async () => {
     const abgelehnt = { nachricht: async () => { throw new KiSchluesselFehler(401, 'invalid x-api-key'); }, dateiHochladen: async () => { throw new KiSchluesselFehler(401, 'invalid x-api-key'); }, dateiLoeschen: async () => {} };
     let geprueft = '';
-    const online = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, ki: abgelehnt, expose: { speicher, ki: null, attrappe: false },
+    const online = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, ki: abgelehnt, expose: { speicher, ki: null, attrappe: false, texterkennung: null },
       kiSchluesselPruefen: async (key: string) => { geprueft = key; return { gueltig: false, meldung: 'abgelehnt (Test)' }; } });
     const post = (pfad: string, body: unknown) => online.request(pfad, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     const zugang = (wert: string) => online.request('/api/zugaenge/anthropic-api-key', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ wert }) });
@@ -69,6 +75,34 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
       expect(geprueft).toBe('sk-ant-test-abgelehnt-9876');
     } finally {
       await zugang('');
+    }
+  });
+
+  it('Nutzungslimit und Überlast im Klartext; unerwartete Fehler nur mit Referenz, die Ursache bleibt im Log (E6)', async () => {
+    const mit = (fehler: Error) => {
+      const ki = { nachricht: async () => { throw fehler; }, dateiHochladen: async () => 'f', dateiLoeschen: async () => {} };
+      return createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, ki, expose: { speicher, ki: null, attrappe: false, texterkennung: null } });
+    };
+    const analysieren = async (app: ReturnType<typeof createApp>) => {
+      const e = await lies(app.request('/api/expose/eingang', { method: 'POST', body: testExpose('Fehlertest') }));
+      return app.request('/api/expose/analyse', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: e.key, dateiname: 'f.pdf' }) });
+    };
+    const zugang = (app: ReturnType<typeof createApp>, wert: string) => app.request('/api/zugaenge/anthropic-api-key', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ wert }) });
+    const limit = mit(new KiDienstFehler(400, 'limit', 'Das Nutzungslimit des Anthropic-Kontos ist erreicht — die KI-Auswertung ist gesperrt. Wieder verfügbar ab 01.11.2026, 00:00 UTC.'));
+    try {
+      await zugang(limit, 'sk-ant-test-limit-0000');
+      const r = await analysieren(limit);
+      expect(r.status).toBe(503);
+      expect(await lies(r)).toMatchObject({ fehler: expect.stringContaining('Nutzungslimit'), details: { quelle: 'anthropic', art: 'limit' } });
+      const kaputt = mit(new Error('Verbindung zur Datenbank verloren'));
+      const k = await analysieren(kaputt);
+      expect(k.status).toBe(500);
+      const antwort = await lies(k);
+      expect(antwort.fehler).toMatch(/^Interner Fehler \(Referenz [a-z0-9]{8}\)$/);
+      expect(antwort.fehler).not.toContain('Datenbank');
+      expect(antwort.details).toMatchObject({ pfad: '/api/expose/analyse', referenz: expect.stringMatching(/^[a-z0-9]{8}$/) });
+    } finally {
+      await zugang(limit, '');
     }
   });
 
@@ -182,5 +216,172 @@ describe.skipIf(!url)('Exposé-Import gegen die lokale Datenbank (KI-Attrappe, A
     expect(r.status).toBe(409);
     expect((await lies(r)).details.dealId).toBe(angelegt.deals[0]);
     expect((await db.select().from(schema.deals)).length).toBe(vorher);
+  });
+
+  it('ein zweites PDF ergänzt den bestehenden Deal: Fotos ans Objekt, fehlender Makler wird gesetzt, PDF als weiteres Exposé — kein zweiter Deal', async () => {
+    const dealId = angelegt.deals[0]!;
+    // Wie bei der Investment-Rechnung: der Deal hat (noch) keinen Makler
+    await db.update(schema.deals).set({ maklerId: null }).where(eq(schema.deals.id, dealId));
+    const { key } = await lies(eingang(testExpose(kennung)));
+    const a = await lies(json('/api/expose/analyse', { key, dateiname: 'exposé-vom-makler.pdf' }));
+    expect(a.bestehendeDeals).toEqual([{ id: dealId, status: 'In Prüfung', makler: null }]);
+    const vorher = (await db.select().from(schema.deals)).length;
+    const r = await json('/api/expose/uebernehmen', {
+      key, dateiname: 'exposé-vom-makler.pdf', extrahiert: a.extrahiert, importId: a.importId, ergaenzeDealId: dealId,
+      objekt: { daten: a.objekt }, makler: { bestehendeId: a.dubletten.makler.id, daten: a.makler }, deal: a.deal,
+    });
+    expect(r.status).toBe(201);
+    const erg = await lies(r);
+    expect(erg).toMatchObject({ dealId, objektId: angelegt.objekte[0], maklerId: a.dubletten.makler.id, ergaenzt: true, pdfGespeichert: true });
+    expect((await db.select().from(schema.deals)).length).toBe(vorher);
+    const [deal] = await db.select().from(schema.deals).where(eq(schema.deals.id, dealId));
+    expect(deal!.maklerId).toBe(a.dubletten.makler.id);
+    const doks = await db.select().from(schema.dealDokumente).where(eq(schema.dealDokumente.dealId, dealId));
+    expect(doks.map((d) => d.label).sort()).toEqual(['Exposé (Import)', 'Exposé (Import, ergänzt)']);
+    expect(speicher.inhalt.has(`pdfs/${key}`)).toBe(false);
+    const [imp] = await db.select().from(schema.exposeImporte).where(eq(schema.exposeImporte.id, a.importId));
+    expect(imp).toMatchObject({ status: 'uebernommen', dealId });
+    // Ein Deal, den es nicht gibt → 404
+    expect((await json('/api/expose/uebernehmen', { key, dateiname: 'x.pdf', extrahiert: a.extrahiert, ergaenzeDealId: 'gibt-es-nicht', objekt: { daten: a.objekt }, makler: { daten: a.makler }, deal: a.deal })).status).toBe(404);
+  });
+
+  it('meldet, wenn die Datei nicht nach einem Exposé aussieht (Tabelle aus Google Sheets)', async () => {
+    const doc = await PDFDocument.load(testExpose(`${kennung}t`));
+    doc.setCreator('Google Sheets');
+    const { key } = await lies(eingang(await doc.save()));
+    const a = await lies(json('/api/expose/analyse', { key, dateiname: 'Investment - Rechnung.pdf' }));
+    expect(a.warnungen[0]).toMatch(/^„Investment - Rechnung\.pdf“ sieht nicht nach einem Exposé aus \(\d+ Seiten?, aus Google Sheets/);
+    expect(a.warnungen[0]).toContain('Lade das Exposé des Maklers dazu hoch');
+    await json(`/api/expose/importe/${a.importId}/verwerfen`, {});
+  });
+
+  it('Analyse (Erfassung v2) legt eine Import-Zeile mit Messwerten und Belegprüfung an und liefert Angaben und Ziele', async () => {
+    const eigene = `Vein${Date.now()}`;
+    const { key } = await lies(eingang(testExposeV2(eigene)));
+    const a = await lies(json('/api/expose/analyse', { key, dateiname: `${eigene}.pdf` }));
+    expect(a).toMatchObject({
+      schemaVersion: 'gg-expose-v2', importId: expect.any(String),
+      objekt: { strasse: `${eigene}strasse`, hausnr: '12', angebotspreis: 1_250_000, wohnflaeche: 240, grundstueck: 480 },
+      extrahiert: { objekt: { angebotspreis: 1_250_000 } },
+      makler: { name: `Anna ${eigene}` },
+    });
+    expect(a).not.toHaveProperty('v1');
+    expect(a.belegQuote).toBeGreaterThan(0.5);
+    expect(Array.isArray(a.warnungen)).toBe(true);
+
+    // Angaben: Mapping, KI-Vorschlag, ohne Ziel; leerer Datensatz → Status „leer“
+    const nach = (art: 'objekt' | 'makler', bezeichnung: string) => a.angaben[art].find((x: any) => x.bezeichnung === bezeichnung);
+    expect(nach('objekt', 'Kaufpreis')).toMatchObject({
+      importId: a.importId, feld: expect.stringMatching(/^angaben\.\d+$/), wert: '1.250.000 EUR', seite: 1, belegt: true, pfad: 'preise.kaufpreis',
+      ziel: { feld: 'objekt.angebotspreis', wert: 1_250_000, aktuell: null, status: 'leer', quelle: 'mapping' },
+    });
+    expect(nach('objekt', 'Erhaltungsreserve')).toMatchObject({ seite: 2, ziel: { feld: 'details.instandhaltungsruecklage', quelle: 'vorschlag' } });
+    expect(nach('objekt', 'Besichtigung')).toMatchObject({ wert: 'nach Vereinbarung', ziel: { feld: null, status: 'keinFeld' } });
+    expect(nach('objekt', 'Ansprechpartner')).toBeUndefined();
+    // Kontaktdaten erkennt der Code per Muster (keine Personen raten): die zweite E-Mail steht beim Makler
+    expect(a.angaben.makler.some((x: any) => x.wert === 'max@beispiel.test')).toBe(true);
+    expect(a.angaben.objekt.filter((x: any) => x.gruppe === 'einheiten')).toHaveLength(3);
+
+    // Ziele: Objekt mit Kalkulation (Prüfseite zeigt beides gemeinsam), Makler getrennt
+    const schluessel = (art: 'objekt' | 'makler') => a.ziele[art].map((z: any) => z.schluessel as string);
+    expect(schluessel('objekt')).toEqual(expect.arrayContaining(['objekt.angebotspreis', 'details.hausgeld_monat', 'kalkulation.kaufpreis']));
+    expect(schluessel('objekt').some((s: string) => s.startsWith('makler.'))).toBe(false);
+    expect(schluessel('makler').every((s: string) => s.startsWith('makler.'))).toBe(true);
+    expect(a.ziele.objekt.find((z: any) => z.schluessel === 'objekt.wohnflaeche')).toEqual({ schluessel: 'objekt.wohnflaeche', label: 'Wohnfläche', einheit: 'm²', pruef: 'objekt.wohnflaeche' });
+    expect(a.ziele.objekt.find((z: any) => z.schluessel === 'details.provision')).toMatchObject({ pruef: null, einheit: null });
+
+    const [imp] = await db.select().from(schema.exposeImporte).where(eq(schema.exposeImporte.id, a.importId));
+    expect(imp).toMatchObject({
+      eingangKey: key, dateiname: `${eigene}.pdf`, schemaVersion: 'gg-expose-v2', weg: 'text', status: 'analysiert', seitenGesamt: 2, seitenGelesen: 2,
+      dealId: null, objektId: null, maklerId: null,
+      rohdaten: { schema: 'gg-expose-v2', einheiten_tabellen: [{ seite: 2 }] },
+      analyse: { nachfass: false, wiederholung: false, belegQuote: a.belegQuote },
+    });
+    const roh = imp!.rohdaten as any;
+    const analyse = imp!.analyse as any;
+    expect(analyse.belegt).toHaveLength(roh.angaben.length);
+    expect(roh.angaben.find((x: any) => x.bezeichnung === 'Kaufpreis')).toMatchObject({ wert: '1.250.000 EUR', seite: 1, pfad: 'preise.kaufpreis' });
+    expect(imp!.promptVersion).toBeTruthy();
+  });
+
+  it('Übernehmen mit importId: Import verknüpft, details aus der Zuordnung, manuelle Zuordnungen samt Korrektur-Zeilen', async () => {
+    const eigene = `Vueb${Date.now()}`;
+    const { key } = await lies(eingang(testExposeV2(eigene)));
+    const a = await lies(json('/api/expose/analyse', { key, dateiname: `${eigene}.pdf` }));
+    const feld = (art: 'objekt' | 'makler', bezeichnung: string) => a.angaben[art].find((x: any) => x.bezeichnung === bezeichnung).feld as string;
+    const ruecklage = feld('objekt', 'Erhaltungsreserve');
+    const besichtigung = feld('objekt', 'Besichtigung');
+    // zweite E-Mail: Teil A hat schon eine → „doppelt“, per Hand zu den weiteren Kontakten
+    const telefonZwei = a.angaben.makler.find((x: any) => x.wert === 'max@beispiel.test').feld as string;
+    const r = await json('/api/expose/uebernehmen', {
+      key, dateiname: `${eigene}.pdf`, extrahiert: a.extrahiert, importId: a.importId,
+      zuordnungen: [
+        { feld: ruecklage, ziel: 'details.instandhaltungsruecklage' },
+        { feld: besichtigung, ziel: 'notizen' },
+        { feld: besichtigung, ziel: 'details.sanierungen' },
+        { feld: telefonZwei, ziel: 'makler.weitereKontakte' },
+        // werden übergangen: Formularfeld der Prüfseite, unbekanntes Ziel, unbekannte Angabe, unlesbarer Wert
+        { feld: feld('objekt', 'Kaufpreis'), ziel: 'objekt.angebotspreis' },
+        { feld: ruecklage, ziel: 'gibt.es.nicht' },
+        { feld: 'angaben.999', ziel: 'details.titel' },
+        { feld: besichtigung, ziel: 'details.stellplaetze' },
+      ],
+      objekt: { daten: { ...a.objekt, notizen: 'Von der Prüfseite' } }, makler: { daten: a.makler }, deal: a.deal,
+    });
+    expect(r.status).toBe(201);
+    const erg = await lies(r);
+    angelegt.deals.push(erg.dealId); angelegt.objekte.push(erg.objektId); if (erg.maklerId) angelegt.makler.push(erg.maklerId);
+
+    const [imp] = await db.select().from(schema.exposeImporte).where(eq(schema.exposeImporte.id, a.importId));
+    expect(imp).toMatchObject({ status: 'uebernommen', dealId: erg.dealId, objektId: erg.objektId, maklerId: erg.maklerId });
+    const [deal] = await db.select().from(schema.deals).where(eq(schema.deals.id, erg.dealId));
+    expect(deal!.exposeRohdaten).toMatchObject({ importId: a.importId, originalFileName: `${eigene}.pdf`, objekt: { angebotspreis: 1_250_000 } });
+
+    const o = await lies(app.request(`/api/objekte/${erg.objektId}`));
+    expect(o.details).toMatchObject({
+      hausgeld_monat: 350, denkmalschutz: 'ja', instandhaltungsruecklage: 12_000, sanierungen: ['Besichtigung: nach Vereinbarung'],
+      herkunft: 'Exposé-Import', importId: a.importId,
+    });
+    expect(o.details).not.toHaveProperty('stellplaetze');
+    expect(o.notizen).toBe(`Von der Prüfseite\nBesichtigung: nach Vereinbarung (Exposé S. 2)`);
+    // Kollegen aus dem Exposé stehen am Unternehmen des Maklers (18.10.2026)
+    const makler = await lies(app.request(`/api/makler/${erg.maklerId}`));
+    expect(makler.unternehmen).not.toBeNull();
+    expect(makler.weitereKontakte.emails).toEqual(expect.arrayContaining(['max@beispiel.test']));
+
+    const einheiten = await db.select().from(schema.objektEinheiten).where(eq(schema.objektEinheiten.objektId, erg.objektId)).orderBy(schema.objektEinheiten.sort);
+    expect(einheiten).toHaveLength(3);
+    expect(einheiten.map((x) => x.details)).toEqual([{ seite: 2 }, { seite: 2 }, { seite: 2 }]);
+  });
+
+  it('Doppel-Submit: dieselbe Analyse ein zweites Mal übernehmen → 409, kein zweites Objekt, kein zweiter Deal (Protokoll 31, W27)', async () => {
+    const eigene = `Dopp${Date.now()}`;
+    const { key } = await lies(eingang(testExposeV2(eigene)));
+    const a = await lies(json('/api/expose/analyse', { key, dateiname: `${eigene}.pdf` }));
+    const body = { key, dateiname: `${eigene}.pdf`, extrahiert: a.extrahiert, importId: a.importId, objekt: { daten: a.objekt }, makler: { daten: a.makler }, deal: a.deal };
+    const deals = async () => (await db.select().from(schema.deals)).length;
+    const objekte = async () => (await db.select().from(schema.objekte)).length;
+    const [d0, o0] = [await deals(), await objekte()];
+    const erste = await json('/api/expose/uebernehmen', body);
+    expect(erste.status).toBe(201);
+    const erg = await lies(erste);
+    angelegt.deals.push(erg.dealId); angelegt.objekte.push(erg.objektId); if (erg.maklerId) angelegt.makler.push(erg.maklerId);
+    expect(erg.pdfGespeichert).toBe(true);
+    const zweite = await json('/api/expose/uebernehmen', body);
+    expect(zweite.status).toBe(409);
+    expect((await lies(zweite)).fehler).toContain('schon übernommen');
+    expect([await deals(), await objekte()]).toEqual([d0 + 1, o0 + 1]);
+  });
+
+  it('Exposé überspringen: Import wird verworfen; unbekannt → 404; übernommene bleiben übernommen', async () => {
+    const eigene = `Vverw${Date.now()}`;
+    const { key } = await lies(eingang(testExposeV2(eigene)));
+    const a = await lies(json('/api/expose/analyse', { key, dateiname: `${eigene}.pdf` }));
+    const r = await json(`/api/expose/importe/${a.importId}/verwerfen`, {});
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ id: a.importId });
+    const [imp] = await db.select({ status: schema.exposeImporte.status }).from(schema.exposeImporte).where(eq(schema.exposeImporte.id, a.importId));
+    expect(imp!.status).toBe('verworfen');
+    expect((await json('/api/expose/importe/gibt-es-nicht/verwerfen', {})).status).toBe(404);
   });
 });

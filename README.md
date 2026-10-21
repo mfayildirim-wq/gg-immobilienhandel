@@ -81,7 +81,8 @@ Knopf „Exposé importieren“ in der Kopfzeile → Upload (Stapel, Kostenschä
 - **Ablage:** Supabase Storage (`SUPABASE_SERVICE_ROLE_KEY`), Buckets `pdfs`, `deal-docs`, `obj-photos` wie in der alten App; Upload zuerst nach `pdfs/_eingang/<uuid>`.
 - **Übernommen und geprüft:** Prompt/Schema wortgleich, Analyse-Wegwahl und PDF-Textlesen mit den Tests der alten App; Dubletten, Telefonregeln und Vorbereitung per Golden Master (150 Fälle); Vorsortierung der Mails (`triageMail`) mit Tests und Beispiel-Mails.
 - **Bewusste Korrekturen:** Deal-Einheiten bekommen `flaeche` (alte App: nur `fl_ist`, Fläche fehlte in der Kalkulation jedes importierten Deals) · Risikopuffer als `rp_pct` (alt `rp`, wirkungslos) · eingegebene 0 bleibt 0 (alt `|| Standard`).
-- **Noch offen:** E-Mail-Angebote aus dem Postfach und Auto-Import-Engine (brauchen Microsoft-Graph-Zugang, Browser, Outward-Gate), Fotos aus dem PDF, Entwurf/Minimieren, Massenimport mit CSV, Vergleich mit echten Exposés.
+- **Noch offen:** E-Mail-Angebote aus dem Postfach und Auto-Import-Engine (brauchen Microsoft-Graph-Zugang, Browser, Outward-Gate), Entwurf/Minimieren, Massenimport mit CSV.
+- **v3 — Rohdaten ohne KI, Deutung mit KI (14.10.2026, Protokolle 28–31):** Das PDF wird zuerst ohne KI gelesen (`pdfDokument`: Textlayer mit Zellen, Bild-Seiten per Texterkennung mit tesseract.js, Fotos per `bilderAusPdf`), daraus entstehen im Code die Rohdaten (`rohdatenAusDokument`: Bezeichnung–Wert, Kacheln, Freitexte, Kontakte, Mietlisten-Tabellen, Wörterbuch mit ~400 Synonymen auf OpenImmo-1.2.7-Pfade). Die KI deutet nur noch: **Teil A** ist der bisherige Aufruf (Prompt, Werkzeug, Grenzen wortgleich), dazu ein kleiner Aufruf für unbekannte Bezeichnungen. `zuordnen` in `@gg/domain` führt beides zusammen (Teil A hat Vorrang, Rohdaten füllen Lücken, Widersprüche erscheinen als „doppelt“; Einheiten werden über Fläche/Lage verbunden, Jahresspalten ÷ 12, Mieternamen entfallen). Jeder Import ist eine Akte in `fach.expose_importe` (Rohdaten samt Dokument, nie überschrieben); die Prüfseite zeigt Widersprüche („doppelt“) als Knopf unter dem jeweiligen Feld (wie die Kontakt-Alternativen beim Makler), Angaben ohne Feld eingeklappt unter „Weitere Angaben“ mit Dropdown „Übernehmen in …“, einen Schritt **Fotos** (automatisch ans Objekt), und bei einer Dublette „Zum bestehenden Deal hinzufügen“. Reiter **„Aus dem Exposé“** an Objekt und Makler zeigt alle erfassten Angaben mit Übernahme ins Feld; `objekt_einheiten.details` nimmt Zusatzspalten je Einheit auf. Ein gelerntes Wörterbuch (`expose_bezeichnungen`) und ein Korrekturprotokoll (`import_korrekturen`) waren kurz dabei und wurden am 16.10.2026 vor der Auslieferung wieder entfernt (Migration `expose_importe` neu erzeugt). Alte Deals bleiben unverändert; `pnpm umzug --altimporte` legt für sie optional eine Akte aus den vorhandenen Rohdaten an. Online läuft die Analyse über die 300-s-Function; Texterkennung siehe `DEPLOYMENT.md` (Schalter `OCR=aus`). Messung gegen `main` an 5 Exposés: 0 Felder nur in `main`, 22 nur neu, Kosten gleich (Protokoll 30 §13).
 
 ## Bankgespräch-PDF
 
@@ -113,6 +114,12 @@ Prüft **gegen die laufende alte App**, ob der Neubau fachlich dasselbe zeigt �
 
 **Bisher gefunden:** Datumsanzeige „Zuletzt“ war im Neubau „8.9.2026“, alt „08.09.2026“ → angeglichen.
 
+**Exposé-Import (`pnpm paritaet:expose`, kostet Geld):** dieselben PDFs auf drei Wegen — alte App (laufend, Port 3001), Neubau v0 (derselbe
+Aufruf, portiert) und Neubau v2 (Produktivweg: Rohdaten ohne KI, Teil A auf dem Dokument-Text, Scan → OCR → Text) — und die Felder der
+Prüfseite im Vergleich. `--nur "a,b"` wählt PDFs, `--scan "a"` nimmt ein PDF zusätzlich als nachgestellten Scan (gerastert, ohne Textlayer;
+`pdfAlsScan` aus `@gg/integrations`). alt ↔ v0 zeigt das KI-Rauschen, v0 ↔ v2 die Wirkung der Eingabe. Ergebnisse werden je PDF und Weg
+unter `.cache/paritaet-expose/` abgelegt; Bericht `berichte/paritaet/expose.md` (Protokoll 31 §8.2).
+
 ## Deal-Detail, Makler, Cockpit-KI, Vorlagen
 
 - **Deal-Info:** Objekt wechseln/neu anlegen (Kaufpreis, Wohnfläche, Einheiten aus dem Objekt), Makler-Pflicht beim manuellen Anlegen, Dublette Objekt+Makler, Frequenzwechsel belegt den nächsten Kontakt vor (nur wenn leer), 1 Wo/1 Mo/3 Mo/6 Mo, E-Mail an Makler, Objektfotos, Gesprächslog, Löschen.
@@ -125,6 +132,20 @@ Prüft **gegen die laufende alte App**, ob der Neubau fachlich dasselbe zeigt �
 - **Einstellungen → Vorlagen-Texte:** Vorlagen mit Platzhaltern, „Mein Name“; Umzug `immo-vorlagen`.
 - **KI ohne Schlüssel:** `KI_ATTRAPPE=1` liefert erkennbare Test-Antworten und keine öffentliche Suche. Whisper braucht `OPENAI_API_KEY`.
 - **Prompts** wörtlich in `packages/integrations/src/ki/persona.ts`, `anreicherung.ts` und `einheiten.ts` (dort geht das PDF als Dokument an das Modell statt als JPEG-Seiten — der Neubau hat keinen Seiten-Renderer); reine Regeln in `packages/domain/src/makler`, `deals/info.ts`, `vorlagen.ts`.
+
+## Unternehmen der Makler
+
+Firma, Webseite, Büroanschrift und die weiteren Kontakte aus Exposés stehen in `fach.unternehmen`, der Makler zeigt
+mit `unternehmen_id` darauf (18.10.2026). Jeder Standort ist ein eigenes Unternehmen. Zugeordnet wird über
+`unternehmenSchluessel` (`@gg/domain`), der nur Schreibweisen zusammenfasst. Lesen und Schreiben laufen über
+`apps/api/src/services/unternehmen.ts`. Im Profil steht der Block „🏢 Unternehmen“ mit den Kollegen; Webseite und
+Anschrift gelten für alle Makler der Firma. Übernahme des Bestands und der HubSpot-Daten: SQL-Migrationen
+`unternehmen_uebernahme` und `hubspot_daten` (siehe DEPLOYMENT.md).
+
+**Vorname (19.10.2026):** `makler.vorname` steht neben `makler.name` (Nachname). Angezeigt und verglichen wird überall
+„Vorname Name“ (`MAKLER_NAME`); ohne Vorname steht der volle Name in `name`, etwa bei neuen Maklern aus Exposé oder Import.
+Den Bestand hat die SQL-Migration `20261019140056_makler_vorname_aufteilen` aufgeteilt: erstes Wort → Vorname. Anrede
+oder Titel vorn, mehrere Personen und „Nachname, Vorname“ bleiben ganz.
 
 ## Objekt-Detail
 

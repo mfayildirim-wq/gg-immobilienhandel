@@ -12,6 +12,7 @@ import {
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { auditSchreiben } from './audit.ts';
 import { FachFehler } from '../fehler.ts';
+import { MAKLER_AUFGELOEST, MAKLER_NAME, maklerFirmaSetzen, UNTERNEHMEN_JOIN } from './unternehmen.ts';
 
 const IGNORIERT = 'dubletten-ignoriert';
 
@@ -45,9 +46,9 @@ const beschriftung = (typ: DublettenEntitaet, x: any) =>
 /** findAllDuplicates über die aktiven Datensätze. */
 export async function dublettenScan(db: Db): Promise<DublettenPaarSicht[]> {
   // Reihenfolge wie in den Listen (alt: Reihenfolge der Sammlung) — sie bestimmt, welcher Eintrag im Paar vorn steht
-  const makler = await db.select().from(schema.makler).where(isNull(schema.makler.deletedAt)).orderBy(asc(schema.makler.reihenfolge));
+  const makler = await db.select(MAKLER_AUFGELOEST).from(schema.makler).leftJoin(schema.unternehmen, UNTERNEHMEN_JOIN).where(isNull(schema.makler.deletedAt)).orderBy(asc(schema.makler.reihenfolge));
   const objekte = await db.select().from(schema.objekte).where(isNull(schema.objekte.deletedAt)).orderBy(asc(schema.objekte.reihenfolge));
-  const deals = await db.select({ id: schema.deals.id, objektId: schema.deals.objektId, maklerId: schema.deals.maklerId, adresse: schema.objekte.strasse, maklerName: schema.makler.name })
+  const deals = await db.select({ id: schema.deals.id, objektId: schema.deals.objektId, maklerId: schema.deals.maklerId, adresse: schema.objekte.strasse, maklerName: MAKLER_NAME })
     .from(schema.deals)
     .innerJoin(schema.objekte, eq(schema.objekte.id, schema.deals.objektId))
     .leftJoin(schema.makler, eq(schema.makler.id, schema.deals.maklerId))
@@ -65,7 +66,7 @@ interface Aggregat { datensatz: any; listen: Record<string, any[]> }
 
 async function aggregat(db: Db, typ: DublettenEntitaet, id: string): Promise<Aggregat> {
   if (typ === 'makler') {
-    const [m] = await db.select().from(schema.makler).where(eq(schema.makler.id, id));
+    const [m] = await db.select(MAKLER_AUFGELOEST).from(schema.makler).leftJoin(schema.unternehmen, UNTERNEHMEN_JOIN).where(eq(schema.makler.id, id));
     if (!m) throw new FachFehler(404, 'Makler nicht gefunden');
     const kommunikation = await db.select().from(schema.maklerKommunikation).where(eq(schema.maklerKommunikation.maklerId, id));
     return { datensatz: { ...m, kommunikation }, listen: { kommunikation } };
@@ -86,6 +87,8 @@ async function aggregat(db: Db, typ: DublettenEntitaet, id: string): Promise<Agg
   return { datensatz: { ...d, kommentare, einheiten, sanierungen }, listen: { kommentare, einheiten, sanierungen, dokumente } };
 }
 
+/** Gehören dem Unternehmen: geschrieben über `maklerFirmaSetzen`, nicht als Spalte des Maklers. */
+const FIRMA_FELDER = new Set(['firma', 'webseite']);
 const TABELLE = { makler: schema.makler, objekt: schema.objekte, deal: schema.deals } as const;
 /** Name der Fremdschlüsselspalte (maklerId, objektId oder dealId) und der Tabelle — beides landet im Protokoll. */
 const verweisSpalte = (spalte: any): 'maklerId' | 'objektId' | 'dealId' =>
@@ -123,7 +126,12 @@ const VERWEISE: Record<DublettenEntitaet, { tabelle: any; spalte: any }[]> = {
 const spaltenWerte = (typ: DublettenEntitaet, zusammen: any) => {
   const tabelle = TABELLE[typ] as unknown as Record<string, unknown>;
   const felder: Record<string, unknown> = {};
-  for (const f of FELDER[typ]) if (f in zusammen && f in tabelle) felder[f] = zusammen[f];
+  for (const f of FELDER[typ]) if (f in zusammen && f in tabelle && !(typ === 'makler' && FIRMA_FELDER.has(f))) felder[f] = zusammen[f];
+  // Name (19.10.2026): passt er zu Vorname + Nachname des Datensatzes, bleiben die Teile; sonst landet er ganz in `name`
+  if (typ === 'makler' && 'name' in felder) {
+    const getrennt = [zusammen.vorname, zusammen.nachname].filter(Boolean).join(' ') || null;
+    Object.assign(felder, getrennt === felder.name ? { vorname: zusammen.vorname ?? null, name: zusammen.nachname ?? null } : { vorname: null });
+  }
   if (typ === 'makler') { felder.tags = zusammen.tags ?? []; felder.persoenlich = zusammen.persoenlich ?? null; felder.kiSummary = null; felder.kiSummaryAt = null; }
   if (typ === 'deal') felder.kalkulation = zusammen.kalkulation ?? {};
   return felder;
@@ -168,6 +176,7 @@ export async function dublettenZusammenfuehren(db: Db, typ: DublettenEntitaet, p
 
   await db.transaction(async (tx) => {
     await tx.update(t).set({ ...spaltenWerte(typ, zusammen), version: sql`${t.version} + 1`, updatedAt: sql`now()` }).where(eq(t.id, primaerId));
+    if (typ === 'makler') await maklerFirmaSetzen(tx, primaerId, { firma: zusammen.firma ?? null, webseite: zusammen.webseite ?? null });
 
     for (const liste of UNTERLISTEN[typ]) {
       const istWahl = WAHL_LISTEN[typ].includes(liste.name);
@@ -248,6 +257,7 @@ export async function dublettenRueckgaengig(db: Db, protokollId: string, erzwing
 
   await db.transaction(async (tx) => {
     await tx.update(t).set({ ...spaltenWerte(typ, primaer.datensatz), version: sql`${t.version} + 1`, updatedAt: sql`now()` }).where(eq(t.id, p.primaerId!));
+    if (typ === 'makler') await maklerFirmaSetzen(tx, p.primaerId!, { firma: primaer.datensatz.firma ?? null, webseite: primaer.datensatz.webseite ?? null });
     if (typ === 'makler') await tx.update(schema.makler).set({ kiSummary: primaer.datensatz.kiSummary ?? null, kiSummaryAt: primaer.datensatz.kiSummaryAt ?? null }).where(eq(schema.makler.id, p.primaerId!));
     await tx.update(t).set({ deletedAt: null }).where(eq(t.id, p.sekundaerId!));
 

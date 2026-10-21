@@ -5,12 +5,13 @@ import { type DealStatus, erledigtTermin, kommZeitstempel, letzterKontaktNachEin
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { FachFehler } from '../fehler.ts';
 import { objektTitel } from './objekte.ts';
+import { MAKLER_AUFGELOEST, MAKLER_FIRMA, MAKLER_NAME, maklerFirmaSetzen, maklerInsUnternehmen, UNTERNEHMEN_JOIN, unternehmenFaxSetzen, unternehmenKurz } from './unternehmen.ts';
 import { versionFortschreiben } from './version.ts';
 
 const spalten = {
   id: schema.makler.id,
-  name: schema.makler.name,
-  firma: schema.makler.firma,
+  name: MAKLER_NAME,
+  firma: MAKLER_FIRMA,
   tel: schema.makler.tel,
   email: schema.makler.email,
   prio: schema.makler.prio,
@@ -23,23 +24,28 @@ export async function maklerListe(db: Db) {
   const zeilen = await db
     .select(spalten)
     .from(schema.makler)
+    .leftJoin(schema.unternehmen, UNTERNEHMEN_JOIN)
     .where(isNull(schema.makler.deletedAt))
-    .orderBy(asc(schema.makler.name));
+    .orderBy(asc(MAKLER_NAME));
   return zeilen.map((z) => ({ ...z, prio: z.prio as 'A' | 'B' | 'C' | null }));
 }
 
 export async function maklerAnlegen(db: Db, eingabe: MaklerAnlegen) {
   const daten = MaklerAnlegenSchema.parse(eingabe);
-  const [neu] = await db
-    .insert(schema.makler)
-    .values({ id: crypto.randomUUID(), ...daten, ...(daten.tel ? { tel: telefonNormalisieren(daten.tel) } : {}) })
-    .returning(spalten);
+  const id = crypto.randomUUID();
+  await db.transaction(async (tx) => {
+    await tx.insert(schema.makler).values({ id, ...daten, ...(daten.tel ? { tel: telefonNormalisieren(daten.tel) } : {}) });
+    await maklerInsUnternehmen(tx, id);
+  });
+  const [neu] = await db.select(spalten).from(schema.makler).leftJoin(schema.unternehmen, UNTERNEHMEN_JOIN).where(eq(schema.makler.id, id));
   return { ...neu!, prio: neu!.prio as 'A' | 'B' | 'C' | null };
 }
 
 export async function maklerDetail(db: Db, id: string): Promise<MaklerDetail> {
-  const [m] = await db.select().from(schema.makler).where(and(eq(schema.makler.id, id), isNull(schema.makler.deletedAt)));
+  const [m] = await db.select(MAKLER_AUFGELOEST).from(schema.makler).leftJoin(schema.unternehmen, UNTERNEHMEN_JOIN)
+    .where(and(eq(schema.makler.id, id), isNull(schema.makler.deletedAt)));
   if (!m) throw new FachFehler(404, 'Makler nicht gefunden');
+  const unternehmen = await unternehmenKurz(db, m.unternehmenId, m.id);
   const kommunikation = await db
     .select({
       id: schema.maklerKommunikation.id, zeitpunkt: schema.maklerKommunikation.zeitpunkt, kanal: schema.maklerKommunikation.kanal,
@@ -54,10 +60,12 @@ export async function maklerDetail(db: Db, id: string): Promise<MaklerDetail> {
     .innerJoin(schema.objekte, eq(schema.objekte.id, schema.deals.objektId))
     .where(and(eq(schema.deals.maklerId, id), isNull(schema.deals.deletedAt)));
   return {
-    id: m.id, name: m.name, firma: m.firma, tel: m.tel, email: m.email, prio: m.prio as 'A' | 'B' | 'C' | null,
+    id: m.id, name: m.name, vorname: m.vorname, nachname: m.nachname, firma: m.firma, tel: m.tel, email: m.email, prio: m.prio as 'A' | 'B' | 'C' | null,
     kontaktFrequenz: m.kontaktFrequenz, nextContact: m.nextContact, version: m.version, webseite: m.webseite,
     mobil: m.mobil, festnetz: m.festnetz, strasse: m.strasse, plz: m.plz, ort: m.ort,
-    weitereKontakte: (m.weitereKontakte as MaklerDetail['weitereKontakte']) ?? null,
+    weitereKontakte: (m.weitereKontakte as MaklerDetail['weitereKontakte']) ?? null, unternehmen,
+    anrede: m.anrede, position: m.position, stellung: m.stellung, zustaendig: m.zustaendig, hinweis: m.hinweis,
+    mailingStatus: m.mailingStatus, mailsAbgemeldet: m.mailsAbgemeldet, rechtsgrundlage: m.rechtsgrundlage, quelle: m.quelle, fax: m.fax,
     persoenlich: (m.persoenlich as Record<string, unknown> | null) ?? null,
     lastContact: m.lastContact, beziehungsNotiz: m.beziehungsNotiz, kommunikation,
     kiSummary: m.kiSummary, kiSummaryAt: m.kiSummaryAt ? kommZeitstempel(m.kiSummaryAt) : null, erstellt: m.createdAt.slice(0, 10),
@@ -72,8 +80,17 @@ export async function maklerAendern(db: Db, id: string, eingabe: MaklerAendern) 
     // mkSave: Telefon normalisiert (0049→+49, ohne Klammern)
     if (felder.tel) felder.tel = telefonNormalisieren(felder.tel);
     for (const k of ['mobil', 'festnetz'] as const) if (felder[k]) felder[k] = telefonNormalisieren(felder[k]);
-    for (const k of ['mobil', 'festnetz', 'strasse', 'plz', 'ort'] as const) if (felder[k] === '') felder[k] = null;
-    if (Object.keys(felder).length) await tx.update(schema.makler).set(felder).where(eq(schema.makler.id, id));
+    for (const k of ['mobil', 'festnetz', 'anrede', 'position', 'stellung', 'zustaendig', 'hinweis', 'mailingStatus', 'rechtsgrundlage', 'quelle', 'fax'] as const) {
+      if (felder[k] === '') felder[k] = null;
+    }
+    // Firma, Webseite, Anschrift gehören dem Unternehmen
+    const { firma, webseite, strasse, plz, ort, fax, nachname, ...rest } = felder;
+    await maklerFirmaSetzen(tx, id, { firma, webseite, strasse, plz, ort });
+    if (fax !== undefined) await unternehmenFaxSetzen(tx, id, fax);
+    // Voller Name in einem Feld leert den Vornamen; getrennt kommen Vorname und Nachname (19.10.2026)
+    if (rest.name !== undefined && rest.vorname === undefined) Object.assign(rest, { vorname: null });
+    if (nachname !== undefined) Object.assign(rest, { name: nachname });
+    if (Object.keys(rest).length) await tx.update(schema.makler).set(rest).where(eq(schema.makler.id, id));
     return { id, version: neu };
   });
 }

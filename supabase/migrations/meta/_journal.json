@@ -64,6 +64,62 @@
       "when": 1791894377983,
       "tag": "20261013122617_geo_verortungen",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791980000851,
+      "tag": "20261014121320_expose_importe",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792318053769,
+      "tag": "20261018100733_unternehmen",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792418455731,
+      "tag": "20261019140055_makler_vorname",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792418456215,
+      "tag": "20261019140056_makler_vorname_aufteilen",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792420315186,
+      "tag": "20261019143155_makler_hubspot_spalten",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792422329424,
+      "tag": "20261019150529_unternehmen_uebernahme",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1792422330919,
+      "tag": "20261019150530_hubspot_daten",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1792569303114,
+      "tag": "20261021075503_makler_telefon_bereinigen",
+      "breakpoints": true
     }
   ]
 }

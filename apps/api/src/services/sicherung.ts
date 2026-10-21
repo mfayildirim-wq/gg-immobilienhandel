@@ -16,8 +16,8 @@ import { auditSchreiben } from './audit.ts';
 
 /** Reihenfolge ist die Einspielreihenfolge: erst die Eltern, dann die Kinder. */
 export const SICHERUNG_TABELLEN = [
-  'makler', 'objekte', 'objektEinheiten', 'objektFotos', 'deals', 'dealEinheiten', 'dealSanierungen', 'dealKommentare',
-  'dealKalkVarianten', 'dealDokumente', 'dealStatusHistorie', 'maklerKommunikation',
+  'unternehmen', 'makler', 'objekte', 'objektEinheiten', 'objektFotos', 'deals', 'dealEinheiten', 'dealSanierungen', 'dealKommentare',
+  'dealKalkVarianten', 'dealDokumente', 'dealStatusHistorie', 'exposeImporte', 'maklerKommunikation',
   'kundenkalkulationen', 'finanzpraesentationen', 'praesentationFolien', 'vertriebslisten', 'vertriebslisteZeilen',
   'projekte', 'projektEinheiten', 'projektMieterhistorie', 'projektAufgaben', 'projektGebaeudeMassnahmen',
   'begleitscheinVorlagen', 'begleitscheine', 'begleitscheinAktionen', 'vordrucke',

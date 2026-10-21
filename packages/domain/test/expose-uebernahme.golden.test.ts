@@ -26,8 +26,14 @@ describe.each(faelle.map((f, i) => [f.name, f, i] as const))('Exposé-Übernahme
     expect(['a@b.de', 'a@b', 'a b@c.de', '', undefined].map((x) => emailPruefen(x))).toEqual(f.ergebnis.email);
   });
 
-  it('Vorbereitung: Flächen- und Mietverteilung, Telefonwahl, Deal-Vorwerte', () => {
+  // Fachentscheidung 16.10.2026 (Protokoll 31 §8.4): die alte App verteilte fehlende Flächen gleichmäßig und fehlende Mieten nach
+  // Fläche auf die Einheiten; der Neubau verteilt nicht mehr (Gesamtwert in die erste offene Zeile, siehe
+  // expose-einheiten-gesamtwert.test.ts). Die Einheiten sind deshalb aus dem Vergleich genommen; der Golden Master selbst bleibt.
+  it('Vorbereitung: Objektfelder, Telefonwahl, Deal-Vorwerte (Einheiten: bewusste Abweichung, eigener Test)', () => {
     const v = exposeVorbereiten(structuredClone(e.extrahiert));
-    expect(JSON.parse(JSON.stringify({ ewObjData: v.objekt, ewMkData: v.makler, ewDealData: v.deal }))).toEqual(f.ergebnis.vorbereitet);
+    const ohneEinheiten = (o: Record<string, unknown>) => { const { einheiten: _e, ...rest } = o; return rest; };
+    const ist = JSON.parse(JSON.stringify({ ewObjData: ohneEinheiten(v.objekt), ewMkData: v.makler, ewDealData: v.deal }));
+    const soll = { ...f.ergebnis.vorbereitet, ewObjData: ohneEinheiten(f.ergebnis.vorbereitet.ewObjData) };
+    expect(ist).toEqual(soll);
   });
 });

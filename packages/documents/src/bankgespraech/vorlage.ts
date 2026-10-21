@@ -1,5 +1,6 @@
 // Wörtliche Kopie von gg-immohandel src/lib/bankgespraechTemplate.ts (Golden Master: packages/documents/test/golden).
 // Abweichungen nur technisch: Import-Pfad des Logos und ein `!` in der Steuerzeile (noUncheckedIndexedAccess).
+// Fachlich (Kundenwunsch 19.10.2026): Fußzeile „IVT Wohnen GmbH“; beim Globalverkauf „Kaufpreis Haus“ statt „Wohnung“.
 // ──────────────────────────────────────────────────────────────
 // Bankgespräch-Template — Single Source of Truth für PDF + Live-Preview
 // ──────────────────────────────────────────────────────────────
@@ -8,6 +9,7 @@
 // im Server (Puppeteer-PDF-Export) verwendet → garantiert identisches Layout.
 // ──────────────────────────────────────────────────────────────
 
+import { kundenkalkKaufgegenstand } from '@gg/domain';
 import { IVT_LOGO_DATA_URL } from '../logo.ts';
 
 export interface BankgespraechCashflowYear {
@@ -394,7 +396,7 @@ function bankgespraechBodyHtml(p: BankgespraechPayload): string {
   const renderFooter = (pageNum: number, totalPages: number) => `
   <div class="bg-foot">
     <span style="float:left">${escapeHtml(p.kalkName)}</span>
-    <span style="float:right;font-style:italic">Ein Produkt der IVT Wohnen GmbH</span>
+    <span style="float:right;font-style:italic">IVT Wohnen GmbH</span>
     <span style="display:block;text-align:center">Seite ${pageNum} / ${totalPages}</span>
     <div style="clear:both"></div>
   </div>`;
@@ -407,7 +409,7 @@ function bankgespraechBodyHtml(p: BankgespraechPayload): string {
       <div class="bg-box-t">Kaufpreis</div>
       <table>
         ${p.kaufpreisStellplatz > 0 ? `
-        <tr><td>Kaufpreis Wohnung</td><td class="bg-num">${fmt(p.kaufpreisWohnung)} €</td></tr>
+        <tr><td>Kaufpreis ${kundenkalkKaufgegenstand(p.scope)}</td><td class="bg-num">${fmt(p.kaufpreisWohnung)} €</td></tr>
         <tr><td>+ Kaufpreis Stellplatz</td><td class="bg-num">${fmt(p.kaufpreisStellplatz)} €</td></tr>
         <tr><td class="bg-bold">= Kaufpreis</td><td class="bg-num bg-bold">${fmt(p.kaufpreis)} €</td></tr>
         ` : `
@@ -534,8 +536,8 @@ function bankgespraechBodyHtml(p: BankgespraechPayload): string {
       <div class="bg-box-t">Eckdaten</div>
       <table>
         <tr><td>Mietfläche</td><td class="bg-num">${p.wohnflaeche.toLocaleString('de-DE',{maximumFractionDigits:1})} m²</td></tr>
-        <tr><td>Kaufpreis Wohnung</td><td class="bg-num">${fmt(p.kaufpreisWohnung)} €</td></tr>
-        <tr><td>Kaufpreis Wohnung pro m²</td><td class="bg-num">${fmt(p.kaufpreisProQm)} €</td></tr>
+        <tr><td>Kaufpreis ${kundenkalkKaufgegenstand(p.scope)}</td><td class="bg-num">${fmt(p.kaufpreisWohnung)} €</td></tr>
+        <tr><td>Kaufpreis ${kundenkalkKaufgegenstand(p.scope)} pro m²</td><td class="bg-num">${fmt(p.kaufpreisProQm)} €</td></tr>
         ${p.stellplaetzeAnzahl > 0 ? `
         <tr><td>Anzahl Stellplätze</td><td class="bg-num">${p.stellplaetzeAnzahl}</td></tr>
         <tr><td>Kaufpreis Stellplatz</td><td class="bg-num">${fmt(p.kaufpreisStellplatz)} €</td></tr>
@@ -719,7 +721,7 @@ export function bankgespraechPdfFooter(p: BankgespraechPayload): string {
     <tr>
       <td style="text-align:left;border:none;padding:0">${escapeHtml(p.kalkName)}</td>
       <td style="text-align:center;border:none;padding:0">Seite <span class="pageNumber"></span> / <span class="totalPages"></span></td>
-      <td style="text-align:right;border:none;padding:0;font-style:italic">Ein Produkt der IVT Wohnen GmbH</td>
+      <td style="text-align:right;border:none;padding:0;font-style:italic">IVT Wohnen GmbH</td>
     </tr>
   </table>
 </div>`;
