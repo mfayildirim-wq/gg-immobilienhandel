@@ -410,7 +410,8 @@ export const useRechercheMakler = (id: string | null) =>
 function useRechercheAendern<E, R>(aufruf: (e: E) => Promise<R>, alles = false) {
   const qc = useQueryClient();
   // Übernehmen ändert Makler und Unternehmen — dann alles neu; sonst nur die Recherche
-  return useMutation({ mutationFn: aufruf, onSettled: () => (alles ? qc.invalidateQueries() : qc.invalidateQueries({ queryKey: ['recherche'] })) });
+  // Neu laden im Hintergrund (void): sonst wartet „Erfolg“ — und damit z. B. das Schließen des Start-Dialogs — auf alle Abfragen
+  return useMutation({ mutationFn: aufruf, onSettled: () => { void (alles ? qc.invalidateQueries() : qc.invalidateQueries({ queryKey: ['recherche'] })); } });
 }
 export const useRechercheStarten = () => useRechercheAendern((e: RechercheStarten) => anfrage<RechercheLauf>('/api/makler-recherche/laeufe', senden('POST', e)));
 export const useRechercheAbbrechen = () => useRechercheAendern((id: string) => anfrage<RechercheLauf>(`/api/makler-recherche/laeufe/${id}/abbrechen`, { method: 'POST' }));
