@@ -28,6 +28,8 @@ test('Makler-Recherche: auswählen, starten, Glocke, Ergebnis mit Quelle, übern
   await expect(dialog).toContainText('2 Makler ausgewählt — 2 mit Webseite');
   await expect(dialog.locator('[data-recherche-kosten="ok"]')).toContainText('ca. 0,01 €');
   await dialog.getByRole('checkbox', { name: /Mit KI-Websuche/ }).check();
+  await expect(dialog.locator('[data-recherche-kosten="ok"]')).not.toContainText('…');
+  await expect(dialog.locator('[data-recherche-los]')).toBeEnabled();
   await dialog.locator('[data-recherche-los]').click();
   await expect(dialog).toBeHidden();
 

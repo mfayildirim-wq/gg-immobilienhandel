@@ -395,7 +395,11 @@ export const useMergeRueckgaengig = () => useDublettenAendern((e: { id: string; 
 // ── Makler-Recherche (Einstellungen → Makler-Recherche) ─────
 export const useRechercheZeilen = () => useQuery({ queryKey: ['recherche', 'zeilen'], queryFn: () => anfrage<RechercheZeile[]>('/api/makler-recherche') });
 export const useRechercheSchaetzung = (e: RechercheStarten | null) =>
-  useQuery({ queryKey: ['recherche', 'schaetzung', e], queryFn: () => anfrage<RechercheSchaetzung>('/api/makler-recherche/schaetzung', senden('POST', e)), enabled: !!e?.maklerIds.length });
+  useQuery({
+    queryKey: ['recherche', 'schaetzung', e], queryFn: () => anfrage<RechercheSchaetzung>('/api/makler-recherche/schaetzung', senden('POST', e)), enabled: !!e?.maklerIds.length,
+    // Beim Umschalten des KI-Hakens bleibt die alte Schätzung stehen, bis die neue da ist — „Starten“ wird nicht kurz gesperrt
+    placeholderData: (vorher) => vorher,
+  });
 /** Jüngster Lauf; solange er läuft, alle 5 s neu (Fortschritt), sonst jede Minute (Glocke). */
 export const useRechercheLauf = () => useQuery({
   queryKey: ['recherche', 'lauf'], queryFn: () => anfrage<RechercheLauf | null>('/api/makler-recherche/laeufe/aktuell'),
