@@ -1004,7 +1004,7 @@ describe.skipIf(!url)('Deal-Ablauf gegen die lokale Datenbank', () => {
     expect((await lies(app.request('/api/dubletten'))).some((p: { a: { id: string }; b: { id: string } }) => [p.a.id, p.b.id].includes(m1.id) && [p.a.id, p.b.id].includes(m2.id))).toBe(false);
     await app.request('/api/dubletten/ignorieren', { method: 'DELETE' });
     expect((await lies(app.request('/api/dubletten'))).some((p: { a: { id: string }; b: { id: string } }) => [p.a.id, p.b.id].includes(m1.id) && [p.a.id, p.b.id].includes(m2.id))).toBe(true);
-  });
+  }, 30_000); // Scan über alle Makler, siehe Sicherung
 
   it('Audit-Log: Einträge mit Hash-Kette, Filter, Export, Prüfung und Aufräumen mit Anker', async () => {
     // Der Testbestand wächst über viele Läufe; geprüft wird die Kette der Zeilen dieses Laufs
@@ -1107,7 +1107,7 @@ describe.skipIf(!url)('Deal-Ablauf gegen die lokale Datenbank', () => {
     expect((await lies(app.request(`/api/objekte/${o.id}`)))).toMatchObject({ strasse, angebotspreis: 500_000 });
 
     expect((await post('/api/sicherung/plan', { version: 9 })).status).toBe(400);
-  });
+  }, 30_000); // ganzer Bestand: seit der HubSpot-Migration rund 770 Makler auch in der leeren Test-DB
 
   it('Propstack: Vorbelegung je Einheit, Gate blockiert den Schreibzugriff, mit Freigabe wird angelegt', async () => {
     const o = await lies(post('/api/objekte', { strasse: 'Bewertungsweg', hausnr: '7', plz: '70173', stadt: 'Stuttgart' }));
