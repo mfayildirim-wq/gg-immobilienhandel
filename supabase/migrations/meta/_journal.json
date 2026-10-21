@@ -113,6 +113,13 @@
       "when": 1792422330919,
       "tag": "20261019150530_hubspot_daten",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1792569303114,
+      "tag": "20261021075503_makler_telefon_bereinigen",
+      "breakpoints": true
     }
   ]
 }
