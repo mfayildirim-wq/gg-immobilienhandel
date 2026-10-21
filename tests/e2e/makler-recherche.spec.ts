@@ -3,6 +3,8 @@ import { expect, test } from '@playwright/test';
 // Makler-Recherche (21.10.2026). Im Test-Modus (KI_ATTRAPPE=1) antwortet ein Ersatz-Internet: beispiel-immobilien.example.test
 // mit Impressum und Team-Seite (Anna Beispiel, Geschäftsführerin, Mobil 0171 5550001) — kein Abruf verlässt den Rechner.
 test('Makler-Recherche: auswählen, starten, Glocke, Ergebnis mit Quelle, übernehmen; im Profil gelb am Feld, Aktualisieren und Speichern', async ({ page }) => {
+  // Zwei Läufe mit Warten auf Etappen und Glocke: mehr als die üblichen 30 s
+  test.setTimeout(120_000);
   const k = Date.now();
   const neu = async (daten: Record<string, unknown>) => {
     const m = await (await page.request.post('/api/makler', { data: { name: 'Platzhalter' } })).json();
@@ -53,6 +55,8 @@ test('Makler-Recherche: auswählen, starten, Glocke, Ergebnis mit Quelle, übern
   // Lauf, während eine andere Seite offen ist: die App treibt ihn weiter, fertig → Glocke; die Recherche-Seite schaltet sie aus
   await page.goto('/makler');
   await page.request.post('/api/makler-recherche/laeufe', { data: { maklerIds: [a], mitKi: false } });
+  // Über die API gestartet: neu laden, damit die App den Lauf gleich sieht (sonst erst bei der nächsten Minuten-Abfrage)
+  await page.reload();
   await expect.poll(async () => (await (await page.request.get('/api/makler-recherche/laeufe/aktuell')).json()), { timeout: 70_000 }).toMatchObject({ status: 'fertig', ungesehen: true });
   if (test.info().project.name === 'desktop') await expect(page.locator('[data-recherche-glocke]')).toBeVisible({ timeout: 70_000 });
   await page.goto('/einstellungen/makler-recherche');
