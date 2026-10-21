@@ -17,7 +17,7 @@ import { auditSchreiben } from './audit.ts';
 /** Reihenfolge ist die Einspielreihenfolge: erst die Eltern, dann die Kinder. */
 export const SICHERUNG_TABELLEN = [
   'unternehmen', 'makler', 'objekte', 'objektEinheiten', 'objektFotos', 'deals', 'dealEinheiten', 'dealSanierungen', 'dealKommentare',
-  'dealKalkVarianten', 'dealDokumente', 'dealStatusHistorie', 'exposeImporte', 'maklerKommunikation',
+  'dealKalkVarianten', 'dealDokumente', 'dealStatusHistorie', 'exposeImporte', 'maklerKommunikation', 'maklerRecherche',
   'kundenkalkulationen', 'finanzpraesentationen', 'praesentationFolien', 'vertriebslisten', 'vertriebslisteZeilen',
   'projekte', 'projektEinheiten', 'projektMieterhistorie', 'projektAufgaben', 'projektGebaeudeMassnahmen',
   'begleitscheinVorlagen', 'begleitscheine', 'begleitscheinAktionen', 'vordrucke',
@@ -35,10 +35,14 @@ export const SICHERUNG_AUSGENOMMEN: Record<string, string> = {
   archiveLedger: 'Ablage-Journal; wird aus den Dateien wieder aufgebaut.',
   maklerAnlaesse: 'Zwischenspeicher der KI-Kontaktanlässe, 24 Stunden gültig; entsteht beim nächsten Ansehen neu.',
   geoVerortungen: 'Zwischenspeicher des Kartendienstes (Adresse → Stadtteil); entsteht bei der nächsten Lagebeschreibung neu.',
+  rechercheLaeufe: 'Protokoll der Recherche-Läufe; was gefunden wurde, steht je Makler in maklerRecherche.',
+  rechercheErgebnisse: 'Schritte und Vorschläge je Lauf; Übernommenes steht am Makler, die gefundenen Adressen in maklerRecherche.',
 };
 
 type Tabellenname = (typeof SICHERUNG_TABELLEN)[number];
 const tabelle = (name: Tabellenname) => (schema as unknown as Record<string, any>)[name];
+/** Spalte, an der eine Zeile beim Einspielen wiedererkannt wird — meist `id`. */
+const schluesselVon = (name: Tabellenname) => ({ einstellungen: 'schluessel', begleitscheinVorlagen: 'typ', maklerRecherche: 'maklerId' } as Partial<Record<Tabellenname, string>>)[name] ?? 'id';
 
 export interface Sicherungsdatei {
   version: 1;
@@ -76,7 +80,7 @@ export async function sicherungPlan(db: Db, roh: unknown) {
   for (const name of SICHERUNG_TABELLEN) {
     const ausDatei = (datei.tabellen[name] ?? []) as any[];
     const bestand = await db.select().from(tabelle(name));
-    const schluessel = name === 'einstellungen' ? 'schluessel' : name === 'begleitscheinVorlagen' ? 'typ' : 'id';
+    const schluessel = schluesselVon(name);
     const vorhanden = new Set(bestand.map((z: any) => z[schluessel]));
     const neu = ausDatei.filter((z) => !vorhanden.has(z[schluessel])).length;
     zeilen.push({ tabelle: name, neu, aktualisiert: ausDatei.length - neu, inDatei: ausDatei.length, imBestand: bestand.length });
@@ -93,7 +97,7 @@ export async function sicherungEinspielen(db: Db, roh: unknown) {
       const ausDatei = (datei.tabellen[name] ?? []) as any[];
       if (!ausDatei.length) continue;
       const t = tabelle(name);
-      const schluessel = name === 'einstellungen' ? 'schluessel' : name === 'begleitscheinVorlagen' ? 'typ' : 'id';
+      const schluessel = schluesselVon(name);
       // dd_checkliste_vorlage führt ihre ID als „generated always": die alte ID lässt sich nur ausdrücklich setzen und
       // beim Aktualisieren gar nicht. Fiel erst mit echtem Bestand auf — vorher war die Tabelle immer leer.
       const identitaet = name === 'ddChecklisteVorlage';
