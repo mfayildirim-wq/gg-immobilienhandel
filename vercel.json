@@ -23,6 +23,10 @@
       "destination": "/api/render"
     },
     {
+      "source": "/api/recherche-probe",
+      "destination": "/api/render"
+    },
+    {
       "source": "/api/cron/(.*)",
       "destination": "/api/render"
     },
