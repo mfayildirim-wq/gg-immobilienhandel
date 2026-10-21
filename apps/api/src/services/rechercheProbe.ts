@@ -6,7 +6,7 @@
  */
 import type { Browser } from 'playwright-core';
 
-export interface ProbeFall { name: string; firma?: string | null; webseite?: string | null; ort?: string | null }
+export interface ProbeFall { name: string; firma?: string | null; webseite?: string | null; ort?: string | null; immoscoutUrl?: string | null }
 
 const BROWSER_KOPF = {
   'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36',
@@ -103,23 +103,61 @@ async function immoscoutLesen(browser: Browser | null, url: string, name: string
   }
 }
 
+/** Bing verpackt Treffer als bing.com/ck/a?…&u=a1<Base64-URL>. */
+function bingZiel(u: string) {
+  try {
+    const p = new URL(u.replace(/&amp;/g, '&')).searchParams.get('u');
+    if (!p?.startsWith('a1')) return u;
+    return Buffer.from(p.slice(2).replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+  } catch { return u; }
+}
+
+/** Suche im echten Browser (Chromium): Treffer-Adressen, Sperre, Dauer. */
+async function browserSuche(browser: Browser | null, maschine: 'bing' | 'google', q: string) {
+  if (!browser) return { fehler: 'kein Browser' };
+  const start = Date.now();
+  const kontext = await browser.newContext({ userAgent: BROWSER_KOPF['User-Agent'], locale: 'de-DE' });
+  try {
+    const seite = await kontext.newPage();
+    const url = maschine === 'bing' ? `https://www.bing.com/search?q=${encodeURIComponent(q)}&setlang=de&cc=DE` : `https://www.google.de/search?q=${encodeURIComponent(q)}&hl=de`;
+    const antwort = await seite.goto(url, { waitUntil: 'domcontentloaded', timeout: 25_000 });
+    await seite.waitForTimeout(1500);
+    const links = await seite.$$eval(maschine === 'bing' ? 'li.b_algo h2 a' : '#search a h3', (as) => as.map((a) => (a.closest("a") as unknown as { href?: string } | null)?.href ?? ''));
+    const inhalt = (await seite.locator('body').innerText({ timeout: 5000 }).catch(() => '')).slice(0, 3000);
+    const treffer = links.filter(Boolean).map(bingZiel).slice(0, 8);
+    return { status: antwort?.status() ?? 0, ms: Date.now() - start, treffer, gesperrt: treffer.length === 0 && SPERRE.test(inhalt), titel: (await seite.title()).slice(0, 80) };
+  } catch (e) {
+    return { ms: Date.now() - start, fehler: (e as Error).message.slice(0, 200) };
+  } finally {
+    await kontext.close();
+  }
+}
+
 export async function rechercheProbe(faelle: ProbeFall[], browserStarten: () => Promise<Browser>) {
   const browser = await browserStarten().catch(() => null);
   const ergebnisse = [];
   try {
     for (const f of faelle) {
+      // Runde 3: bekannte ImmoScout-Adresse direkt öffnen (einfacher Abruf und Chromium), ohne Suche
+      if (f.immoscoutUrl) {
+        const abruf = await holen(f.immoscoutUrl);
+        ergebnisse.push({ name: f.name, immoscoutAbruf: { status: abruf.status, ms: abruf.ms, gesperrt: SPERRE.test(text(abruf.html).slice(0, 3000)), personGenannt: enthaeltName(text(abruf.html), f.name), zeichen: text(abruf.html).length }, immoscout: await immoscoutLesen(browser, f.immoscoutUrl, f.name) });
+        continue;
+      }
       const q = `${f.name} ${f.firma ?? 'Immobilienmakler'} ${f.ort ?? ''}`.trim();
-      const webseite = await webseitePruefen(f);
-      await warten(1500);
-      const ddg = await suche('duckduckgo', q);
-      await warten(1500);
-      const bing = await suche('bing', q);
-      await warten(1500);
-      const isSuche = await suche('duckduckgo', `${f.name} immobilienscout24`);
-      const isUrl = [...isSuche.treffer, ...bing.treffer, ...ddg.treffer].find((u) => /immobilienscout24\.de\/(anbieter|profil|makler)/i.test(u)) ?? null;
+      // Runde 2 (21.10.): Abruf-Suche ist vom Server unbrauchbar (DuckDuckGo 403, Bing liefert Fremdtreffer) — jetzt im Browser
+      const bing = await browserSuche(browser, 'bing', q);
+      await warten(2000);
+      const google = await browserSuche(browser, 'google', q);
+      await warten(2000);
+      const isSuche = await browserSuche(browser, 'bing', `"${f.name}" immobilienscout24 anbieter`);
+      const isUrl = [...('treffer' in isSuche ? isSuche.treffer ?? [] : []), ...('treffer' in bing ? bing.treffer ?? [] : [])]
+        .find((u) => /immobilienscout24\.de\/(anbieter|profil|makler|scoutmanager)/i.test(u)) ?? null;
+      const isAbruf = isUrl ? await holen(isUrl) : null;
+      const immoscoutAbruf = isAbruf ? { status: isAbruf.status, ms: isAbruf.ms, gesperrt: SPERRE.test(text(isAbruf.html).slice(0, 3000)), personGenannt: enthaeltName(text(isAbruf.html), f.name) } : null;
       const immoscout = isUrl ? { url: isUrl, ...(await immoscoutLesen(browser, isUrl, f.name)) } : null;
-      ergebnisse.push({ name: f.name, firma: f.firma ?? null, webseite, duckduckgo: ddg, bing, immoscoutSuche: { status: isSuche.status, treffer: isSuche.treffer.length, gesperrt: isSuche.gesperrt }, immoscout });
-      await warten(1500);
+      ergebnisse.push({ name: f.name, firma: f.firma ?? null, bing, google, immoscoutSuche: isSuche, immoscoutAbruf, immoscout });
+      await warten(2000);
     }
   } finally {
     await browser?.close();

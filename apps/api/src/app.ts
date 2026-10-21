@@ -746,7 +746,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, prop
   );
   // ── Probe Makler-Recherche (21.10.2026, nur Messung, wird wieder entfernt): kommen Webseite, Suche, ImmoScout durch? ──
   app.post('/api/recherche-probe', async (c) => {
-    const faelle = z.array(z.object({ name: z.string().min(1).max(200), firma: z.string().max(300).nullish(), webseite: z.string().max(500).nullish(), ort: z.string().max(200).nullish() }))
+    const faelle = z.array(z.object({ name: z.string().min(1).max(200), firma: z.string().max(300).nullish(), webseite: z.string().max(500).nullish(), ort: z.string().max(200).nullish(), immoscoutUrl: z.string().url().max(500).nullish() }))
       .min(1).max(5).parse(await c.req.json());
     return c.json(await rechercheProbe(faelle, autoImport?.browserStarten ?? browserStarten), 200);
   });
