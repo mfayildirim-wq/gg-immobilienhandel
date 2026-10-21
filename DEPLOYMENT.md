@@ -152,6 +152,11 @@ Alles läuft mit `npx supabase db push --dry-run`, dann ohne — kein Skript von
 Probe auf einer Kopie der privaten Prod (19.10.2026): 117 Unternehmen aus dem Bestand; danach 68 Makler ergänzt (27 mit
 neuer Priorität), 699 neu, 209 Unternehmen neu, 8 ergänzt.
 
+Nachtrag 21.10.2026, Migration `makler_telefon_bereinigen`: Der Export enthielt Excel-Reste in der Telefonnummer (`'` vorn,
+nur `'+`, `49…` ohne `+`, `4.97E+12`). Die Migration entfernt den Marker, ergänzt das `+` und leert Werte ohne Ziffer
+oder in Exponentialschreibweise. Auf der privaten Prod: 343 Nummern, davon 30 geleert. Die Dubletten „gleiche
+Telefonnummer“ gehen dadurch von 441 auf 107 Paare zurück (27 Makler mit `'+` galten untereinander als Dubletten).
+
 ## Vor jedem Deployment
 
 ```bash

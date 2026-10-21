@@ -12,6 +12,7 @@ import { CSV, MIGRATION, datenblock, migrationMitDaten } from '../../../supabase
 const url = process.env.DATABASE_URL ? verlangeLokaleDatenbank(process.env.DATABASE_URL, 'Testlauf') : undefined;
 const UEBERNAHME = readFileSync(join(import.meta.dirname, '../../../supabase/migrations/20261019150529_unternehmen_uebernahme.sql'), 'utf8');
 const HUBSPOT = readFileSync(MIGRATION, 'utf8');
+const TELEFON = readFileSync(join(import.meta.dirname, '../../../supabase/migrations/20261021075503_makler_telefon_bereinigen.sql'), 'utf8');
 
 describe('HubSpot-Daten: Migration enthält genau die CSV', () => {
   it('Datenblock = CSV', () => {
@@ -124,5 +125,27 @@ describe.skipIf(!url)('Migrationen Unternehmen-Übernahme und HubSpot', () => {
 
     const stand = (x: typeof ist.erst) => [...x.m.map((y) => `${y.id}:${y.version}`), ...x.u.map((y) => `${y.id}:${y.version}`)].sort();
     expect(stand(ist.dann)).toEqual(stand(ist.erst));
+  });
+  it('Telefonnummern bereinigen: Excel-Reste weg, + ergänzt, alles andere unverändert — zweiter Lauf ändert nichts', async () => {
+    const faelle: [string | null, string | null][] = [
+      ["'+", null], ["'+49 711 1234567", '+49 711 1234567'], ['4971112345678', '+4971112345678'], ['4.97232E+12', null],
+      ['Reder', null], ['+49 711 1', '+49 711 1'], ['0711 123', '0711 123'], ['', ''], [null, null], ['49 711 123456', '49 711 123456'],
+    ];
+    const ist = await probe(async (tx) => {
+      await tx.insert(schema.makler).values(faelle.map(([tel], i) => ({ id: `${k}t${i}`, name: `${k}Tel${i}`, tel, mobil: i === 0 ? "'+" : null, festnetz: i === 1 ? '4970312345678' : null })));
+      await tx.execute(sql.raw(TELEFON));
+      const lesen = () => tx.select().from(schema.makler).where(like(schema.makler.name, `${k}Tel%`));
+      const erst = await lesen();
+      await tx.execute(sql.raw(TELEFON));
+      return { erst, dann: await lesen() };
+    });
+    const m = (i: number) => ist.erst.find((x) => x.id === `${k}t${i}`)!;
+    faelle.forEach(([, soll], i) => expect(m(i).tel, String(faelle[i]![0])).toBe(soll));
+    expect(m(0).mobil).toBeNull();
+    expect(m(1).festnetz).toBe('+4970312345678');
+    // nur geänderte Makler bekommen eine neue Version
+    expect(m(6).version).toBe(1);
+    expect(m(0).version).toBe(2);
+    expect(ist.dann.map((x) => `${x.id}:${x.version}`).sort()).toEqual(ist.erst.map((x) => `${x.id}:${x.version}`).sort());
   });
 });
