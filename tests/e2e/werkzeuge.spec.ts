@@ -6,7 +6,9 @@ test('Werkzeuge: Nachfass-Reset mit Vorschau und Ausführen, KI-Kosten-Übersich
   const o = await (await page.request.post('/api/objekte', { data: { strasse, hausnr: '3' } })).json();
   const d = await (await page.request.post('/api/deals', { data: { objektId: o.id } })).json();
   const dd = await (await page.request.get(`/api/deals/${d.id}`)).json();
-  const datum = '2026-11-20';
+  // Ein Tag, den sonst niemand belegt: Andere Klicktests („1M“) und die HubSpot-Migration (nächster Kontakt in den
+  // kommenden 3 Monaten) setzen Termine nahe heute; jeder Lauf nimmt einen eigenen Tag, auch die Wiederholung.
+  const datum = new Date(Date.UTC(2031, 0, 1) + (Date.now() % 3000) * 864e5).toISOString().slice(0, 10);
   await page.request.patch(`/api/deals/${d.id}`, { data: { version: dd.version, nextContact: datum, lastContact: '2026-09-01' } });
 
   await page.goto('/einstellungen/werkzeuge');
