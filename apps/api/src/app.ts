@@ -106,7 +106,6 @@ import type { FinanzPraes } from '@gg/domain';
 import { pdfDateiname, type BankgespraechPayload } from '@gg/documents';
 import { FachFehler } from './fehler.ts';
 import { renderTor } from './middleware/render-tor.ts';
-import { rechercheProbe } from './services/rechercheProbe.ts';
 import { bankgespraechDaten, pdfExportProtokollieren } from './services/dokumente.ts';
 import {
   praesentationAnlegen, praesentationDetail, praesentationExportProtokollieren, praesentationFuerExport, praesentationLoeschen, praesentationSpeichern,
@@ -744,12 +743,6 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, prop
       return c.json(await m365AnmeldungStarten(db, rueckweg.uri), 200);
     },
   );
-  // ── Probe Makler-Recherche (21.10.2026, nur Messung, wird wieder entfernt): kommen Webseite, Suche, ImmoScout durch? ──
-  app.post('/api/recherche-probe', async (c) => {
-    const faelle = z.array(z.object({ name: z.string().min(1).max(200), firma: z.string().max(300).nullish(), webseite: z.string().max(500).nullish(), ort: z.string().max(200).nullish(), immoscoutUrl: z.string().url().max(500).nullish() }))
-      .min(1).max(5).parse(await c.req.json());
-    return c.json(await rechercheProbe(faelle, autoImport?.browserStarten ?? browserStarten), 200);
-  });
   // ── Auto-Import: aus einer Angebots-Mail selbstständig das Exposé holen ──
   // Der Lauf gehört zur Anfrage (online: lang laufende Function); das Ergebnis steht in der Tabelle und im Exposé-Eingang.
   // Abgeschaltet (AUTO_IMPORT_AKTIV) startet und bricht nichts — der Verlauf bleibt lesbar.
