@@ -14,13 +14,24 @@ export function normalizeAddr(s: string): string {
 
 const normalizeHausnr = (s: string) => (s || '').toLowerCase().replace(/\s+/g, '').trim();
 
-export function levenshtein(a: string, b: string): number {
+/**
+ * Editierabstand mit zwei Zeilen statt ganzer Tabelle. Mit `grenze`: bricht ab, sobald jede Zelle einer Zeile die
+ * Grenze erreicht (der Abstand kann dann nur noch größer werden) und liefert diesen Zwischenwert (≥ grenze).
+ */
+export function levenshtein(a: string, b: string, grenze = Infinity): number {
   const m = a.length, n = b.length;
-  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) => Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)));
-  for (let i = 1; i <= m; i++)
-    for (let j = 1; j <= n; j++)
-      dp[i]![j] = a[i - 1] === b[j - 1] ? dp[i - 1]![j - 1]! : 1 + Math.min(dp[i - 1]![j]!, dp[i]![j - 1]!, dp[i - 1]![j - 1]!);
-  return dp[m]![n]!;
+  let vorher = Array.from({ length: n + 1 }, (_, j) => j), jetzt = new Array<number>(n + 1);
+  for (let i = 1; i <= m; i++) {
+    jetzt[0] = i;
+    let kleinster = i;
+    for (let j = 1; j <= n; j++) {
+      jetzt[j] = a[i - 1] === b[j - 1] ? vorher[j - 1]! : 1 + Math.min(vorher[j]!, jetzt[j - 1]!, vorher[j - 1]!);
+      if (jetzt[j]! < kleinster) kleinster = jetzt[j]!;
+    }
+    if (kleinster >= grenze) return kleinster;
+    [vorher, jetzt] = [jetzt, vorher];
+  }
+  return vorher[n]!;
 }
 
 export function nameSimilar(a: string | null | undefined, b: string | null | undefined): boolean {
@@ -28,7 +39,14 @@ export function nameSimilar(a: string | null | undefined, b: string | null | und
   const na = a.toLowerCase().trim(), nb = b.toLowerCase().trim();
   if (na === nb) return true;
   const maxLen = Math.max(na.length, nb.length);
-  return maxLen > 0 && levenshtein(na, nb) / maxLen < 0.3;
+  if (maxLen === 0) return false;
+  // kleinster Abstand, der nicht mehr ähnlich ist — in derselben Rechnung wie unten (d / maxLen < 0.3)
+  let grenze = Math.floor(0.3 * maxLen);
+  while (grenze > 0 && (grenze - 1) / maxLen >= 0.3) grenze--;
+  while (grenze / maxLen < 0.3) grenze++;
+  // Der Abstand ist mindestens der Längenunterschied — dann muss nicht gerechnet werden.
+  if (Math.abs(na.length - nb.length) >= grenze) return false;
+  return levenshtein(na, nb, grenze) / maxLen < 0.3;
 }
 
 type Adresse = { strasse?: string | null; hausnr?: string | null; stadt?: string | null; plz?: string | null };
