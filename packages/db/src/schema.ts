@@ -764,3 +764,71 @@ export const exposeImporte = fach
   )
   .enableRLS();
 
+
+/**
+ * Makler-Recherche (21.10.2026): was über einen Makler im Netz gefunden wurde — eine Zeile je Makler. Der nächste Lauf
+ * nimmt die gespeicherten Adressen direkt, statt neu zu suchen. Quelle: bekannt | email | firmenname | ki | hand.
+ */
+export const maklerRecherche = fach
+  .table('makler_recherche', {
+  maklerId: text('makler_id').primaryKey().references((): AnyPgColumn => makler.id, { onDelete: 'cascade' }),
+      webseite: text('webseite'),
+      webseiteQuelle: text('webseite_quelle'),
+      webseiteAm: timestamp('webseite_am', { withTimezone: true, mode: 'string' }),
+      immoscoutUrl: text('immoscout_url'),
+      immoscoutQuelle: text('immoscout_quelle'),
+      immoscoutAm: timestamp('immoscout_am', { withTimezone: true, mode: 'string' }),
+      /** Seite, auf der die Person genannt ist */
+      personUrl: text('person_url'),
+      /** gefunden | nicht_genannt | nichts_gefunden | fehler (RECHERCHE_STATUS) */
+      status: text('status'),
+      letzteRechercheAm: timestamp('letzte_recherche_am', { withTimezone: true, mode: 'string' }),
+      /** Summe aller Läufe */
+      kostenEur: numeric('kosten_eur', { precision: 10, scale: 4, mode: 'number' }).notNull().default(0),
+      ...zeitSpalten,
+    })
+  .enableRLS();
+
+/** Ein gestarteter Recherche-Lauf (Einstellungen → Makler-Recherche). Läuft in Etappen, angestoßen von der geöffneten App. */
+export const rechercheLaeufe = fach
+  .table('recherche_laeufe', {
+  id: text('id').primaryKey(),
+      /** laeuft | fertig | abgebrochen */
+      status: text('status').notNull().default('laeuft'),
+      mitKi: boolean('mit_ki').notNull().default(false),
+      anzahl: integer('anzahl').notNull(),
+      kostenEur: numeric('kosten_eur', { precision: 10, scale: 4, mode: 'number' }).notNull().default(0),
+      gestartetVon: text('gestartet_von'),
+      beendetAm: timestamp('beendet_am', { withTimezone: true, mode: 'string' }),
+      /** Glocke: ein fertiger Lauf, den noch niemand angesehen hat */
+      gesehenAm: timestamp('gesehen_am', { withTimezone: true, mode: 'string' }),
+      ...zeitSpalten,
+    })
+  .enableRLS();
+
+/** Ergebnis eines Laufs für einen Makler: was gemacht wurde (Schritte) und die Vorschläge samt Entscheidung. */
+export const rechercheErgebnisse = fach
+  .table(
+    'recherche_ergebnisse',
+    {
+  id: text('id').primaryKey(),
+      laufId: text('lauf_id').notNull().references((): AnyPgColumn => rechercheLaeufe.id, { onDelete: 'cascade' }),
+      maklerId: text('makler_id').notNull().references((): AnyPgColumn => makler.id, { onDelete: 'cascade' }),
+      /** RECHERCHE_STATUS */
+      status: text('status').notNull().default('wartet'),
+      /** [{ zeit, text, url? }] */
+      schritte: jsonb('schritte').notNull().default(sql`'[]'::jsonb`),
+      /** RechercheVorschlag[] */
+      vorschlaege: jsonb('vorschlaege').notNull().default(sql`'[]'::jsonb`),
+      kostenEur: numeric('kosten_eur', { precision: 10, scale: 4, mode: 'number' }).notNull().default(0),
+      fehler: text('fehler'),
+      begonnenAm: timestamp('begonnen_am', { withTimezone: true, mode: 'string' }),
+      beendetAm: timestamp('beendet_am', { withTimezone: true, mode: 'string' }),
+      ...zeitSpalten,
+    },
+    (t) => [
+      index('recherche_ergebnisse_lauf_idx').on(t.laufId, t.status),
+      index('recherche_ergebnisse_makler_idx').on(t.maklerId),
+    ],
+  )
+  .enableRLS();
