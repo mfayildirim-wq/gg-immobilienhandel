@@ -1,0 +1,35 @@
+{
+  "beschreibung": "Gleiche Testdaten für Mem0 und Cognee: zwei Apps einer Firma (gg, desk), eine fremde Firma; Einträge aus App-Ereignissen (API) und aus einem KI-Gespräch (MCP).",
+  "mandanten": { "ivtag": ["gg", "desk"], "andere-firma": ["fremd"] },
+  "ereignisse": [
+    { "mandant": "ivtag", "app": "gg", "objekt": "gg:makler:anna-beispiel", "art": "recherche",
+      "text": "Makler Anna Beispiel (Musterhaus Immobilien GmbH, Stuttgart) hat die neue Mobilnummer 0171 5550001. Quelle: Makler-Recherche, Webseite beispiel-immobilien.example.test/team." },
+    { "mandant": "ivtag", "app": "gg", "objekt": "gg:deal:koenigstrasse-1", "art": "status",
+      "text": "Deal Königstraße 1, 70173 Stuttgart: Status von 'In Prüfung' auf 'Angebot abgegeben' gesetzt. Angebotener Kaufpreis 1.200.000 EUR." },
+    { "mandant": "ivtag", "app": "gg", "objekt": "gg:makler:bernd-muster", "art": "hubspot",
+      "text": "Makler Bernd Muster (Muster & Partner Immobilien, Esslingen): HubSpot-Klassifizierung VIP, Priorität A, Kontakt-Rhythmus alle 3 Monate." },
+    { "mandant": "ivtag", "app": "desk", "objekt": "gg:makler:anna-beispiel", "art": "termin",
+      "text": "Termin mit Makler Anna Beispiel am 30.10.2026 um 11:00 Uhr im Büro Stuttgart geplant: Besichtigung Mehrfamilienhaus Rotebühlstraße." },
+    { "mandant": "andere-firma", "app": "fremd", "objekt": "fremd:kontakt:anna-beispiel", "art": "notiz",
+      "text": "Anna Beispiel ist Kundin der anderen Firma und sucht eine 3-Zimmer-Wohnung in Ulm." }
+  ],
+  "gespraech": {
+    "mandant": "ivtag", "app": "gg", "objekt": "gg:makler:anna-beispiel",
+    "nachrichten": [
+      { "role": "user", "content": "Ich hatte gerade ein Telefonat mit Anna Beispiel von Musterhaus Immobilien. Sie möchte nur telefonisch kontaktiert werden, keine E-Mails, und nie vor 10 Uhr morgens." },
+      { "role": "assistant", "content": "Verstanden. Soll ich noch etwas zu ihr festhalten?" },
+      { "role": "user", "content": "Ja: Sie betreut vor allem Mehrfamilienhäuser in Stuttgart-West. Und beim Deal Königstraße 1 finanziert die Sparkasse, Ansprechpartner dort ist Herr Kunz." },
+      { "role": "assistant", "content": "Notiert: Anna Beispiel nur telefonisch ab 10 Uhr, Schwerpunkt Mehrfamilienhäuser Stuttgart-West; Deal Königstraße 1 Finanzierung Sparkasse, Herr Kunz." }
+    ]
+  },
+  "fragen": [
+    { "id": "f1", "mandant": "ivtag", "app": "gg", "bereich": "eigene", "frage": "Wie erreiche ich Anna Beispiel am besten?", "erwartet": ["telefon", "10"], "quelle": "gespraech" },
+    { "id": "f2", "mandant": "ivtag", "app": "gg", "bereich": "eigene", "frage": "Welche Bank finanziert den Deal Königstraße 1?", "erwartet": ["sparkasse"], "quelle": "gespraech" },
+    { "id": "f3", "mandant": "ivtag", "app": "gg", "bereich": "eigene", "frage": "Welche Priorität hat Bernd Muster?", "erwartet": ["priorität a"], "quelle": "ereignis" },
+    { "id": "f4", "mandant": "ivtag", "app": "gg", "bereich": "eigene", "frage": "Welche Mobilnummer hat Anna Beispiel?", "erwartet": ["0171"], "quelle": "ereignis" },
+    { "id": "f5", "mandant": "ivtag", "app": "gg", "bereich": "firma", "frage": "Wann ist der nächste Termin mit Anna Beispiel?", "erwartet": ["30.10"], "quelle": "andere App (desk)" },
+    { "id": "f6", "mandant": "ivtag", "app": "desk", "bereich": "firma", "frage": "Was wissen wir über Anna Beispiel?", "erwartet": ["0171", "telefon"], "quelle": "andere App (gg)" },
+    { "id": "f7", "mandant": "ivtag", "app": "desk", "bereich": "eigene", "frage": "Welche Mobilnummer hat Anna Beispiel?", "erwartet": [], "verboten": ["0171"], "quelle": "Trennung: desk ohne Freigabe für gg" },
+    { "id": "f8", "mandant": "andere-firma", "app": "fremd", "bereich": "firma", "frage": "Was wissen wir über Anna Beispiel?", "erwartet": ["ulm"], "verboten": ["0171", "telefon", "30.10", "sparkasse"], "quelle": "Trennung: fremde Firma" }
+  ]
+}

@@ -1,0 +1,488 @@
+{
+ "engine": "mem0",
+ "modell": "mistral-small3.2",
+ "embedding": "bge-m3",
+ "zeiten": {
+  "ereignisse_s": 0.43,
+  "gespraech_s": 10.74,
+  "fragen_s": 0.63
+ },
+ "verbrauch": {
+  "llm_aufrufe": 1,
+  "token_ein": 8896,
+  "token_aus": 193,
+  "embeddings": 15,
+  "kosten_haiku_usd": 0.00986
+ },
+ "verbrauch_nach_ereignissen": {
+  "llm_aufrufe": 0,
+  "token_ein": 0,
+  "token_aus": 0,
+  "embeddings": 5,
+  "kosten_haiku_usd": 0.0
+ },
+ "gespraech_fakten": [
+  "Makler Anna Beispiel von Musterhaus Immobilien möchte nur telefonisch kontaktiert werden, keine E-Mails, und nie vor 10 Uhr morgens.",
+  "Makler Anna Beispiel von Musterhaus Immobilien betreut vor allem Mehrfamilienhäuser in Stuttgart-West.",
+  "Beim Deal Königstraße 1 finanziert die Sparkasse, Ansprechpartner dort ist Herr Kunz."
+ ],
+ "fragen": [
+  {
+   "id": "f1",
+   "mandant": "ivtag",
+   "app": "gg",
+   "bereich": "eigene",
+   "frage": "Wie erreiche ich Anna Beispiel am besten?",
+   "erwartet": [
+    "telefon",
+    "10"
+   ],
+   "quelle": "gespraech",
+   "treffer": [
+    {
+     "text": "Makler Anna Beispiel von Musterhaus Immobilien möchte nur telefonisch kontaktiert werden, keine E-Mails, und nie vor 10 Uhr morgens.",
+     "score": 0.515,
+     "app": "gg",
+     "meta": {
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "ki"
+     }
+    },
+    {
+     "text": "Makler Anna Beispiel (Musterhaus Immobilien GmbH, Stuttgart) hat die neue Mobilnummer 0171 5550001. Quelle: Makler-Recherche, Webseite beispiel-immobilien.example.test/team.",
+     "score": 0.507,
+     "app": "gg",
+     "meta": {
+      "art": "recherche",
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "api"
+     }
+    },
+    {
+     "text": "Makler Anna Beispiel von Musterhaus Immobilien betreut vor allem Mehrfamilienhäuser in Stuttgart-West.",
+     "score": 0.447,
+     "app": "gg",
+     "meta": {
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "ki"
+     }
+    },
+    {
+     "text": "Makler Bernd Muster (Muster & Partner Immobilien, Esslingen): HubSpot-Klassifizierung VIP, Priorität A, Kontakt-Rhythmus alle 3 Monate.",
+     "score": 0.377,
+     "app": "gg",
+     "meta": {
+      "art": "hubspot",
+      "objekt": "gg:makler:bernd-muster",
+      "quelle": "api"
+     }
+    },
+    {
+     "text": "Beim Deal Königstraße 1 finanziert die Sparkasse, Ansprechpartner dort ist Herr Kunz.",
+     "score": 0.361,
+     "app": "gg",
+     "meta": {
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "ki"
+     }
+    }
+   ],
+   "bewertung": {
+    "ok": true,
+    "fehlt": [],
+    "verboten_gefunden": []
+   }
+  },
+  {
+   "id": "f2",
+   "mandant": "ivtag",
+   "app": "gg",
+   "bereich": "eigene",
+   "frage": "Welche Bank finanziert den Deal Königstraße 1?",
+   "erwartet": [
+    "sparkasse"
+   ],
+   "quelle": "gespraech",
+   "treffer": [
+    {
+     "text": "Beim Deal Königstraße 1 finanziert die Sparkasse, Ansprechpartner dort ist Herr Kunz.",
+     "score": 0.712,
+     "app": "gg",
+     "meta": {
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "ki"
+     }
+    },
+    {
+     "text": "Deal Königstraße 1, 70173 Stuttgart: Status von 'In Prüfung' auf 'Angebot abgegeben' gesetzt. Angebotener Kaufpreis 1.200.000 EUR.",
+     "score": 0.586,
+     "app": "gg",
+     "meta": {
+      "art": "status",
+      "objekt": "gg:deal:koenigstrasse-1",
+      "quelle": "api"
+     }
+    },
+    {
+     "text": "Makler Anna Beispiel (Musterhaus Immobilien GmbH, Stuttgart) hat die neue Mobilnummer 0171 5550001. Quelle: Makler-Recherche, Webseite beispiel-immobilien.example.test/team.",
+     "score": 0.34,
+     "app": "gg",
+     "meta": {
+      "art": "recherche",
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "api"
+     }
+    },
+    {
+     "text": "Makler Bernd Muster (Muster & Partner Immobilien, Esslingen): HubSpot-Klassifizierung VIP, Priorität A, Kontakt-Rhythmus alle 3 Monate.",
+     "score": 0.272,
+     "app": "gg",
+     "meta": {
+      "art": "hubspot",
+      "objekt": "gg:makler:bernd-muster",
+      "quelle": "api"
+     }
+    },
+    {
+     "text": "Makler Anna Beispiel von Musterhaus Immobilien betreut vor allem Mehrfamilienhäuser in Stuttgart-West.",
+     "score": 0.265,
+     "app": "gg",
+     "meta": {
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "ki"
+     }
+    }
+   ],
+   "bewertung": {
+    "ok": true,
+    "fehlt": [],
+    "verboten_gefunden": []
+   }
+  },
+  {
+   "id": "f3",
+   "mandant": "ivtag",
+   "app": "gg",
+   "bereich": "eigene",
+   "frage": "Welche Priorität hat Bernd Muster?",
+   "erwartet": [
+    "priorität a"
+   ],
+   "quelle": "ereignis",
+   "treffer": [
+    {
+     "text": "Makler Bernd Muster (Muster & Partner Immobilien, Esslingen): HubSpot-Klassifizierung VIP, Priorität A, Kontakt-Rhythmus alle 3 Monate.",
+     "score": 0.565,
+     "app": "gg",
+     "meta": {
+      "art": "hubspot",
+      "objekt": "gg:makler:bernd-muster",
+      "quelle": "api"
+     }
+    },
+    {
+     "text": "Makler Anna Beispiel von Musterhaus Immobilien möchte nur telefonisch kontaktiert werden, keine E-Mails, und nie vor 10 Uhr morgens.",
+     "score": 0.368,
+     "app": "gg",
+     "meta": {
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "ki"
+     }
+    },
+    {
+     "text": "Makler Anna Beispiel von Musterhaus Immobilien betreut vor allem Mehrfamilienhäuser in Stuttgart-West.",
+     "score": 0.353,
+     "app": "gg",
+     "meta": {
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "ki"
+     }
+    },
+    {
+     "text": "Makler Anna Beispiel (Musterhaus Immobilien GmbH, Stuttgart) hat die neue Mobilnummer 0171 5550001. Quelle: Makler-Recherche, Webseite beispiel-immobilien.example.test/team.",
+     "score": 0.263,
+     "app": "gg",
+     "meta": {
+      "art": "recherche",
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "api"
+     }
+    },
+    {
+     "text": "Beim Deal Königstraße 1 finanziert die Sparkasse, Ansprechpartner dort ist Herr Kunz.",
+     "score": 0.22,
+     "app": "gg",
+     "meta": {
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "ki"
+     }
+    }
+   ],
+   "bewertung": {
+    "ok": true,
+    "fehlt": [],
+    "verboten_gefunden": []
+   }
+  },
+  {
+   "id": "f4",
+   "mandant": "ivtag",
+   "app": "gg",
+   "bereich": "eigene",
+   "frage": "Welche Mobilnummer hat Anna Beispiel?",
+   "erwartet": [
+    "0171"
+   ],
+   "quelle": "ereignis",
+   "treffer": [
+    {
+     "text": "Makler Anna Beispiel (Musterhaus Immobilien GmbH, Stuttgart) hat die neue Mobilnummer 0171 5550001. Quelle: Makler-Recherche, Webseite beispiel-immobilien.example.test/team.",
+     "score": 0.681,
+     "app": "gg",
+     "meta": {
+      "art": "recherche",
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "api"
+     }
+    },
+    {
+     "text": "Makler Anna Beispiel von Musterhaus Immobilien möchte nur telefonisch kontaktiert werden, keine E-Mails, und nie vor 10 Uhr morgens.",
+     "score": 0.576,
+     "app": "gg",
+     "meta": {
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "ki"
+     }
+    },
+    {
+     "text": "Makler Anna Beispiel von Musterhaus Immobilien betreut vor allem Mehrfamilienhäuser in Stuttgart-West.",
+     "score": 0.482,
+     "app": "gg",
+     "meta": {
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "ki"
+     }
+    },
+    {
+     "text": "Beim Deal Königstraße 1 finanziert die Sparkasse, Ansprechpartner dort ist Herr Kunz.",
+     "score": 0.376,
+     "app": "gg",
+     "meta": {
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "ki"
+     }
+    },
+    {
+     "text": "Makler Bernd Muster (Muster & Partner Immobilien, Esslingen): HubSpot-Klassifizierung VIP, Priorität A, Kontakt-Rhythmus alle 3 Monate.",
+     "score": 0.363,
+     "app": "gg",
+     "meta": {
+      "art": "hubspot",
+      "objekt": "gg:makler:bernd-muster",
+      "quelle": "api"
+     }
+    }
+   ],
+   "bewertung": {
+    "ok": true,
+    "fehlt": [],
+    "verboten_gefunden": []
+   }
+  },
+  {
+   "id": "f5",
+   "mandant": "ivtag",
+   "app": "gg",
+   "bereich": "firma",
+   "frage": "Wann ist der nächste Termin mit Anna Beispiel?",
+   "erwartet": [
+    "30.10"
+   ],
+   "quelle": "andere App (desk)",
+   "treffer": [
+    {
+     "text": "Makler Anna Beispiel (Musterhaus Immobilien GmbH, Stuttgart) hat die neue Mobilnummer 0171 5550001. Quelle: Makler-Recherche, Webseite beispiel-immobilien.example.test/team.",
+     "score": 0.58,
+     "app": "gg",
+     "meta": {
+      "art": "recherche",
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "api"
+     }
+    },
+    {
+     "text": "Termin mit Makler Anna Beispiel am 30.10.2026 um 11:00 Uhr im Büro Stuttgart geplant: Besichtigung Mehrfamilienhaus Rotebühlstraße.",
+     "score": 0.565,
+     "app": "desk",
+     "meta": {
+      "art": "termin",
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "api"
+     }
+    },
+    {
+     "text": "Makler Anna Beispiel von Musterhaus Immobilien möchte nur telefonisch kontaktiert werden, keine E-Mails, und nie vor 10 Uhr morgens.",
+     "score": 0.543,
+     "app": "gg",
+     "meta": {
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "ki"
+     }
+    },
+    {
+     "text": "Makler Anna Beispiel von Musterhaus Immobilien betreut vor allem Mehrfamilienhäuser in Stuttgart-West.",
+     "score": 0.472,
+     "app": "gg",
+     "meta": {
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "ki"
+     }
+    },
+    {
+     "text": "Makler Bernd Muster (Muster & Partner Immobilien, Esslingen): HubSpot-Klassifizierung VIP, Priorität A, Kontakt-Rhythmus alle 3 Monate.",
+     "score": 0.428,
+     "app": "gg",
+     "meta": {
+      "art": "hubspot",
+      "objekt": "gg:makler:bernd-muster",
+      "quelle": "api"
+     }
+    }
+   ],
+   "bewertung": {
+    "ok": true,
+    "fehlt": [],
+    "verboten_gefunden": []
+   }
+  },
+  {
+   "id": "f6",
+   "mandant": "ivtag",
+   "app": "desk",
+   "bereich": "firma",
+   "frage": "Was wissen wir über Anna Beispiel?",
+   "erwartet": [
+    "0171",
+    "telefon"
+   ],
+   "quelle": "andere App (gg)",
+   "treffer": [
+    {
+     "text": "Makler Anna Beispiel (Musterhaus Immobilien GmbH, Stuttgart) hat die neue Mobilnummer 0171 5550001. Quelle: Makler-Recherche, Webseite beispiel-immobilien.example.test/team.",
+     "score": 0.502,
+     "app": "gg",
+     "meta": {
+      "art": "recherche",
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "api"
+     }
+    },
+    {
+     "text": "Makler Anna Beispiel von Musterhaus Immobilien betreut vor allem Mehrfamilienhäuser in Stuttgart-West.",
+     "score": 0.467,
+     "app": "gg",
+     "meta": {
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "ki"
+     }
+    },
+    {
+     "text": "Makler Anna Beispiel von Musterhaus Immobilien möchte nur telefonisch kontaktiert werden, keine E-Mails, und nie vor 10 Uhr morgens.",
+     "score": 0.428,
+     "app": "gg",
+     "meta": {
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "ki"
+     }
+    },
+    {
+     "text": "Termin mit Makler Anna Beispiel am 30.10.2026 um 11:00 Uhr im Büro Stuttgart geplant: Besichtigung Mehrfamilienhaus Rotebühlstraße.",
+     "score": 0.39,
+     "app": "desk",
+     "meta": {
+      "art": "termin",
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "api"
+     }
+    },
+    {
+     "text": "Beim Deal Königstraße 1 finanziert die Sparkasse, Ansprechpartner dort ist Herr Kunz.",
+     "score": 0.281,
+     "app": "gg",
+     "meta": {
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "ki"
+     }
+    }
+   ],
+   "bewertung": {
+    "ok": true,
+    "fehlt": [],
+    "verboten_gefunden": []
+   }
+  },
+  {
+   "id": "f7",
+   "mandant": "ivtag",
+   "app": "desk",
+   "bereich": "eigene",
+   "frage": "Welche Mobilnummer hat Anna Beispiel?",
+   "erwartet": [],
+   "verboten": [
+    "0171"
+   ],
+   "quelle": "Trennung: desk ohne Freigabe für gg",
+   "treffer": [
+    {
+     "text": "Termin mit Makler Anna Beispiel am 30.10.2026 um 11:00 Uhr im Büro Stuttgart geplant: Besichtigung Mehrfamilienhaus Rotebühlstraße.",
+     "score": 0.43,
+     "app": "desk",
+     "meta": {
+      "art": "termin",
+      "objekt": "gg:makler:anna-beispiel",
+      "quelle": "api"
+     }
+    }
+   ],
+   "bewertung": {
+    "ok": true,
+    "fehlt": [],
+    "verboten_gefunden": []
+   }
+  },
+  {
+   "id": "f8",
+   "mandant": "andere-firma",
+   "app": "fremd",
+   "bereich": "firma",
+   "frage": "Was wissen wir über Anna Beispiel?",
+   "erwartet": [
+    "ulm"
+   ],
+   "verboten": [
+    "0171",
+    "telefon",
+    "30.10",
+    "sparkasse"
+   ],
+   "quelle": "Trennung: fremde Firma",
+   "treffer": [
+    {
+     "text": "Anna Beispiel ist Kundin der anderen Firma und sucht eine 3-Zimmer-Wohnung in Ulm.",
+     "score": 0.545,
+     "app": "fremd",
+     "meta": {
+      "art": "notiz",
+      "objekt": "fremd:kontakt:anna-beispiel",
+      "quelle": "api"
+     }
+    }
+   ],
+   "bewertung": {
+    "ok": true,
+    "fehlt": [],
+    "verboten_gefunden": []
+   }
+  }
+ ]
+}
