@@ -122,3 +122,19 @@ def zaehl_proxy(zaehler: Zaehler, port: int = 11500, ziel: str = "http://localho
     server = ThreadingHTTPServer(("127.0.0.1", port), H)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return f"http://127.0.0.1:{port}"
+
+
+def anthropic_zaehlen(zaehler: Zaehler):
+    """Anthropic-Client umhüllen: Token aus `usage` jeder Antwort zählen."""
+    from anthropic.resources.messages import Messages
+
+    orig = Messages.create
+
+    def create(self, *a, **k):
+        r = orig(self, *a, **k)
+        zaehler.aufrufe += 1
+        zaehler.ein += int(getattr(r.usage, "input_tokens", 0) or 0)
+        zaehler.aus += int(getattr(r.usage, "output_tokens", 0) or 0)
+        return r
+
+    Messages.create = create

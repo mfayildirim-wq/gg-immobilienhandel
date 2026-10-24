@@ -32,7 +32,9 @@ Ergebnisse stehen in `ergebnisse/*.json` (Treffer je Frage, Zeiten, Token).
 | Antwort | Liste von Fakten mit Score und Herkunft (App, Bezug) | fertiger Antwortsatz, je Datensatz einer |
 | Trennung | nur per Filter (`user_id` = Firma, `agent_id` = App) — Rechte muss unser Dienst prüfen | echte Rechte: Nutzer je App, Leserecht je Datensatz; fremder Zugriff → `PermissionDeniedError` |
 | Speicher | eine Tabelle in Postgres (pgvector) + SQLite-Verlauf | eine Datenbank, je Datensatz ein Schema (`pgvector_shared`, `postgres_graph_shared`); ohne diese Schalter je Datensatz eine eigene Datenbank |
-| Aktualisieren (noch nicht geprüft) | KI entscheidet bei `infer=True` ADD/UPDATE/DELETE gegen Bestehendes | neue Dokumente; altes bleibt, bis man es löscht |
+| Aktualisieren | Mem0 2.x legt **nur noch an** (kein UPDATE/DELETE mehr). Eigene Schicht: neue Fakten gegen Einträge zum selben Bezug prüfen (1 KI-Aufruf), Überholtes bekommt ein Ablaufdatum; App-Ereignisse ersetzen den letzten Eintrag gleicher Art am selben Bezug → 10/10 | neue Dokumente; altes bleibt, bis man es löscht (nicht geprüft) |
+
+Mit Haiku statt lokal: `PROBE_LLM=anthropic` (braucht `ANTHROPIC_API_KEY` in der Umgebung).
 
 Beobachtungen:
 - `nomic-embed-text` (englisch) findet deutsche Fragen schlecht; `bge-m3` (mehrsprachig) ist nötig.
