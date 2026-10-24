@@ -32,7 +32,7 @@ Ergebnisse stehen in `ergebnisse/*.json` (Treffer je Frage, Zeiten, Token).
 | Antwort | Liste von Fakten mit Score und Herkunft (App, Bezug) | fertiger Antwortsatz, je Datensatz einer |
 | Trennung | nur per Filter (`user_id` = Firma, `agent_id` = App) — Rechte muss unser Dienst prüfen | echte Rechte: Nutzer je App, Leserecht je Datensatz; fremder Zugriff → `PermissionDeniedError` |
 | Speicher | eine Tabelle in Postgres (pgvector) + SQLite-Verlauf | eine Datenbank, je Datensatz ein Schema (`pgvector_shared`, `postgres_graph_shared`); ohne diese Schalter je Datensatz eine eigene Datenbank |
-| Aktualisieren | KI entscheidet bei `infer=True` ADD/UPDATE/DELETE gegen Bestehendes | neue Dokumente; altes bleibt, bis man es löscht |
+| Aktualisieren (noch nicht geprüft) | KI entscheidet bei `infer=True` ADD/UPDATE/DELETE gegen Bestehendes | neue Dokumente; altes bleibt, bis man es löscht |
 
 Beobachtungen:
 - `nomic-embed-text` (englisch) findet deutsche Fragen schlecht; `bge-m3` (mehrsprachig) ist nötig.
