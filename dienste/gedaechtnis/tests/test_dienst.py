@@ -40,7 +40,7 @@ class Mem0Double:
                 return False
         return True
 
-    def add(self, inhalt, *, user_id, agent_id, metadata=None, infer=True):
+    def add(self, inhalt, *, user_id, agent_id, metadata=None, infer=True, run_id=None):
         texte = [inhalt] if not infer else (
             [n["content"] for n in inhalt if n["role"] == "user"] if isinstance(inhalt, list) else [s.strip() for s in inhalt.split(".") if s.strip()])
         neu = []
@@ -142,13 +142,20 @@ def test_ereignis_ersetzt_gleiche_art_am_bezug(umgebung):
 
 def test_merken_loest_ueberholtes_per_ki_ab(umgebung):
     c, mem, _ = umgebung
-    als(c, "gg", "POST", "/v1/ereignis", json={"text": "Anna Beispiel: Mobil 0171 5550001", "objekt": "gg:makler:a", "art": "recherche"})
+    als(c, "gg", "POST", "/v1/merken", json={"text": "Anna Beispiel Termin am Montag", "objekt": "gg:makler:a"})
+    als(c, "gg", "POST", "/v1/ereignis", json={"text": "Anna Beispiel: Mobil 0171 5550001", "objekt": "gg:makler:a", "art": "kontakt"})
     mem.llm.antwort = 'Antwort: {"ueberholt": [0]}'
-    r = als(c, "gg", "POST", "/v1/merken", json={"nachrichten": [{"role": "user", "content": "Anna Beispiel hat jetzt Mobil 0172 9990002"}], "objekt": "gg:makler:a"}).json()
-    assert [x["text"] for x in r["abgeloest"]] == ["Anna Beispiel: Mobil 0171 5550001"]
-    treffer = als(c, "gg", "POST", "/v1/suchen", json={"frage": "Mobil Anna Beispiel"}).json()["treffer"]
-    assert [t["text"] for t in treffer] == ["Anna Beispiel hat jetzt Mobil 0172 9990002"]
+    r = als(c, "gg", "POST", "/v1/merken", json={"nachrichten": [{"role": "user", "content": "Anna Beispiel Termin jetzt am Dienstag"}], "objekt": "gg:makler:a"}).json()
+    assert [x["text"] for x in r["abgeloest"]] == ["Anna Beispiel Termin am Montag"]
+    treffer = als(c, "gg", "POST", "/v1/suchen", json={"frage": "Anna Beispiel Termin"}).json()["treffer"]
+    assert treffer[0]["text"] == "Anna Beispiel Termin jetzt am Dienstag"
+    assert "Anna Beispiel Termin am Montag" not in [t["text"] for t in treffer]
     assert treffer[0]["quelle"] == "ki" and treffer[0]["objekt"] == "gg:makler:a"
+    # App-Ereignisse sind maßgeblich: die KI bekommt sie gar nicht zur Prüfung, sie bleiben stehen
+    mem.llm.antwort = '{"ueberholt": [0, 1]}'
+    als(c, "gg", "POST", "/v1/merken", json={"text": "Anna Beispiel möchte nur per E-Mail kontaktiert werden", "objekt": "gg:makler:a"})
+    texte = [x["text"] for x in als(c, "gg", "GET", "/v1/eintraege", params={"objekt": "gg:makler:a"}).json()["eintraege"]]
+    assert "Anna Beispiel: Mobil 0171 5550001" in texte
 
 
 def test_lesen_nur_mit_freigabe_und_nie_ueber_mandanten(umgebung):

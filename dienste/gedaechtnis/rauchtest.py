@@ -52,19 +52,25 @@ als("gg", "POST", "/v1/ereignis", json={"text": "Makler Bernd Muster: Priorität
 t = texte("gg", "Welche Priorität hat Bernd Muster?")
 pruefe("Ereignis ersetzt Priorität", "Priorität B" in t and "Priorität A" not in t, t)
 
-r = als("gg", "POST", "/v1/merken", json={"objekt": A, "text": "Anna Beispiel hat eine neue Mobilnummer: 0172 9990002."})
-pruefe("merken löst alte Nummer ab", any("0171" in x["text"] for x in r["abgeloest"]), r)
+als("gg", "POST", "/v1/merken", json={"objekt": A, "text": "Anna Beispiel hat ihr Büro in der Königstraße 5."})
+r = als("gg", "POST", "/v1/merken", json={"objekt": A, "text": "Anna Beispiel ist mit ihrem Büro in die Rotebühlstraße 12 umgezogen."})
+pruefe("merken löst überholte KI-Angabe ab", any("Königstraße" in x["text"] for x in r["abgeloest"]), r)
+t = texte("gg", "Wo ist das Büro von Anna Beispiel?", objekt=A)
+pruefe("Suche zeigt nur die neue Adresse", "Rotebühlstraße" in t and "Königstraße" not in t, t)
+als("gg", "POST", "/v1/merken", json={"objekt": A, "text": "Anna Beispiel möchte nur per E-Mail kontaktiert werden."})
 t = texte("gg", "Welche Mobilnummer hat Anna Beispiel?", objekt=A)
-pruefe("Suche zeigt nur die neue Nummer", "0172" in t and "die Mobilnummer 0171" not in t, t)
+pruefe("App-Ereignis bleibt maßgeblich (Nummer nicht von KI abgelöst)", "0171" in t, t)
 
 # MCP mit dem Claude-Zugang (alle Apps der Firma lesen)
 kopf = {"authorization": f"Bearer {S['claude']}", "accept": "application/json, text/event-stream"}
 rpc = lambda i, m, p=None: httpx.post(URL + "/mcp", headers=kopf, json={"jsonrpc": "2.0", "id": i, "method": m, **({"params": p} if p else {})}, timeout=300).json()
 init = rpc(1, "initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "rauchtest", "version": "1"}})
 pruefe("MCP initialize", init.get("result", {}).get("serverInfo", {}).get("name") == "gedaechtnis", init)
-r = rpc(2, "tools/call", {"name": "suchen", "arguments": {"frage": "Was wissen wir über Anna Beispiel?"}})
+r = rpc(2, "tools/call", {"name": "suchen", "arguments": {"frage": "Was wissen wir über Anna Beispiel?", "anzahl": 20}})
 inhalt = r.get("result", {}).get("content", [{}])[0].get("text", "")
-pruefe("MCP suchen über alle Apps der Firma", "30.10" in inhalt and "10 Uhr" in inhalt and "Ulm" not in inhalt, inhalt[:300])
+# „nur per E-Mail“ hat oben „nur telefonisch ab 10 Uhr“ abgelöst — gewollt
+pruefe("MCP suchen über alle Apps der Firma", "30.10" in inhalt and "Rotebühlstraße" in inhalt and "E-Mail" in inhalt
+       and "nur telefonisch" not in inhalt and "Ulm" not in inhalt, inhalt[:300])
 
 prot = als("gg", "GET", "/v1/protokoll", params={"anzahl": 50})["protokoll"]
 pruefe("Protokoll führt Buch", {"ereignis", "merken", "suchen"} <= {p["aktion"] for p in prot}, prot[:3])

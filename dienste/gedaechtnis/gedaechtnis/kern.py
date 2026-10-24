@@ -3,13 +3,16 @@
 Abbildung auf Mem0: Mandant = user_id, App = agent_id; Bezug (z. B. gg:makler:123), Art und Quelle als metadata.
 Mem0 2.x legt nur an — überholte Einträge löst diese Schicht ab (Ablaufdatum statt Löschen, der Verlauf bleibt):
   • Ereignis (App, wörtlich, ohne KI): ersetzt den letzten Eintrag gleicher Art am selben Bezug.
-  • Merken (KI-Extraktion): ein kleiner KI-Aufruf prüft die neuen Fakten gegen die Einträge zum selben Bezug.
+  • Merken (KI-Extraktion): ein kleiner KI-Aufruf prüft die neuen Fakten gegen die KI-Einträge zum selben Bezug.
+    App-Ereignisse sind maßgeblich: sie ersetzt nur ein neues Ereignis der App, nie ein KI-Fakt (24.10.2026 — sonst
+    löste „nur per E-Mail kontaktieren“ die Telefonnummern aus gg ab).
 """
 from __future__ import annotations
 
 import datetime as dt
 import json
 import re
+import uuid
 from typing import Any, Callable
 
 from .zugang import Zugang, ZugangsFehler
@@ -18,7 +21,9 @@ Protokoll = Callable[[Zugang, str, dict], None]
 
 PRUEF_PROMPT = (
     "Bestehende Einträge:\n{liste}\n\nNeue Fakten:\n{neu}\n\nWelche bestehenden Einträge sind durch die neuen Fakten "
-    'überholt (gleiche Angabe, neuer Wert)? Nur eindeutige Fälle. Antworte nur als JSON {{"ueberholt": [Nummern]}}.'
+    "überholt? Überholt ist ein Eintrag nur, wenn ein neuer Fakt genau dieselbe Angabe mit einem anderen Wert nennt "
+    "(z. B. dieselbe Telefonnummer-Art mit neuer Nummer, derselbe Termin mit neuem Datum). Vorlieben, Ergänzungen und "
+    'andere Angaben überholen nichts. Im Zweifel nichts. Antworte nur als JSON {{"ueberholt": [Nummern]}}.'
 )
 
 
@@ -96,12 +101,15 @@ class Gedaechtnis:
         """Text oder Gesprächsverlauf: Mem0 zieht die Fakten heraus; mit Bezug wird gegen Bestehendes geprüft."""
         self._schreibrecht(z)
         meta = {"quelle": "ki", "von": von or z.label, **({"objekt": objekt} if objekt else {})}
-        r = self.m.add(inhalt, user_id=z.mandant, agent_id=z.app, metadata=meta)
+        # eigene Lauf-Kennung: Mem0 gibt sonst die letzten Nachrichten derselben App als Kontext mit, und das Modell legt
+        # daraus alte Fakten neu an (24.10.2026, auch zu anderen Maklern). Den Abgleich mit Bestehendem macht diese Schicht.
+        r = self.m.add(inhalt, user_id=z.mandant, agent_id=z.app, run_id=str(uuid.uuid4()), metadata=meta)
         neu = [x for x in r.get("results", []) if x.get("id")]
         abgeloest: list[dict] = []
         if objekt and neu:
             ids = {x["id"] for x in neu}
-            bestehend = [x for x in self._am_bezug(z, objekt) if x["id"] not in ids]
+            bestehend = [x for x in self._am_bezug(z, objekt)
+                         if x["id"] not in ids and (x.get("metadata") or {}).get("quelle") != "api"]
             if bestehend:
                 antwort = self.m.llm.generate_response(messages=[{"role": "user", "content": PRUEF_PROMPT.format(
                     liste="\n".join(f'{i}: {x["memory"]}' for i, x in enumerate(bestehend)),

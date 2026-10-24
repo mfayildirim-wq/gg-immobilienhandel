@@ -1,4 +1,9 @@
 import {
+  GedaechtnisAblage,
+  GedaechtnisArtParam,
+  GedaechtnisEintrag,
+  GedaechtnisMerken,
+  GedaechtnisSuchen,
   ExposeAnalyseAntwort,
   ExposeAngabenAntwort,
   ExposeUebernahme,
@@ -131,6 +136,10 @@ import { autoSicherungDatei, autoSicherungEinspielen, autoSicherungErstellen, au
 import { filterAnlegen, filterListe, filterLoeschen, filterUmbenennen, filterVorlagenEinrichten, listenAltformat } from './services/listen.ts';
 import { projektAnlegen, projektDealAuswahl, projektDetail, projekteListe, projektLoeschen, projektSpeichern } from './services/projekte.ts';
 import { fotoDatei, fotoHochladen, fotoLoeschen, fotoPort, fotosListe, fotosSortieren } from './services/fotos.ts';
+import { gedaechtnisAttrappe, gedaechtnisClient, type GedaechtnisDienst } from '@gg/integrations';
+import {
+  dealKommentarMelden, dealStatusMelden, gedaechtnisAendern, gedaechtnisEintraege, gedaechtnisMerken, gedaechtnisStand, gedaechtnisSuchen, gedaechtnisVergessen, maklerMelden,
+} from './services/gedaechtnis.ts';
 import { type Dateispeicher, type Geocoder, type GraphClient, AnalyseFehler, type KiClient, KiDienstFehler, KiSchluesselFehler, type PropstackClient, nachrichtenSuche, webSuche, anthropicClient, anthropicSchluesselPruefen, kiMitModell } from '@gg/integrations';
 import { bekannteExposeDateien, exposeAnalysieren, exposeEingang, exposeEingangUebernehmen, type ExposeKontext, exposeUebernehmen, importVerwerfen, MAX_EXPOSE_BYTES, exposeBild } from './services/expose.ts';
 import { maklerAngaben, maklerUebernahme, objektAngaben, objektUebernahme } from './services/exposeAngaben.ts';
@@ -208,6 +217,8 @@ export interface AppKontext {
   autoImport?: { aktiv?: boolean; browserStarten?: () => Promise<import('playwright-core').Browser>; maxZeitlimitSek?: number; lokaleZieleErlaubt?: boolean };
   /** „Schlüssel testen“ für Anthropic; Standard: echte Abfrage der Modellliste. Tests setzen einen Ersatz. */
   kiSchluesselPruefen?: (apiKey: string) => Promise<{ gueltig: boolean; meldung: string }>;
+  /** Gedächtnis-Dienst fest vorgegeben (Tests); sonst aus Einstellungen → Zugänge, mit KI-Attrappe eine Attrappe. */
+  gedaechtnis?: GedaechtnisDienst | null;
   /** `CRON_SECRET`: ohne dieses Geheimnis antworten die Cron-Routen immer mit 401. */
   cronGeheimnis?: string;
   /** Wohin die Microsoft-Anmeldung zurückleiten darf; Standard: nur lokale Adressen (`rueckwegRegelnAusUmgebung`). */
@@ -233,7 +244,7 @@ const Version = z.object({ version: z.number().int() });
 const Geaendert = json(z.object({ id: z.string(), version: z.number().int() }), 'geändert');
 const konflikt = { 400: fehler('Eingabe ungültig'), 404: fehler('nicht gefunden'), 409: fehler('Versionskonflikt') };
 
-export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, cronGeheimnis, kiSchluesselPruefen = anthropicSchluesselPruefen, autoImport, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
+export function createApp({ db, auth: authOpt, expose, gedaechtnis: gedaechtnisOpt, ki: kiOpt, geocoder, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, cronGeheimnis, kiSchluesselPruefen = anthropicSchluesselPruefen, autoImport, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
   const autoImportAktiv = autoImport?.aktiv ?? true;
   const exposeKontext = () => {
     if (!expose) throw new FachFehler(422, 'Dateiablage ist nicht eingerichtet (SUPABASE_SERVICE_ROLE_KEY).');
@@ -252,6 +263,17 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, prop
     const ki = fest ?? (key ? anthropicClient(key) : (expose?.ki ?? null));
     if (!ki) return null;
     return kiMitModell(ki, bereich ? kiModellFuer(await kiModellwahlLesen(db), bereich) : null);
+  };
+  /**
+   * Der Gedächtnis-Dienst je Anfrage, wie die KI: fest vorgegeben geht vor, dann Adresse und Schlüssel aus
+   * Einstellungen → Zugänge (oder GEDAECHTNIS_URL/GEDAECHTNIS_SCHLUESSEL), mit KI-Attrappe eine Attrappe im Speicher.
+   */
+  const gedaechtnisProbe = expose?.attrappe ? gedaechtnisAttrappe() : null;
+  const gedaechtnisAktuell = async (): Promise<GedaechtnisDienst | null> => {
+    if (gedaechtnisOpt !== undefined) return gedaechtnisOpt;
+    const url = (await zugangLesen(db, 'gedaechtnis-url')) || process.env.GEDAECHTNIS_URL || '';
+    const schluessel = (await zugangLesen(db, 'gedaechtnis-schluessel')) || process.env.GEDAECHTNIS_SCHLUESSEL || '';
+    return url && schluessel ? gedaechtnisClient(url, schluessel) : gedaechtnisProbe;
   };
   const exposeMitKi = async () => ({ ...exposeKontext(), ki: await kiAktuell('expose') });
   const ablage = () => {
@@ -394,7 +416,13 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, prop
         409: fehler('Versionskonflikt'),
       },
     }),
-    async (c) => c.json(await statusAendern(db, c.req.valid('param').id, c.req.valid('json')), 200),
+    async (c) => {
+      const { id } = c.req.valid('param');
+      const wechsel = c.req.valid('json');
+      const ergebnis = await statusAendern(db, id, wechsel);
+      await dealStatusMelden(db, await gedaechtnisAktuell(), id, wechsel.grund);
+      return c.json(ergebnis, 200);
+    },
   );
   app.openapi(
     createRoute({
@@ -425,7 +453,12 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, prop
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/deals/{id}/kommentare', request: { params: IdParam, ...body(KommentarAnlegen) }, responses: { 201: json(DealKommentar, 'angelegt'), 404: fehler('nicht gefunden') } }),
-    async (c) => c.json(await kommentarAnlegen(db, c.req.valid('param').id, c.req.valid('json').text), 201),
+    async (c) => {
+      const { id } = c.req.valid('param');
+      const kommentar = await kommentarAnlegen(db, id, c.req.valid('json').text);
+      await dealKommentarMelden(db, await gedaechtnisAktuell(), id, kommentar);
+      return c.json(kommentar, 201);
+    },
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/deals/{id}/erledigt', request: { params: IdParam, ...body(Version) }, responses: { 200: Geaendert, ...konflikt } }),
@@ -497,7 +530,13 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, prop
   );
   app.openapi(
     createRoute({ method: 'patch', path: '/api/makler/{id}', request: { params: IdParam, ...body(MaklerAendern) }, responses: { 200: Geaendert, ...konflikt } }),
-    async (c) => c.json(await maklerAendern(db, c.req.valid('param').id, c.req.valid('json')), 200),
+    async (c) => {
+      const { id } = c.req.valid('param');
+      const eingabe = c.req.valid('json');
+      const ergebnis = await maklerAendern(db, id, eingabe);
+      await maklerMelden(db, await gedaechtnisAktuell(), id, eingabe);
+      return c.json(ergebnis, 200);
+    },
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/makler/{id}/kommunikation', request: { params: IdParam, ...body(KommunikationAnlegen) }, responses: { 201: json(MaklerKommunikation, 'angelegt'), 404: fehler('nicht gefunden') } }),
@@ -719,6 +758,36 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, prop
   app.openapi(
     createRoute({ method: 'get', path: '/api/mcp', responses: { 200: json(z.object({ lokal: z.boolean(), schluessel: z.array(z.object({ label: z.string(), scopes: z.array(z.string()) })), verworfen: z.array(z.string()), werkzeuge: z.array(z.object({ name: z.string(), scope: z.string(), title: z.string(), description: z.string() })) }), 'Werkzeuge und Schlüssel') } }),
     (c) => c.json(mcpStand(process.env), 200),
+  );
+
+  // ── Gedächtnis: Einträge je Deal und Makler (zentraler Dienst) ──
+  const GedaechtnisBezugParam = z.object({ art: GedaechtnisArtParam, id: z.string().min(1) });
+  app.openapi(
+    createRoute({ method: 'get', path: '/api/gedaechtnis', responses: { 200: json(z.object({ verbunden: z.boolean() }), 'Stand') } }),
+    async (c) => c.json(gedaechtnisStand(await gedaechtnisAktuell()), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'get', path: '/api/gedaechtnis/{art}/{id}', request: { params: GedaechtnisBezugParam }, responses: { 200: json(z.object({ eintraege: z.array(GedaechtnisEintrag) }), 'Einträge'), 503: fehler('nicht eingerichtet') } }),
+    async (c) => { const p = c.req.valid('param'); return c.json(await gedaechtnisEintraege(await gedaechtnisAktuell(), p.art, p.id), 200); },
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/gedaechtnis/{art}/{id}', request: { params: GedaechtnisBezugParam, ...body(GedaechtnisMerken) }, responses: { 201: json(GedaechtnisAblage, 'gemerkt'), 503: fehler('nicht eingerichtet') } }),
+    async (c) => { const p = c.req.valid('param'); return c.json(await gedaechtnisMerken(await gedaechtnisAktuell(), p.art, p.id, c.req.valid('json').text), 201); },
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/gedaechtnis/suchen', request: body(GedaechtnisSuchen), responses: { 200: json(z.object({ treffer: z.array(GedaechtnisEintrag) }), 'Treffer'), 503: fehler('nicht eingerichtet') } }),
+    async (c) => {
+      const e = c.req.valid('json');
+      return c.json(await gedaechtnisSuchen(await gedaechtnisAktuell(), e.frage, e.art && e.id ? { art: e.art, id: e.id } : undefined), 200);
+    },
+  );
+  app.openapi(
+    createRoute({ method: 'patch', path: '/api/gedaechtnis/eintraege/{id}', request: { params: IdParam, ...body(GedaechtnisMerken) }, responses: { 200: json(GedaechtnisEintrag, 'geändert'), 503: fehler('nicht eingerichtet') } }),
+    async (c) => c.json(await gedaechtnisAendern(await gedaechtnisAktuell(), c.req.valid('param').id, c.req.valid('json').text), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'delete', path: '/api/gedaechtnis/eintraege/{id}', request: { params: IdParam }, responses: { 200: json(z.object({ id: z.string(), geloescht: z.boolean() }), 'gelöscht'), 503: fehler('nicht eingerichtet') } }),
+    async (c) => c.json(await gedaechtnisVergessen(await gedaechtnisAktuell(), c.req.valid('param').id), 200),
   );
 
   // ── Microsoft 365: Zugang und Posteingang (alt: /api/oauth/*, /api/offers) ──

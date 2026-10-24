@@ -13,6 +13,10 @@ Hintergrund und Vergleich mit Cognee: `../../werkzeuge/gedaechtnis-probe/README.
   - `ereignis` (App, wörtlich, ohne KI) ersetzt den letzten Eintrag gleicher `art` am selben `objekt`.
   - `merken` (KI zieht Fakten heraus) prüft mit einem kleinen KI-Aufruf gegen die Einträge zum selben `objekt`.
   - Überholtes bekommt ein Ablaufdatum (`abgeloest_durch`), gelöscht wird nichts — der Verlauf bleibt.
+  - **App-Ereignisse sind maßgeblich:** sie ersetzt nur ein neues Ereignis der App, nie ein KI-Fakt (sonst löste
+    „nur per E-Mail kontaktieren“ die Telefonnummern aus gg ab).
+  - Jedes `merken` läuft mit eigener Lauf-Kennung: Mem0 gäbe sonst die letzten Nachrichten der App als Kontext mit,
+    und das Modell legte daraus alte Fakten neu an.
 - **Protokoll:** jede Ablage, Suche, Änderung in `gedaechtnis_protokoll` (wer, App, was, wann).
 
 ## Schnittstellen
@@ -55,5 +59,4 @@ claude mcp add-json -s user gedaechtnis-lokal "$(python3 -c 'import json;k=json.
 ## Offen
 
 - Betrieb außerhalb des Rechners (eigener Server/Container), Embeddings dort (bge-m3 selbst oder ein Anbieter).
-- Anbindung gg: Ereignisse aus den Services, Kasten „Gedächtnis“ an Deal und Makler.
 - Zugänge in einer Tabelle statt Umgebungsvariable, Oberfläche zum Verwalten.
