@@ -31,3 +31,4 @@ export * from './pdf/bilder.ts';
 export * from './recherche/lesen.ts';
 export * from './recherche/ki.ts';
 export * from './recherche/testseiten.ts';
+export * from './gedaechtnis.ts';

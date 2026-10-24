@@ -1,0 +1,4 @@
+.venv-*/
+ergebnisse/*.db
+ergebnisse/*.log
+__pycache__/
