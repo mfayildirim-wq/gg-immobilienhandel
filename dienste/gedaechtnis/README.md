@@ -1,0 +1,59 @@
+# Gedächtnis-Dienst (Prototyp)
+
+Zentrales Gedächtnis für Apps und KI: **Mem0** (Postgres + pgvector) mit einer eigenen Schicht davor.
+Apps sprechen **REST** (`/v1/…`), KI-Clients **MCP** (`/mcp`, Streamable HTTP) — beide mit demselben Schlüssel.
+Hintergrund und Vergleich mit Cognee: `../../werkzeuge/gedaechtnis-probe/README.md`.
+
+## Was die Schicht vor Mem0 tut
+
+- **Mandant und App aus dem Schlüssel** (Mem0: `user_id` = Mandant, `agent_id` = App). Wer schreibt, bestimmt nie der Aufrufer.
+- **Freigaben:** Lesen in der eigenen App und in freigegebenen Apps desselben Mandanten (`"*"` = alle). Über Mandanten nie.
+  Schreiben, Ändern, Löschen nur in der eigenen App. Gesucht wird je App einzeln; Treffer außerhalb der Freigabe werden zusätzlich verworfen.
+- **Ersetzen** (Mem0 2.x legt nur an):
+  - `ereignis` (App, wörtlich, ohne KI) ersetzt den letzten Eintrag gleicher `art` am selben `objekt`.
+  - `merken` (KI zieht Fakten heraus) prüft mit einem kleinen KI-Aufruf gegen die Einträge zum selben `objekt`.
+  - Überholtes bekommt ein Ablaufdatum (`abgeloest_durch`), gelöscht wird nichts — der Verlauf bleibt.
+- **Protokoll:** jede Ablage, Suche, Änderung in `gedaechtnis_protokoll` (wer, App, was, wann).
+
+## Schnittstellen
+
+| REST | MCP-Werkzeug | Was |
+|---|---|---|
+| `POST /v1/ereignis` `{text, objekt, art}` | – | App-Ereignis wörtlich ablegen |
+| `POST /v1/merken` `{text \| nachrichten, objekt?}` | `merken` | Fakten aus Text/Gespräch |
+| `POST /v1/suchen` `{frage, objekt?, apps?, anzahl?}` | `suchen` | Suche (Score, App, Bezug, Quelle) |
+| `GET /v1/eintraege?objekt=` | `eintraege_zu` | gültige Einträge zu einem Bezug |
+| `PATCH /v1/eintraege/{id}` `{text}` | – | von Hand korrigieren |
+| `DELETE /v1/eintraege/{id}` | `vergessen` | löschen |
+| `GET /v1/protokoll` | – | Protokoll der lesbaren Apps |
+| `GET /v1/ich` | – | eigener Zugang |
+
+`objekt` ist ein freier Bezug, z. B. `gg:makler:<id>`, `gg:deal:<id>`.
+
+## Lokal starten
+
+Voraussetzungen wie in der Probe: Postgres-Container `gedaechtnis-probe-pg` (Port 55440), Ollama mit `mistral-small3.2` und `bge-m3`.
+
+```bash
+uv sync
+uv run python zugang_erzeugen.py claude ivtag claude '*'   # label mandant app [lesen] [nur-lesen]
+uv run python zugang_erzeugen.py gg ivtag gg desk
+./start.sh                                                  # http://127.0.0.1:8800  (Doku: /docs)
+uv run pytest -q                                            # Rechte, Ersetzen, MCP (ohne Modell)
+uv run python rauchtest.py                                  # Durchlauf mit echtem Mem0 (braucht gg, desk, fremd, claude)
+```
+
+Schlüssel stehen nur in `.schluessel.local.json`, die Hashes in `.env.local` (beide nicht im Repo).
+Mit Claude statt lokal: `GEDAECHTNIS_LLM=anthropic` und `ANTHROPIC_API_KEY` in der Umgebung.
+
+## Claude Code verbinden
+
+```bash
+claude mcp add-json -s user gedaechtnis-lokal "$(python3 -c 'import json;k=json.load(open(".schluessel.local.json"))["claude"];print(json.dumps({"type":"http","url":"http://127.0.0.1:8800/mcp","headers":{"Authorization":"Bearer "+k}}))')"
+```
+
+## Offen
+
+- Betrieb außerhalb des Rechners (eigener Server/Container), Embeddings dort (bge-m3 selbst oder ein Anbieter).
+- Anbindung gg: Ereignisse aus den Services, Kasten „Gedächtnis“ an Deal und Makler.
+- Zugänge in einer Tabelle statt Umgebungsvariable, Oberfläche zum Verwalten.

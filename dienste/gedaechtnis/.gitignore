@@ -1,0 +1,5 @@
+.venv/
+.env.local
+.schluessel.local.json
+verlauf.db
+__pycache__/
