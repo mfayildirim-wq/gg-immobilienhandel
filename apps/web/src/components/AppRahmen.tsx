@@ -56,7 +56,8 @@ export function AppRahmen() {
  * App-Rahmen im neuen Design: einklappbare Seitenleiste links. Die Wählmaschine gehört zur Ankaufseite (Knopf über der Liste).
  * Die Kopfzeile zeigt als Brotkrumen, auf welcher Seite man ist, und hält links von „Exposé importieren“ einen Platz
  * frei, in den eine Seite ihr Menü „Ansicht und Filter“ setzt (`AnsichtMenue`).
- * Oben in der Mitte der rote Sprechkreis: öffnet rechts die KI-Leiste zum gerade offenen Dialog (26.10.2026).
+ * Oben in der Mitte der rote Sprechkreis: öffnet rechts die KI-Leiste zum gerade offenen Dialog (26.10.2026),
+ * als Ebene über dem Inhalt, ohne ihn zu verschieben.
  */
 function Rahmen() {
   const ki = useKiLeiste();
@@ -91,7 +92,6 @@ function Rahmen() {
     <AppShell
       header={{ height: 56 }}
       navbar={{ width: schmal ? 64 : 240, breakpoint: 'sm', collapsed: { mobile: !mobilOffen, desktop: false } }}
-      aside={{ width: { sm: 380, xl: 440 }, breakpoint: 'sm', collapsed: { mobile: !ki.offen, desktop: !ki.offen } }}
       padding="md"
     >
       <AppShell.Header>
@@ -210,9 +210,22 @@ function Rahmen() {
         </KopfPlatzKontext.Provider>
       </AppShell.Main>
 
-      <AppShell.Aside inert={!ki.offen} style={{ ...KI_FARBEN, visibility: ki.offen ? undefined : 'hidden' }}>
+      {/* Als Ebene über dem Inhalt: die Seite darunter behält ihre Breite und verschiebt sich nicht */}
+      <Box
+        component="aside"
+        inert={!ki.offen}
+        pos="fixed"
+        top={56}
+        right={0}
+        bottom={0}
+        w="min(440px, 100vw)"
+        style={{
+          ...KI_FARBEN, zIndex: 150, borderLeft: '1px solid var(--mantine-color-default-border)', boxShadow: 'var(--mantine-shadow-xl)',
+          transform: ki.offen ? 'none' : 'translateX(100%)', visibility: ki.offen ? undefined : 'hidden', transition: 'transform 150ms ease, visibility 150ms',
+        }}
+      >
         {kiAufgebaut && <KiLeiste darstellen={markdownAlsHtml} />}
-      </AppShell.Aside>
+      </Box>
 
       <GlobaleSuche offen={sucheOffen} schliessen={suche.close} />
     </AppShell>
