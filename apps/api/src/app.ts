@@ -349,7 +349,7 @@ export function createApp({ db, auth: authOpt, expose, gedaechtnis: gedaechtnisO
     }
     const rumpf: unknown = await c.req.json().catch(() => null);
     if (rumpf === null) return c.json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Der Rumpf ist kein gültiges JSON.' } }, 400);
-    const antwort = await mcpVerarbeiten(db, rumpf, anmeldung.sitzung);
+    const antwort = await mcpVerarbeiten(db, rumpf, anmeldung.sitzung, { gedaechtnis: gedaechtnisAktuell });
     // Nur Benachrichtigungen: Streamable HTTP verlangt 202 ohne Rumpf
     return antwort ? c.json(antwort, 200) : c.body(null, 202);
   });

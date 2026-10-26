@@ -28,9 +28,14 @@ from .zugang import Zugang, ZugangsFehler, anmelden, schluessel_aus_kopf, verzei
 DB = os.environ.get("GEDAECHTNIS_DB", "postgresql://postgres:probe@127.0.0.1:55440/probe")
 LLM = os.environ.get("GEDAECHTNIS_LLM", "ollama")
 MODELL = os.environ.get("GEDAECHTNIS_MODELL", "claude-haiku-4-5" if LLM == "anthropic" else "mistral-small3.2")
-EMBED = os.environ.get("GEDAECHTNIS_EMBED", "bge-m3")
+# Embeddings: lokal über Ollama (bge-m3) oder im Prozess über fastembed (ONNX, ohne PyTorch — für den Server)
+EMBED_ANBIETER = os.environ.get("GEDAECHTNIS_EMBED_ANBIETER", "ollama")
+EMBED = os.environ.get("GEDAECHTNIS_EMBED", "bge-m3" if EMBED_ANBIETER == "ollama" else "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 OLLAMA = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-DIMS = {"bge-m3": 1024, "nomic-embed-text": 768}.get(EMBED, 1024)
+DIMS = {"bge-m3": 1024, "nomic-embed-text": 768, "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2": 384,
+        "sentence-transformers/paraphrase-multilingual-mpnet-base-v2": 768, "intfloat/multilingual-e5-large": 1024}.get(EMBED, 1024)
+# je Embedding eine eigene Sammlung: Vektoren verschiedener Modelle sind nicht vergleichbar
+SAMMLUNG = "gedaechtnis" if EMBED == "bge-m3" else "gedaechtnis_" + "".join(c if c.isalnum() else "_" for c in EMBED.split("/")[-1].lower())
 
 ANWEISUNG = ("Schreibe jeden Fakt auf Deutsch, knapp und mit vollem Namen der Person, Firma oder des Deals. "
              "Behalte Telefonnummern, Uhrzeiten, Beträge und Namen wörtlich.")
@@ -61,10 +66,12 @@ class Aendern(BaseModel):
 def mem0_konfig() -> dict:
     return {
         "vector_store": {"provider": "pgvector", "config": {
-            "connection_string": DB, "collection_name": "gedaechtnis", "embedding_model_dims": DIMS}},
-        "llm": {"provider": "anthropic", "config": {"model": MODELL, "temperature": 0}} if LLM == "anthropic"
+            "connection_string": DB, "collection_name": SAMMLUNG, "embedding_model_dims": DIMS}},
+        # das Anthropic-SDK nimmt keine Sampling-Parameter mehr an (temperature/top_p) — Mem0 darf sie nicht senden
+        "llm": {"provider": "anthropic", "config": {"model": MODELL, "enable_sampling_parameters": False}} if LLM == "anthropic"
         else {"provider": "ollama", "config": {"model": MODELL, "temperature": 0, "ollama_base_url": OLLAMA}},
-        "embedder": {"provider": "ollama", "config": {"model": EMBED, "embedding_dims": DIMS, "ollama_base_url": OLLAMA}},
+        "embedder": {"provider": "fastembed", "config": {"model": EMBED, "embedding_dims": DIMS}} if EMBED_ANBIETER == "fastembed"
+        else {"provider": "ollama", "config": {"model": EMBED, "embedding_dims": DIMS, "ollama_base_url": OLLAMA}},
         "custom_instructions": ANWEISUNG,
         "history_db_path": os.environ.get("GEDAECHTNIS_VERLAUF", os.path.join(os.path.dirname(__file__), "..", "verlauf.db")),
     }
@@ -171,7 +178,7 @@ def erzeuge(memory: Any = None, protokoll=None) -> FastAPI:
 
     @app.get("/health")
     def health():
-        return {"ok": True, "llm": LLM, "modell": MODELL, "embed": EMBED}
+        return {"ok": True, "llm": LLM, "modell": MODELL, "embed": EMBED, "embed_anbieter": EMBED_ANBIETER}
 
     @app.get("/v1/ich")
     def ich(z: Zugang = Depends(wer)):

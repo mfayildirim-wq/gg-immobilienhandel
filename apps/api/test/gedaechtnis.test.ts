@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { createDb, schema, verlangeLokaleDatenbank } from '@gg/db';
 import { GedaechtnisFehler, gedaechtnisAttrappe, type GedaechtnisDienst } from '@gg/integrations';
 import { inArray, like } from 'drizzle-orm';
@@ -68,6 +69,46 @@ describe.skipIf(!url)('Gedächtnis: Ereignisse aus gg und Einträge je Deal/Makl
     expect(treffer.treffer[0].text).toBe('Verkäufer ab 3. November erreichbar');
     expect(await lies(senden('DELETE', `/api/gedaechtnis/eintraege/${gemerkt.neu[0].id}`))).toEqual({ id: gemerkt.neu[0].id, geloescht: true });
     expect(await liste()).toHaveLength(3);
+  });
+
+  it('MCP: Gedächtnis suchen, Einträge lesen, merken (Bereich write); ohne Dienst ein Werkzeugfehler', async () => {
+    const m = await lies(senden('POST', '/api/makler', { name: `${k} Carla` }));
+    angelegt.makler.push(m.id);
+    await senden('PATCH', `/api/makler/${m.id}`, { version: (await lies(app.request(`/api/makler/${m.id}`))).version, mobil: '0170 1112223' });
+    const rpc = async (a: ReturnType<typeof createApp>, name: string, args: Record<string, unknown>, kopf: Record<string, string> = {}) =>
+      (await a.request('/api/mcp', { method: 'POST', headers: { 'content-type': 'application/json', ...kopf }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) })).json() as Promise<any>;
+    const inhalt = (r: any) => JSON.parse(r.result.content[0].text);
+    const alt = { lokal: process.env.AUTH_LOCAL_OPEN, vercel: process.env.VERCEL, keys: process.env.MCP_API_KEYS };
+    process.env.AUTH_LOCAL_OPEN = '1';
+    delete process.env.VERCEL;
+    try {
+      const gemerkt = await rpc(app, 'gedaechtnis_merken', { collection: 'makler', id: m.id, text: 'Carla ist dienstags nicht erreichbar' });
+      expect(gemerkt.result.isError).toBe(false);
+      expect(inhalt(gemerkt).neu[0]).toMatchObject({ objekt: `gg:makler:${m.id}`, von: 'mcp:local' });
+
+      const eintraege = inhalt(await rpc(app, 'gedaechtnis_eintraege', { collection: 'makler', id: m.id })).eintraege.map((e: { text: string }) => e.text);
+      expect(eintraege).toHaveLength(2);
+      expect(eintraege.join(' ')).toContain('Mobil 0170 1112223');
+      expect(inhalt(await rpc(app, 'gedaechtnis_suchen', { frage: 'Wann ist Carla nicht erreichbar?' })).treffer[0].text).toBe('Carla ist dienstags nicht erreichbar');
+
+      const objektFalsch = await rpc(app, 'gedaechtnis_eintraege', { collection: 'objekte', id: 'x' });
+      expect(objektFalsch.result).toMatchObject({ isError: true });
+      const ohne = await rpc(createApp({ db, auth: offen, gedaechtnis: null }), 'gedaechtnis_suchen', { frage: 'egal' });
+      expect(ohne.result.isError).toBe(true);
+      expect(ohne.result.content[0].text).toContain('nicht eingerichtet');
+
+      // Nur lesen: suchen ja, merken nein
+      process.env.AUTH_LOCAL_OPEN = '0';
+      const schluessel = 'gedaechtnis-lesen-1234';
+      process.env.MCP_API_KEYS = `cowork:read:${createHash('sha256').update(schluessel).digest('hex')}`;
+      const kopf = { authorization: `Bearer ${schluessel}` };
+      expect((await rpc(app, 'gedaechtnis_suchen', { frage: 'Carla', collection: 'makler', id: m.id }, kopf)).result.isError).toBe(false);
+      expect((await rpc(app, 'gedaechtnis_merken', { collection: 'makler', id: m.id, text: 'x' }, kopf)).error).toMatchObject({ code: -32003 });
+    } finally {
+      if (alt.lokal === undefined) delete process.env.AUTH_LOCAL_OPEN; else process.env.AUTH_LOCAL_OPEN = alt.lokal;
+      if (alt.keys === undefined) delete process.env.MCP_API_KEYS; else process.env.MCP_API_KEYS = alt.keys;
+      if (alt.vercel === undefined) delete process.env.VERCEL; else process.env.VERCEL = alt.vercel;
+    }
   });
 
   it('Ohne Dienst: Oberfläche bekommt 503, Änderungen in gg laufen trotzdem; ein ausgefallener Dienst hält gg nicht auf', async () => {

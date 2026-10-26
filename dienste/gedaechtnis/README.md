@@ -56,6 +56,22 @@ Mit Claude statt lokal: `GEDAECHTNIS_LLM=anthropic` und `ANTHROPIC_API_KEY` in d
 claude mcp add-json -s user gedaechtnis-lokal "$(python3 -c 'import json;k=json.load(open(".schluessel.local.json"))["claude"];print(json.dumps({"type":"http","url":"http://127.0.0.1:8800/mcp","headers":{"Authorization":"Bearer "+k}}))')"
 ```
 
+## Server (Coolify-Host 157.90.119.156)
+
+`https://gedaechtnis.157.90.119.156.sslip.io` — `Dockerfile` + `docker-compose.yml` in `/opt/gedaechtnis`, hinter dem
+Coolify-Traefik (Netz `coolify`, Let's Encrypt), eigene Postgres mit pgvector. Modell: Haiku; Embeddings: fastembed
+`paraphrase-multilingual-MiniLM-L12-v2` (im Image, ohne GPU/Ollama).
+
+```bash
+ZIEL=server uv run python zugang_erzeugen.py gg ivtag gg '*'      # Schlüssel → .schluessel.server.json, Hashes → .env.server
+rsync -az --exclude-from=.dockerignore Dockerfile docker-compose.yml .dockerignore pyproject.toml uv.lock gedaechtnis root@157.90.119.156:/opt/gedaechtnis/
+grep '^GEDAECHTNIS_ZUGAENGE=' .env.server | ssh root@157.90.119.156 'cd /opt/gedaechtnis && grep -v "^GEDAECHTNIS_ZUGAENGE=" .env > .env.neu && cat >> .env.neu && mv .env.neu .env'
+ssh root@157.90.119.156 'cd /opt/gedaechtnis && docker compose up -d --build'
+ZIEL=server uv run python rauchtest.py https://gedaechtnis.157.90.119.156.sslip.io   # Zugänge rt-* in eigenen Mandanten
+```
+
+Auf dem Server steht in `/opt/gedaechtnis/.env`: `POSTGRES_PASSWORD`, `GEDAECHTNIS_HOST`, `ANTHROPIC_API_KEY`, `GEDAECHTNIS_ZUGAENGE` (nur Hashes).
+
 ## Offen
 
 - Betrieb außerhalb des Rechners (eigener Server/Container), Embeddings dort (bge-m3 selbst oder ein Anbieter).

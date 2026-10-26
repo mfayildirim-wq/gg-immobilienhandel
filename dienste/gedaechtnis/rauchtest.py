@@ -1,13 +1,18 @@
 """Durchlauf gegen den laufenden Dienst (echtes Mem0): App-Ereignisse, KI-Gespräch, Ersetzen, Freigaben, MCP, Protokoll.
-Aufruf: uv run python rauchtest.py [http://127.0.0.1:8800]   — braucht Zugänge gg, desk, fremd, claude (zugang_erzeugen.py)."""
+Aufruf: uv run python rauchtest.py [http://127.0.0.1:8800]   — braucht Zugänge gg, desk, fremd, claude (zugang_erzeugen.py).
+Gegen den Server: ZIEL=server, Zugänge rt-gg, rt-desk, rt-fremd, rt-claude in eigenen Mandanten (räumt nur dort auf)."""
 import json
+import os
 import sys
 from pathlib import Path
 
 import httpx
 
 URL = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8800"
-S = json.loads((Path(__file__).parent / ".schluessel.local.json").read_text())
+ZIEL = os.environ.get("ZIEL", "local")
+PRAEFIX = "rt-" if ZIEL == "server" else ""
+S = {k.removeprefix(PRAEFIX): v for k, v in json.loads((Path(__file__).parent / f".schluessel.{ZIEL}.json").read_text()).items()
+     if k.startswith(PRAEFIX)}
 ok = True
 
 
