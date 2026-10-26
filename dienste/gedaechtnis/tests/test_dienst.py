@@ -140,6 +140,20 @@ def test_ereignis_ersetzt_gleiche_art_am_bezug(umgebung):
     assert ("gg", "ereignis", {"objekt": "gg:makler:b", "art": "prioritaet", "neu": 1, "abgeloest": 1}) in protokoll
 
 
+def test_ablegen_ein_eintrag_woertlich_gleicher_titel_ersetzt(umgebung):
+    c, _, _ = umgebung
+    recherche = "## Vergleichsangebote\n\n| Objekt | Preis |\n|---|---|\n| Musterweg 1 | 420.000 € |\n\nFazit: Preis liegt im Rahmen."
+    r = als(c, "gg", "POST", "/v1/ablegen", json={"titel": "Vergleichsangebote Umgebung", "text": recherche, "objekt": "gg:deal:d"}).json()
+    assert len(r["neu"]) == 1 and r["neu"][0]["text"] == recherche
+    assert {k: r["neu"][0][k] for k in ("titel", "quelle", "objekt")} == {"titel": "Vergleichsangebote Umgebung", "quelle": "ablage", "objekt": "gg:deal:d"}
+    als(c, "gg", "POST", "/v1/ablegen", json={"titel": "Lage", "text": "Ruhige Seitenstraße.", "objekt": "gg:deal:d"})
+    r = als(c, "gg", "POST", "/v1/ablegen", json={"titel": "Vergleichsangebote Umgebung", "text": "Neue Recherche: 3 Angebote.", "objekt": "gg:deal:d"}).json()
+    assert [x["titel"] for x in r["abgeloest"]] == ["Vergleichsangebote Umgebung"]
+    texte = sorted(x["text"] for x in als(c, "gg", "GET", "/v1/eintraege", params={"objekt": "gg:deal:d"}).json()["eintraege"])
+    assert texte == ["Neue Recherche: 3 Angebote.", "Ruhige Seitenstraße."]
+    assert als(c, "leser", "POST", "/v1/ablegen", json={"titel": "x", "text": "x", "objekt": "gg:deal:d"}).status_code == 403
+
+
 def test_merken_loest_ueberholtes_per_ki_ab(umgebung):
     c, mem, _ = umgebung
     als(c, "gg", "POST", "/v1/merken", json={"text": "Anna Beispiel Termin am Montag", "objekt": "gg:makler:a"})
@@ -190,7 +204,7 @@ def test_mcp_werkzeuge_mit_demselben_schluessel(umgebung):
     init = rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}}})
     assert init.status_code == 200 and init.json()["result"]["serverInfo"]["name"] == "gedaechtnis"
     namen = [t["name"] for t in rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}).json()["result"]["tools"]]
-    assert namen == ["merken", "suchen", "eintraege_zu", "vergessen"]
+    assert namen == ["merken", "ablegen", "suchen", "eintraege_zu", "vergessen"]
     r = rpc({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "merken", "arguments": {"text": "Anna Beispiel nur telefonisch ab 10 Uhr", "objekt": "gg:makler:a"}}}).json()
     assert r["result"]["isError"] is False
     r = rpc({"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "suchen", "arguments": {"frage": "Anna telefonisch"}}}).json()

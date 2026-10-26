@@ -82,6 +82,12 @@ export async function gedaechtnisMerken(dienst: GedaechtnisDienst | null, art: G
   return mitFehlern(() => dienst.merken({ text, objekt: gedaechtnisBezug(art, id), von }));
 }
 
+/** Ein Ergebnis (z. B. Recherche aus Cowork) wörtlich als einen Eintrag ablegen; derselbe Titel ersetzt den alten. */
+export async function gedaechtnisAblegen(dienst: GedaechtnisDienst | null, art: GedaechtnisArt, id: string, titel: string, text: string, von: string) {
+  if (!dienst) throw ohneDienst();
+  return mitFehlern(() => dienst.ablegen({ titel, text, objekt: gedaechtnisBezug(art, id), von }));
+}
+
 export async function gedaechtnisSuchen(dienst: GedaechtnisDienst | null, frage: string, bezug?: { art: GedaechtnisArt; id: string }) {
   if (!dienst) throw ohneDienst();
   return mitFehlern(() => dienst.suchen({ frage, objekt: bezug ? gedaechtnisBezug(bezug.art, bezug.id) : undefined, anzahl: 10 }));

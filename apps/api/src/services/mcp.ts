@@ -23,7 +23,7 @@ import { FachFehler } from '../fehler.ts';
 import { auditListe, auditSchreiben } from './audit.ts';
 import { dealDetail, dealListe } from './deals.ts';
 import { dokumenteListe } from './dealDokumente.ts';
-import { gedaechtnisEintraege, gedaechtnisMerken, gedaechtnisSuchen } from './gedaechtnis.ts';
+import { gedaechtnisAblegen, gedaechtnisEintraege, gedaechtnisSuchen } from './gedaechtnis.ts';
 import { freigabeBeantragen } from './outward.ts';
 import { maklerDetail, maklerListe } from './makler.ts';
 import { objektDetail, objekteListe } from './objekte.ts';
@@ -200,14 +200,23 @@ export const MCP_WERKZEUGE: Werkzeug[] = [
     },
   },
   {
-    name: 'gedaechtnis_merken', scope: 'write', title: 'Im Gedächtnis merken',
-    description: 'Merkt sich etwas zu einem Deal oder Makler (z. B. Absprachen aus einem Gespräch). Der Dienst zieht die Fakten heraus '
-      + 'und löst überholte gemerkte Angaben ab; Daten aus gg selbst (Status, Kontakt) ändert das nicht.',
-    inputSchema: { type: 'object', properties: { ...gedaechtnisBezugArgs, text: { type: 'string' } }, required: ['collection', 'id', 'text'], additionalProperties: false },
+    // 26.10.2026: wörtlich als EIN Eintrag — die Faktenextraktion zerlegte eine Recherche in viele Einzeleinträge
+    name: 'gedaechtnis_merken', scope: 'write', title: 'Im Gedächtnis ablegen',
+    description: 'Legt ein Ergebnis zu einem Deal oder Makler im Gedächtnis ab, z. B. eine Recherche, eine Zusammenfassung oder Absprachen. '
+      + 'Gespeichert wird genau ein Eintrag mit `titel` und dem vollständigen `text` (Markdown: Überschriften, Listen, Tabellen, Links); '
+      + 'in gg ist er im Reiter „Gedächtnis“ zu sehen. Derselbe Titel am selben Deal/Makler ersetzt den alten Eintrag — '
+      + 'für eine neue Fassung also denselben Titel nehmen, für ein anderes Thema einen anderen.',
+    inputSchema: {
+      type: 'object',
+      properties: { ...gedaechtnisBezugArgs, titel: { type: 'string', description: 'kurz, z. B. „Vergleichsangebote Umgebung“' }, text: { type: 'string' } },
+      required: ['collection', 'id', 'titel', 'text'], additionalProperties: false,
+    },
     async run(_db, args, sitzung, umfeld) {
       const { art, id } = gedaechtnisBezugAus(args, true);
+      const titel = text(args, 'titel').slice(0, 200);
       const inhalt = text(args, 'text');
-      return ausDemGedaechtnis(async () => gedaechtnisMerken(await umfeld.gedaechtnis(), art, id, inhalt, `mcp:${sitzung.label}`));
+      if (inhalt.length > 100_000) throw new McpWerkzeugFehler('Der Text ist zu lang (höchstens 100 000 Zeichen).');
+      return ausDemGedaechtnis(async () => gedaechtnisAblegen(await umfeld.gedaechtnis(), art, id, titel, inhalt, `mcp:${sitzung.label}`));
     },
   },
   {

@@ -82,14 +82,20 @@ describe.skipIf(!url)('Gedächtnis: Ereignisse aus gg und Einträge je Deal/Makl
     process.env.AUTH_LOCAL_OPEN = '1';
     delete process.env.VERCEL;
     try {
-      const gemerkt = await rpc(app, 'gedaechtnis_merken', { collection: 'makler', id: m.id, text: 'Carla ist dienstags nicht erreichbar' });
+      const recherche = '## Erreichbarkeit\n\n- Carla ist dienstags nicht erreichbar\n- mittwochs ab 9 Uhr';
+      const gemerkt = await rpc(app, 'gedaechtnis_merken', { collection: 'makler', id: m.id, titel: 'Erreichbarkeit', text: 'erste Fassung' });
       expect(gemerkt.result.isError).toBe(false);
-      expect(inhalt(gemerkt).neu[0]).toMatchObject({ objekt: `gg:makler:${m.id}`, von: 'mcp:local' });
+      expect(inhalt(gemerkt).neu).toHaveLength(1);
+      expect(inhalt(gemerkt).neu[0]).toMatchObject({ objekt: `gg:makler:${m.id}`, von: 'mcp:local', titel: 'Erreichbarkeit', quelle: 'ablage' });
+      // derselbe Titel ersetzt: eine Recherche bleibt ein Eintrag
+      const ersetzt = inhalt(await rpc(app, 'gedaechtnis_merken', { collection: 'makler', id: m.id, titel: 'Erreichbarkeit', text: recherche }));
+      expect(ersetzt.abgeloest.map((e: { text: string }) => e.text)).toEqual(['erste Fassung']);
 
       const eintraege = inhalt(await rpc(app, 'gedaechtnis_eintraege', { collection: 'makler', id: m.id })).eintraege.map((e: { text: string }) => e.text);
       expect(eintraege).toHaveLength(2);
+      expect(eintraege).toContain(recherche);
       expect(eintraege.join(' ')).toContain('Mobil 0170 1112223');
-      expect(inhalt(await rpc(app, 'gedaechtnis_suchen', { frage: 'Wann ist Carla nicht erreichbar?' })).treffer[0].text).toBe('Carla ist dienstags nicht erreichbar');
+      expect(inhalt(await rpc(app, 'gedaechtnis_suchen', { frage: 'Wann ist Carla nicht erreichbar?' })).treffer[0].text).toBe(recherche);
 
       const objektFalsch = await rpc(app, 'gedaechtnis_eintraege', { collection: 'objekte', id: 'x' });
       expect(objektFalsch.result).toMatchObject({ isError: true });
@@ -103,7 +109,7 @@ describe.skipIf(!url)('Gedächtnis: Ereignisse aus gg und Einträge je Deal/Makl
       process.env.MCP_API_KEYS = `cowork:read:${createHash('sha256').update(schluessel).digest('hex')}`;
       const kopf = { authorization: `Bearer ${schluessel}` };
       expect((await rpc(app, 'gedaechtnis_suchen', { frage: 'Carla', collection: 'makler', id: m.id }, kopf)).result.isError).toBe(false);
-      expect((await rpc(app, 'gedaechtnis_merken', { collection: 'makler', id: m.id, text: 'x' }, kopf)).error).toMatchObject({ code: -32003 });
+      expect((await rpc(app, 'gedaechtnis_merken', { collection: 'makler', id: m.id, titel: 'x', text: 'x' }, kopf)).error).toMatchObject({ code: -32003 });
     } finally {
       if (alt.lokal === undefined) delete process.env.AUTH_LOCAL_OPEN; else process.env.AUTH_LOCAL_OPEN = alt.lokal;
       if (alt.keys === undefined) delete process.env.MCP_API_KEYS; else process.env.MCP_API_KEYS = alt.keys;
