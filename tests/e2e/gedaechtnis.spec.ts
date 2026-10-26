@@ -33,6 +33,22 @@ test('Gedächtnis: Makler-Kontakt landet im Gedächtnis, neue Nummer ersetzt die
   await notiz.getByRole('button', { name: 'Vergessen' }).click();
   await expect(eintraege).toHaveCount(1);
 
+  // Ergebnis aus Cowork/Claude (MCP): ein Eintrag mit Titel, im Popup als HTML
+  const ablage = { collection: 'makler', id: m.id, titel: 'Vergleichsangebote Umgebung', text: '## Angebote\n\n| Objekt | Preis |\n|---|---|\n| Musterweg 1 | 420.000 € |' };
+  const mcp = await page.request.post('/api/mcp', { data: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'gedaechtnis_merken', arguments: ablage } } });
+  expect((await mcp.json()).result.isError).toBe(false);
+  await page.reload();
+  await s.getByRole('tab', { name: '🧠 Gedächtnis' }).click();
+  await expect(eintraege).toHaveCount(2);
+  const abgelegt = eintraege.filter({ hasText: 'Vergleichsangebote Umgebung' });
+  await expect(abgelegt).toContainText('abgelegt');
+  await abgelegt.getByRole('button', { name: /Eintrag öffnen/ }).click();
+  const ansicht = page.getByRole('dialog', { name: /Vergleichsangebote Umgebung/ });
+  await expect(ansicht.getByRole('heading', { name: 'Angebote', exact: true })).toBeVisible();
+  await expect(ansicht.getByRole('cell', { name: 'Musterweg 1' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(ansicht).toBeHidden();
+
   // Deal: Statuswechsel steht im Gedächtnis des Deals
   const o = await (await page.request.post('/api/objekte', { data: { strasse: `${name} Str`, hausnr: '1', stadt: 'Ulm' } })).json();
   const d = await (await page.request.post('/api/deals', { data: { objektId: o.id, maklerId: m.id } })).json();

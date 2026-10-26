@@ -3,6 +3,8 @@
 Abbildung auf Mem0: Mandant = user_id, App = agent_id; Bezug (z. B. gg:makler:123), Art und Quelle als metadata.
 Mem0 2.x legt nur an — überholte Einträge löst diese Schicht ab (Ablaufdatum statt Löschen, der Verlauf bleibt):
   • Ereignis (App, wörtlich, ohne KI): ersetzt den letzten Eintrag gleicher Art am selben Bezug.
+  • Ablegen (KI-Ergebnis, z. B. eine Recherche aus Cowork): ein Eintrag, wörtlich, mit Titel; derselbe Titel am selben
+    Bezug ersetzt den alten (26.10.2026 — Merken zerlegte eine Recherche in viele Einzelfakten).
   • Merken (KI-Extraktion): ein kleiner KI-Aufruf prüft die neuen Fakten gegen die KI-Einträge zum selben Bezug.
     App-Ereignisse sind maßgeblich: sie ersetzt nur ein neues Ereignis der App, nie ein KI-Fakt (24.10.2026 — sonst
     löste „nur per E-Mail kontaktieren“ die Telefonnummern aus gg ab).
@@ -36,6 +38,7 @@ def eintrag(x: dict) -> dict:
     return {
         "id": x["id"], "text": x.get("memory"), "app": x.get("agent_id"),
         "objekt": meta.get("objekt"), "art": meta.get("art"), "quelle": meta.get("quelle"), "von": meta.get("von"),
+        "titel": meta.get("titel"),
         "score": round(x["score"], 3) if x.get("score") is not None else None,
         "am": x.get("updated_at") or x.get("created_at"),
     }
@@ -96,6 +99,20 @@ class Gedaechtnis:
         ergebnis = {"neu": neu, "abgeloest": [eintrag(x) for x in alt]}
         self.protokoll(z, "ereignis", {"objekt": objekt, "art": art, "neu": len(neu), "abgeloest": len(alt)})
         return ergebnis
+
+    def ablegen(self, z: Zugang, titel: str, text: str, objekt: str, von: str | None = None) -> dict:
+        """Ein Ergebnis wörtlich als genau einen Eintrag ablegen; derselbe Titel am selben Bezug ersetzt den alten."""
+        self._schreibrecht(z)
+        art = "ablage:" + (re.sub(r"[^a-z0-9äöüß]+", "-", titel.lower()).strip("-")[:50] or "ohne-titel")
+        alt = [x for x in self._am_bezug(z, objekt) if (x.get("metadata") or {}).get("art") == art]
+        meta = {"objekt": objekt, "art": art, "titel": titel, "quelle": "ablage", "von": von or z.label}
+        r = self.m.add(text, user_id=z.mandant, agent_id=z.app, infer=False, metadata=meta)
+        # Mem0 gibt beim Anlegen nur id und Text zurück — Titel und Bezug gehören in die Antwort
+        neu = [eintrag({"agent_id": z.app, **x, "metadata": meta}) for x in r.get("results", [])]
+        for x in alt:
+            self._abloesen(x, neu[0]["id"] if neu else "")
+        self.protokoll(z, "ablegen", {"objekt": objekt, "titel": titel[:120], "zeichen": len(text), "abgeloest": len(alt)})
+        return {"neu": neu, "abgeloest": [eintrag(x) for x in alt]}
 
     def merken(self, z: Zugang, inhalt: str | list[dict], objekt: str | None = None, von: str | None = None) -> dict:
         """Text oder Gesprächsverlauf: Mem0 zieht die Fakten heraus; mit Bezug wird gegen Bestehendes geprüft."""

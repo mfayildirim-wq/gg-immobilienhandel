@@ -6,12 +6,16 @@
 export interface GedaechtnisEintrag {
   id: string; text: string; app: string; objekt: string | null; art: string | null;
   quelle: string | null; von: string | null; score: number | null; am: string | null;
+  /** nur bei abgelegten Ergebnissen (quelle 'ablage') */
+  titel?: string | null;
 }
 export interface GedaechtnisAblage { neu: GedaechtnisEintrag[]; abgeloest: GedaechtnisEintrag[] }
 
 export interface GedaechtnisDienst {
   /** App-Ereignis wörtlich (ohne KI); ersetzt den letzten Eintrag gleicher Art am selben Bezug. */
   ereignis(e: { text: string; objekt: string; art: string; von?: string }): Promise<GedaechtnisAblage>;
+  /** Ergebnis wörtlich als genau einen Eintrag ablegen (Markdown); derselbe Titel am selben Bezug ersetzt den alten. */
+  ablegen(e: { titel: string; text: string; objekt: string; von?: string }): Promise<GedaechtnisAblage>;
   /** Text merken: der Dienst zieht die Fakten heraus und löst Überholtes am selben Bezug ab. */
   merken(e: { text: string; objekt?: string; von?: string }): Promise<GedaechtnisAblage>;
   suchen(e: { frage: string; objekt?: string; anzahl?: number }): Promise<{ treffer: GedaechtnisEintrag[] }>;
@@ -47,6 +51,7 @@ export function gedaechtnisClient(url: string, schluessel: string, abruf: Abruf 
   };
   return {
     ereignis: (e) => rufe('POST', '/v1/ereignis', e),
+    ablegen: (e) => rufe('POST', '/v1/ablegen', e),
     merken: (e) => rufe('POST', '/v1/merken', e, kiZeitMs),
     suchen: (e) => rufe('POST', '/v1/suchen', e),
     eintraege: (objekt) => rufe('GET', `/v1/eintraege?objekt=${encodeURIComponent(objekt)}`),
@@ -59,8 +64,8 @@ export function gedaechtnisClient(url: string, schluessel: string, abruf: Abruf 
 export function gedaechtnisAttrappe(app = 'gg'): GedaechtnisDienst & { alle: () => GedaechtnisEintrag[] } {
   const liste: (GedaechtnisEintrag & { abgeloest?: boolean })[] = [];
   const gueltig = () => liste.filter((x) => !x.abgeloest);
-  const neu = (text: string, objekt: string | null, art: string | null, quelle: string, von?: string): GedaechtnisEintrag => {
-    const x = { id: crypto.randomUUID(), text, app, objekt, art, quelle, von: von ?? app, score: null, am: new Date().toISOString() };
+  const neu = (text: string, objekt: string | null, art: string | null, quelle: string, von?: string, titel: string | null = null): GedaechtnisEintrag => {
+    const x = { id: crypto.randomUUID(), text, app, objekt, art, quelle, von: von ?? app, score: null, am: new Date().toISOString(), titel };
     liste.push(x);
     return x;
   };
@@ -70,6 +75,12 @@ export function gedaechtnisAttrappe(app = 'gg'): GedaechtnisDienst & { alle: () 
       const alt = gueltig().filter((x) => x.objekt === e.objekt && x.art === e.art);
       for (const x of alt) x.abgeloest = true;
       return { neu: [neu(e.text, e.objekt, e.art, 'api', e.von)], abgeloest: alt };
+    },
+    async ablegen(e) {
+      const art = `ablage:${e.titel.toLowerCase()}`;
+      const alt = gueltig().filter((x) => x.objekt === e.objekt && x.art === art);
+      for (const x of alt) x.abgeloest = true;
+      return { neu: [neu(e.text, e.objekt, art, 'ablage', e.von, e.titel)], abgeloest: alt };
     },
     async merken(e) {
       return { neu: [neu(e.text, e.objekt ?? null, null, 'ki', e.von)], abgeloest: [] };

@@ -47,6 +47,12 @@ class Ereignis(BaseModel):
     art: str = Field(min_length=1, max_length=60)
     von: str | None = None
 
+class Ablage(BaseModel):
+    titel: str = Field(min_length=1, max_length=200)
+    text: str = Field(min_length=1, max_length=100_000)
+    objekt: str = Field(min_length=1, max_length=200)
+    von: str | None = None
+
 class Merken(BaseModel):
     text: str | None = Field(default=None, max_length=20000)
     nachrichten: list[dict] | None = None
@@ -130,6 +136,11 @@ def erzeuge(memory: Any = None, protokoll=None) -> FastAPI:
     def merken(text: str, objekt: str | None = None) -> dict:
         return g.merken(zugang(), text, objekt)
 
+    @mcp.tool(description="Ein Ergebnis (z. B. eine Recherche) wörtlich als genau einen Eintrag ablegen, Markdown erlaubt. "
+                          "`objekt` ist der Bezug (z. B. gg:deal:123); derselbe `titel` am selben Bezug ersetzt den alten Eintrag.")
+    def ablegen(titel: str, text: str, objekt: str) -> dict:
+        return g.ablegen(zugang(), titel, text, objekt)
+
     @mcp.tool(description="Im Gedächtnis suchen. `objekt` grenzt auf einen Bezug ein, `apps` auf freigegebene Apps "
                           "(leer = eigene und freigegebene).")
     def suchen(frage: str, objekt: str | None = None, apps: list[str] | None = None, anzahl: int = 8) -> dict:
@@ -188,6 +199,10 @@ def erzeuge(memory: Any = None, protokoll=None) -> FastAPI:
     @app.post("/v1/ereignis")
     def ereignis(e: Ereignis, z: Zugang = Depends(wer)):
         return g.ereignis(z, e.text, e.objekt, e.art, e.von)
+
+    @app.post("/v1/ablegen")
+    def ablegen_rest(e: Ablage, z: Zugang = Depends(wer)):
+        return g.ablegen(z, e.titel, e.text, e.objekt, e.von)
 
     @app.post("/v1/merken")
     def merken_rest(e: Merken, z: Zugang = Depends(wer)):

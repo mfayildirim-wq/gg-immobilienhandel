@@ -1069,6 +1069,7 @@ export type NachrichtEntwurf = z.infer<typeof NachrichtEntwurf>;
 export const GedaechtnisEintrag = z.object({
   id: z.string(), text: z.string(), app: z.string(), objekt: z.string().nullable(), art: z.string().nullable(),
   quelle: z.string().nullable(), von: z.string().nullable(), score: z.number().nullable(), am: z.string().nullable(),
+  titel: z.string().nullable().optional(),
 });
 export type GedaechtnisEintrag = z.infer<typeof GedaechtnisEintrag>;
 export const GedaechtnisArtParam = z.enum(['deal', 'makler']);

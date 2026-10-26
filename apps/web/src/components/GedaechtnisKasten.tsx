@@ -1,15 +1,33 @@
-import { ActionIcon, Alert, Badge, Button, Group, Loader, Paper, Stack, Text, Textarea, Tooltip } from '@mantine/core';
+import type { GedaechtnisEintrag } from '@gg/api-contract';
+import { ActionIcon, Alert, Badge, Button, Group, Loader, Modal, Paper, Stack, Text, Textarea, Tooltip, Typography, UnstyledButton } from '@mantine/core';
 import { IconBrain, IconCheck, IconPencil, IconTrash, IconX } from '@tabler/icons-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { type GedaechtnisArt, useGedaechtnis, useGedaechtnisAendern, useGedaechtnisStand } from '../lib/api.ts';
 import { datumDe } from '../lib/format.ts';
+import { markdownAlsHtml } from '../lib/markdown.ts';
 
-/** Woher ein Eintrag stammt — gg (Ereignis), KI (aus Text gezogen), von Hand korrigiert. */
+/** Woher ein Eintrag stammt — gg (Ereignis), KI (aus Text gezogen), abgelegtes Ergebnis (Cowork/Claude), von Hand korrigiert. */
 const QUELLE: Record<string, { text: string; farbe: string }> = {
   api: { text: 'aus der App', farbe: 'gray' },
   ki: { text: 'gemerkt', farbe: 'violet' },
+  ablage: { text: 'abgelegt', farbe: 'indigo' },
   hand: { text: 'korrigiert', farbe: 'teal' },
 };
+
+/** Der ganze Eintrag im Popup, Markdown als HTML (26.10.2026: Recherchen aus Cowork sind lang und haben Tabellen). */
+function EintragAnsicht({ eintrag, schliessen }: { eintrag: GedaechtnisEintrag; schliessen: () => void }) {
+  const html = useMemo(() => markdownAlsHtml(eintrag.text), [eintrag.text]);
+  return (
+    <Modal opened onClose={schliessen} size="xl" title={<Text fw={600}>🧠 {eintrag.titel ?? 'Gedächtnis-Eintrag'}</Text>}>
+      <Typography data-gedaechtnis-ansicht>
+        <div dangerouslySetInnerHTML={{ __html: html }} />
+      </Typography>
+      <Text size="xs" c="dimmed" mt="md">
+        App {eintrag.app}{eintrag.von && eintrag.von !== eintrag.app ? ` · ${eintrag.von}` : ''}{eintrag.am ? ` · ${datumDe(eintrag.am.slice(0, 10))}` : ''}
+      </Text>
+    </Modal>
+  );
+}
 
 /**
  * Gedächtnis zu einem Deal oder Makler (24.10.2026): was der zentrale Gedächtnis-Dienst weiß — aus gg-Ereignissen,
@@ -22,6 +40,7 @@ export function GedaechtnisKasten({ art, id }: { art: GedaechtnisArt; id: string
   const { merken, aendern, vergessen } = useGedaechtnisAendern(art, id);
   const [neu, setNeu] = useState('');
   const [bearbeitet, setBearbeitet] = useState<{ id: string; text: string } | null>(null);
+  const [offen, setOffen] = useState<GedaechtnisEintrag | null>(null);
 
   if (stand && !stand.verbunden) {
     return <Alert color="gray" icon={<IconBrain size={18} />}>Der Gedächtnis-Dienst ist nicht eingerichtet (Einstellungen → Zugänge: Adresse und Schlüssel).</Alert>;
@@ -66,7 +85,10 @@ export function GedaechtnisKasten({ art, id }: { art: GedaechtnisArt; id: string
               </Group>
             ) : (
               <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
-                <Text size="sm" style={{ whiteSpace: 'pre-wrap', flex: 1 }}>{e.text}</Text>
+                <UnstyledButton style={{ flex: 1, minWidth: 0 }} onClick={() => setOffen(e)} aria-label={`Eintrag öffnen: ${e.titel ?? e.text.slice(0, 40)}`}>
+                  {e.titel && <Text size="sm" fw={600}>{e.titel}</Text>}
+                  <Text size="sm" lineClamp={3} style={{ whiteSpace: 'pre-wrap' }}>{e.text}</Text>
+                </UnstyledButton>
                 <Group gap={2} wrap="nowrap">
                     <Tooltip label="Korrigieren"><ActionIcon variant="subtle" size="sm" aria-label="Korrigieren" onClick={() => setBearbeitet({ id: e.id, text: e.text })}><IconPencil size={14} /></ActionIcon></Tooltip>
                     <Tooltip label="Vergessen"><ActionIcon variant="subtle" size="sm" color="red" aria-label="Vergessen" loading={vergessen.isPending && vergessen.variables === e.id}
@@ -83,6 +105,7 @@ export function GedaechtnisKasten({ art, id }: { art: GedaechtnisArt; id: string
           </Paper>
         );
       })}
+      {offen && <EintragAnsicht eintrag={offen} schliessen={() => setOffen(null)} />}
     </Stack>
   );
 }
