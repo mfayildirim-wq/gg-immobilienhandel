@@ -210,3 +210,38 @@ def test_mcp_werkzeuge_mit_demselben_schluessel(umgebung):
     r = rpc({"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "suchen", "arguments": {"frage": "Anna telefonisch"}}}).json()
     assert "telefonisch" in r["result"]["content"][0]["text"]
     assert c.post("/mcp", headers={**kopf, "authorization": "Bearer falsch"}, content="{}").status_code == 401
+
+
+def test_gespraeche_je_app_getrennt_vom_wissen(umgebung):
+    c, mem, _ = umgebung
+    g = {"bezug": {"art": "deal", "id": "d1"}, "titel": "Ähnliche Angebote?", "von": "anna", "am": "2026-10-26T10:00:00Z", "anzahl": 2,
+         "nachrichten": [{"rolle": "nutzer", "text": "Ähnliche Angebote?"}, {"rolle": "ki", "text": "| a | b |"}]}
+    assert als(c, "gg", "PUT", "/v1/gespraeche/g1", json=g).status_code == 200
+    als(c, "gg", "PUT", "/v1/gespraeche/g2", json={**g, "bezug": None, "titel": "Allgemein"})
+    assert [x["id"] for x in als(c, "gg", "GET", "/v1/gespraeche", params={"bezug_art": "deal", "bezug_id": "d1"}).json()["gespraeche"]] == ["g1"]
+    assert [x["titel"] for x in als(c, "gg", "GET", "/v1/gespraeche").json()["gespraeche"]] == ["Allgemein"]
+    assert als(c, "gg", "GET", "/v1/gespraeche/g1").json()["nachrichten"][1]["text"] == "| a | b |"
+    # kein Wissen: nichts in Mem0, nicht in der Suche
+    assert mem.eintraege == {}
+    # andere App (auch mit Leserecht auf gg) und anderer Mandant sehen nichts
+    assert als(c, "alle", "GET", "/v1/gespraeche/g1").status_code == 404
+    assert als(c, "fremd", "GET", "/v1/gespraeche/g1").status_code == 404
+    assert als(c, "desk", "GET", "/v1/gespraeche", params={"bezug_art": "deal", "bezug_id": "d1"}).json()["gespraeche"] == []
+    # nur mit Schreibrecht speichern und löschen
+    assert als(c, "leser", "PUT", "/v1/gespraeche/g3", json=g).status_code == 403
+    assert als(c, "gg", "GET", "/v1/gespraeche", params={"bezug_art": "deal"}).status_code == 400
+    assert als(c, "gg", "DELETE", "/v1/gespraeche/g1").json() == {"id": "g1", "geloescht": True}
+    assert als(c, "gg", "GET", "/v1/gespraeche/g1").status_code == 404
+
+
+def test_gespraeche_verfallen_nach_90_tagen():
+    from gedaechtnis.gespraeche import GespraecheImSpeicher
+    from gedaechtnis.zugang import Zugang
+    jetzt = [dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)]
+    s = GespraecheImSpeicher(lambda: jetzt[0])
+    z = Zugang("gg", "ivtag", "gg", (), True)
+    s.speichern(z, "alt", {"bezug": None, "titel": "t", "anzahl": 0, "nachrichten": []})
+    jetzt[0] += dt.timedelta(days=89)
+    s.speichern(z, "neu", {"bezug": None, "titel": "t", "anzahl": 0, "nachrichten": []})
+    jetzt[0] += dt.timedelta(days=2)
+    assert [g["id"] for g in s.liste(z, None, None, 10)] == ["neu"]

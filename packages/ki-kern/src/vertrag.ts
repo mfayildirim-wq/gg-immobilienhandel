@@ -25,7 +25,13 @@ export interface KiNachricht {
   /** wie viele Gedächtnis-Einträge zum Dialog die KI vor der Antwort bekam */
   gedaechtnis?: number;
   modell?: string;
+  /** Die KI schlägt vor, etwas im Gedächtnis abzulegen — gespeichert wird erst, wenn der Nutzer bestätigt */
+  vorschlag?: KiVorschlag;
+  /** Titel, unter dem diese Antwort (oder ihr Vorschlag) im Gedächtnis abgelegt wurde */
+  abgelegt?: string;
 }
+
+export interface KiVorschlag { titel: string; text: string; status?: 'abgelegt' | 'verworfen' }
 
 export interface KiGespraechKopf {
   id: string;
@@ -48,6 +54,8 @@ export interface KiModellAngebot { id: string; label: string }
 export interface KiStand {
   verfuegbar: boolean;
   gedaechtnis: boolean;
+  /** Verlauf im Gedächtnis-Dienst; sonst nur bis zum Neustart */
+  verlaufDauerhaft: boolean;
   einstellungen: KiEinstellungen;
   modelle: KiModellAngebot[];
 }
@@ -71,4 +79,6 @@ export interface KiBezugSicht {
 }
 
 export interface KiSenden { gespraechId?: string | null; bezug?: KiBezug | null; text: string }
-export interface KiAblegen { bezug: KiBezug; titel: string; text: string }
+/** `gespraechId` + `nachricht` (Index): die Antwort, aus der abgelegt wird — dort wird es vermerkt */
+export interface KiAblegen { bezug: KiBezug; titel: string; text: string; gespraechId?: string | null; nachricht?: number | null }
+export interface KiVorschlagVerwerfen { gespraechId: string; nachricht: number }

@@ -89,3 +89,15 @@
 .kl-zeile-titel { font-weight: 600; }
 .kl-auszug { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .kl-liste li > .kl-text { padding: 4px 8px 8px; }
+
+.kl-vorschlag { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--kl-akzent); border-radius: 8px; background: var(--kl-hg); }
+.kl-vorschlag small { color: var(--kl-matt); }
+.kl-vorschlag textarea { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--kl-linie); background: var(--kl-hg); color: var(--kl-text); resize: vertical; }
+.kl-knoepfe { display: flex; gap: 6px; align-items: center; }
+.kl-leiste .kl-knoepfe > button:not(.kl-symbol) { border: 0; border-radius: 6px; padding: 4px 10px; background: var(--kl-akzent); color: #fff; cursor: pointer; }
+.kl-leiste .kl-knoepfe > button.kl-zweit { background: var(--kl-flaeche); color: var(--kl-text); }
+.kl-leiste .kl-knoepfe > button.kl-loeschen { background: var(--kl-fehler); }
+.kl-leiste .kl-knoepfe > button:disabled { opacity: 0.5; cursor: default; }
+.kl-klein { font-size: 12px; }
+.kl-verlauf-zeile { display: flex; align-items: center; gap: 4px; }
+.kl-verlauf-zeile > .kl-zeile { flex: 1; min-width: 0; }

@@ -77,6 +77,16 @@ inhalt = r.get("result", {}).get("content", [{}])[0].get("text", "")
 pruefe("MCP suchen über alle Apps der Firma", "30.10" in inhalt and "Rotebühlstraße" in inhalt and "E-Mail" in inhalt
        and "nur telefonisch" not in inhalt and "Ulm" not in inhalt, inhalt[:300])
 
+# Gespräche der KI-Leiste: nur die eigene App, nicht im Wissen
+g = {"bezug": {"art": "deal", "id": "rauchtest"}, "titel": "Rauchtest", "von": "rauchtest", "am": "2026-10-26", "anzahl": 2,
+     "nachrichten": [{"rolle": "nutzer", "text": "Geheimwort Zitronenfalter"}, {"rolle": "ki", "text": "ok"}]}
+als("gg", "PUT", "/v1/gespraeche/rauchtest-1", json=g)
+liste = als("gg", "GET", "/v1/gespraeche", params={"bezug_art": "deal", "bezug_id": "rauchtest"})["gespraeche"]
+pruefe("Gespräch gespeichert", [x["id"] for x in liste] == ["rauchtest-1"], liste)
+pruefe("Gespräch nicht in der Suche", "Zitronenfalter" not in texte("gg", "Zitronenfalter Geheimwort"))
+pruefe("desk sieht das Gespräch nicht", als("desk", "GET", "/v1/gespraeche", params={"bezug_art": "deal", "bezug_id": "rauchtest"})["gespraeche"] == [])
+pruefe("Gespräch gelöscht", als("gg", "DELETE", "/v1/gespraeche/rauchtest-1").get("geloescht") is True)
+
 prot = als("gg", "GET", "/v1/protokoll", params={"anzahl": 50})["protokoll"]
 pruefe("Protokoll führt Buch", {"ereignis", "merken", "suchen"} <= {p["aktion"] for p in prot}, prot[:3])
 print("\nALLES GUT" if ok else "\nFEHLER")

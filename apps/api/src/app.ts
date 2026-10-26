@@ -1,5 +1,5 @@
 import {
-  KiAblegen, KiBezugSicht, KiEinstellungen, KiGespraech, KiGespraechKopf, KiSenden, KiStand,
+  KiAblegen, KiBezugSicht, KiEinstellungen, KiGespraech, KiGespraechKopf, KiSenden, KiStand, KiVorschlagVerwerfen,
   GedaechtnisAblage,
   GedaechtnisArtParam,
   GedaechtnisEintrag,
@@ -804,6 +804,14 @@ export function createApp({ db, auth: authOpt, expose, gedaechtnis: gedaechtnisO
   app.openapi(
     createRoute({ method: 'get', path: '/api/ki-leiste/gespraeche/{id}', request: { params: IdParam }, responses: { 200: json(KiGespraech, 'Gespräch'), 404: fehler('nicht gefunden') } }),
     async (c) => c.json(await leiste.gespraech(c.req.valid('param').id), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'delete', path: '/api/ki-leiste/gespraeche/{id}', request: { params: IdParam }, responses: { 200: json(z.object({ id: z.string(), geloescht: z.boolean() }), 'gelöscht'), 404: fehler('nicht gefunden') } }),
+    async (c) => c.json(await leiste.gespraechLoeschen(c.req.valid('param').id), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/ki-leiste/vorschlag-verwerfen', request: body(KiVorschlagVerwerfen), responses: { 200: json(KiGespraech, 'Gespräch'), 404: fehler('nicht gefunden') } }),
+    async (c) => c.json(await leiste.vorschlagVerwerfen(c.req.valid('json')), 200),
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/ki-leiste/senden', request: body(KiSenden), responses: { 200: json(KiGespraech, 'Gespräch mit Antwort'), 503: fehler('KI nicht eingerichtet') } }),

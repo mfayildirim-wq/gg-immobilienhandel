@@ -31,8 +31,14 @@ Hintergrund und Vergleich mit Cognee: `../../werkzeuge/gedaechtnis-probe/README.
 | `DELETE /v1/eintraege/{id}` | `vergessen` | löschen |
 | `GET /v1/protokoll` | – | Protokoll der lesbaren Apps |
 | `GET /v1/ich` | – | eigener Zugang |
+| `GET /v1/gespraeche?bezug_art=&bezug_id=` · `GET/PUT/DELETE /v1/gespraeche/{id}` | – | Gespräche der KI-Leiste (siehe unten) |
 
 `objekt` ist ein freier Bezug, z. B. `gg:makler:<id>`, `gg:deal:<id>`.
+
+**Gespräche (26.10.2026)** sind das wörtliche Chat-Protokoll einer KI-Leiste, kein Wissen: eigene Tabelle
+`gedaechtnis_gespraeche`, nicht in Mem0, in keiner Suche, nur für die eigene App (Mandant + App aus dem Schlüssel, auch
+mit Leserecht `*` nicht fremd lesbar). Speichern und Löschen brauchen Schreibrecht. Nach `GEDAECHTNIS_GESPRAECHE_TAGE`
+(Standard 90) Tagen ohne Fortsetzung werden sie gelöscht. Ins Gedächtnis kommt nur, was in der App bestätigt wird (`/v1/ablegen`).
 
 ## Lokal starten
 

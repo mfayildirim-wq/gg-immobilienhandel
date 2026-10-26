@@ -11,6 +11,12 @@ export interface GedaechtnisEintrag {
 }
 export interface GedaechtnisAblage { neu: GedaechtnisEintrag[]; abgeloest: GedaechtnisEintrag[] }
 
+/** Gespräch einer KI-Leiste: wörtliches Chat-Protokoll der eigenen App, kein Wissen (26.10.2026). Nachrichten: @gg/ki-kern. */
+export interface GedaechtnisGespraechKopf {
+  id: string; bezug: { art: string; id: string } | null; titel: string; von: string | null; am: string | null; anzahl: number;
+}
+export interface GedaechtnisGespraech extends GedaechtnisGespraechKopf { nachrichten: unknown[] }
+
 export interface GedaechtnisDienst {
   /** App-Ereignis wörtlich (ohne KI); ersetzt den letzten Eintrag gleicher Art am selben Bezug. */
   ereignis(e: { text: string; objekt: string; art: string; von?: string }): Promise<GedaechtnisAblage>;
@@ -22,6 +28,11 @@ export interface GedaechtnisDienst {
   eintraege(objekt: string): Promise<{ eintraege: GedaechtnisEintrag[] }>;
   aendern(id: string, text: string): Promise<GedaechtnisEintrag>;
   vergessen(id: string): Promise<{ id: string; geloescht: boolean }>;
+  /** Gespräche zum Bezug (ohne Bezug: die allgemeinen), zuletzt fortgesetzte zuerst */
+  gespraeche(bezug: { art: string; id: string } | null, anzahl?: number): Promise<{ gespraeche: GedaechtnisGespraechKopf[] }>;
+  gespraech(id: string): Promise<GedaechtnisGespraech>;
+  gespraechSpeichern(g: GedaechtnisGespraech): Promise<GedaechtnisGespraechKopf>;
+  gespraechLoeschen(id: string): Promise<{ id: string; geloescht: boolean }>;
 }
 
 export class GedaechtnisFehler extends Error {
@@ -57,6 +68,10 @@ export function gedaechtnisClient(url: string, schluessel: string, abruf: Abruf 
     eintraege: (objekt) => rufe('GET', `/v1/eintraege?objekt=${encodeURIComponent(objekt)}`),
     aendern: (id, text) => rufe('PATCH', `/v1/eintraege/${encodeURIComponent(id)}`, { text }),
     vergessen: (id) => rufe('DELETE', `/v1/eintraege/${encodeURIComponent(id)}`),
+    gespraeche: (bezug, anzahl = 20) => rufe('GET', `/v1/gespraeche?${new URLSearchParams({ ...(bezug ? { bezug_art: bezug.art, bezug_id: bezug.id } : {}), anzahl: String(anzahl) })}`),
+    gespraech: (id) => rufe('GET', `/v1/gespraeche/${encodeURIComponent(id)}`),
+    gespraechSpeichern: ({ id, ...g }) => rufe('PUT', `/v1/gespraeche/${encodeURIComponent(id)}`, g),
+    gespraechLoeschen: (id) => rufe('DELETE', `/v1/gespraeche/${encodeURIComponent(id)}`),
   };
 }
 
@@ -64,6 +79,8 @@ export function gedaechtnisClient(url: string, schluessel: string, abruf: Abruf 
 export function gedaechtnisAttrappe(app = 'gg'): GedaechtnisDienst & { alle: () => GedaechtnisEintrag[] } {
   const liste: (GedaechtnisEintrag & { abgeloest?: boolean })[] = [];
   const gueltig = () => liste.filter((x) => !x.abgeloest);
+  const gespraeche = new Map<string, GedaechtnisGespraech & { geaendert: number }>();
+  const kopf = ({ nachrichten: _n, geaendert: _g, ...k }: GedaechtnisGespraech & { geaendert: number }): GedaechtnisGespraechKopf => k;
   const neu = (text: string, objekt: string | null, art: string | null, quelle: string, von?: string, titel: string | null = null): GedaechtnisEintrag => {
     const x = { id: crypto.randomUUID(), text, app, objekt, art, quelle, von: von ?? app, score: null, am: new Date().toISOString(), titel };
     liste.push(x);
@@ -108,6 +125,26 @@ export function gedaechtnisAttrappe(app = 'gg'): GedaechtnisDienst & { alle: () 
       if (i < 0) throw new GedaechtnisFehler(404, 'Eintrag nicht gefunden.');
       liste.splice(i, 1);
       return { id, geloescht: true };
+    },
+    async gespraeche(bezug, anzahl = 20) {
+      const passt = (g: GedaechtnisGespraech) => (bezug ? g.bezug?.art === bezug.art && g.bezug?.id === bezug.id : !g.bezug);
+      return { gespraeche: [...gespraeche.values()].filter(passt).sort((a, b) => b.geaendert - a.geaendert).slice(0, anzahl).map(kopf) };
+    },
+    async gespraech(id) {
+      const g = gespraeche.get(id);
+      if (!g) throw new GedaechtnisFehler(404, 'Gespräch nicht gefunden.');
+      const { geaendert: _g, ...rest } = structuredClone(g);
+      return rest;
+    },
+    async gespraechSpeichern(g) {
+      // je Speichern ein späterer Zeitpunkt, auch wenn zwei in derselben Millisekunde liegen
+      const zuletzt = Math.max(0, ...[...gespraeche.values()].map((x) => x.geaendert));
+      const neu = { ...structuredClone(g), geaendert: Math.max(Date.now(), zuletzt + 1) };
+      gespraeche.set(g.id, neu);
+      return kopf(neu);
+    },
+    async gespraechLoeschen(id) {
+      return { id, geloescht: gespraeche.delete(id) };
     },
   };
 }

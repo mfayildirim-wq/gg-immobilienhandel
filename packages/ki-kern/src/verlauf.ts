@@ -1,5 +1,5 @@
 /**
- * Verlauf der Gespräche je Dialog. Die App bringt den Speicher mit (gg: Tabelle `ki_gespraeche`);
+ * Verlauf der Gespräche je Dialog. Die App bringt den Speicher mit (gg: der Gedächtnis-Dienst, `/v1/gespraeche`);
  * hier stehen die Schnittstelle und ein Speicher im Arbeitsspeicher für Tests.
  */
 import type { KiBezug, KiGespraech, KiGespraechKopf } from './vertrag.ts';
@@ -9,6 +9,7 @@ export interface VerlaufSpeicher {
   liste(bezug: KiBezug | null, anzahl: number): Promise<KiGespraechKopf[]>;
   laden(id: string): Promise<KiGespraech | null>;
   speichern(g: KiGespraech): Promise<void>;
+  loeschen(id: string): Promise<boolean>;
 }
 
 export const gleicherBezug = (a: KiBezug | null, b: KiBezug | null) => (a === null || b === null ? a === b : a.art === b.art && a.id === b.id);
@@ -27,6 +28,9 @@ export function verlaufImArbeitsspeicher(): VerlaufSpeicher {
     },
     async speichern(g) {
       alle.set(g.id, structuredClone(g));
+    },
+    async loeschen(id) {
+      return alle.delete(id);
     },
   };
 }

@@ -21,7 +21,7 @@ export const SICHERUNG_TABELLEN = [
   'kundenkalkulationen', 'finanzpraesentationen', 'praesentationFolien', 'vertriebslisten', 'vertriebslisteZeilen',
   'projekte', 'projektEinheiten', 'projektMieterhistorie', 'projektAufgaben', 'projektGebaeudeMassnahmen',
   'begleitscheinVorlagen', 'begleitscheine', 'begleitscheinAktionen', 'vordrucke',
-  'textvorlagen', 'ddChecklisteVorlage', 'einstellungen', 'gespeicherteFilter', 'kiGespraeche',
+  'textvorlagen', 'ddChecklisteVorlage', 'einstellungen', 'gespeicherteFilter',
 ] as const;
 
 /** Bewusst nicht in der Sicherung — mit Begründung, damit nichts unbemerkt fehlt. */

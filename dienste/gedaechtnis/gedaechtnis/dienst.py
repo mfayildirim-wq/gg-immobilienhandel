@@ -22,6 +22,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from .gespraeche import Gespraeche, GespraecheImSpeicher, GespraecheInPostgres
 from .kern import Gedaechtnis
 from .zugang import Zugang, ZugangsFehler, anmelden, schluessel_aus_kopf, verzeichnis
 
@@ -68,6 +69,19 @@ class Suchen(BaseModel):
 class Aendern(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
 
+class Bezug(BaseModel):
+    art: str = Field(min_length=1, max_length=40)
+    id: str = Field(min_length=1, max_length=200)
+
+class Gespraech(BaseModel):
+    """Ein Gespräch der KI-Leiste; die Nachrichten speichert der Dienst unverändert (Format: @gg/ki-kern KiNachricht)."""
+    bezug: Bezug | None = None
+    titel: str = Field(min_length=1, max_length=200)
+    von: str | None = Field(default=None, max_length=200)
+    am: str | None = Field(default=None, max_length=40)
+    anzahl: int = Field(default=0, ge=0)
+    nachrichten: list[dict] = Field(default_factory=list, max_length=500)
+
 
 def mem0_konfig() -> dict:
     return {
@@ -109,14 +123,16 @@ def protokoll_lesen(z: Zugang, anzahl: int) -> list[dict]:
     return [{"am": a.isoformat(), "label": l, "app": ap, "aktion": ak, "details": d} for a, l, ap, ak, d in zeilen]
 
 
-def erzeuge(memory: Any = None, protokoll=None) -> FastAPI:
-    """memory/protokoll sind für Tests austauschbar; ohne Angabe: Mem0 auf Postgres und Protokoll-Tabelle."""
+def erzeuge(memory: Any = None, protokoll=None, gespraeche: Gespraeche | None = None) -> FastAPI:
+    """memory/protokoll/gespraeche sind für Tests austauschbar; ohne Angabe: Mem0 auf Postgres, Protokoll- und Gesprächstabelle."""
     if memory is None:
         from mem0 import Memory
         os.environ.setdefault("MEM0_TELEMETRY", "False")
         memory = Memory.from_config(mem0_konfig())
         protokoll_anlegen()
         protokoll = protokoll_schreiben
+        gespraeche = gespraeche or GespraecheInPostgres(DB)
+    verlauf: Gespraeche = gespraeche or GespraecheImSpeicher()
     g = Gedaechtnis(memory, protokoll or (lambda *_: None))
     aktuell: contextvars.ContextVar[Zugang | None] = contextvars.ContextVar("zugang", default=None)
 
@@ -230,6 +246,27 @@ def erzeuge(memory: Any = None, protokoll=None) -> FastAPI:
     @app.get("/v1/protokoll")
     def protokoll_rest(anzahl: int = 100, z: Zugang = Depends(wer)):
         return {"protokoll": protokoll_lesen(z, max(1, min(anzahl, 1000)))}
+
+    # ── Gespräche der KI-Leisten (nur REST, nur die eigene App) ──
+    @app.get("/v1/gespraeche")
+    def gespraeche_liste(bezug_art: str | None = None, bezug_id: str | None = None, anzahl: int = 20, z: Zugang = Depends(wer)):
+        if bool(bezug_art) != bool(bezug_id):
+            raise ZugangsFehler(400, "bezug_art und bezug_id nur zusammen angeben")
+        return {"gespraeche": verlauf.liste(z, bezug_art, bezug_id, max(1, min(anzahl, 100)))}
+
+    @app.get("/v1/gespraeche/{gid}")
+    def gespraech_laden(gid: str, z: Zugang = Depends(wer)):
+        return verlauf.laden(z, gid)
+
+    @app.put("/v1/gespraeche/{gid}")
+    def gespraech_speichern(gid: str, e: Gespraech, z: Zugang = Depends(wer)):
+        return verlauf.speichern(z, gid, e.model_dump())
+
+    @app.delete("/v1/gespraeche/{gid}")
+    def gespraech_loeschen(gid: str, z: Zugang = Depends(wer)):
+        r = verlauf.loeschen(z, gid)
+        g.protokoll(z, "gespraech-geloescht", {"id": gid})
+        return r
 
     app.mount("/", mcp_app)  # nach den Routen: /v1/… zuerst, /mcp aus der MCP-App
     return app

@@ -1,17 +1,19 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { KiBezug, KiGespraech } from '@gg/ki-kern/vertrag';
+import type { KiAblegen, KiBezug, KiGespraech } from '@gg/ki-kern/vertrag';
 import { httpTransport, KiKnopf, KiLeiste, KiLeisteRahmen, type KiTransport, titelVorschlag, useKiBezug } from '../src/index.ts';
 
 afterEach(cleanup);
 
-function attrappe(): KiTransport & { gesendet: unknown[]; abgelegt: unknown[] } {
+function attrappe(antwort = '## Vergleich\n\nDrei Angebote', vorschlag?: { titel: string; text: string }): KiTransport & { gesendet: unknown[]; abgelegt: KiAblegen[]; geloescht: string[] } {
   const gesendet: unknown[] = [];
-  const abgelegt: unknown[] = [];
+  const abgelegt: KiAblegen[] = [];
+  const geloescht: string[] = [];
+  const gespeichert = new Map<string, KiGespraech>();
   return {
-    gesendet, abgelegt,
-    stand: async () => ({ verfuegbar: true, gedaechtnis: true, einstellungen: { modell: 'm', websuche: true, gedaechtnis: true }, modelle: [{ id: 'm', label: 'M' }] }),
+    gesendet, abgelegt, geloescht,
+    stand: async () => ({ verfuegbar: true, gedaechtnis: true, verlaufDauerhaft: true, einstellungen: { modell: 'm', websuche: true, gedaechtnis: true }, modelle: [{ id: 'm', label: 'M' }] }),
     einstellungenSpeichern: async (e) => e,
     bezug: async (b: KiBezug) => ({
       bezug: b, label: b.art === 'deal' ? 'Deal' : 'Makler', titel: `Titel ${b.id}`,
@@ -19,16 +21,29 @@ function attrappe(): KiTransport & { gesendet: unknown[]; abgelegt: unknown[] } 
       gespraeche: [{ id: 'alt', bezug: b, titel: 'Frühere Frage', von: 'anna', am: '2026-10-25T10:00:00Z', anzahl: 2 }],
     }),
     allgemein: async () => ({ gespraeche: [] }),
-    gespraech: async (id) => ({ id, bezug: null, titel: 'Frühere Frage', von: 'anna', am: '', anzahl: 2, nachrichten: [{ rolle: 'nutzer', text: 'Frühere Frage', am: '' }, { rolle: 'ki', text: 'Frühere Antwort', am: '' }] }),
+    gespraech: async (id) => gespeichert.get(id) ?? ({ id, bezug: null, titel: 'Frühere Frage', von: 'anna', am: '', anzahl: 2, nachrichten: [{ rolle: 'nutzer', text: 'Frühere Frage', am: '' }, { rolle: 'ki', text: 'Frühere Antwort', am: '' }] }),
     async senden(s) {
       gesendet.push(s);
       const g: KiGespraech = {
         id: 'g1', bezug: s.bezug ?? null, titel: s.text, von: 'ich', am: '', anzahl: 2,
-        nachrichten: [{ rolle: 'nutzer', text: s.text, am: '1' }, { rolle: 'ki', text: '## Vergleich\n\nDrei Angebote', am: '2', gedaechtnis: 1, schritte: [{ art: 'websuche', name: 'web_search', ok: true, kurz: 'Ulm' }] }],
+        nachrichten: [{ rolle: 'nutzer', text: s.text, am: '1' }, { rolle: 'ki', text: antwort, am: '2', gedaechtnis: 1, schritte: [{ art: 'websuche', name: 'web_search', ok: true, kurz: 'Ulm' }], ...(vorschlag ? { vorschlag } : {}) }],
       };
+      gespeichert.set(g.id, structuredClone(g));
       return g;
     },
-    async ablegen(a) { abgelegt.push(a); return {}; },
+    async ablegen(a) {
+      abgelegt.push(a);
+      const g = gespeichert.get(a.gespraechId!)!;
+      const n = g.nachrichten[a.nachricht!]!;
+      g.nachrichten[a.nachricht!] = { ...n, abgelegt: a.titel, ...(n.vorschlag ? { vorschlag: { ...n.vorschlag, status: 'abgelegt' as const } } : {}) };
+      return {};
+    },
+    async vorschlagVerwerfen(v) {
+      const g = gespeichert.get(v.gespraechId)!;
+      g.nachrichten[v.nachricht] = { ...g.nachrichten[v.nachricht]!, vorschlag: { ...g.nachrichten[v.nachricht]!.vorschlag!, status: 'verworfen' } };
+      return structuredClone(g);
+    },
+    async gespraechLoeschen(id) { geloescht.push(id); return {}; },
   };
 }
 
@@ -75,7 +90,7 @@ describe('KI-Leiste', () => {
     fireEvent.click(screen.getByRole('button', { name: '🧠 Im Gedächtnis ablegen' }));
     expect((screen.getByRole('textbox', { name: 'Titel im Gedächtnis' }) as HTMLInputElement).value).toBe('Vergleich');
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Ablegen' })); });
-    expect(t.abgelegt).toEqual([{ bezug: { art: 'deal', id: 'd1' }, titel: 'Vergleich', text: '## Vergleich\n\nDrei Angebote' }]);
+    expect(t.abgelegt).toEqual([{ bezug: { art: 'deal', id: 'd1' }, titel: 'Vergleich', text: '## Vergleich\n\nDrei Angebote', gespraechId: 'g1', nachricht: 1 }]);
     expect(await screen.findByText('✓ Im Gedächtnis abgelegt: Vergleich')).toBeTruthy();
 
     // Folgefrage geht ins selbe Gespräch
@@ -89,6 +104,38 @@ describe('KI-Leiste', () => {
     fireEvent.click(screen.getByRole('tab', { name: /Verlauf/ }));
     await act(async () => { fireEvent.click(screen.getByText('Frühere Frage')); });
     expect(await screen.findByText('Frühere Antwort')).toBeTruthy();
+  });
+
+  it('Vorschlag der KI: Karte mit Ablegen, Ändern, Verwerfen; abgelegt wird erst auf Klick', async () => {
+    const t = attrappe('Notiert.', { titel: 'Termin', text: 'Besichtigung Montag' });
+    render(<KiLeisteRahmen transport={t}><Dialog b={{ art: 'deal', id: 'd1' }} /><KiLeiste /></KiLeisteRahmen>);
+    await screen.findByText('Deal: Titel d1');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Frage an die KI' }), { target: { value: 'Merk dir: Besichtigung Montag' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Senden' })); });
+    const karte = await screen.findByRole('group', { name: 'Vorschlag fürs Gedächtnis' });
+    expect(karte.textContent).toContain('Besichtigung Montag');
+    expect(screen.queryByRole('button', { name: '🧠 Im Gedächtnis ablegen' })).toBeNull();
+    expect(t.abgelegt).toEqual([]);
+    fireEvent.click(screen.getByRole('button', { name: 'Ändern' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Text im Gedächtnis' }), { target: { value: 'Besichtigung Montag 10 Uhr' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Ablegen' })); });
+    expect(t.abgelegt).toEqual([{ bezug: { art: 'deal', id: 'd1' }, titel: 'Termin', text: 'Besichtigung Montag 10 Uhr', gespraechId: 'g1', nachricht: 1 }]);
+    expect(await screen.findByText('✓ Im Gedächtnis abgelegt: Termin')).toBeTruthy();
+  });
+
+  it('Vorschlag verwerfen; Gespräch im Verlauf löschen (mit Rückfrage in der Zeile)', async () => {
+    const t = attrappe('Notiert.', { titel: 'Termin', text: 'x' });
+    render(<KiLeisteRahmen transport={t}><Dialog b={{ art: 'deal', id: 'd1' }} /><KiLeiste /></KiLeisteRahmen>);
+    await screen.findByText('Deal: Titel d1');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Frage an die KI' }), { target: { value: 'Merk dir das' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Senden' })); });
+    await act(async () => { fireEvent.click(await screen.findByRole('button', { name: 'Verwerfen' })); });
+    expect(await screen.findByText('Vorschlag fürs Gedächtnis verworfen.')).toBeTruthy();
+    expect(t.abgelegt).toEqual([]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Gespräch löschen: Frühere Frage' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Wirklich löschen' })); });
+    expect(t.geloescht).toEqual(['alt']);
   });
 
   it('Titelvorschlag: erste Überschrift, sonst die Frage', () => {
