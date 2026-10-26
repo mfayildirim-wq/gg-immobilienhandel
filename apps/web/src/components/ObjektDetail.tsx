@@ -13,6 +13,7 @@ import { alsZahl, euro, prozent } from '../lib/format.ts';
 import { anzahlOffen, ExposeAngaben, neuesteAngaben } from './ExposeAngaben.tsx';
 import { ObjektFotos } from './ObjektFotos.tsx';
 import { StatusBadge } from './StatusBadge.tsx';
+import { useKiBezug } from '@gg/ki-leiste';
 
 const ZAHL = { decimalSeparator: ',', thousandSeparator: '.', hideControls: true } as const;
 type Einheit = Omit<ObjektEinheit, 'id'> & { id?: string };
@@ -22,6 +23,7 @@ const GEBAEUDE_ZAHLEN = [['baujahr', 'Baujahr'], ['einheitenAnzahl', 'Einheiten 
 const PREISE = [['angebotspreis', 'Angebotspreis €'], ['zielpreis', 'Zielkaufpreis €'], ['istMiete', 'Ist-Miete/Mo €'], ['sollMiete', 'Soll-Miete/Mo €']] as const;
 
 export function ObjektDetail({ id, geloescht }: { id: string; geloescht?: () => void }) {
+  useKiBezug({ art: 'objekt', id });
   const { data: o, isLoading, error } = useObjektDetail(id);
   const { data: angaben } = useExposeAngaben('objekte', id);
   // Der Reiter bleibt beim Speichern stehen (der Inhalt wird je Version neu aufgebaut)

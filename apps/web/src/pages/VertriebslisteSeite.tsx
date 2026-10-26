@@ -7,12 +7,14 @@ import { useNavigate, useParams } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { useAutomatischSpeichern } from '../lib/automatischSpeichern.ts';
 import { useVertriebsliste, vertriebslisteSpeichern } from '../lib/api.ts';
+import { useKiBezug } from '@gg/ki-leiste';
 
 const TYP_LABEL: Record<VlSpalte['type'], string> = { text: 'Text', multitext: 'Notiz', number: 'Zahl', euro: '€', percent: '%', date: 'Datum', dropdown: 'Auswahl', ampel: 'Ampel', checkbox: 'Ja/Nein' };
 const AMPEL = [['gruen', 'Grün', '#4ade80'], ['gelb', 'Gelb', '#fbbf24'], ['rot', 'Rot', '#ef4444']] as const;
 
 export function VertriebslisteSeite() {
   const { id } = useParams({ from: '/vertriebslisten/$id' });
+  useKiBezug({ art: 'vertriebsliste', id });
   const { data, isLoading, error } = useVertriebsliste(id);
   if (isLoading) return <Loader size="sm" />;
   if (error || !data) return <Alert color="red">{error?.message ?? 'Vertriebsliste nicht gefunden'}</Alert>;

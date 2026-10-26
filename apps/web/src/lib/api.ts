@@ -1,5 +1,5 @@
 import { gehalteneKarten, type Vorher } from './gehalteneKarten.ts';
-import type { KalkStandard, KiModellwahl } from '@gg/domain';
+import type { GedaechtnisArt, KalkStandard, KiModellwahl } from '@gg/domain';
 import type {
   GedaechtnisEintrag,
   ExposeAnalyseAntwort,
@@ -107,7 +107,7 @@ export async function mitToken(headers?: HeadersInit): Promise<HeadersInit> {
 }
 
 /** Bei 401 einmal die Sitzung erneuern und den Aufruf wiederholen (wie apiFetch der alten App). */
-async function holen(pfad: string, init?: RequestInit): Promise<Response> {
+export async function holen(pfad: string, init?: RequestInit): Promise<Response> {
   const bauen = async () => fetch(pfad, { ...init, headers: await mitToken(init?.headers) });
   const res = await bauen();
   if (res.status !== 401) return res;
@@ -767,7 +767,7 @@ export const useOsint = (id: string) => useAendern('makler', () => anfrage<{ per
 
 // ── Gedächtnis (zentraler Dienst, 24.10.2026) ─────────────────
 
-export type GedaechtnisArt = 'deal' | 'makler';
+export type { GedaechtnisArt };
 export const useGedaechtnisStand = () => useQuery({ queryKey: ['gedaechtnis'], queryFn: () => anfrage<{ verbunden: boolean }>('/api/gedaechtnis'), staleTime: 60_000 });
 export const useGedaechtnis = (art: GedaechtnisArt, id: string, aktiv = true) =>
   useQuery({

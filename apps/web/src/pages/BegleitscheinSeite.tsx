@@ -10,11 +10,13 @@ import { useState } from 'react';
 import { ebeneStil, StatusWahl } from '../components/begleitschein/farben.tsx';
 import { useAutomatischSpeichern } from '../lib/automatischSpeichern.ts';
 import { begleitscheinAktion, begleitscheinSpeichern, useBegleitschein } from '../lib/api.ts';
+import { useKiBezug } from '@gg/ki-leiste';
 
 type Stand = { kopf: string; rows: BsZeile[] };
 
 export function BegleitscheinSeite() {
   const { id } = useParams({ from: '/begleitscheine/$id' });
+  useKiBezug({ art: 'begleitschein', id });
   const { data, isLoading, error } = useBegleitschein(id);
   if (isLoading) return <Loader size="sm" />;
   if (error || !data) return <Alert color="red">{error?.message ?? 'Begleitschein nicht gefunden'}</Alert>;

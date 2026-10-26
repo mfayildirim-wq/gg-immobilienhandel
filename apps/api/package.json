@@ -16,6 +16,7 @@
     "@gg/documents": "workspace:*",
     "@gg/domain": "workspace:*",
     "@gg/integrations": "workspace:*",
+    "@gg/ki-kern": "workspace:*",
     "@hono/node-server": "^2.1.1",
     "@hono/zod-openapi": "^1.6.3",
     "@napi-rs/canvas": "0.1.100",

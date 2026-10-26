@@ -25,8 +25,12 @@ import { dealDetail, dealListe } from './deals.ts';
 import { dokumenteListe } from './dealDokumente.ts';
 import { gedaechtnisAblegen, gedaechtnisEintraege, gedaechtnisSuchen } from './gedaechtnis.ts';
 import { freigabeBeantragen } from './outward.ts';
+import { begleitscheinDetail } from './begleitscheine.ts';
+import { kundenkalkulationDetail } from './kundenkalkulationen.ts';
 import { maklerDetail, maklerListe } from './makler.ts';
 import { objektDetail, objekteListe } from './objekte.ts';
+import { projektDetail } from './projekte.ts';
+import { vertriebslisteDetail } from './vertriebslisten.ts';
 
 /** Kopfzeilen von Hono kommen als flaches Objekt; die Regel erwartet die lose Form. */
 export const mcpSchluesselAusKopfOderNull = (kopf: Record<string, string | undefined>) => mcpSchluesselAusKopf(kopf);
@@ -79,8 +83,20 @@ const zahl = (args: Record<string, unknown>, feld: string, standard: number) => 
 
 const BEREICHE = ['deals', 'makler', 'objekte'] as const;
 
-// Gedächtnis: Deals und Makler haben einen Bezug im zentralen Gedächtnis
-const GEDAECHTNIS_BEREICHE: Record<string, GedaechtnisArt> = { deals: 'deal', makler: 'makler' };
+/** Einzeln lesbar ist alles, was in gg einen eigenen Dialog hat — dieselben Bestände haben ein Gedächtnis. */
+const EINZELN: Record<string, { art: GedaechtnisArt; lesen: (db: Db, id: string) => Promise<unknown> }> = {
+  deals: { art: 'deal', lesen: dealDetail },
+  makler: { art: 'makler', lesen: maklerDetail },
+  objekte: { art: 'objekt', lesen: objektDetail },
+  projekte: { art: 'projekt', lesen: projektDetail },
+  kundenkalkulationen: { art: 'kundenkalkulation', lesen: kundenkalkulationDetail },
+  vertriebslisten: { art: 'vertriebsliste', lesen: vertriebslisteDetail },
+  begleitscheine: { art: 'begleitschein', lesen: begleitscheinDetail },
+};
+/** Bestand zur Gedächtnis-Art, z. B. für die KI-Leiste: 'objekt' → 'objekte'. */
+export const mcpBestandZu = (art: GedaechtnisArt) => Object.entries(EINZELN).find(([, e]) => e.art === art)?.[0] ?? null;
+
+const GEDAECHTNIS_BEREICHE: Record<string, GedaechtnisArt> = Object.fromEntries(Object.entries(EINZELN).map(([b, e]) => [b, e.art]));
 const gedaechtnisBezugArgs = { collection: { type: 'string', enum: Object.keys(GEDAECHTNIS_BEREICHE) }, id: { type: 'string' } };
 function gedaechtnisBezugAus(args: Record<string, unknown>, pflicht: true): { art: GedaechtnisArt; id: string };
 function gedaechtnisBezugAus(args: Record<string, unknown>, pflicht: false): { art: GedaechtnisArt; id: string } | undefined;
@@ -89,7 +105,7 @@ function gedaechtnisBezugAus(args: Record<string, unknown>, pflicht: boolean) {
   const id = text(args, 'id', pflicht);
   if (!bereich && !id) return undefined;
   const art = GEDAECHTNIS_BEREICHE[bereich];
-  if (!art) throw new McpWerkzeugFehler(`Gedächtnis gibt es für ${Object.keys(GEDAECHTNIS_BEREICHE).join(' und ')}, nicht für "${bereich}".`);
+  if (!art) throw new McpWerkzeugFehler(`Gedächtnis gibt es für ${Object.keys(GEDAECHTNIS_BEREICHE).join(', ')}, nicht für "${bereich}".`);
   if (!id) throw new McpWerkzeugFehler('Feld "id" fehlt oder ist leer.');
   return { art, id };
 }
@@ -133,15 +149,14 @@ export const MCP_WERKZEUGE: Werkzeug[] = [
   },
   {
     name: 'read_entity', scope: 'read', title: 'Datensatz lesen',
-    description: 'Liest einen Deal, Makler oder ein Objekt mit allen Feldern.',
-    inputSchema: { type: 'object', properties: { collection: { type: 'string', enum: [...BEREICHE] }, id: { type: 'string' } }, required: ['collection', 'id'], additionalProperties: false },
+    description: 'Liest einen Datensatz mit allen Feldern: Deal, Makler, Objekt, Projekt, Kundenkalkulation, Vertriebsliste oder Begleitschein.',
+    inputSchema: { type: 'object', properties: { collection: { type: 'string', enum: Object.keys(EINZELN) }, id: { type: 'string' } }, required: ['collection', 'id'], additionalProperties: false },
     async run(db, args) {
       const bereich = text(args, 'collection');
       const id = text(args, 'id');
-      if (bereich === 'deals') return dealDetail(db, id);
-      if (bereich === 'makler') return maklerDetail(db, id);
-      if (bereich === 'objekte') return objektDetail(db, id);
-      throw new McpWerkzeugFehler(`Unbekannter Bestand "${bereich}".`);
+      const e = EINZELN[bereich];
+      if (!e) throw new McpWerkzeugFehler(`Unbekannter Bestand "${bereich}".`);
+      return e.lesen(db, id);
     },
   },
   {
@@ -182,7 +197,7 @@ export const MCP_WERKZEUGE: Werkzeug[] = [
   {
     name: 'gedaechtnis_suchen', scope: 'read', title: 'Im Gedächtnis suchen',
     description: 'Sucht im zentralen Gedächtnis (gg-Ereignisse, gemerkte Notizen, KI-Gespräche, freigegebene andere Apps). '
-      + 'Mit `collection` und `id` nur zu einem Deal oder Makler.',
+      + 'Mit `collection` und `id` nur zu einem Datensatz (Deal, Makler, Objekt, Projekt …).',
     inputSchema: { type: 'object', properties: { frage: { type: 'string' }, ...gedaechtnisBezugArgs }, required: ['frage'], additionalProperties: false },
     async run(_db, args, _sitzung, umfeld) {
       const frage = text(args, 'frage');
@@ -191,8 +206,8 @@ export const MCP_WERKZEUGE: Werkzeug[] = [
     },
   },
   {
-    name: 'gedaechtnis_eintraege', scope: 'read', title: 'Gedächtnis zu einem Deal oder Makler',
-    description: 'Alle gültigen Gedächtnis-Einträge zu einem Deal oder Makler, neueste zuerst (wie der Reiter „Gedächtnis“ in der App).',
+    name: 'gedaechtnis_eintraege', scope: 'read', title: 'Gedächtnis zu einem Datensatz',
+    description: 'Alle gültigen Gedächtnis-Einträge zu einem Deal, Makler, Objekt, Projekt … — neueste zuerst (wie in der KI-Leiste der App).',
     inputSchema: { type: 'object', properties: gedaechtnisBezugArgs, required: ['collection', 'id'], additionalProperties: false },
     async run(_db, args, _sitzung, umfeld) {
       const { art, id } = gedaechtnisBezugAus(args, true);
@@ -202,9 +217,9 @@ export const MCP_WERKZEUGE: Werkzeug[] = [
   {
     // 26.10.2026: wörtlich als EIN Eintrag — die Faktenextraktion zerlegte eine Recherche in viele Einzeleinträge
     name: 'gedaechtnis_merken', scope: 'write', title: 'Im Gedächtnis ablegen',
-    description: 'Legt ein Ergebnis zu einem Deal oder Makler im Gedächtnis ab, z. B. eine Recherche, eine Zusammenfassung oder Absprachen. '
+    description: 'Legt ein Ergebnis zu einem Datensatz (Deal, Makler, Objekt, Projekt …) im Gedächtnis ab, z. B. eine Recherche, eine Zusammenfassung oder Absprachen. '
       + 'Gespeichert wird genau ein Eintrag mit `titel` und dem vollständigen `text` (Markdown: Überschriften, Listen, Tabellen, Links); '
-      + 'in gg ist er im Reiter „Gedächtnis“ zu sehen. Derselbe Titel am selben Deal/Makler ersetzt den alten Eintrag — '
+      + 'in gg ist er in der KI-Leiste und im Reiter „Gedächtnis“ zu sehen. Derselbe Titel am selben Datensatz ersetzt den alten Eintrag — '
       + 'für eine neue Fassung also denselben Titel nehmen, für ein anderes Thema einen anderen.',
     inputSchema: {
       type: 'object',

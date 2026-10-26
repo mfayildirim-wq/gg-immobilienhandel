@@ -97,8 +97,10 @@ describe.skipIf(!url)('Gedächtnis: Ereignisse aus gg und Einträge je Deal/Makl
       expect(eintraege.join(' ')).toContain('Mobil 0170 1112223');
       expect(inhalt(await rpc(app, 'gedaechtnis_suchen', { frage: 'Wann ist Carla nicht erreichbar?' })).treffer[0].text).toBe(recherche);
 
-      const objektFalsch = await rpc(app, 'gedaechtnis_eintraege', { collection: 'objekte', id: 'x' });
-      expect(objektFalsch.result).toMatchObject({ isError: true });
+      // Seit der KI-Leiste haben alle Dialoge ein Gedächtnis (Objekt, Projekt …); unbekannte Bestände nicht
+      expect((await rpc(app, 'gedaechtnis_eintraege', { collection: 'objekte', id: 'x' })).result).toMatchObject({ isError: false });
+      const falsch = await rpc(app, 'gedaechtnis_eintraege', { collection: 'papierkorb', id: 'x' });
+      expect(falsch.result).toMatchObject({ isError: true });
       const ohne = await rpc(createApp({ db, auth: offen, gedaechtnis: null }), 'gedaechtnis_suchen', { frage: 'egal' });
       expect(ohne.result.isError).toBe(true);
       expect(ohne.result.content[0].text).toContain('nicht eingerichtet');

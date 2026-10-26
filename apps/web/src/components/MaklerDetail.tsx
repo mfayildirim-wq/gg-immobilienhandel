@@ -19,6 +19,7 @@ import {
 import { heuteIso, useEinstellung } from '../lib/ansicht.ts';
 import { datumDe } from '../lib/format.ts';
 import { StatusBadge } from './StatusBadge.tsx';
+import { useKiBezug } from '@gg/ki-leiste';
 
 const REITER = ['profil', 'komm', 'persoenlich', 'deals', 'gedaechtnis'] as const;
 type Reiter = (typeof REITER)[number];
@@ -28,6 +29,7 @@ type Reiter = (typeof REITER)[number];
  * Der zuletzt gewählte Reiter wird je Kontext gemerkt und bleibt beim Wechsel zum nächsten Makler (wie beim Deal).
  */
 export function MaklerDetail({ id, geloescht, start = 'profil' }: { id: string; geloescht?: () => void; start?: 'profil' | 'komm' }) {
+  useKiBezug({ art: 'makler', id });
   const { data: m, isLoading, error } = useMaklerDetail(id);
   const [reiter, setReiter] = useEinstellung<Reiter>(`makler.reiter.${start}`, REITER, start);
   if (isLoading) return <Loader size="sm" />;
