@@ -67,7 +67,8 @@ def mem0_konfig() -> dict:
     return {
         "vector_store": {"provider": "pgvector", "config": {
             "connection_string": DB, "collection_name": SAMMLUNG, "embedding_model_dims": DIMS}},
-        "llm": {"provider": "anthropic", "config": {"model": MODELL, "temperature": 0}} if LLM == "anthropic"
+        # das Anthropic-SDK nimmt keine Sampling-Parameter mehr an (temperature/top_p) — Mem0 darf sie nicht senden
+        "llm": {"provider": "anthropic", "config": {"model": MODELL, "enable_sampling_parameters": False}} if LLM == "anthropic"
         else {"provider": "ollama", "config": {"model": MODELL, "temperature": 0, "ollama_base_url": OLLAMA}},
         "embedder": {"provider": "fastembed", "config": {"model": EMBED, "embedding_dims": DIMS}} if EMBED_ANBIETER == "fastembed"
         else {"provider": "ollama", "config": {"model": EMBED, "embedding_dims": DIMS, "ollama_base_url": OLLAMA}},
