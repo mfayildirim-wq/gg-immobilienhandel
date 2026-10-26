@@ -14,7 +14,7 @@
     },
     "api/render.mjs": {
       "maxDuration": 300,
-      "includeFiles": "{apps/api/dist,apps/api/assets,apps/api/node_modules/tesseract.js-core,node_modules/.pnpm/@napi-rs+canvas*,node_modules/.pnpm/pdfjs-dist@*,node_modules/.pnpm/tesseract.js-core@*,node_modules/.pnpm/@sparticuz+chromium@*}/**"
+      "includeFiles": "{apps/api/dist/**,node_modules/.pnpm/@napi-rs+canvas*/**,node_modules/.pnpm/pdfjs-dist@*/node_modules/**,node_modules/.pnpm/@sparticuz+chromium@*/node_modules/@sparticuz/chromium/bin/**}"
     }
   },
   "rewrites": [
@@ -36,10 +36,6 @@
     },
     {
       "source": "/api/praesentationen/:id/pptx",
-      "destination": "/api/render"
-    },
-    {
-      "source": "/api/expose/analyse",
       "destination": "/api/render"
     },
     {
