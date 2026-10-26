@@ -470,7 +470,7 @@ describe.skipIf(!url)('Deal-Ablauf gegen die lokale Datenbank', () => {
     const { id: dealId } = await lies(req('/api/deals', { objektId: objekt.id }));
     const p = await lies(req(`/api/deals/${dealId}/praesentation`, { vorlage: 'leer' }));
     const vorher = await lies(req('/api/einstellungen/ki-modelle'));
-    expect(vorher).toEqual({ praesentation: 'standard', expose: 'standard', makler: 'standard', autoimport: 'standard' });
+    expect(vorher).toEqual({ praesentation: 'standard', expose: 'standard', makler: 'standard', autoimport: 'standard', assistent: 'standard' });
 
     try {
       // Unbekanntes Modell fällt auf „standard“ zurück; ein bekanntes gilt für den Bereich

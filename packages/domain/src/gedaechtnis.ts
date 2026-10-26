@@ -6,9 +6,12 @@
  * Ersetzen Wissen verloren. Kommentare haben je Kommentar eine eigene Art und ersetzen nichts.
  */
 
-export type GedaechtnisArt = 'deal' | 'makler';
+/** Alles, was in gg einen eigenen Dialog hat, hat auch ein Gedächtnis (26.10.2026: KI-Leiste, vorher nur Deal und Makler). */
+export const GEDAECHTNIS_ARTEN = ['deal', 'makler', 'objekt', 'projekt', 'kundenkalkulation', 'vertriebsliste', 'begleitschein'] as const;
+export type GedaechtnisArt = (typeof GEDAECHTNIS_ARTEN)[number];
+export const istGedaechtnisArt = (a: unknown): a is GedaechtnisArt => GEDAECHTNIS_ARTEN.includes(a as GedaechtnisArt);
 
-/** Bezug im Gedächtnis: `gg:deal:<id>`, `gg:makler:<id>`. */
+/** Bezug im Gedächtnis: `gg:deal:<id>`, `gg:makler:<id>`, `gg:objekt:<id>` … */
 export const gedaechtnisBezug = (art: GedaechtnisArt, id: string) => `gg:${art}:${id}`;
 
 const liste = (teile: (string | null | undefined | false)[]) => teile.filter((t): t is string => Boolean(t && t.trim())).join(', ');

@@ -23,6 +23,7 @@ import { Zahlfeld } from '../components/Zahlfeld.tsx';
 import { type AuswahlAuftrag, BildAuswahl } from '../components/praesentation/BildAuswahl.tsx';
 import { useAutomatischSpeichern } from '../lib/automatischSpeichern.ts';
 import { bankgespraechPdfLaden, kundenkalkulationSpeichern, useDealDetail, useKundenkalkEinstellungen, useKundenkalkulation } from '../lib/api.ts';
+import { useKiBezug } from '@gg/ki-leiste';
 
 const ZAHL = { decimalSeparator: ',', thousandSeparator: '.', hideControls: true } as const;
 const MODI: { value: SanierungsModus; label: string }[] = [
@@ -39,6 +40,7 @@ const felder = ({ id, dealId, version, scope, einheitId, createdAt, updatedAt, .
 
 export function KundenkalkulationSeite() {
   const { id } = useParams({ from: '/kundenkalkulationen/$id' });
+  useKiBezug({ art: 'kundenkalkulation', id });
   const { data, isLoading, error } = useKundenkalkulation(id);
   if (isLoading) return <Loader size="sm" />;
   if (error || !data) return <Alert color="red">{error?.message ?? 'Kundenkalkulation nicht gefunden'}</Alert>;

@@ -1,4 +1,5 @@
 import {
+  KiAblegen, KiBezugSicht, KiEinstellungen, KiGespraech, KiGespraechKopf, KiSenden, KiStand,
   GedaechtnisAblage,
   GedaechtnisArtParam,
   GedaechtnisEintrag,
@@ -138,7 +139,9 @@ import { autoSicherungDatei, autoSicherungEinspielen, autoSicherungErstellen, au
 import { filterAnlegen, filterListe, filterLoeschen, filterUmbenennen, filterVorlagenEinrichten, listenAltformat } from './services/listen.ts';
 import { projektAnlegen, projektDealAuswahl, projektDetail, projekteListe, projektLoeschen, projektSpeichern } from './services/projekte.ts';
 import { fotoDatei, fotoHochladen, fotoLoeschen, fotoPort, fotosListe, fotosSortieren } from './services/fotos.ts';
-import { gedaechtnisAttrappe, gedaechtnisClient, type GedaechtnisDienst } from '@gg/integrations';
+import { anfrageFuerModell, gedaechtnisAttrappe, gedaechtnisClient, type GedaechtnisDienst } from '@gg/integrations';
+import { attrappenModell, KiLeisteFehler, type Modell } from '@gg/ki-kern';
+import { kiLeiste } from './services/kiLeiste.ts';
 import {
   dealKommentarMelden, dealStatusMelden, gedaechtnisAendern, gedaechtnisEintraege, gedaechtnisMerken, gedaechtnisStand, gedaechtnisSuchen, gedaechtnisVergessen, maklerMelden,
 } from './services/gedaechtnis.ts';
@@ -221,6 +224,8 @@ export interface AppKontext {
   recherche?: { abruf?: Abruf; pauseMs?: number };
   /** „Schlüssel testen“ für Anthropic; Standard: echte Abfrage der Modellliste. Tests setzen einen Ersatz. */
   kiSchluesselPruefen?: (apiKey: string) => Promise<{ gueltig: boolean; meldung: string }>;
+  /** Modell der KI-Leiste fest vorgegeben (Tests); sonst Anthropic mit dem Schlüssel wie überall, mit KI-Attrappe eine Attrappe. */
+  kiLeisteModell?: Modell;
   /** Gedächtnis-Dienst fest vorgegeben (Tests); sonst aus Einstellungen → Zugänge, mit KI-Attrappe eine Attrappe. */
   gedaechtnis?: GedaechtnisDienst | null;
   /** `CRON_SECRET`: ohne dieses Geheimnis antworten die Cron-Routen immer mit 401. */
@@ -248,7 +253,7 @@ const Version = z.object({ version: z.number().int() });
 const Geaendert = json(z.object({ id: z.string(), version: z.number().int() }), 'geändert');
 const konflikt = { 400: fehler('Eingabe ungültig'), 404: fehler('nicht gefunden'), 409: fehler('Versionskonflikt') };
 
-export function createApp({ db, auth: authOpt, expose, gedaechtnis: gedaechtnisOpt, ki: kiOpt, geocoder, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, cronGeheimnis, kiSchluesselPruefen = anthropicSchluesselPruefen, autoImport, recherche: rechercheOpt, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
+export function createApp({ db, auth: authOpt, expose, gedaechtnis: gedaechtnisOpt, kiLeisteModell, ki: kiOpt, geocoder, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, cronGeheimnis, kiSchluesselPruefen = anthropicSchluesselPruefen, autoImport, recherche: rechercheOpt, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
   const autoImportAktiv = autoImport?.aktiv ?? true;
   const exposeKontext = () => {
     if (!expose) throw new FachFehler(422, 'Dateiablage ist nicht eingerichtet (SUPABASE_SERVICE_ROLE_KEY).');
@@ -261,10 +266,13 @@ export function createApp({ db, auth: authOpt, expose, gedaechtnis: gedaechtnisO
    * Mit Bereich gilt das dort eingestellte Modell (Einstellungen → KI-Modelle); die Hülle passt jede Anfrage an
    * das Modell an, auch ohne Umlenkung.
    */
-  const kiAktuell = async (bereich?: KiBereich): Promise<KiClient | null> => {
+  const kiBasis = async (): Promise<KiClient | null> => {
     const fest = kiOpt ?? (expose?.attrappe ? expose.ki : null);
     const key = fest ? null : await zugangLesen(db, 'anthropic-api-key');
-    const ki = fest ?? (key ? anthropicClient(key) : (expose?.ki ?? null));
+    return fest ?? (key ? anthropicClient(key) : (expose?.ki ?? null));
+  };
+  const kiAktuell = async (bereich?: KiBereich): Promise<KiClient | null> => {
+    const ki = await kiBasis();
     if (!ki) return null;
     return kiMitModell(ki, bereich ? kiModellFuer(await kiModellwahlLesen(db), bereich) : null);
   };
@@ -280,6 +288,20 @@ export function createApp({ db, auth: authOpt, expose, gedaechtnis: gedaechtnisO
     return url && schluessel ? gedaechtnisClient(url, schluessel) : gedaechtnisProbe;
   };
   const exposeMitKi = async () => ({ ...exposeKontext(), ki: await kiAktuell('expose') });
+  /**
+   * KI-Leiste: Werkzeugschleife mit Anthropic. Ohne `kiMitModell`-Hülle: die Schleife braucht die Denkblöcke der Antwort,
+   * um sie mit den Werkzeugergebnissen zurückzugeben — angepasst wird nur die Anfrage.
+   */
+  const leiste = kiLeiste(db, {
+    gedaechtnis: () => gedaechtnisAktuell(),
+    modell: async (modellId) => {
+      if (kiLeisteModell) return kiLeisteModell;
+      if (expose?.attrappe) return attrappenModell();
+      const ki = await kiBasis();
+      if (!ki) return null;
+      return async (anfrage) => ki.nachricht(anfrageFuerModell({ model: modellId, ...anfrage }, modellId), 120_000);
+    },
+  });
   const ablage = () => {
     const s = speicherOpt ?? expose?.speicher;
     if (!s) throw new FachFehler(422, 'Dateiablage ist nicht eingerichtet (SUPABASE_SERVICE_ROLE_KEY).');
@@ -313,6 +335,7 @@ export function createApp({ db, auth: authOpt, expose, gedaechtnis: gedaechtnisO
       return c.json({ fehler: err.meldung, details: { quelle: 'anthropic', art: err.art, status: err.status } }, status);
     }
     if (err instanceof AnalyseFehler) return c.json({ fehler: err.message }, 422);
+    if (err instanceof KiLeisteFehler) return c.json({ fehler: err.message }, err.status);
     // Unerwartet (E6, 16.10.2026): Fach- und KI-Fehler oben im Klartext; technische Ursachen (SQL, Stack, Pfade) nur ins Log,
     // die Antwort trägt eine Referenz, mit der man die Logzeile findet.
     const referenz = Math.random().toString(36).slice(2, 10);
@@ -369,6 +392,7 @@ export function createApp({ db, auth: authOpt, expose, gedaechtnis: gedaechtnisO
   app.use('/api/deals/:id/einheiten-aus-pdf', begrenzung(GRENZEN.ki));
   app.use('/api/transkription', begrenzung(GRENZEN.diktat));
   app.use('/api/auto-import/lauf', begrenzung(GRENZEN.ki));
+  app.use('/api/ki-leiste/senden', begrenzung(GRENZEN.ki));
   app.use('/api/m365/posteingang', begrenzung(GRENZEN.abruf));
   app.use('/api/m365/konfiguration', begrenzung(GRENZEN.zugang));
   app.use('/api/m365/anmeldung', begrenzung(GRENZEN.zugang));
@@ -774,7 +798,37 @@ export function createApp({ db, auth: authOpt, expose, gedaechtnis: gedaechtnisO
     (c) => c.json(mcpStand(process.env), 200),
   );
 
-  // ── Gedächtnis: Einträge je Deal und Makler (zentraler Dienst) ──
+  // ── KI-Leiste: Chat zum gerade offenen Dialog (@gg/ki-kern) ──
+  app.openapi(
+    createRoute({ method: 'get', path: '/api/ki-leiste/stand', responses: { 200: json(KiStand, 'Stand und Einstellungen') } }),
+    async (c) => c.json(await leiste.stand(), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'put', path: '/api/ki-leiste/einstellungen', request: body(KiEinstellungen), responses: { 200: json(KiEinstellungen, 'gespeichert'), 400: fehler('Eingabe ungültig') } }),
+    async (c) => c.json(await leiste.einstellungenSpeichern(c.req.valid('json')), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'get', path: '/api/ki-leiste/bezug/{art}/{id}', request: { params: z.object({ art: z.string().min(1), id: z.string().min(1) }) }, responses: { 200: json(KiBezugSicht, 'Dialog mit Gedächtnis und Gesprächen'), 404: fehler('nicht gefunden') } }),
+    async (c) => c.json(await leiste.bezug(c.req.valid('param')), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'get', path: '/api/ki-leiste/allgemein', responses: { 200: json(z.object({ gespraeche: z.array(KiGespraechKopf) }), 'Gespräche ohne Dialog') } }),
+    async (c) => c.json(await leiste.allgemein(), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'get', path: '/api/ki-leiste/gespraeche/{id}', request: { params: IdParam }, responses: { 200: json(KiGespraech, 'Gespräch'), 404: fehler('nicht gefunden') } }),
+    async (c) => c.json(await leiste.gespraech(c.req.valid('param').id), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/ki-leiste/senden', request: body(KiSenden), responses: { 200: json(KiGespraech, 'Gespräch mit Antwort'), 503: fehler('KI nicht eingerichtet') } }),
+    async (c) => c.json(await leiste.senden(c.req.valid('json'), c.get('nutzer') ?? 'unbekannt'), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/ki-leiste/ablegen', request: body(KiAblegen), responses: { 201: json(GedaechtnisAblage, 'abgelegt'), 503: fehler('Gedächtnis nicht eingerichtet') } }),
+    async (c) => c.json(await leiste.ablegen(c.req.valid('json'), c.get('nutzer') ?? 'unbekannt') as z.infer<typeof GedaechtnisAblage>, 201),
+  );
+
+  // ── Gedächtnis: Einträge je Datensatz (zentraler Dienst) ──
   const GedaechtnisBezugParam = z.object({ art: GedaechtnisArtParam, id: z.string().min(1) });
   app.openapi(
     createRoute({ method: 'get', path: '/api/gedaechtnis', responses: { 200: json(z.object({ verbunden: z.boolean() }), 'Stand') } }),
