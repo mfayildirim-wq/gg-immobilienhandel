@@ -1222,7 +1222,7 @@ describe.skipIf(!url)('Deal-Ablauf gegen die lokale Datenbank', () => {
       expect(init.result.serverInfo.name).toBe('gg-immobilienhandel');
 
       const liste = await (await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' })).json() as { result: { tools: { name: string }[] } };
-      expect(liste.result.tools.map((t) => t.name)).toEqual(['list_collections', 'read_collection', 'read_entity', 'list_files', 'read_audit_log', 'add_note', 'request_outward_approval']);
+      expect(liste.result.tools.map((t) => t.name)).toEqual(['list_collections', 'read_collection', 'read_entity', 'list_files', 'read_audit_log', 'add_note', 'gedaechtnis_suchen', 'gedaechtnis_eintraege', 'gedaechtnis_merken', 'request_outward_approval']);
 
       const gelesen = await (await rpc({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'read_entity', arguments: { collection: 'deals', id: d.id } } })).json() as { result: { content: { text: string }[]; isError: boolean } };
       expect(gelesen.result.isError).toBe(false);

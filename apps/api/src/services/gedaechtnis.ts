@@ -76,9 +76,10 @@ export async function gedaechtnisEintraege(dienst: GedaechtnisDienst | null, art
   return { eintraege: [...eintraege].sort((a, b) => (b.am ?? '').localeCompare(a.am ?? '')) };
 }
 
-export async function gedaechtnisMerken(dienst: GedaechtnisDienst | null, art: GedaechtnisArt, id: string, text: string) {
+/** `von`: wer gemerkt hat — 'gg' aus der Oberfläche, 'mcp:<label>' über den MCP-Server. */
+export async function gedaechtnisMerken(dienst: GedaechtnisDienst | null, art: GedaechtnisArt, id: string, text: string, von = 'gg') {
   if (!dienst) throw ohneDienst();
-  return mitFehlern(() => dienst.merken({ text, objekt: gedaechtnisBezug(art, id), von: 'gg' }));
+  return mitFehlern(() => dienst.merken({ text, objekt: gedaechtnisBezug(art, id), von }));
 }
 
 export async function gedaechtnisSuchen(dienst: GedaechtnisDienst | null, frage: string, bezug?: { art: GedaechtnisArt; id: string }) {
