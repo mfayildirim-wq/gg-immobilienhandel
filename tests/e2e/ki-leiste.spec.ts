@@ -8,7 +8,13 @@ test('KI-Leiste: roter Kreis öffnet die Leiste zum offenen Dialog; Chat, Werkze
 
   await page.goto(`/makler?makler=${m.id}`);
   const leiste = page.getByRole('region', { name: 'KI-Leiste' });
-  if (!(await leiste.isVisible())) await page.getByRole('button', { name: 'KI-Leiste öffnen' }).click();
+  if (await leiste.isVisible()) await page.getByRole('button', { name: 'KI-Leiste schließen' }).first().click();
+  await expect(leiste).toBeHidden();
+  const breiteVorher = (await page.locator('main > *').first().boundingBox())?.width;
+  await page.getByRole('button', { name: 'KI-Leiste öffnen' }).click();
+  await expect(leiste).toBeVisible();
+  // Die Leiste liegt als Ebene über dem Inhalt: die Seite darunter behält ihre Breite
+  expect((await page.locator('main > *').first().boundingBox())?.width).toBe(breiteVorher);
   await expect(leiste.locator(`[data-ki-bezug="makler:${m.id}"]`)).toContainText(`Makler: ${name}`);
 
   // Frage → Antwort der Attrappe mit Dialog und Gedächtnis (frischer Makler: noch leer)
