@@ -52,3 +52,4 @@ export * from './dd/vorlage.ts';
 export * from './ankaufkalkulation/vorbelegung.ts';
 export * from './ankaufkalkulation/einheitPreise.ts';
 export * from './ankaufkalkulation/zielkaufpreis.ts';
+export * from './gedaechtnis.ts';

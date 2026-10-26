@@ -1063,3 +1063,16 @@ export const PersonaStand = z.object({ profil: PersonaProfil.nullable(), konfide
 export type PersonaStand = z.infer<typeof PersonaStand>;
 export const NachrichtEntwurf = z.object({ wa: z.string(), email: z.object({ subject: z.string(), body: z.string() }) });
 export type NachrichtEntwurf = z.infer<typeof NachrichtEntwurf>;
+
+// ── Gedächtnis (zentraler Dienst, 24.10.2026) ─────────────────
+
+export const GedaechtnisEintrag = z.object({
+  id: z.string(), text: z.string(), app: z.string(), objekt: z.string().nullable(), art: z.string().nullable(),
+  quelle: z.string().nullable(), von: z.string().nullable(), score: z.number().nullable(), am: z.string().nullable(),
+  titel: z.string().nullable().optional(),
+});
+export type GedaechtnisEintrag = z.infer<typeof GedaechtnisEintrag>;
+export const GedaechtnisArtParam = z.enum(['deal', 'makler']);
+export const GedaechtnisMerken = z.object({ text: z.string().trim().min(1).max(4000) });
+export const GedaechtnisSuchen = z.object({ frage: z.string().trim().min(1).max(1000), art: GedaechtnisArtParam.optional(), id: z.string().optional() });
+export const GedaechtnisAblage = z.object({ neu: z.array(GedaechtnisEintrag), abgeloest: z.array(GedaechtnisEintrag) });

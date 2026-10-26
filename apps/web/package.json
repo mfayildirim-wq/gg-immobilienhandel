@@ -20,6 +20,8 @@
     "@tabler/icons-react": "^3.46.0",
     "@tanstack/react-query": "^5.103.1",
     "@tanstack/react-router": "^1.170.38",
+    "dompurify": "^3.4.17",
+    "marked": "^15.0.12",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

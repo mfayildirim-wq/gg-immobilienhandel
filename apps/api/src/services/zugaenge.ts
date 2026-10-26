@@ -13,6 +13,10 @@ export const ZUGAENGE = [
     quelleUrl: 'https://platform.openai.com/api-keys', quelleText: 'platform.openai.com' },
   { schluessel: 'propstack-api-key', label: 'Propstack', umgebung: 'PROPSTACK_API_KEY', hinweis: 'Für die Bewertung von Einheiten.',
     quelleUrl: 'https://crm.propstack.de/app/admin/api_keys', quelleText: 'crm.propstack.de/app/admin/api_keys' },
+  { schluessel: 'gedaechtnis-url', label: 'Gedächtnis-Dienst: Adresse', umgebung: 'GEDAECHTNIS_URL', hinweis: 'Adresse des zentralen Gedächtnisses, z. B. https://gedaechtnis.example.de.',
+    quelleUrl: '', quelleText: 'Betreiber des Gedächtnis-Dienstes' },
+  { schluessel: 'gedaechtnis-schluessel', label: 'Gedächtnis-Dienst: Schlüssel', umgebung: 'GEDAECHTNIS_SCHLUESSEL', hinweis: 'Zugang von gg zum Gedächtnis (Mandant und App stehen im Schlüssel).',
+    quelleUrl: '', quelleText: 'dienste/gedaechtnis: zugang_erzeugen.py' },
 ] as const;
 export type ZugangSchluessel = (typeof ZUGAENGE)[number]['schluessel'];
 
