@@ -22,6 +22,7 @@ export const textAus = (content: string | Block[]): string =>
  * Attrappe für Klicktests und lokales Arbeiten ohne Schlüssel — antwortet sofort und vorhersagbar:
  * nennt Dialog und Zahl der Gedächtnis-Einträge (aus dem Systemtext) und wiederholt die Frage.
  * `werkzeug:<name> {json}` in der Frage ruft das Werkzeug auf; so lässt sich der Weg über MCP durchklicken.
+ * „merk dir …“ schlägt den Rest als Gedächtnis-Eintrag vor, wenn das Werkzeug dafür angeboten wird.
  */
 export function attrappenModell(): Modell {
   return async (a) => {
@@ -35,6 +36,11 @@ export function attrappenModell(): Modell {
     const aufruf = /werkzeug:([\w-]+)\s*(\{[\s\S]*\})?/.exec(frage);
     if (aufruf) {
       return { content: [{ type: 'tool_use', id: `attrappe-${a.messages.length}`, name: aufruf[1], input: JSON.parse(aufruf[2] ?? '{}') }], stop_reason: 'tool_use', model: 'attrappe' };
+    }
+    const merken = /merk dir:?\s*(.+)/i.exec(frage);
+    if (merken && a.tools.some((t) => t.name === 'gedaechtnis_vorschlagen')) {
+      const text = merken[1]!.trim();
+      return { content: [{ type: 'tool_use', id: `attrappe-${a.messages.length}`, name: 'gedaechtnis_vorschlagen', input: { titel: 'Notiz', text } }], stop_reason: 'tool_use', model: 'attrappe' };
     }
     const dialog = /^Dialog: (.+)$/m.exec(a.system)?.[1] ?? 'keiner';
     const eintraege = /^Gedächtnis-Einträge: (\d+)/m.exec(a.system)?.[1] ?? '0';

@@ -15,7 +15,7 @@ test('KI-Leiste: roter Kreis öffnet die Leiste zum offenen Dialog; Chat, Werkze
   const frage = leiste.getByRole('textbox', { name: 'Frage an die KI' });
   await frage.fill('Was weißt du?');
   await frage.press('Enter');
-  const antwort = leiste.locator('[data-ki-nachricht="ki"]').last();
+  const antwort = leiste.locator('[data-ki-nachricht="ki"]').first();
   await expect(antwort).toContainText(`Dialog: Makler „${name}“ · Gedächtnis: 0 Einträge`);
 
   // Folgefrage im selben Gespräch: das MCP-Werkzeug liest den Makler
@@ -31,8 +31,28 @@ test('KI-Leiste: roter Kreis öffnet die Leiste zum offenen Dialog; Chat, Werkze
   await expect(antwort).toContainText('✓ Im Gedächtnis abgelegt: Zusammenfassung');
   await leiste.getByRole('tab', { name: /Gedächtnis \(1\)/ }).click();
   await expect(leiste.locator('[data-ki-gedaechtnis]').filter({ hasText: 'Zusammenfassung' })).toContainText('abgelegt');
+
+  // „merk dir …“: die KI schlägt vor, erst „Ablegen“ speichert
+  await frage.fill('merk dir: ruft nur vormittags zurück');
+  await frage.press('Enter');
+  const karte = leiste.getByRole('group', { name: 'Vorschlag fürs Gedächtnis' });
+  await expect(karte).toContainText('ruft nur vormittags zurück');
+  await expect(leiste.getByRole('tab', { name: /Gedächtnis \(1\)/ })).toBeVisible();
+  await karte.getByRole('button', { name: 'Ablegen' }).click();
+  await expect(leiste.locator('[data-ki-nachricht="ki"]').last()).toContainText('✓ Im Gedächtnis abgelegt: Notiz');
+  await expect(leiste.getByRole('tab', { name: /Gedächtnis \(2\)/ })).toBeVisible();
+
+  // Verlauf: das Gespräch steht dort, lässt sich wieder öffnen und löschen
   await leiste.getByRole('tab', { name: /Verlauf \(1\)/ }).click();
   await expect(leiste.locator('[data-ki-gespraech]')).toContainText('Was weißt du?');
+  await leiste.getByRole('button', { name: 'Neues Gespräch' }).click();
+  await expect(leiste.locator('[data-ki-nachricht]')).toHaveCount(0);
+  await leiste.locator('[data-ki-gespraech]').click();
+  await expect(leiste.locator('[data-ki-nachricht="ki"]').filter({ hasText: '✓ Im Gedächtnis abgelegt: Zusammenfassung' })).toHaveCount(1);
+  await leiste.getByRole('button', { name: 'Gespräch löschen: Was weißt du?' }).click();
+  await leiste.getByRole('button', { name: 'Wirklich löschen' }).click();
+  await expect(leiste.getByRole('tab', { name: /Verlauf \(0\)/ })).toBeVisible();
+  await expect(leiste.locator('[data-ki-nachricht]')).toHaveCount(0);
 
   // Anderer Dialog: neues Gespräch, Bezug folgt; die Leiste bleibt offen
   await page.goto(`/objekte?objekt=${o.id}`);

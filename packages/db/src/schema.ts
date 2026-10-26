@@ -832,25 +832,3 @@ export const rechercheErgebnisse = fach
     ],
   )
   .enableRLS();
-
-/**
- * KI-Leiste (26.10.2026): Gespräche je Dialog. `bezug_art`/`bezug_id` ist der Dialog, in dem das Gespräch begann
- * (leer = Übersicht); die Nachrichten stehen als Liste im Gespräch — gelesen wird immer das ganze Gespräch.
- */
-export const kiGespraeche = fach
-  .table(
-    'ki_gespraeche',
-    {
-      id: text('id').primaryKey(),
-      bezugArt: text('bezug_art'),
-      bezugId: text('bezug_id'),
-      titel: text('titel').notNull(),
-      nutzer: text('nutzer').notNull(),
-      anzahl: integer('anzahl').notNull().default(0),
-      /** KiNachricht[] (@gg/ki-kern) */
-      nachrichten: jsonb('nachrichten').notNull(),
-      ...zeitSpalten,
-    },
-    (t) => [index('ki_gespraeche_bezug_idx').on(t.bezugArt, t.bezugId, t.updatedAt)],
-  )
-  .enableRLS();

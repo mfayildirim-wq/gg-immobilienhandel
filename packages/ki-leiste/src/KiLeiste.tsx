@@ -131,12 +131,14 @@ export function KiLeiste({ darstellen }: KiLeisteProps) {
         )}
         {nachrichten.map((n, i) => (
           <Nachricht key={`${i}-${n.am}`} n={n} darstellen={darstellen} frage={nachrichten[i - 1]?.text}
-            ablegen={ablegenMoeglich && n.rolle === 'ki' ? async (titel) => {
-              const ziel = gespraech?.bezug ?? bezug;
+            ablegen={ablegenMoeglich && n.rolle === 'ki' && gespraech ? async (titel, text) => {
+              const ziel = gespraech.bezug ?? bezug;
               if (!ziel) return;
-              await transport.ablegen({ bezug: ziel, titel, text: n.text });
+              await transport.ablegen({ bezug: ziel, titel, text, gespraechId: gespraech.id, nachricht: i });
+              setGespraech(await transport.gespraech(gespraech.id));
               void sichtLaden();
-            } : undefined} />
+            } : undefined}
+            verwerfen={gespraech ? async () => setGespraech(await transport.vorschlagVerwerfen({ gespraechId: gespraech.id, nachricht: i })) : undefined} />
         ))}
         {wartend && <p className="kl-denkt" role="status">Denkt nach …</p>}
         <div ref={ende} />
@@ -161,7 +163,13 @@ export function KiLeiste({ darstellen }: KiLeisteProps) {
         </div>
         <div className="kl-unten-inhalt" role="tabpanel">
           {unten === 'verlauf' || !sicht ? (
-            <Verlauf gespraeche={gespraeche} aktiv={gespraech?.id} oeffnen={oeffnen} />
+            <Verlauf gespraeche={gespraeche} aktiv={gespraech?.id} oeffnen={oeffnen} loeschen={async (id) => {
+              try {
+                await transport.gespraechLoeschen(id);
+                if (gespraech?.id === id) setGespraech(null);
+                void sichtLaden();
+              } catch (e) { setFehler(fehlerText(e)); }
+            }} />
           ) : (
             <Gedaechtnis g={gedaechtnis} darstellen={darstellen} />
           )}
@@ -171,10 +179,15 @@ export function KiLeiste({ darstellen }: KiLeisteProps) {
   );
 }
 
-function Nachricht({ n, darstellen, frage, ablegen }: { n: KiNachricht; darstellen?: (md: string) => string; frage?: string; ablegen?: (titel: string) => Promise<void> }) {
+type Ablegen = (titel: string, text: string) => Promise<void>;
+
+function Nachricht({ n, darstellen, frage, ablegen, verwerfen }: {
+  n: KiNachricht; darstellen?: (md: string) => string; frage?: string; ablegen?: Ablegen; verwerfen?: () => Promise<void>;
+}) {
   if (n.rolle === 'nutzer') return <div className="kl-nutzer" data-ki-nachricht="nutzer">{n.text}</div>;
-  const werkzeuge = (n.schritte ?? []).filter((s) => s.art === 'werkzeug');
+  const werkzeuge = (n.schritte ?? []).filter((s) => s.art === 'werkzeug' && s.name !== 'gedaechtnis_vorschlagen');
   const suchen = (n.schritte ?? []).filter((s) => s.art === 'websuche');
+  const offenerVorschlag = n.vorschlag && !n.vorschlag.status ? n.vorschlag : null;
   return (
     <article className="kl-ki" data-ki-nachricht="ki">
       <Inhalt text={n.text} darstellen={darstellen} />
@@ -188,7 +201,10 @@ function Nachricht({ n, darstellen, frage, ablegen }: { n: KiNachricht; darstell
         {suchen.length > 0 && <span title={suchen.map((s) => s.kurz).join('\n')}>🌐 {suchen.length}× gesucht</span>}
         {n.gedaechtnis !== undefined && <span>🧠 {n.gedaechtnis} aus dem Gedächtnis</span>}
       </div>
-      {ablegen && <Ablegen vorschlag={titelVorschlag(n.text, frage)} ablegen={ablegen} />}
+      {n.abgelegt ? <p className="kl-abgelegt" role="status">✓ Im Gedächtnis abgelegt: {n.abgelegt}</p>
+        : offenerVorschlag && ablegen ? <Vorschlag titel={offenerVorschlag.titel} text={offenerVorschlag.text} ablegen={ablegen} verwerfen={verwerfen} />
+        : n.vorschlag?.status === 'verworfen' ? <p className="kl-leer kl-klein">Vorschlag fürs Gedächtnis verworfen.</p>
+        : ablegen ? <Ablegen vorschlag={titelVorschlag(n.text, frage)} text={n.text} ablegen={ablegen} /> : null}
     </article>
   );
 }
@@ -200,22 +216,58 @@ export function titelVorschlag(antwort: string, frage?: string): string {
   return t.length > 80 ? `${t.slice(0, 79)}…` : t;
 }
 
-function Ablegen({ vorschlag, ablegen }: { vorschlag: string; ablegen: (titel: string) => Promise<void> }) {
+/** Die KI schlägt vor — der Nutzer legt ab, ändert vorher Titel und Text oder verwirft. */
+function Vorschlag({ titel: start, text: startText, ablegen, verwerfen }: { titel: string; text: string; ablegen: Ablegen; verwerfen?: () => Promise<void> }) {
+  const [titel, setTitel] = useState(start);
+  const [text, setText] = useState(startText);
+  const [aendern, setAendern] = useState(false);
+  const [laeuft, setLaeuft] = useState(false);
+  const [fehler, setFehler] = useState('');
+  const tun = async (f: () => Promise<void>) => {
+    setLaeuft(true);
+    setFehler('');
+    try { await f(); } catch (e) { setFehler(fehlerText(e)); } finally { setLaeuft(false); }
+  };
+  return (
+    <div className="kl-vorschlag" role="group" aria-label="Vorschlag fürs Gedächtnis" data-ki-vorschlag>
+      <strong>🧠 Im Gedächtnis ablegen?</strong>
+      {aendern ? (
+        <>
+          <input aria-label="Titel im Gedächtnis" value={titel} onChange={(e) => setTitel(e.target.value)} maxLength={200} />
+          <textarea aria-label="Text im Gedächtnis" value={text} onChange={(e) => setText(e.target.value)} rows={5} />
+        </>
+      ) : (
+        <>
+          <span className="kl-zeile-titel">{titel}</span>
+          <span className="kl-auszug">{text}</span>
+        </>
+      )}
+      <div className="kl-knoepfe">
+        <button type="button" disabled={laeuft || !titel.trim() || !text.trim()} onClick={() => void tun(() => ablegen(titel.trim(), text.trim()))}>Ablegen</button>
+        {!aendern && <button type="button" className="kl-zweit" onClick={() => setAendern(true)}>Ändern</button>}
+        {verwerfen && <button type="button" className="kl-zweit" disabled={laeuft} onClick={() => void tun(verwerfen)}>Verwerfen</button>}
+      </div>
+      {fehler && <span className="kl-fehler" role="alert">{fehler}</span>}
+      <small>Gleicher Titel ersetzt den alten Eintrag.</small>
+    </div>
+  );
+}
+
+function Ablegen({ vorschlag, text, ablegen }: { vorschlag: string; text: string; ablegen: Ablegen }) {
   const [offen, setOffen] = useState(false);
   const [titel, setTitel] = useState(vorschlag);
-  const [zustand, setZustand] = useState<'' | 'laeuft' | 'fertig'>('');
+  const [laeuft, setLaeuft] = useState(false);
   const [fehler, setFehler] = useState('');
-  if (zustand === 'fertig') return <p className="kl-abgelegt" role="status">✓ Im Gedächtnis abgelegt: {titel}</p>;
   if (!offen) return <button type="button" className="kl-ablegen" onClick={() => setOffen(true)}>🧠 Im Gedächtnis ablegen</button>;
   return (
     <form className="kl-ablegen-form" onSubmit={async (e) => {
       e.preventDefault();
-      setZustand('laeuft');
+      setLaeuft(true);
       setFehler('');
-      try { await ablegen(titel.trim()); setZustand('fertig'); } catch (f) { setFehler(fehlerText(f)); setZustand(''); }
+      try { await ablegen(titel.trim(), text); } catch (f) { setFehler(fehlerText(f)); setLaeuft(false); }
     }}>
       <input aria-label="Titel im Gedächtnis" value={titel} onChange={(e) => setTitel(e.target.value)} maxLength={200} />
-      <button type="submit" disabled={!titel.trim() || zustand === 'laeuft'}>Ablegen</button>
+      <button type="submit" disabled={!titel.trim() || laeuft}>Ablegen</button>
       <button type="button" onClick={() => setOffen(false)}>Abbrechen</button>
       {fehler && <span className="kl-fehler" role="alert">{fehler}</span>}
       <small>Gleicher Titel ersetzt den alten Eintrag.</small>
@@ -223,16 +275,25 @@ function Ablegen({ vorschlag, ablegen }: { vorschlag: string; ablegen: (titel: s
   );
 }
 
-function Verlauf({ gespraeche, aktiv, oeffnen }: { gespraeche: KiGespraechKopf[]; aktiv?: string; oeffnen: (id: string) => void }) {
+function Verlauf({ gespraeche, aktiv, oeffnen, loeschen }: { gespraeche: KiGespraechKopf[]; aktiv?: string; oeffnen: (id: string) => void; loeschen: (id: string) => Promise<void> }) {
+  const [fragen, setFragen] = useState<string | null>(null);
   if (!gespraeche.length) return <p className="kl-leer">Noch keine Gespräche zu diesem Dialog.</p>;
   return (
     <ul className="kl-liste">
       {gespraeche.map((g) => (
-        <li key={g.id}>
+        <li key={g.id} className="kl-verlauf-zeile">
           <button type="button" className="kl-zeile" aria-current={g.id === aktiv || undefined} onClick={() => oeffnen(g.id)} data-ki-gespraech={g.id}>
             <span className="kl-zeile-titel">{g.titel}</span>
-            <small>{datum(g.am)} · {g.von} · {g.anzahl / 2} Fragen</small>
+            <small>{datum(g.am)} · {g.von} · {Math.ceil(g.anzahl / 2)} Fragen</small>
           </button>
+          {fragen === g.id ? (
+            <span className="kl-knoepfe">
+              <button type="button" className="kl-loeschen" onClick={() => { setFragen(null); void loeschen(g.id); }}>Wirklich löschen</button>
+              <button type="button" className="kl-symbol" aria-label="Nicht löschen" onClick={() => setFragen(null)}>✕</button>
+            </span>
+          ) : (
+            <button type="button" className="kl-symbol" aria-label={`Gespräch löschen: ${g.titel}`} title="Gespräch löschen" onClick={() => setFragen(g.id)}>🗑</button>
+          )}
         </li>
       ))}
     </ul>
@@ -276,6 +337,7 @@ function Einstellungen({ stand, speichern }: { stand: KiStand; speichern: (e: Ki
       <label className="kl-schalter"><input type="checkbox" checked={e.websuche} onChange={(x) => setE({ ...e, websuche: x.target.checked })} /> Websuche erlauben</label>
       <label className="kl-schalter"><input type="checkbox" checked={e.gedaechtnis} onChange={(x) => setE({ ...e, gedaechtnis: x.target.checked })} /> Gedächtnis des Dialogs mitgeben</label>
       <small>Gedächtnis-Dienst: {stand.gedaechtnis ? 'verbunden' : 'nicht eingerichtet'}</small>
+      <small>Verlauf: {stand.verlaufDauerhaft ? 'im Gedächtnis-Dienst, getrennt vom Wissen; nach 90 Tagen ohne Fortsetzung gelöscht' : 'nur bis zum Neustart (ohne Gedächtnis-Dienst)'}</small>
       {fehler && <span className="kl-fehler" role="alert">{fehler}</span>}
       <button type="submit">Speichern</button>
     </form>

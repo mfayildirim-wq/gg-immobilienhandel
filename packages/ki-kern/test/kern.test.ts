@@ -83,7 +83,7 @@ describe('KI-Dienst', () => {
         async ablegen(bezug, titel, text, von) { abgelegt.push({ bezug, titel, text, von }); return { ok: true }; },
       }),
       hatGedaechtnis: (b) => b.art !== 'liste',
-      verlauf,
+      verlauf: async () => ({ speicher: verlauf, dauerhaft: true }),
       beschreiben: async (b) => (b.id === 'weg' ? null : { label: 'Deal', titel: `Musterweg ${b.id}`, kontext: { status: 'Neu' }, hinweis: 'read_entity mit collection "deals"' }),
       einstellungen: { lesen: async () => einstellungen, speichern: async (e) => (einstellungen = e) },
       jetzt: () => new Date('2026-10-26T10:00:00Z'),
@@ -134,6 +134,43 @@ describe('KI-Dienst', () => {
     await expect(aufbau({ modell: null }).dienst.senden({ text: 'x' }, 'u')).rejects.toThrow('nicht eingerichtet');
   });
 
+  it('Vorschlag: die KI schlägt vor (Karte an der Antwort), schreibt aber nichts; Ablegen und Verwerfen werden vermerkt', async () => {
+    const modell = drehbuchModell([
+      { content: [{ type: 'tool_use', id: 'v1', name: 'gedaechtnis_vorschlagen', input: { titel: 'Absprache', text: 'Verkäufer will warten' } }], stop_reason: 'tool_use' },
+      { content: [{ type: 'text', text: 'Ich habe es zum Ablegen vorgeschlagen.' }], stop_reason: 'end_turn' },
+      { content: [{ type: 'text', text: 'Hallo' }], stop_reason: 'end_turn' },
+      { content: [{ type: 'text', text: 'Allgemein' }], stop_reason: 'end_turn' },
+    ]);
+    const { dienst, abgelegt } = aufbau({ gedaechtnis: [], modell });
+    const g = await dienst.senden({ bezug: { art: 'deal', id: '1' }, text: 'Merk dir: Verkäufer will warten' }, 'anna');
+    expect(g.nachrichten[1]).toMatchObject({ text: 'Ich habe es zum Ablegen vorgeschlagen.', vorschlag: { titel: 'Absprache', text: 'Verkäufer will warten' } });
+    expect(abgelegt).toEqual([]);
+    expect(modell.anfragen[0]!.tools.map((t) => t.name)).toContain('gedaechtnis_vorschlagen');
+    expect(modell.anfragen[0]!.system).toContain('rufe gedaechtnis_vorschlagen auf');
+
+    await dienst.ablegen({ bezug: { art: 'deal', id: '1' }, titel: 'Absprache', text: 'Verkäufer will warten', gespraechId: g.id, nachricht: 1 }, 'anna');
+    expect(abgelegt).toHaveLength(1);
+    expect((await dienst.gespraech(g.id)).nachrichten[1]).toMatchObject({ abgelegt: 'Absprache', vorschlag: { status: 'abgelegt' } });
+
+    const g2 = await dienst.senden({ gespraechId: g.id, text: 'Hallo' }, 'anna');
+    expect((await dienst.vorschlagVerwerfen({ gespraechId: g2.id, nachricht: 1 })).nachrichten[1]!.vorschlag?.status).toBe('verworfen');
+    await expect(dienst.vorschlagVerwerfen({ gespraechId: g2.id, nachricht: 0 })).rejects.toThrow('Antwort nicht gefunden');
+
+    // ohne Gedächtnis (Übersicht) wird nichts vorgeschlagen
+    await dienst.senden({ text: 'Allgemein' }, 'anna');
+    expect(modell.anfragen[3]!.tools.map((t) => t.name)).not.toContain('gedaechtnis_vorschlagen');
+    expect(modell.anfragen[3]!.system).toContain('nur bei einem geöffneten Datensatz');
+  });
+
+  it('Attrappe schlägt „merk dir …“ vor; Gespräche lassen sich löschen', async () => {
+    const { dienst } = aufbau({ gedaechtnis: [] });
+    const g = await dienst.senden({ bezug: { art: 'deal', id: '1' }, text: 'merk dir: Termin am Montag' }, 'u');
+    expect(g.nachrichten[1]!.vorschlag).toEqual({ titel: 'Notiz', text: 'Termin am Montag' });
+    expect(await dienst.gespraechLoeschen(g.id)).toEqual({ id: g.id, geloescht: true });
+    await expect(dienst.gespraech(g.id)).rejects.toThrow('nicht gefunden');
+    await expect(dienst.gespraechLoeschen(g.id)).rejects.toThrow('nicht gefunden');
+  });
+
   it('Ablegen geht mit Titel ins Gedächtnis des Dialogs; Einstellungen nur mit bekanntem Modell', async () => {
     const { dienst, abgelegt } = aufbau();
     await dienst.ablegen({ bezug: { art: 'deal', id: '1' }, titel: ' Vergleich ', text: '| a |' }, 'anna');
@@ -141,6 +178,6 @@ describe('KI-Dienst', () => {
     await expect(dienst.ablegen({ bezug: { art: 'liste', id: '1' }, titel: 't', text: 'x' }, 'a')).rejects.toThrow('kein Gedächtnis');
     await expect(dienst.einstellungenSpeichern({ modell: 'fremd', websuche: true, gedaechtnis: true })).rejects.toThrow('Unbekanntes Modell');
     expect(await dienst.einstellungenSpeichern({ modell: 'm1', websuche: true, gedaechtnis: false })).toEqual({ modell: 'm1', websuche: true, gedaechtnis: false });
-    expect(await dienst.stand()).toMatchObject({ verfuegbar: true, gedaechtnis: true, einstellungen: { websuche: true } });
+    expect(await dienst.stand()).toMatchObject({ verfuegbar: true, gedaechtnis: true, verlaufDauerhaft: true, einstellungen: { websuche: true } });
   });
 });

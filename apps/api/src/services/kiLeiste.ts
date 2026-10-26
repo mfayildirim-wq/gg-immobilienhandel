@@ -1,17 +1,17 @@
 /**
  * KI-Leiste (26.10.2026): gg verdrahtet den KI-Dienst aus @gg/ki-kern. Die Werkzeuge sind die des eigenen MCP-Servers
- * (im selben Prozess, nur lesend, im Namen des angemeldeten Nutzers), das Gedächtnis ist der zentrale Dienst, der Verlauf
- * liegt in `fach.ki_gespraeche`. Was gg-spezifisch ist — welcher Dialog wie heißt und welche Daten er hat — steht hier.
+ * (im selben Prozess, nur lesend, im Namen des angemeldeten Nutzers); Gedächtnis und Verlauf liegen im zentralen
+ * Gedächtnis-Dienst (der Verlauf getrennt vom Wissen). Was gg-spezifisch ist — welcher Dialog wie heißt und welche Daten er hat — steht hier.
  */
-import { type Db, schema } from '@gg/db';
+import type { Db } from '@gg/db';
 import {
   type GedaechtnisArt, istGedaechtnisArt, KI_MODELLE, KI_STANDARD, kiModellFuer, maklerAnzeigename,
 } from '@gg/domain';
-import type { GedaechtnisDienst } from '@gg/integrations';
+import { GedaechtnisFehler, type GedaechtnisDienst } from '@gg/integrations';
 import {
   type BezugBeschreibung, type KiBezug, kiDienst, type KiGespraech, type KiNachricht, type Modell, quelleAusMcp, type VerlaufSpeicher,
+  verlaufImArbeitsspeicher,
 } from '@gg/ki-kern';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { FachFehler } from '../fehler.ts';
 import { begleitscheinDetail } from './begleitscheine.ts';
 import { dealDetail } from './deals.ts';
@@ -73,34 +73,35 @@ async function beschreiben(db: Db, bezug: KiBezug): Promise<BezugBeschreibung | 
   }
 }
 
-// ── Verlauf in der Datenbank ────────────────────────────────
+// ── Verlauf im Gedächtnis-Dienst ────────────────────────────
 
-const iso = (t: string) => new Date(t).toISOString();
-type Zeile = typeof schema.kiGespraeche.$inferSelect;
-const kopf = (z: Zeile) => ({
-  id: z.id, bezug: z.bezugArt && z.bezugId ? { art: z.bezugArt, id: z.bezugId } : null, titel: z.titel, von: z.nutzer, am: iso(z.updatedAt), anzahl: z.anzahl,
-});
-
-export function verlaufInDb(db: Db): VerlaufSpeicher {
-  const t = schema.kiGespraeche;
+/** Gespräche liegen im Gedächtnis-Dienst — getrennt vom Wissen, nur für gg lesbar, nach 90 Tagen ohne Fortsetzung gelöscht. */
+export function verlaufImDienst(dienst: GedaechtnisDienst): VerlaufSpeicher {
   return {
     async liste(bezug, anzahl) {
-      const wo = bezug ? and(eq(t.bezugArt, bezug.art), eq(t.bezugId, bezug.id)) : and(isNull(t.bezugArt), isNull(t.bezugId));
-      const zeilen = await db.select().from(t).where(wo).orderBy(desc(t.updatedAt)).limit(anzahl);
-      return zeilen.map(kopf);
+      const { gespraeche } = await dienst.gespraeche(bezug, anzahl);
+      return gespraeche.map((g) => ({ ...g, von: g.von ?? '', am: g.am ?? '' }));
     },
     async laden(id) {
-      const [z] = await db.select().from(t).where(eq(t.id, id));
-      return z ? { ...kopf(z), nachrichten: z.nachrichten as KiNachricht[] } : null;
+      try {
+        const g = await dienst.gespraech(id);
+        return { ...g, von: g.von ?? '', am: g.am ?? '', nachrichten: g.nachrichten as KiNachricht[] };
+      } catch (e) {
+        if (e instanceof GedaechtnisFehler && e.status === 404) return null;
+        throw e;
+      }
     },
     async speichern(g: KiGespraech) {
-      const werte = { titel: g.titel, anzahl: g.anzahl, nachrichten: g.nachrichten, updatedAt: g.am };
-      await db.insert(t)
-        .values({ id: g.id, bezugArt: g.bezug?.art ?? null, bezugId: g.bezug?.id ?? null, nutzer: g.von, createdAt: sql`now()`, ...werte })
-        .onConflictDoUpdate({ target: t.id, set: werte });
+      await dienst.gespraechSpeichern(g);
+    },
+    async loeschen(id) {
+      return (await dienst.gespraechLoeschen(id)).geloescht;
     },
   };
 }
+
+/** Ohne Gedächtnis-Dienst (lokal): Verlauf nur im Arbeitsspeicher, bis zum Neustart. */
+const fluechtig = verlaufImArbeitsspeicher();
 
 // ── Zusammenbau ─────────────────────────────────────────────
 
@@ -130,7 +131,10 @@ export function kiLeiste(db: Db, u: KiLeisteUmfeld) {
       };
     },
     hatGedaechtnis: (b) => istGedaechtnisArt(b.art),
-    verlauf: verlaufInDb(db),
+    verlauf: async () => {
+      const dienst = await u.gedaechtnis();
+      return dienst ? { speicher: verlaufImDienst(dienst), dauerhaft: true } : { speicher: fluechtig, dauerhaft: false };
+    },
     beschreiben: (b) => beschreiben(db, b),
     einstellungen: {
       async lesen() {

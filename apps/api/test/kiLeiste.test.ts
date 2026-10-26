@@ -1,7 +1,7 @@
 import { createDb, schema, verlangeLokaleDatenbank } from '@gg/db';
 import { gedaechtnisAttrappe } from '@gg/integrations';
 import { drehbuchModell } from '@gg/ki-kern';
-import { eq, inArray } from 'drizzle-orm';
+import { inArray } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.ts';
 import { kompakt } from '../src/services/kiLeiste.ts';
@@ -28,7 +28,6 @@ describe.skipIf(!url)('KI-Leiste: Chat zum Dialog über die API (26.10.2026)', (
     app.request(pfad, { method: methode, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
 
   afterAll(async () => {
-    await db.delete(schema.kiGespraeche).where(inArray(schema.kiGespraeche.bezugId, angelegt.objekte));
     await db.delete(schema.objekte).where(inArray(schema.objekte.id, angelegt.objekte));
     await client.end();
   });
@@ -62,15 +61,38 @@ describe.skipIf(!url)('KI-Leiste: Chat zum Dialog über die API (26.10.2026)', (
     expect(namen).not.toContain('add_note');
     expect(namen).not.toContain('gedaechtnis_merken');
 
-    const [zeile] = await db.select().from(schema.kiGespraeche).where(eq(schema.kiGespraeche.id, g.id));
-    expect(zeile).toMatchObject({ bezugArt: 'objekt', bezugId: o.id, nutzer: 'lokal', anzahl: 2 });
+    // Der Verlauf liegt im Gedächtnis-Dienst — als Gespräch, nicht als Wissen
+    expect((await gedaechtnis.gespraech(g.id)).titel).toBe('Wie ist die Lage?');
+    expect(gedaechtnis.alle().map((e) => e.text)).toEqual(['Dach muss neu']);
     expect((await lies(app.request(`/api/ki-leiste/bezug/objekt/${o.id}`))).gespraeche).toEqual([expect.objectContaining({ id: g.id, titel: 'Wie ist die Lage?' })]);
     expect((await lies(app.request(`/api/ki-leiste/gespraeche/${g.id}`))).nachrichten).toHaveLength(2);
 
-    const abgelegt = await senden(app, 'POST', '/api/ki-leiste/ablegen', { bezug: { art: 'objekt', id: o.id }, titel: 'Lage', text: g.nachrichten[1].text });
+    const abgelegt = await senden(app, 'POST', '/api/ki-leiste/ablegen', { bezug: { art: 'objekt', id: o.id }, titel: 'Lage', text: g.nachrichten[1].text, gespraechId: g.id, nachricht: 1 });
     expect(abgelegt.status).toBe(201);
     const nachher = (await lies(app.request(`/api/ki-leiste/bezug/objekt/${o.id}`))).gedaechtnis.eintraege;
     expect(nachher.find((e: { titel?: string }) => e.titel === 'Lage')).toMatchObject({ von: 'leiste:lokal', quelle: 'ablage' });
+    expect((await lies(app.request(`/api/ki-leiste/gespraeche/${g.id}`))).nachrichten[1].abgelegt).toBe('Lage');
+
+    expect((await lies(senden(app, 'DELETE', `/api/ki-leiste/gespraeche/${g.id}`))).geloescht).toBe(true);
+    expect((await app.request(`/api/ki-leiste/gespraeche/${g.id}`)).status).toBe(404);
+  });
+
+  it('„merk dir …“: die KI schlägt vor, gespeichert wird erst nach Bestätigung; Verwerfen wird vermerkt', async () => {
+    const app = createApp({ db, auth: offen, gedaechtnis });
+    const modell = drehbuchModell([
+      { content: [{ type: 'tool_use', id: 'v', name: 'gedaechtnis_vorschlagen', input: { titel: 'Termin', text: 'Besichtigung Montag 10 Uhr' } }], stop_reason: 'tool_use' },
+      { content: [{ type: 'text', text: 'Vorgeschlagen.' }], stop_reason: 'end_turn' },
+    ]);
+    const mitModell = createApp({ db, auth: offen, gedaechtnis, kiLeisteModell: modell });
+    const o = await lies(senden(app, 'POST', '/api/objekte', { strasse: `${k}gasse`, hausnr: '1' }));
+    angelegt.objekte.push(o.id);
+    const vorher = gedaechtnis.alle().length;
+    const g = await lies(senden(mitModell, 'POST', '/api/ki-leiste/senden', { bezug: { art: 'objekt', id: o.id }, text: 'Merk dir: Besichtigung Montag 10 Uhr' }));
+    expect(g.nachrichten[1].vorschlag).toEqual({ titel: 'Termin', text: 'Besichtigung Montag 10 Uhr' });
+    expect(gedaechtnis.alle()).toHaveLength(vorher);
+    const verworfen = await lies(senden(app, 'POST', '/api/ki-leiste/vorschlag-verwerfen', { gespraechId: g.id, nachricht: 1 }));
+    expect(verworfen.nachrichten[1].vorschlag.status).toBe('verworfen');
+    expect(gedaechtnis.alle()).toHaveLength(vorher);
   });
 
   it('Stand, Einstellungen (Modell in der Modellwahl), Fehler für unbekannte Dialoge', async () => {
@@ -89,5 +111,7 @@ describe.skipIf(!url)('KI-Leiste: Chat zum Dialog über die API (26.10.2026)', (
     expect((await app.request('/api/ki-leiste/bezug/objekt/gibt-es-nicht')).status).toBe(404);
     expect((await app.request('/api/ki-leiste/bezug/papierkorb/1')).status).toBe(404);
     expect((await senden(app, 'POST', '/api/ki-leiste/ablegen', { bezug: { art: 'deal', id: 'x' }, titel: 't', text: 'x' })).status).toBe(503);
+    // ohne Gedächtnis-Dienst: Verlauf nur bis zum Neustart
+    expect((await lies(app.request('/api/ki-leiste/stand'))).verlaufDauerhaft).toBe(false);
   });
 });
