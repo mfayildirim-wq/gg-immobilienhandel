@@ -7,7 +7,7 @@ Neubau von GG Immohandel **neben der laufenden App** (`../gg-immohandel`), nach 
 - Hosting bleibt vorerst **Supabase + Vercel** (Alternative in 12 zurückgestellt)
 - Offene Fachfragen (11): bis zur Antwort gilt das **Ist-Verhalten** der alten App
 
-Stand: **Fachlich vollständig gegenüber der alten App** — bis auf den Auto-Import-Bot (Browser-Automatisierung mit AGB-Bestätigung), der bewusst offen ist. Startseite ist das **Ankauf-Cockpit** (Deals nachverfolgen, Makler kontaktieren, Anruf-Briefing, Wählmaschine, Tageslog). Bedienbar sind: Deal-Detail (Übersicht, Kalkulation mit Varianten und Sammelwerkzeugen, Dateien, Kundenkalkulation, Bank-Präsentation), Objekt-Detail, Makler-Detail mit KI, Listen mit gespeicherten Filtern, globale Suche, Angebote (Microsoft 365), Projekte, Vertriebslisten, Begleitscheine, Exposé-Import sowie die Einstellungen (Kalkulation, Kundenkalkulation, Bank-Präsentation, Vertriebslisten, Begleitscheine, Vorlagen-Texte, Microsoft 365, Sicherung, Zugänge, Werkzeuge, Audit-Log, Dubletten, Makler-Recherche, Papierkorb, Aktionen nach außen, Anleitungen). Rechenkerne, Listen, Filter, Fälligkeiten, Hash-Kette, Dubletten, Gate und Mail-Triage sind per Golden Master gegen den Originalcode geprüft, 17 Bereiche zusätzlich gegen die laufende alte App (`pnpm paritaet`).
+Stand: **Fachlich vollständig gegenüber der alten App** — bis auf den Auto-Import-Bot (Browser-Automatisierung mit AGB-Bestätigung), der bewusst offen ist. Startseite ist das **Ankauf-Cockpit** (Deals nachverfolgen, Makler kontaktieren, Anruf-Briefing, Wählmaschine, Tageslog). Bedienbar sind: Deal-Detail (Übersicht, Kalkulation mit Varianten und Sammelwerkzeugen, Dateien, Kundenkalkulation, Bank-Präsentation), Objekt-Detail, Makler-Detail mit KI, Listen mit gespeicherten Filtern, globale Suche, Angebote (Microsoft 365), Projekte, Vertriebslisten, Begleitscheine, Exposé-Import sowie die Einstellungen (Kalkulation, Kundenkalkulation, Bank-Präsentation, Vertriebslisten, Begleitscheine, Vorlagen-Texte, Microsoft 365, Sicherung, Zugänge, Werkzeuge, Audit-Log, Dubletten, Papierkorb, Aktionen nach außen, Anleitungen). Rechenkerne, Listen, Filter, Fälligkeiten, Hash-Kette, Dubletten, Gate und Mail-Triage sind per Golden Master gegen den Originalcode geprüft, 17 Bereiche zusätzlich gegen die laufende alte App (`pnpm paritaet`).
 
 ## Schnellstart
 
@@ -81,8 +81,8 @@ Knopf „Exposé importieren“ in der Kopfzeile → Upload (Stapel, Kostenschä
 - **Ablage:** Supabase Storage (`SUPABASE_SERVICE_ROLE_KEY`), Buckets `pdfs`, `deal-docs`, `obj-photos` wie in der alten App; Upload zuerst nach `pdfs/_eingang/<uuid>`.
 - **Übernommen und geprüft:** Prompt/Schema wortgleich, Analyse-Wegwahl und PDF-Textlesen mit den Tests der alten App; Dubletten, Telefonregeln und Vorbereitung per Golden Master (150 Fälle); Vorsortierung der Mails (`triageMail`) mit Tests und Beispiel-Mails.
 - **Bewusste Korrekturen:** Deal-Einheiten bekommen `flaeche` (alte App: nur `fl_ist`, Fläche fehlte in der Kalkulation jedes importierten Deals) · Risikopuffer als `rp_pct` (alt `rp`, wirkungslos) · eingegebene 0 bleibt 0 (alt `|| Standard`).
-- **Noch offen:** E-Mail-Angebote aus dem Postfach und Auto-Import-Engine (brauchen Microsoft-Graph-Zugang, Browser, Outward-Gate), Entwurf/Minimieren, Massenimport mit CSV.
-- **v3 — Rohdaten ohne KI, Deutung mit KI (14.10.2026, Protokolle 28–31):** Das PDF wird zuerst ohne KI gelesen (`pdfDokument`: Textlayer mit Zellen, Bild-Seiten per Texterkennung mit tesseract.js, Fotos per `bilderAusPdf`), daraus entstehen im Code die Rohdaten (`rohdatenAusDokument`: Bezeichnung–Wert, Kacheln, Freitexte, Kontakte, Mietlisten-Tabellen, Wörterbuch mit ~400 Synonymen auf OpenImmo-1.2.7-Pfade). Die KI deutet nur noch: **Teil A** ist der bisherige Aufruf (Prompt, Werkzeug, Grenzen wortgleich), dazu ein kleiner Aufruf für unbekannte Bezeichnungen. `zuordnen` in `@gg/domain` führt beides zusammen (Teil A hat Vorrang, Rohdaten füllen Lücken, Widersprüche erscheinen als „doppelt“; Einheiten werden über Fläche/Lage verbunden, Jahresspalten ÷ 12, Mieternamen entfallen). Jeder Import ist eine Akte in `fach.expose_importe` (Rohdaten samt Dokument, nie überschrieben); die Prüfseite zeigt Widersprüche („doppelt“) als Knopf unter dem jeweiligen Feld (wie die Kontakt-Alternativen beim Makler), Angaben ohne Feld eingeklappt unter „Weitere Angaben“ mit Dropdown „Übernehmen in …“, einen Schritt **Fotos** (automatisch ans Objekt), und bei einer Dublette „Zum bestehenden Deal hinzufügen“. Reiter **„Aus dem Exposé“** an Objekt und Makler zeigt alle erfassten Angaben mit Übernahme ins Feld; `objekt_einheiten.details` nimmt Zusatzspalten je Einheit auf. Ein gelerntes Wörterbuch (`expose_bezeichnungen`) und ein Korrekturprotokoll (`import_korrekturen`) waren kurz dabei und wurden am 16.10.2026 vor der Auslieferung wieder entfernt (Migration `expose_importe` neu erzeugt). Alte Deals bleiben unverändert; `pnpm umzug --altimporte` legt für sie optional eine Akte aus den vorhandenen Rohdaten an. Online läuft die Analyse über die 300-s-Function; Texterkennung siehe `DEPLOYMENT.md` (Schalter `OCR=aus`). Messung gegen `main` an 5 Exposés: 0 Felder nur in `main`, 22 nur neu, Kosten gleich (Protokoll 30 §13).
+- **Noch offen:** E-Mail-Angebote aus dem Postfach und Auto-Import-Engine (brauchen Microsoft-Graph-Zugang, Browser, Outward-Gate), Fotos aus dem PDF, Entwurf/Minimieren, Massenimport mit CSV, Vergleich mit echten Exposés.
+- **v3 zurückgenommen (26.10.2026):** Rückmeldung des Kunden: v3 brauchte je Datei 3–4× so lange, Einheitenliste, Provision und Kaufpreis waren oft falsch. Der Import arbeitet wieder wie vor v3 (eine KI-Analyse je PDF). Tabelle `fach.expose_importe` und Spalte `objekt_einheiten.details` bleiben in der Datenbank, werden aber nicht mehr benutzt.
 
 ## Bankgespräch-PDF
 
@@ -114,12 +114,6 @@ Prüft **gegen die laufende alte App**, ob der Neubau fachlich dasselbe zeigt �
 
 **Bisher gefunden:** Datumsanzeige „Zuletzt“ war im Neubau „8.9.2026“, alt „08.09.2026“ → angeglichen.
 
-**Exposé-Import (`pnpm paritaet:expose`, kostet Geld):** dieselben PDFs auf drei Wegen — alte App (laufend, Port 3001), Neubau v0 (derselbe
-Aufruf, portiert) und Neubau v2 (Produktivweg: Rohdaten ohne KI, Teil A auf dem Dokument-Text, Scan → OCR → Text) — und die Felder der
-Prüfseite im Vergleich. `--nur "a,b"` wählt PDFs, `--scan "a"` nimmt ein PDF zusätzlich als nachgestellten Scan (gerastert, ohne Textlayer;
-`pdfAlsScan` aus `@gg/integrations`). alt ↔ v0 zeigt das KI-Rauschen, v0 ↔ v2 die Wirkung der Eingabe. Ergebnisse werden je PDF und Weg
-unter `.cache/paritaet-expose/` abgelegt; Bericht `berichte/paritaet/expose.md` (Protokoll 31 §8.2).
-
 ## Deal-Detail, Makler, Cockpit-KI, Vorlagen
 
 - **Deal-Info:** Objekt wechseln/neu anlegen (Kaufpreis, Wohnfläche, Einheiten aus dem Objekt), Makler-Pflicht beim manuellen Anlegen, Dublette Objekt+Makler, Frequenzwechsel belegt den nächsten Kontakt vor (nur wenn leer), 1 Wo/1 Mo/3 Mo/6 Mo, E-Mail an Makler, Objektfotos, Gesprächslog, Löschen.
@@ -128,7 +122,6 @@ unter `.cache/paritaet-expose/` abgelegt; Bericht `berichte/paritaet/expose.md` 
 - **Feste Leiste (02.10.2026):** Im Deal bleiben die Adresszeile (Adresse, Stadt und Makler in einer Zeile, rechts der Status) und die Reiterleiste beim Scrollen oben stehen. In der Kalkulation steht direkt darunter eine Knopfleiste, die ebenfalls stehen bleibt: links die Varianten („💾 Speichern als…“, „Variante laden“), rechts „Verwerfen“ und „Speichern“, darunter die Marke „ungespeichert“. Bei ungespeicherten Änderungen fragen Reiterwechsel, ein anderer Deal, eine andere Seite und das Neuladen nach, bevor die Eingaben verloren gehen (`apps/web/src/lib/ungespeichert.ts`).
 - **Aufbau wie in der alten App (02.10.2026, Kundenwunsch):** Unter der festen Leiste folgt der Inhalt wieder `dealKalkHTML`: Einheitenliste IST / SOLL (Alle setzen, IST-/SOLL-/VKP-Spalten, Ø-Fußzeile) → Kaufpreis & Nebenkosten (mit KP/m² und Rendite) → Finanzierung → Sanierungskosten (Auf/Beide/Glo, Risikopuffer in Prozent oder als fester Betrag — wer das eine setzt, nimmt das andere zurück) → GIK & Ergebnis mit den Boxen Aufteiler und Global (Projektkosten, Herstellungskosten, Exit, Ampel). Der Rechenkern ist unverändert. Dabei behoben: Zwischenstände beim Tippen ("01", wenn im Feld „0“ steht) galten als leer und verschluckten das erste Zeichen (`alsZahl`).
 - **Makler-Detail:** Profil (Prio, Telefon normalisiert, „Nicht kontaktieren“, zuletzt kontaktiert, Dublette beim Anlegen, Löschen), Kommunikation (Verlauf wie alt, Notiz, WhatsApp, E-Mail mit Vorlagen, 🎤 Anruf aufnehmen + Whisper, letzter Kontakt rückt nur vor), KI-Zusammenfassung, Beziehungsprofil + Du/Sie, Persönlich (Erwähnungen, Geburtstag, Ansprache, KI-Extraktion, OSINT), Deals-Reiter.
-- **Makler-Recherche (21.10.2026, neu):** Einstellungen → Makler-Recherche: Tabelle aller Makler mit Webseite (bekannt / aus E-Mail / KI-Websuche / von Hand), ImmoScout-Profil, Status, offenen Vorschlägen und Kosten; Auswahl einzeln oder mehrfach, Start-Dialog mit Kostenschätzung (rot ab 5 €), Lauf im Hintergrund, 🔔 bei Einstellungen, wenn fertig. Vorschläge mit Quelle je Feld übernehmen oder verwerfen (auch für mehrere Makler auf einmal); im Makler-Profil gelb am Feld, „Aktualisieren“ setzt alle ins Formular. Regeln in `@gg/domain` (`makler/recherche.ts`), Lesen und KI in `@gg/integrations` (`recherche/`).
 - **Cockpit-KI:** Kommunikationsstil (Sonnet) mit Konfidenz, KI-Entwurf WhatsApp + E-Mail je Makler, Kontakt-Anlässe (Web-Suche + News + Haiku) für fällige Makler, Gesprächsöffner und Aufnahme im Briefing, Mail-Auswahl mit Vorlagen auf Deal- und Makler-Karten.
 - **Einstellungen → Vorlagen-Texte:** Vorlagen mit Platzhaltern, „Mein Name“; Umzug `immo-vorlagen`.
 - **KI ohne Schlüssel:** `KI_ATTRAPPE=1` liefert erkennbare Test-Antworten und keine öffentliche Suche. Whisper braucht `OPENAI_API_KEY`.
@@ -194,21 +187,6 @@ Gebaut zum Herauslösen: `packages/ki-kern` (Schleife, MCP-Quelle `quelleAusMcp`
 ## MCP-Server
 
 `POST /api/mcp` spricht JSON-RPC (initialize, tools/list, tools/call). Außerhalb einer nachweislich lokalen Umgebung braucht jeder Aufruf einen Schlüssel im Kopf `Authorization: Bearer …` — Cookies zählen nicht; hinterlegt werden nur SHA-256-Hashes in `MCP_API_KEYS` (`label:scope[+scope]:sha256`), verglichen wird in konstanter Zeit. Bereiche: `read`, `write`, `outward`; ein Werkzeug ohne gültigen Bereich ist weder auflistbar noch aufrufbar. Werkzeuge: `list_collections`, `read_collection`, `read_entity`, `list_files`, `read_audit_log`, `gedaechtnis_suchen`, `gedaechtnis_eintraege` (lesen), `add_note`, `gedaechtnis_merken` (schreiben; Gedächtnis zu jedem Datensatz mit eigenem Dialog über den Gedächtnis-Dienst) und `request_outward_approval` (legt nur einen Antrag an — ausgeführt wird nichts). Regeln in `packages/domain/src/mcp/zugang.ts` (Golden Master aus `server/mcp.ts`), Werkzeuge in `apps/api/src/services/mcp.ts`; die Übersicht steht unter Einstellungen → Aktionen nach außen.
-
-Der Endpunkt liegt vor der App-Anmeldung (der Bearer-Kopf trägt den MCP-Schlüssel, kein Supabase-Login); ein GET mit `Accept: text/event-stream` bekommt 405 (kein Ereignisstrom), reine Benachrichtigungen 202. Claude verbinden:
-
-```bash
-# Schlüssel erzeugen und den Hash in Vercel eintragen: MCP_API_KEYS = claude:read:<hash>  (Bereiche mit + verbinden, z. B. read+write)
-openssl rand -hex 32                        # = <schluessel>, nur beim Nutzer aufbewahren
-echo -n '<schluessel>' | shasum -a 256      # = <hash>
-
-# Claude Code
-claude mcp add --transport http gg https://<app>.vercel.app/api/mcp --header "Authorization: Bearer <schluessel>"
-# lokal (AUTH_LOCAL_OPEN=1, ohne Schlüssel)
-claude mcp add --transport http gg-lokal http://localhost:3101/api/mcp
-```
-
-Claude Desktop über `npx mcp-remote https://<app>.vercel.app/api/mcp --header "Authorization: Bearer <schluessel>"`. claude.ai-Connectoren verlangen OAuth und gehen mit einem festen Schlüssel nicht.
 
 ## Audit-Log
 

@@ -12,7 +12,7 @@ const MIGRATION = readFileSync(join(import.meta.dirname, '../../../supabase/migr
 
 describe.skipIf(!url)('Makler: Vorname und Name (19.10.2026)', () => {
   const { db, client } = createDb(url!);
-  const app = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, expose: { speicher: speicherImSpeicher(), ki: kiAttrappe(), attrappe: true, texterkennung: null } });
+  const app = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, expose: { speicher: speicherImSpeicher(), ki: kiAttrappe(), attrappe: true } });
   const k = `Vorn${Date.now()}`;
   const ids: string[] = [];
 

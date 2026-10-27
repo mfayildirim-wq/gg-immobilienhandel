@@ -61,7 +61,6 @@ export async function objektDetail(db: Db, id: string): Promise<ObjektDetail> {
     id: o.id, strasse: o.strasse, hausnr: o.hausnr, plz: o.plz, stadt: o.stadt, einheitenAnzahl: o.einheitenAnzahl, wohnflaeche: o.wohnflaeche,
     angebotspreis: o.angebotspreis, status: o.status, version: o.version, bundesland: o.bundesland, baujahr: o.baujahr, grundstueck: o.grundstueck,
     energieklasse: o.energieklasse, heizung: o.heizung, zielpreis: o.zielpreis, istMiete: o.istMiete, sollMiete: o.sollMiete, notizen: o.notizen,
-    details: (o.details as Record<string, unknown> | null) ?? null,
     einheiten, deals: deals.map((d) => ({ ...d, status: d.status as DealStatus })),
   };
 }

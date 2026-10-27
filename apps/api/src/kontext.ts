@@ -1,23 +1,7 @@
 import { createDb, verlangeLokaleDatenbank } from '@gg/db';
 import { rueckwegRegelnAusUmgebung } from '@gg/domain';
-import { anthropicClient, kiAttrappe, nominatimGeocoder, supabaseSpeicher, graphAttrappe, propstackAttrappe, tesseractOcr } from '@gg/integrations';
-import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { anthropicClient, kiAttrappe, nominatimGeocoder, supabaseSpeicher, graphAttrappe, propstackAttrappe } from '@gg/integrations';
 import { createApp } from './app.ts';
-
-/**
- * Texterkennung (OCR) für Bild-Seiten im Exposé-Import. `OCR=aus` schaltet sie ab; dann bleiben Bild-Seiten ohne Text
- * und Scans gehen wie vor Protokoll 30 komplett an das gründliche Modell.
- * Pfade: Im Vercel-Bündel liegt der Worker als `dist/ocr-worker.cjs` neben dieser Datei (bau-vercel.mjs); lokal (tsx) gibt
- * es ihn nicht, dann nimmt tesseract.js sein Skript aus node_modules. Die Sprachdaten liegen in `apps/api/assets`
- * (von `src/` wie von `dist/` aus `../assets`), damit online nichts vom CDN geladen und nichts geschrieben werden muss.
- */
-export function texterkennungAusUmgebung(env: Record<string, string | undefined> = process.env): (() => ReturnType<typeof tesseractOcr>) | null {
-  if (env.OCR === 'aus') return null;
-  const worker = fileURLToPath(new URL('./ocr-worker.cjs', import.meta.url));
-  const sprachdaten = fileURLToPath(new URL('../assets/', import.meta.url));
-  return () => tesseractOcr({ ...(existsSync(worker) ? { workerPath: worker } : {}), langPath: sprachdaten });
-}
 
 /**
  * Baut die App aus der Umgebung — der eine Ort dafür. Der lokale Server (`server.ts`) und der Einstieg auf
@@ -54,7 +38,7 @@ export function appAusUmgebung(env: Record<string, string | undefined> = process
   const propstack = env.PROPSTACK_ATTRAPPE === '1' && !produktion ? propstackAttrappe() : null;
 
   const app = createApp({
-    expose: speicher ? { speicher, ki, attrappe, texterkennung: texterkennungAusUmgebung(env) } : undefined,
+    expose: speicher ? { speicher, ki, attrappe } : undefined,
     ki,
     geocoder,
     graph,

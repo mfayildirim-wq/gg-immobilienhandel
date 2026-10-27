@@ -43,35 +43,6 @@ describe('Eingabeprüfung ohne Datenbank', () => {
     expect((await prod.request('/api/deals')).status).toBe(401);
   });
 
-  it('MCP in Produktion: Schlüssel statt Login, GET-Strom 405, Benachrichtigung 202', async () => {
-    const prod = createApp({ db: null as never, auth: { ...offen, lokalOffen: false, produktion: true, supabaseUrl: 'https://beispiel.supabase.co' } });
-    const schluessel = 'prod-schluessel-5678';
-    const alt = { vercel: process.env.VERCEL, keys: process.env.MCP_API_KEYS };
-    process.env.VERCEL = '1';
-    process.env.MCP_API_KEYS = `claude:read:${createHash('sha256').update(schluessel).digest('hex')}`;
-    const rpc = (nachricht: unknown, kopf: Record<string, string> = {}) =>
-      prod.request('/api/mcp', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...kopf }, body: JSON.stringify(nachricht) });
-    try {
-      // Der MCP-Schlüssel ist kein Supabase-Login — die App-Anmeldung darf ihn nicht abweisen
-      const liste = await rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, { authorization: `Bearer ${schluessel}` });
-      expect(liste.status).toBe(200);
-      expect(((await liste.json()) as { result: { tools: { name: string }[] } }).result.tools.map((t) => t.name)).toContain('read_entity');
-      // Ohne oder mit falschem Schlüssel antwortet der MCP-Server selbst (JSON-RPC), nicht die App
-      const ohne = await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' });
-      expect(ohne.status).toBe(401);
-      expect(await ohne.json()).toMatchObject({ jsonrpc: '2.0', error: { code: -32001 } });
-      expect((await rpc({ jsonrpc: '2.0', id: 3, method: 'ping' }, { authorization: 'Bearer falsch' })).status).toBe(401);
-      expect((await rpc({ jsonrpc: '2.0', method: 'notifications/initialized' }, { authorization: `Bearer ${schluessel}` })).status).toBe(202);
-      // GET: Ereignisstrom gibt es nicht; die Übersicht für die App bleibt hinter der Anmeldung
-      expect((await prod.request('/api/mcp', { headers: { accept: 'text/event-stream', authorization: `Bearer ${schluessel}` } })).status).toBe(405);
-      expect((await prod.request('/api/mcp')).status).toBe(401);
-      expect((await prod.request('/api/deals', { headers: { authorization: `Bearer ${schluessel}` } })).status).toBe(401);
-    } finally {
-      if (alt.keys === undefined) delete process.env.MCP_API_KEYS; else process.env.MCP_API_KEYS = alt.keys;
-      if (alt.vercel === undefined) delete process.env.VERCEL; else process.env.VERCEL = alt.vercel;
-    }
-  });
-
   it('nimmt das Token auch aus dem Cookie (Bilder und Downloads tragen keinen Header)', async () => {
     const prod = createApp({ db: null as never, auth: { ...offen, produktion: true, supabaseUrl: 'https://beispiel.supabase.co' } });
     // Ohne gültiges Token bleibt es bei 401 — geprüft wird, dass der Cookie überhaupt gelesen wird

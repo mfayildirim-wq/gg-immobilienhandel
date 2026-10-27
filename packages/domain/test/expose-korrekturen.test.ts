@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  berechneAnkauf, dealEinheitenAusExpose, einheitAlsEingabe, EXPOSE_V2_SCHEMA, exposeV2Leer, exposeVorbereiten, KALK_STANDARD, maklerHatDaten, MAPPING,
-  telefonErsetzen, wizardKalkSpeichern, wizardKalkVorbelegen, zuordnen,
-} from '../src/index.ts';
+import { berechneAnkauf, dealEinheitenAusExpose, einheitAlsEingabe, KALK_STANDARD, maklerHatDaten, telefonErsetzen, wizardKalkSpeichern, wizardKalkVorbelegen } from '../src/index.ts';
 
 describe('Exposé-Import: bewusste Korrekturen gegenüber der alten App', () => {
   it('importierte Einheiten tragen die Fläche so, dass die Ankaufskalkulation sie liest', () => {
@@ -20,25 +17,6 @@ describe('Exposé-Import: bewusste Korrekturen gegenüber der alten App', () => 
 
   it('eine eingegebene 0 bleibt 0, nur leere Felder werden Standard', () => {
     expect(wizardKalkSpeichern({ makler: 0, notar: null }, KALK_STANDARD)).toMatchObject({ makler: 0, notar: KALK_STANDARD.notar, kaufpreis: 0 });
-  });
-});
-
-describe('Exposé-Import: Vollerfassung v2 (Auftraggeber 11.10.2026, Protokoll 28)', () => {
-  it('die KI liefert wörtliche Angaben; Zahlen und Zuordnung macht der Code über die Mapping-Tabelle', () => {
-    const v2 = exposeV2Leer();
-    expect(v2.schema).toBe(EXPOSE_V2_SCHEMA);
-    v2.angaben = [
-      { bezeichnung: 'Ort', wert: 'Stuttgart', seite: 1, pfad: 'geo.ort', kontakt: null, gg: null },
-      { bezeichnung: 'Kaufpreis', wert: '1.250.000 €', seite: 1, pfad: 'preise.kaufpreis', kontakt: null, gg: null },
-      { bezeichnung: 'Faktor', wert: '20,8-fach', seite: 1, pfad: 'preise.x_fache', kontakt: null, gg: null },
-    ];
-    const { pruefdaten, details } = zuordnen(v2);
-    const v = exposeVorbereiten(pruefdaten);
-    expect(v.objekt).toMatchObject({ stadt: 'Stuttgart', angebotspreis: 1_250_000 });
-    expect(v.deal.kalk.kaufpreis).toBe(1_250_000);
-    // der Kaufpreisfaktor landet in details, nicht in einer Spalte
-    expect(MAPPING['preise.x_fache']).toEqual(['details.kaufpreisfaktor']);
-    expect(details).toEqual({ kaufpreisfaktor: 20.8 });
   });
 });
 

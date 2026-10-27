@@ -1,4 +1,4 @@
-import { ActionIcon, Anchor, AppShell, Box, Burger, Button, Group, Indicator, NavLink, Text, Title, Tooltip, useMantineColorScheme } from '@mantine/core';
+import { ActionIcon, Anchor, AppShell, Box, Burger, Button, Group, NavLink, Text, Title, Tooltip, useMantineColorScheme } from '@mantine/core';
 import { useDisclosure, useMediaQuery } from '@mantine/hooks';
 import {
   IconBuildingCommunity,
@@ -12,7 +12,7 @@ import {
   IconFileImport,
   IconMail,
   IconSearch,
-  IconUsers, IconChecklist, IconTableShare, IconChartBar, IconBellRinging } from '@tabler/icons-react';
+  IconUsers, IconChecklist, IconTableShare, IconChartBar } from '@tabler/icons-react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { type CSSProperties, Fragment, useEffect, useState } from 'react';
 import { AbmeldenKnopf } from './Anmeldung.tsx';
@@ -21,7 +21,7 @@ import { EINSTELLUNGEN_SEITEN } from '../lib/einstellungenSeiten.tsx';
 import { brotkrumen } from '../lib/brotkrumen.ts';
 import { KopfPlatzKontext } from './AnsichtMenue.tsx';
 import { httpTransport, KiKnopf, KiLeiste, KiLeisteRahmen, useKiLeiste } from '@gg/ki-leiste';
-import { holen, useRechercheTreiber } from '../lib/api.ts';
+import { holen } from '../lib/api.ts';
 import { markdownAlsHtml } from '../lib/markdown.ts';
 
 /** KI-Leiste: spricht mit /api/ki-leiste, mit der Anmeldung der Sitzung (Token, bei 401 einmal erneuert). */
@@ -76,8 +76,6 @@ function Rahmen() {
   const ausgeklappt = leisteOffen || ueberfahren;
   const schmal = desktop && !ausgeklappt;
   const leisteSichtbar = desktop ? true : mobilOffen;
-  // Makler-Recherche läuft in Etappen weiter, solange die App offen ist; ein fertiger, ungesehener Lauf zeigt die Glocke
-  const rechercheGlocke = !!useRechercheTreiber()?.ungesehen;
   // Untermenü Einstellungen: auf einer Einstellungsseite offen, sonst per Klick
   const [einstellungenOffen, setEinstellungenOffen] = useState(pfad.startsWith('/einstellungen'));
   const krumen = brotkrumen(pfad, NAVIGATION, EINSTELLUNGEN_SEITEN);
@@ -166,8 +164,7 @@ function Rahmen() {
           <Tooltip label="Einstellungen" position="right" disabled={!schmal}>
             <NavLink
               label={schmal ? undefined : 'Einstellungen'}
-              leftSection={<Indicator disabled={!rechercheGlocke} color="orange" size={8} offset={2}><IconSettings size={18} /></Indicator>}
-              rightSection={rechercheGlocke && !schmal ? <IconBellRinging size={16} color="var(--mantine-color-orange-6)" aria-label="Makler-Recherche fertig" data-recherche-glocke /> : undefined}
+              leftSection={<IconSettings size={18} />}
               active={pfad.startsWith('/einstellungen') && !einstellungenOffen}
               opened={einstellungenOffen && !schmal}
               onChange={setEinstellungenOffen}
@@ -181,7 +178,6 @@ function Rahmen() {
                   to={`/einstellungen/${unter}`}
                   label={label}
                   leftSection={<Icon size={16} />}
-                  rightSection={unter === 'makler-recherche' && rechercheGlocke ? <IconBellRinging size={14} color="var(--mantine-color-orange-6)" /> : undefined}
                   active={pfad === `/einstellungen/${unter}`}
                   styles={{ label: { fontWeight: pfad === `/einstellungen/${unter}` ? 700 : undefined } }}
                   onClick={() => { mobilSchliessen(); setUeberfahren(false); }}

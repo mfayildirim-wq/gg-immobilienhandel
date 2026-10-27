@@ -334,8 +334,6 @@ export const ObjektDetail = Objekt.extend({
   istMiete: ZahlOderLeer,
   sollMiete: ZahlOderLeer,
   notizen: z.string().nullable(),
-  /** Zusatzangaben (Exposé-Import): bruttorendite, heizungsbaujahr, energieausweis, lagebeschreibung, ausstattung, hausgeld … */
-  details: z.record(z.string(), z.unknown()).nullable(),
   einheiten: z.array(ObjektEinheit),
   deals: z.array(z.object({ id: z.string(), status: DealStatus, maklerName: z.string().nullable() })),
 });
@@ -702,8 +700,6 @@ const T = z.string().max(5000).nullable().optional();
 
 export const ExposeEinheitDaten = z.object({
   typ: T, lage: T, zimmer: Nr, flaeche: Nr, kaltmiete: Nr, vermiet: T,
-  // Zeile trägt den Gesamtwert oder den Rest aus dem Gesamtwert (bitte aufteilen); beim Anlegen ohne Bedeutung
-  hinweis: z.enum(['gesamtwert', 'rest']).nullable().optional(),
 });
 
 export const ExposeObjektDaten = z.object({
@@ -732,48 +728,15 @@ export const WizardKalkSchema = z.object({
 
 export const Dublette = z.object({ id: z.string(), titel: z.string(), sicherheit: z.enum(['exact', 'fuzzy']) }).nullable();
 
-// ── Exposé v2: Angaben, Ziele, Zuordnung (Protokoll 28) ─────
-const AngabeWert = z.union([z.string(), z.number(), z.boolean()]).nullable();
-/** Eine erfasste Angabe — wörtlich, mit Standard-Pfad und gg-Ziel (Mapping oder KI-Vorschlag). Struktur = `Angabe` in @gg/domain. */
-export const ExposeAngabe = z.object({
-  importId: z.string(), datum: z.string(), gruppe: z.string(),
-  /** 'angaben.12' oder 'einheiten.3' */
-  feld: z.string(), pfad: z.string().nullable(), bezeichnung: z.string(), standard: z.string().nullable(), wert: z.string(),
-  seite: z.number().nullable(), belegt: z.boolean().nullable(),
-  zuordnung: z.enum(['zugeordnet', 'doppelt', 'keinWert', 'keinMapping']).nullable(),
-  ziel: z.object({
-    feld: z.string().nullable(), label: z.string().nullable(), wert: AngabeWert, aktuell: AngabeWert,
-    status: z.enum(['gleich', 'abweichend', 'leer', 'keinFeld']), quelle: z.enum(['mapping', 'vorschlag']).nullable(), hinweis: z.string().nullable(),
-  }),
-});
-export type ExposeAngabe = z.infer<typeof ExposeAngabe>;
-/** gg-Zielfeld für das Dropdown; `pruef` = Pfad im Formular der Prüfseite (objekt.*, makler.*, kalkulation.*), falls es dort steht. */
-export const ExposeZiel = z.object({ schluessel: z.string(), label: z.string(), einheit: z.string().nullable(), pruef: z.string().nullable() });
-export type ExposeZiel = z.infer<typeof ExposeZiel>;
-
 export const ExposeAnalyseAntwort = z.object({
   modus: z.enum(['text', 'pdf']), modell: z.string(), seiten: z.number(), zeichenProSeite: z.number(), hinweis: z.string().optional(),
   attrappe: z.boolean(),
   extrahiert: z.record(z.string(), z.unknown()),
-  /** Die Analyse liegt serverseitig in expose_importe; Übernehmen verweist auf importId */
-  importId: z.string(),
-  schemaVersion: z.string(),
-  /** v2: alle erfassten Angaben für Objekt und Makler (leer bei v0) */
-  angaben: z.object({ objekt: z.array(ExposeAngabe), makler: z.array(ExposeAngabe) }),
-  /** gg-Ziele für das Dropdown unter „Weitere Angaben“ */
-  ziele: z.object({ objekt: z.array(ExposeZiel), makler: z.array(ExposeZiel) }),
-  /** Anteil der Angaben, deren Wert auf der genannten Seite steht (Textweg), sonst null */
-  belegQuote: z.number().nullable(),
-  warnungen: z.array(z.string()),
   konfidenz: z.record(z.string(), z.string()),
   objekt: ExposeObjektDaten.passthrough(),
   makler: ExposeMaklerDaten.passthrough(),
   deal: z.object({ status: z.string(), nachfassFreq: z.string(), notizen: z.string(), kalk: WizardKalkSchema }),
   dubletten: z.object({ objekt: Dublette, makler: Dublette }),
-  /** Deals des erkannten Objekts — das PDF kann einen davon ergänzen (Fotos, Makler, Exposé), statt einen zweiten anzulegen */
-  bestehendeDeals: z.array(z.object({ id: z.string(), status: z.string(), makler: z.string().nullable() })).default([]),
-  // Fotos aus dem Exposé (Protokoll 30 §4.4): liegen im Eingang, werden beim Anlegen ans Objekt übernommen
-  bilder: z.array(z.object({ nr: z.number().int(), seite: z.number().int(), breite: z.number().int(), hoehe: z.number().int(), url: z.string() })).default([]),
 });
 export type ExposeAnalyseAntwort = z.infer<typeof ExposeAnalyseAntwort>;
 
@@ -781,42 +744,15 @@ export const ExposeUebernehmen = z.object({
   key: z.string(),
   dateiname: z.string().max(300),
   extrahiert: z.record(z.string(), z.unknown()),
-  /** Verweis auf die gespeicherte Analyse (expose_importe); ohne importId wird wie bisher `extrahiert` verwendet */
-  importId: z.string().optional(),
-  /** Auf der Prüfseite per Dropdown zugeordnete weitere Angaben (Ziel: gg-Ziel-Schlüssel oder 'notizen') */
-  zuordnungen: z.array(z.object({ feld: z.string(), ziel: z.string() })).max(500).optional(),
-  /** Im Wizard-Schritt „Fotos“ entfernte Bilder (Nummer wie in `ExposeAnalyseAntwort.bilder[].nr`) — werden nicht übernommen */
-  bilderAusschliessen: z.array(z.number().int().min(0)).max(500).optional(),
   objekt: z.object({ bestehendeId: z.string().optional(), daten: ExposeObjektDaten }),
   makler: z.object({ bestehendeId: z.string().optional(), daten: ExposeMaklerDaten }),
   deal: z.object({ status: DealStatus, nachfassFreq: z.string().max(40), notizen: z.string().max(10000), kalk: WizardKalkSchema }),
-  /** Statt eines neuen Deals diesen bestehenden ergänzen: Fotos ans Objekt, Makler setzen (falls keiner), PDF als Exposé ablegen */
-  ergaenzeDealId: z.string().optional(),
 });
 export type ExposeUebernehmen = z.infer<typeof ExposeUebernehmen>;
 
 export const ExposeUebernahmeErgebnis = z.object({
   dealId: z.string(), objektId: z.string(), maklerId: z.string().nullable(), pdfGespeichert: z.boolean(), warnung: z.string().optional(),
-  /** Der Deal bestand schon und wurde ergänzt (kein neuer Deal) */
-  ergaenzt: z.boolean().default(false),
-  /** Anzahl der aus dem Exposé ans Objekt übernommenen Fotos */
-  fotos: z.number().int().default(0),
 });
-
-// ── Reiter „Aus dem Exposé“ (Objekt/Makler) ───────────────────
-export const ExposeAngabenAntwort = z.object({
-  importe: z.array(z.object({ id: z.string(), datum: z.string(), dateiname: z.string().nullable(), dealId: z.string().nullable(), schemaVersion: z.string() })),
-  angaben: z.array(ExposeAngabe),
-  /** Dropdown: gg-Ziele dieser Art mit aktuellem Wert; `leer` = frei (Listen-Ziele immer) */
-  ziele: z.array(z.object({ schluessel: z.string(), label: z.string(), einheit: z.string().nullable(), aktuell: AngabeWert, leer: z.boolean() })),
-});
-export type ExposeAngabenAntwort = z.infer<typeof ExposeAngabenAntwort>;
-/** `ziel`: gg-Ziel-Schlüssel (z. B. 'objekt.angebotspreis', 'details.hausgeld_monat') oder 'notizen' */
-export const ExposeUebernahme = z.object({
-  version: z.number().int(), importId: z.string(), feld: z.string(), ziel: z.string().min(1).max(80), ersetzen: z.boolean().default(false),
-});
-export type ExposeUebernahme = z.input<typeof ExposeUebernahme>;
-
 
 // ── Bank-Präsentation ──────────────────────────────────────
 
@@ -1064,75 +1000,6 @@ export type PersonaStand = z.infer<typeof PersonaStand>;
 export const NachrichtEntwurf = z.object({ wa: z.string(), email: z.object({ subject: z.string(), body: z.string() }) });
 export type NachrichtEntwurf = z.infer<typeof NachrichtEntwurf>;
 
-// ── Makler-Recherche (21.10.2026) ──────────────────────────
-
-const RechercheQuelle = z.enum(['bekannt', 'email', 'firmenname', 'ki', 'hand']);
-const RechercheAdresse = z.object({ url: z.string(), quelle: RechercheQuelle }).nullable();
-
-export const RechercheVorschlag = z.object({
-  ziel: z.enum(['makler', 'unternehmen']), feld: z.string(), alt: z.string().nullable(), neu: z.string(), quelle: z.string(),
-  entscheidung: z.enum(['uebernommen', 'verworfen']).nullable(), entschiedenAm: z.string().nullable(),
-});
-export type RechercheVorschlag = z.infer<typeof RechercheVorschlag>;
-
-/** Eine Zeile der Tabelle unter Einstellungen → Makler-Recherche. */
-export const RechercheZeile = z.object({
-  id: z.string(), name: z.string().nullable(), firma: z.string().nullable(), prio: z.string().nullable(),
-  /** Gespeicherter Stand, sonst bekannte Webseite, sonst aus der E-Mail-Domain (noch nicht geprüft) */
-  webseite: RechercheAdresse,
-  immoscout: RechercheAdresse,
-  personUrl: z.string().nullable(),
-  status: z.string().nullable(),
-  letzteRecherche: z.string().nullable(),
-  offeneVorschlaege: z.number().int(),
-  kostenEur: z.number(),
-});
-export type RechercheZeile = z.infer<typeof RechercheZeile>;
-
-export const RechercheStarten = z.object({ maklerIds: z.array(z.string().min(1)).min(1).max(2000), mitKi: z.boolean() });
-export type RechercheStarten = z.infer<typeof RechercheStarten>;
-
-export const RechercheSchaetzung = z.object({
-  anzahl: z.number().int(), mitWebseite: z.number().int(), ohneWebseite: z.number().int(),
-  euro: z.number(), kiSucheMakler: z.number().int(), warnung: z.boolean(),
-});
-export type RechercheSchaetzung = z.infer<typeof RechercheSchaetzung>;
-
-export const RechercheLauf = z.object({
-  id: z.string(), status: z.enum(['laeuft', 'fertig', 'abgebrochen']), mitKi: z.boolean(), anzahl: z.number().int(),
-  erledigt: z.number().int(), gefunden: z.number().int(), fehler: z.number().int(), kostenEur: z.number(),
-  gestartetAm: z.string(), beendetAm: z.string().nullable(),
-  /** Glocke: fertig oder abgebrochen und noch nicht angesehen */
-  ungesehen: z.boolean(),
-});
-export type RechercheLauf = z.infer<typeof RechercheLauf>;
-
-export const RechercheErgebnis = z.object({
-  id: z.string(), laufId: z.string(), status: z.string(),
-  schritte: z.array(z.object({ zeit: z.string(), text: z.string(), url: z.string().optional() })),
-  vorschlaege: z.array(RechercheVorschlag),
-  kostenEur: z.number(), beendetAm: z.string().nullable(), fehler: z.string().nullable(),
-});
-export type RechercheErgebnis = z.infer<typeof RechercheErgebnis>;
-
-/** Recherche zu einem Makler: Stand und die letzten Ergebnisse (neueste zuerst). */
-export const RechercheMakler = z.object({
-  maklerId: z.string(), webseite: RechercheAdresse, immoscout: RechercheAdresse, personUrl: z.string().nullable(),
-  status: z.string().nullable(), letzteRecherche: z.string().nullable(), kostenEur: z.number(),
-  ergebnisse: z.array(RechercheErgebnis),
-});
-export type RechercheMakler = z.infer<typeof RechercheMakler>;
-
-/** Adressen von Hand setzen oder löschen (null). */
-export const RechercheStandSetzen = z.object({ webseite: z.string().trim().max(500).nullable().optional(), immoscoutUrl: z.string().trim().max(500).nullable().optional() });
-export type RechercheStandSetzen = z.infer<typeof RechercheStandSetzen>;
-
-export const RechercheEntscheiden = z.object({
-  ergebnisId: z.string().min(1), index: z.number().int().min(0), entscheidung: z.enum(['uebernommen', 'verworfen']),
-  /** Nur vermerken: der Wert wurde schon mit dem Makler-Formular gespeichert (Vorschlag ins Feld übernommen, dann „Speichern“) */
-  ohneAnwenden: z.boolean().optional(),
-});
-export type RechercheEntscheiden = z.infer<typeof RechercheEntscheiden>;
 // ── Gedächtnis (zentraler Dienst, 24.10.2026) ─────────────────
 
 export const GedaechtnisEintrag = z.object({

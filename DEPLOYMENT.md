@@ -55,7 +55,7 @@ auch dort (sichern nur Testdaten). Supabase Free pausiert das Projekt nach einer
    nicht; lokal mit tsx fällt das nicht auf, weil jede Datei aus ihrem eigenen Paket auflöst. Folge online: Fotos aus dem Exposé
    und Texterkennung liefen leer („Bild übersprungen“, „OCR fehlgeschlagen“ im Log), die Analyse selbst lief durch. Regel:
    **jedes Paket in `EXTERN` steht auch in `apps/api/package.json`** (`pdfjs-dist`, `@napi-rs/canvas`, `playwright-core`,
-   `@sparticuz/chromium`, dazu `tesseract.js-core` für den OCR-Worker). Laufzeit-Logs: `npx vercel logs --deployment gg-immobilienhandel.vercel.app --json` (keine Live-Verfolgung, sondern
+   `@sparticuz/chromium`). Laufzeit-Logs: `npx vercel logs --deployment gg-immobilienhandel.vercel.app --json` (keine Live-Verfolgung, sondern
    eine Abfrage über ein Zeitfenster, Standard die letzten 30 Minuten; im Hobby-Tarif reicht die Aufbewahrung nicht weiter, und
    am 15.10.2026 kam die Abfrage trotz frischer Aufrufe leer zurück). Verlässlicher Nachweis ist die Antwort von
    `POST /api/expose/analyse`: `bilder` gefüllt und bei Scans die Warnung „… Bild-Seite(n) per Texterkennung gelesen“.
@@ -84,15 +84,8 @@ das direkt aus, der Node-Builder von Vercel nicht. `apps/api/bau-vercel.mjs` bü
 **Nur Produktion wird gebaut** (`ignoreCommand`, wie in der alten App): Vorschau-Deployments liefen sonst mit dem
 Code eines Branches gegen die echte Datenbank.
 
-**Texterkennung auf Vercel (14.10.2026, Exposé-Import v3):** `tesseract.js` startet einen Worker-Thread aus einer Datei. Im
-Bündel zeigte der Standardpfad ins Leere, und Node beendet bei einer fehlenden Worker-Datei den Prozess — jede Analyse mit
-Fotoseiten wäre online abgestürzt (Protokoll 31, B6). Deshalb bündelt `bau-vercel.mjs` den Worker als zweite Datei
-`dist/ocr-worker.cjs` (alle Abhängigkeiten drin, nur `tesseract.js-core` mit dem WASM bleibt in `node_modules` und steht in
-`includeFiles`), `kontext.ts` prüft, ob die Datei da ist, und die deutschen Sprachdaten liegen in `apps/api/assets`
-(`includeFiles`), damit online nichts vom CDN geladen und nichts geschrieben wird. Fehlt etwas, läuft die Analyse **ohne**
-OCR weiter (Warnung im Log) statt abzubrechen. Nachweis vor dem Produktivgang: ein eingescanntes Exposé auf der
-Testumgebung importieren und im Log „Bild-Seite(n) per Texterkennung gelesen“ sehen; andernfalls `OCR=aus` setzen.
-Die Analyse läuft über `/api/render` (300 s); das OCR-Zeitbudget je Dokument ist 120 s.
+**Exposé-Import v3 zurückgenommen (26.10.2026):** keine Texterkennung und kein eigener Weg über `/api/render` mehr; der
+Import läuft wieder wie vor v3. Die Migration `expose_importe` bleibt eingespielt (Tabelle und Spalte ungenutzt).
 
 ## Umgebungsvariablen (Vercel → Settings → Environment Variables, nur „Production")
 
@@ -109,7 +102,6 @@ Die Analyse läuft über `/api/render` (300 s); das OCR-Zeitbudget je Dokument i
 | `CRON_SECRET` | ja | schützt `/api/cron/sicherung` und `/api/cron/archiv`; Vercel hängt es als `Authorization: Bearer …` an. Ohne Wert antworten beide immer mit 401 |
 | `OAUTH_HOSTS` | bei eigener Domain | zusätzliche Adressen für die Microsoft-Anmeldung; die Vercel-Domains gelten von selbst |
 | `AUTO_IMPORT_AKTIV` | zum Freischalten | Auto-Import-Bot. **Online ist er aus, bis hier `ja` steht** — dann antworten `/api/auto-import/lauf` und `…/abbrechen` mit 503 und die Oberfläche zeigt keine Bot-Knöpfe. Braucht zusätzlich `ANTHROPIC_API_KEY`, die M365-Verbindung und für AGB-Seiten die Freigabe unter Einstellungen → Freigaben |
-| `OCR` | zum Abschalten | Texterkennung für Bild-Seiten im Exposé-Import (tesseract.js, deutsch). Standard an; `aus` lässt Bild-Seiten ohne Text und schickt Scans wie früher komplett an das gründliche Modell. Siehe „Texterkennung auf Vercel“ unten |
 
 Nicht setzen: `AUTH_LOCAL_OPEN`, `KI_ATTRAPPE`, `M365_ATTRAPPE`, `PROPSTACK_ATTRAPPE` (in Produktion ohnehin wirkungslos).
 
@@ -156,22 +148,6 @@ Nachtrag 21.10.2026, Migration `makler_telefon_bereinigen`: Der Export enthielt 
 nur `'+`, `49…` ohne `+`, `4.97E+12`). Die Migration entfernt den Marker, ergänzt das `+` und leert Werte ohne Ziffer
 oder in Exponentialschreibweise. Auf der privaten Prod: 343 Nummern, davon 30 geleert. Die Dubletten „gleiche
 Telefonnummer“ gehen dadurch von 441 auf 107 Paare zurück (27 Makler mit `'+` galten untereinander als Dubletten).
-
-## Makler-Recherche (Migration `makler_recherche`, 21.10.2026)
-
-Neue Tabellen `makler_recherche` (Stand je Makler: Webseite, ImmoScout-Profil, Quelle, Datum, Kosten), `recherche_laeufe` und
-`recherche_ergebnisse` (Schritte und Vorschläge je Lauf). Die Migration legt nur an, an vorhandenen Daten ändert sich nichts;
-nach dem Deploy passiert nichts von allein — Abrufe und KI-Kosten entstehen erst, wenn jemand unter Einstellungen →
-Makler-Recherche Makler auswählt und startet.
-
-- **Wege je Makler:** Firmen-Webseite (bekannt, sonst aus der E-Mail-Domain) → ImmoScout24-Profil (aus dem Firmennamen) →
-  KI-Websuche nur, wenn im Start-Dialog angehakt und vorher nichts gefunden. Die Probe vom 21.10. (Vercel) zeigte: Webseiten
-  und ImmoScout-Profile kommen per einfachem Abruf durch; DuckDuckGo (403), Bing (Fremdtreffer) und Google (Captcha) nicht.
-- **Hintergrund:** Etappen zu drei Maklern, angestoßen von der geöffneten App (jede Seite). `vercel.json` leitet
-  `/api/makler-recherche/*` in die 300-s-Function. Ist kein Fenster offen, ruht der Lauf und geht beim nächsten Öffnen weiter.
-- **KI:** Bereich „Makler und Persona“ (Einstellungen → KI-Modelle). Auswerten ca. 0,3 Cent je Makler, KI-Websuche ca. 3 Cent;
-  ab 5 € geschätzten Kosten warnt der Dialog rot. Kosten stehen je Makler, je Lauf und im Audit (`kicall`, Quelle `makler-recherche`).
-- **Sicherung:** `makler_recherche` ist enthalten; Läufe und Ergebnisse nicht (Protokoll).
 
 ## Vor jedem Deployment
 

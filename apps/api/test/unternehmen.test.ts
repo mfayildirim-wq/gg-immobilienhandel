@@ -12,7 +12,7 @@ const UEBERNAHME = readFileSync(join(import.meta.dirname, '../../../supabase/mig
 
 describe.skipIf(!url)('Unternehmen der Makler (18.10.2026)', () => {
   const { db, client } = createDb(url!);
-  const app = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, expose: { speicher: speicherImSpeicher(), ki: kiAttrappe(), attrappe: true, texterkennung: null } });
+  const app = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, expose: { speicher: speicherImSpeicher(), ki: kiAttrappe(), attrappe: true } });
   const k = `Untern${Date.now()}`;
   const ids: string[] = [];
 

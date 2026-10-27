@@ -12,12 +12,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@gg/domain": "workspace:*",
-    "@napi-rs/canvas": "0.1.100",
     "pdf-lib": "1.17.1",
     "pdfjs-dist": "^5.7.284",
     "playwright-core": "1.63.0",
-    "tesseract.js": "^6.0.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
