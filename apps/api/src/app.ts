@@ -344,6 +344,28 @@ export function createApp({ db, auth: authOpt, expose, gedaechtnis: gedaechtnisO
     return { eingangEntfernt, spiegel: await archivSpiegeln(db, speicher) };
   });
 
+  // ── MCP-Server (alt: server/mcp.ts) — VOR der Anmeldeprüfung, dafür mit eigenem Schlüssel ──
+  // Der Bearer-Kopf trägt hier einen MCP-Schlüssel, kein Supabase-Login. Nur Kopfzeilen, kein Cookie:
+  // ein Browser schickt Cookies bei jedem fremden POST mit.
+  app.post('/api/mcp', async (c) => {
+    const anmeldung = mcpAnmelden(mcpSchluesselAusKopfOderNull(c.req.header()), process.env);
+    if (!anmeldung.ok) {
+      if (anmeldung.detail) console.warn('[mcp] Anmeldung abgelehnt:', anmeldung.detail);
+      return c.json({ jsonrpc: '2.0', id: null, error: { code: -32001, message: anmeldung.message } }, anmeldung.status as 401 | 500);
+    }
+    const rumpf: unknown = await c.req.json().catch(() => null);
+    if (rumpf === null) return c.json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Der Rumpf ist kein gültiges JSON.' } }, 400);
+    const antwort = await mcpVerarbeiten(db, rumpf, anmeldung.sitzung, { gedaechtnis: gedaechtnisAktuell });
+    // Nur Benachrichtigungen: Streamable HTTP verlangt 202 ohne Rumpf
+    return antwort ? c.json(antwort, 200) : c.body(null, 202);
+  });
+  // Ein MCP-Client öffnet per GET einen Ereignisstrom; den gibt es hier nicht — 405 sagt ihm das.
+  // GET ohne diesen Wunsch ist die Übersicht der App und läuft weiter zur Anmeldung.
+  app.get('/api/mcp', async (c, next) => {
+    if ((c.req.header('accept') ?? '').includes('text/event-stream')) return c.body(null, 405, { allow: 'POST' });
+    await next();
+  });
+
   app.use('/api/*', auth(authOpt));
 
   // Begrenzung der teuren und der zugangsnahen Wege (alt: rate-limits.ts) — nach der Anmeldeprüfung, vor den Routen
@@ -753,19 +775,7 @@ export function createApp({ db, auth: authOpt, expose, gedaechtnis: gedaechtnisO
     async (c) => { const p = c.req.valid('param'); return c.json(await varianteLoeschen(db, p.id, p.varianteId), 200); },
   );
 
-  // ── MCP-Server (alt: server/mcp.ts) ─────────────────────
-  // Nur Kopfzeilen, kein Cookie: ein Browser schickt Cookies bei jedem fremden POST mit.
-  app.post('/api/mcp', async (c) => {
-    const anmeldung = mcpAnmelden(mcpSchluesselAusKopfOderNull(c.req.header()), process.env);
-    if (!anmeldung.ok) {
-      if (anmeldung.detail) console.warn('[mcp] Anmeldung abgelehnt:', anmeldung.detail);
-      return c.json({ jsonrpc: '2.0', id: null, error: { code: -32001, message: anmeldung.message } }, anmeldung.status as 401 | 500);
-    }
-    const rumpf: unknown = await c.req.json().catch(() => null);
-    if (rumpf === null) return c.json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Der Rumpf ist kein gültiges JSON.' } }, 400);
-    const antwort = await mcpVerarbeiten(db, rumpf, anmeldung.sitzung, { gedaechtnis: gedaechtnisAktuell });
-    return antwort ? c.json(antwort, 200) : c.body(null, 204);
-  });
+  // ── MCP-Server: Übersicht für die App (hinter der Anmeldung; der Endpunkt selbst steht vor ihr) ──
   app.openapi(
     createRoute({ method: 'get', path: '/api/mcp', responses: { 200: json(z.object({ lokal: z.boolean(), schluessel: z.array(z.object({ label: z.string(), scopes: z.array(z.string()) })), verworfen: z.array(z.string()), werkzeuge: z.array(z.object({ name: z.string(), scope: z.string(), title: z.string(), description: z.string() })) }), 'Werkzeuge und Schlüssel') } }),
     (c) => c.json(mcpStand(process.env), 200),
