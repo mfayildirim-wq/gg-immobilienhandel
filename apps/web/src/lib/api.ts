@@ -3,9 +3,6 @@ import type { GedaechtnisArt, KalkStandard, KiModellwahl } from '@gg/domain';
 import type {
   GedaechtnisEintrag,
   ExposeAnalyseAntwort,
-  ExposeAngabe,
-  ExposeAngabenAntwort,
-  ExposeUebernahme,
   ExposeUebernehmen,
   Kundenkalkulation,
   KundenkalkulationAnlegen,
@@ -488,7 +485,7 @@ export async function exposeHochladen(datei: File): Promise<{ key: string }> {
   const key = await direktHochladen('expose', datei);
   return anfrage<{ key: string }>('/api/expose/eingang/uebernehmen', senden('POST', { key }));
 }
-export const exposeAnalysieren = (key: string, dateiname: string, bilder = true) => anfrage<ExposeAnalyseAntwort>('/api/expose/analyse', senden('POST', { key, dateiname, bilder }));
+export const exposeAnalysieren = (key: string, dateiname: string) => anfrage<ExposeAnalyseAntwort>('/api/expose/analyse', senden('POST', { key, dateiname }));
 
 export class DublettenFehler extends ApiFehler {
   constructor(readonly dealId: string, message: string) { super(409, message); }
@@ -498,45 +495,8 @@ export async function exposeUebernehmen(e: ExposeUebernehmen) {
   const body = await res.json().catch(() => null);
   if (res.status === 409) throw new DublettenFehler(body?.details?.dealId, body?.fehler);
   if (!res.ok) throw new ApiFehler(res.status, body?.fehler ?? `Fehler ${res.status}`, body?.details, body?.felder);
-  return body as { dealId: string; objektId: string; maklerId: string | null; pdfGespeichert: boolean; warnung?: string; ergaenzt?: boolean; fotos?: number };
+  return body as { dealId: string; objektId: string; maklerId: string | null; pdfGespeichert: boolean; warnung?: string };
 }
-
-// ── Reiter „Aus dem Exposé“ (Objekt/Makler) ───────────────
-type ExposeArt = 'objekte' | 'makler';
-export const useExposeAngaben = (art: ExposeArt, id: string | null) =>
-  useQuery({ queryKey: ['expose-angaben', art, id], queryFn: () => anfrage<ExposeAngabenAntwort>(`/api/${art}/${id}/expose-angaben`), enabled: !!id });
-
-/**
- * 409 der Übernahme: entweder ist die Version überholt (`aktuelleVersion`) oder das Feld trägt inzwischen einen
- * anderen Wert und die Anfrage kam ohne `ersetzen` (`aktuell`) — dann fragt die Oberfläche nach, statt abzubrechen.
- */
-export class ExposeKonflikt extends ApiFehler {
-  constructor(message: string, readonly aktuelleVersion?: number, readonly aktuell?: ExposeAngabe['ziel']['aktuell']) { super(409, message); }
-}
-export function useExposeUebernahme(art: ExposeArt, id: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (e: ExposeUebernahme) => {
-      const res = await holen(`/api/${art}/${id}/expose-uebernahme`, { ...senden('POST', e), headers: { 'content-type': 'application/json' } });
-      const body = await res.json().catch(() => null);
-      if (res.status === 409) {
-        const aktuell = body?.aktuell !== undefined ? body.aktuell : body?.details?.aktuell;
-        throw new ExposeKonflikt(body?.fehler ?? 'Zwischenzeitlich geändert', body?.aktuelleVersion ?? body?.details?.aktuelleVersion, aktuell);
-      }
-      if (!res.ok) throw new ApiFehler(res.status, body?.fehler ?? `Fehler ${res.status}`, body?.details, body?.felder);
-      return body as Geaendert;
-    },
-    onSuccess: (r) => { if (art === 'makler') gehalteneKarten.version('makler', r.id, r.version); },
-    // Angaben (Status je Zeile), Detail und Listen des Bereichs sowie das Ankauf-Cockpit neu laden
-    onSettled: () => Promise.all([
-      qc.invalidateQueries({ queryKey: ['expose-angaben', art, id] }),
-      qc.invalidateQueries({ queryKey: [art] }),
-      qc.invalidateQueries({ queryKey: ['ankauf'] }),
-    ]),
-  });
-}
-/** „Exposé überspringen“: die gespeicherte Analyse gilt als verworfen. */
-export const exposeImportVerwerfen = (importId: string) => anfrage<{ id: string }>(`/api/expose/importe/${importId}/verwerfen`, senden('POST', {}));
 
 // ── Bank-Präsentation ─────────────────────────────────────
 export const useDealPraesentation = (dealId: string) =>

@@ -47,14 +47,6 @@ export async function schreiben(tx: Tx, z: Zeilen) {
   await einfuegen(tx, schema.dealKalkVarianten, z.dealKalkVarianten);
   await einfuegen(tx, schema.dealStatusHistorie, z.dealStatusHistorie);
   await einfuegen(tx, schema.dealDokumente, z.dealDokumente);
-  // Alt-Exposés: die Zeile je Deal hat eine feste ID (imp:<dealId>); ein weiterer Lauf trifft dieselbe Zeile und frischt
-  // die Verweise auf, die das Leeren von deals/objekte/makler zuvor auf null gesetzt hat (on delete set null).
-  for (const e of z.exposeImporte) {
-    await tx.insert(schema.exposeImporte).values(e).onConflictDoUpdate({
-      target: schema.exposeImporte.id,
-      set: { dealId: e.dealId, objektId: e.objektId, maklerId: e.maklerId, dateiname: e.dateiname, schemaVersion: e.schemaVersion, status: e.status, rohdaten: e.rohdaten, updatedAt: sql`now()` },
-    });
-  }
   await einfuegen(tx, schema.kundenkalkulationen, z.kundenkalkulationen);
   await einfuegen(tx, schema.finanzpraesentationen, z.finanzpraesentationen);
   await einfuegen(tx, schema.praesentationFolien, z.praesentationFolien);

@@ -6,8 +6,6 @@ import {
   GedaechtnisMerken,
   GedaechtnisSuchen,
   ExposeAnalyseAntwort,
-  ExposeAngabenAntwort,
-  ExposeUebernahme,
   ExposeUebernahmeErgebnis,
   ExposeUebernehmen,
   Kundenkalkulation,
@@ -143,9 +141,8 @@ import { kiLeiste } from './services/kiLeiste.ts';
 import {
   dealKommentarMelden, dealStatusMelden, gedaechtnisAendern, gedaechtnisEintraege, gedaechtnisMerken, gedaechtnisStand, gedaechtnisSuchen, gedaechtnisVergessen, maklerMelden,
 } from './services/gedaechtnis.ts';
-import { type Dateispeicher, type Geocoder, type GraphClient, AnalyseFehler, type KiClient, KiDienstFehler, KiSchluesselFehler, type PropstackClient, nachrichtenSuche, webSuche, anthropicClient, anthropicSchluesselPruefen, kiMitModell } from '@gg/integrations';
-import { bekannteExposeDateien, exposeAnalysieren, exposeEingang, exposeEingangUebernehmen, type ExposeKontext, exposeUebernehmen, importVerwerfen, MAX_EXPOSE_BYTES, exposeBild } from './services/expose.ts';
-import { maklerAngaben, maklerUebernahme, objektAngaben, objektUebernahme } from './services/exposeAngaben.ts';
+import { type Dateispeicher, type Geocoder, type GraphClient, type KiClient, KiSchluesselFehler, type PropstackClient, nachrichtenSuche, webSuche, anthropicClient, anthropicSchluesselPruefen, kiMitModell } from '@gg/integrations';
+import { bekannteExposeDateien, exposeAnalysieren, exposeEingang, exposeEingangUebernehmen, type ExposeKontext, exposeUebernehmen, MAX_EXPOSE_BYTES } from './services/expose.ts';
 import { auth, type AuthOptionen } from './middleware/auth.ts';
 import {
   dealAnlegen,
@@ -324,19 +321,9 @@ export function createApp({ db, auth: authOpt, expose, gedaechtnis: gedaechtnisO
       const quelle = z?.quelle === 'einstellungen' ? 'Schlüssel aus Einstellungen → Zugänge' : 'Schlüssel aus der Umgebung (ANTHROPIC_API_KEY)';
       return c.json({ fehler: `Der Anthropic-Schlüssel wird abgelehnt (ungültig oder gesperrt). Verwendet: ${quelle}${z?.maske ? ` ${z.maske}` : ''}. Bitte unter Einstellungen → Zugänge einen gültigen Schlüssel hinterlegen oder mit „Schlüssel testen“ prüfen.` }, 422);
     }
-    // Anthropic-Fehler (Limit, Guthaben, Überlast, Zeitlimit …) und fachliche Abbrüche der Analyse: die Ursache zeigen
-    if (err instanceof KiDienstFehler) {
-      console.error('[ki]', err.art, err.antwort || err.message);
-      const status = ({ limit: 503, guthaben: 503, rate: 429, ueberlastet: 503, stoerung: 502, anfrage: 502, zeitlimit: 504, netz: 502 } as const)[err.art];
-      return c.json({ fehler: err.meldung, details: { quelle: 'anthropic', art: err.art, status: err.status } }, status);
-    }
-    if (err instanceof AnalyseFehler) return c.json({ fehler: err.message }, 422);
     if (err instanceof KiLeisteFehler) return c.json({ fehler: err.message }, err.status);
-    // Unerwartet (E6, 16.10.2026): Fach- und KI-Fehler oben im Klartext; technische Ursachen (SQL, Stack, Pfade) nur ins Log,
-    // die Antwort trägt eine Referenz, mit der man die Logzeile findet.
-    const referenz = Math.random().toString(36).slice(2, 10);
-    console.error(`[fehler ${referenz}] ${c.req.method} ${c.req.path}`, err);
-    return c.json({ fehler: `Interner Fehler (Referenz ${referenz})`, details: { pfad: c.req.path, referenz } }, 500);
+    console.error(err);
+    return c.json({ fehler: 'Interner Fehler' }, 500);
   });
 
   app.get('/api/health', async (c) => {
@@ -1341,43 +1328,12 @@ export function createApp({ db, auth: authOpt, expose, gedaechtnis: gedaechtnisO
     async (c) => c.json(await dokumenteUebernehmen(db, ablage(), c.req.valid('param').id, c.req.valid('json').dateien), 201),
   );
   app.openapi(
-    createRoute({ method: 'post', path: '/api/expose/analyse', ...{ request: body(z.object({ key: z.string(), dateiname: z.string().max(300), bilder: z.boolean().optional() })) }, responses: { 200: json(ExposeAnalyseAntwort, 'ausgewertet'), 404: fehler('Datei fehlt'), 422: fehler('nicht auswertbar') } }),
-    async (c) => { const b = c.req.valid('json'); return c.json(await exposeAnalysieren(db, await exposeMitKi(), b.key, b.dateiname, { bilder: b.bilder ?? true }), 200); },
+    createRoute({ method: 'post', path: '/api/expose/analyse', ...{ request: body(z.object({ key: z.string(), dateiname: z.string().max(300) })) }, responses: { 200: json(ExposeAnalyseAntwort, 'ausgewertet'), 404: fehler('Datei fehlt'), 422: fehler('nicht auswertbar') } }),
+    async (c) => { const b = c.req.valid('json'); return c.json(await exposeAnalysieren(db, await exposeMitKi(), b.key, b.dateiname), 200); },
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/expose/uebernehmen', request: body(ExposeUebernehmen), responses: { 201: json(ExposeUebernahmeErgebnis, 'angelegt'), 404: fehler('nicht gefunden'), 409: fehler('Deal bereits vorhanden'), 422: fehler('ungültig') } }),
     async (c) => c.json(await exposeUebernehmen(db, exposeKontext(), c.req.valid('json'), heuteBerlin()), 201),
-  );
-  app.openapi(
-    createRoute({ method: 'post', path: '/api/expose/importe/{id}/verwerfen', request: { params: IdParam }, responses: { 200: json(z.object({ id: z.string() }), 'verworfen'), 404: fehler('nicht gefunden') } }),
-    async (c) => c.json(await importVerwerfen(db, c.req.valid('param').id, ablage()), 200),
-  );
-
-  // Vorschaubild eines Imports (Auth wie bei /api/photos: Header oder Cookie gg-auth)
-  app.get('/api/expose/importe/:id/bilder/:nr', async (c) => {
-    const nr = Number(c.req.param('nr'));
-    if (!Number.isInteger(nr) || nr < 0) throw new FachFehler(404, 'Bild nicht gefunden');
-    const bytes = await exposeBild(db, ablage(), c.req.param('id'), nr);
-    return alsStrom(bytes, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
-  });
-
-  // ── Reiter „Aus dem Exposé“ (Objekt/Makler) ───────────────
-  const uebernahmeAntworten = { 200: Geaendert, ...konflikt, 422: fehler('kein Ziel für diese Angabe') };
-  app.openapi(
-    createRoute({ method: 'get', path: '/api/objekte/{id}/expose-angaben', request: { params: IdParam }, responses: { 200: json(ExposeAngabenAntwort, 'Angaben aus den Exposé-Importen'), 404: fehler('nicht gefunden') } }),
-    async (c) => c.json(await objektAngaben(db, c.req.valid('param').id), 200),
-  );
-  app.openapi(
-    createRoute({ method: 'post', path: '/api/objekte/{id}/expose-uebernahme', request: { params: IdParam, ...body(ExposeUebernahme) }, responses: uebernahmeAntworten }),
-    async (c) => c.json(await objektUebernahme(db, c.req.valid('param').id, c.req.valid('json')), 200),
-  );
-  app.openapi(
-    createRoute({ method: 'get', path: '/api/makler/{id}/expose-angaben', request: { params: IdParam }, responses: { 200: json(ExposeAngabenAntwort, 'Angaben aus den Exposé-Importen'), 404: fehler('nicht gefunden') } }),
-    async (c) => c.json(await maklerAngaben(db, c.req.valid('param').id), 200),
-  );
-  app.openapi(
-    createRoute({ method: 'post', path: '/api/makler/{id}/expose-uebernahme', request: { params: IdParam, ...body(ExposeUebernahme) }, responses: uebernahmeAntworten }),
-    async (c) => c.json(await maklerUebernahme(db, c.req.valid('param').id, c.req.valid('json')), 200),
   );
   app.get('/api/expose/bekannte-dateien', async (c) => c.json(await bekannteExposeDateien(db)));
 

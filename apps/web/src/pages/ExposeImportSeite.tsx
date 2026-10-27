@@ -1,12 +1,12 @@
 import {
   ExposeMaklerDaten as MaklerVertrag, ExposeObjektDaten as ObjektVertrag, ExposeUebernehmen,
-  type ExposeAnalyseAntwort, type ExposeAngabe, type ExposeMaklerDaten, type ExposeObjektDaten, type ExposeZiel,
+  type ExposeAnalyseAntwort, type ExposeMaklerDaten, type ExposeObjektDaten,
 } from '@gg/api-contract';
 import {
-  DEAL_STATUS, einheitenSumme, emailPruefen, exposeKostenBestaetigen, exposeKostenSchaetzung, FREQUENZEN, GG_ZIELE, telefonPruefen, WIZARD_KALK_FELDER, zielWert, type WizardKalk,
+  DEAL_STATUS, emailPruefen, exposeKostenBestaetigen, exposeKostenSchaetzung, FREQUENZEN, telefonPruefen, WIZARD_KALK_FELDER, type WizardKalk,
 } from '@gg/domain';
 import {
-  Accordion, ActionIcon, Alert, Anchor, Badge, Button, Checkbox, Group, NumberInput, Paper, ScrollArea, Select, SimpleGrid, Stack, Stepper, Table, Text, Textarea, TextInput, Title, UnstyledButton,
+  ActionIcon, Alert, Anchor, Badge, Button, Checkbox, Group, NumberInput, Paper, ScrollArea, Select, SimpleGrid, Stack, Stepper, Table, Text, Textarea, TextInput, Title, UnstyledButton,
 } from '@mantine/core';
 import { IconFileUpload, IconPlus, IconTrash, IconX } from '@tabler/icons-react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -14,9 +14,8 @@ import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { type ReactNode, useMemo, useRef, useState, useEffect } from 'react';
 import { Zahlfeld } from '../components/Zahlfeld.tsx';
 import {
-  DublettenFehler, exposeAnalysieren, exposeHochladen, exposeImportVerwerfen, exposeUebernehmen, useBekannteExposeDateien, useKiStatus, useMakler,
+  DublettenFehler, exposeAnalysieren, exposeHochladen, exposeUebernehmen, useBekannteExposeDateien, useKiStatus, useMakler,
 } from '../lib/api.ts';
-import { Bezeichnung, Fundstelle, istEinheit, KonfidenzPunkt, kurzText, Wortlaut } from '../components/ExposeAngaben.tsx';
 
 const ZAHL = { decimalSeparator: ',', thousandSeparator: '.', hideControls: true } as const;
 const WIZARD_STATUS = DEAL_STATUS.filter((s) => s !== 'Angekauft');
@@ -68,9 +67,7 @@ function FehlerListe({ fehler, titel }: { fehler: Feldfehler; titel: string }) {
   );
 }
 
-/** Wizard: 1 Objekt · 2 Fotos · 3 Makler · 4 Deal */
-type Schritt = 1 | 2 | 3 | 4;
-type Phase = { art: 'upload' } | { art: 'pruefen'; schritt: Schritt } | { art: 'zwischenstand'; dealId: string; adresse: string; makler: string };
+type Phase = { art: 'upload' } | { art: 'pruefen'; schritt: 1 | 2 | 3 } | { art: 'zwischenstand'; dealId: string; adresse: string; makler: string };
 
 /** Exposé-Import (Charta Ablauf 1): 📄 Upload → 🏢 Objekt → 🤝 Makler → 📋 Deal & Kalkulation, auch als Stapel. */
 export function ExposeImportSeite() {
@@ -82,9 +79,6 @@ export function ExposeImportSeite() {
   const [idx, setIdx] = useState(0);
   const [phase, setPhase] = useState<Phase>({ art: 'upload' });
   const [kostenOk, setKostenOk] = useState(false);
-  /** Fotos aus dem Exposé herauslösen? Abgewählt entfällt der Schritt „Fotos“ (16.10.2026); die Wahl bleibt im Browser gemerkt. */
-  const [fotosAn, setFotosAnRoh] = useState(() => { try { return localStorage.getItem('expose-fotos') !== '0'; } catch { return true; } });
-  const setFotosAn = (v: boolean) => { setFotosAnRoh(v); try { localStorage.setItem('expose-fotos', v ? '1' : '0'); } catch { /* ohne Speicher */ } };
   const [status, setStatus] = useState<{ text: string; fehler?: boolean } | null>(null);
   const [laeuft, setLaeuft] = useState(false);
   const [a, setA] = useState<(ExposeAnalyseAntwort & { key: string }) | null>(null);
@@ -94,14 +88,6 @@ export function ExposeImportSeite() {
   const [maklerBestehend, setMaklerBestehend] = useState<string | null>(null);
   const [deal, setDeal] = useState<{ status: string; nachfassFreq: string; notizen: string; kalk: WizardKalk }>({ status: 'In Prüfung', nachfassFreq: 'Wöchentlich', notizen: '', kalk: {} });
   const [dublette, setDublette] = useState<string | null>(null);
-  /** Dieses PDF ergänzt einen bestehenden Deal (Fotos, Makler, Exposé) statt einen neuen anzulegen */
-  const [ergaenzen, setErgaenzen] = useState<string | null>(null);
-  /** Weitere Angaben, die beim Anlegen gespeichert werden (Feld → gg-Ziel oder 'notizen') */
-  const [zuordnungen, setZuordnungen] = useState<Record<string, string>>({});
-  // Im Schritt „Fotos“ entfernte Bilder (Nummern)
-  const [fotosAus, setFotosAus] = useState<number[]>([]);
-  /** Weitere Angaben, die schon ins Formular geschrieben wurden (Feld → gg-Ziel) */
-  const [uebernommen, setUebernommen] = useState<Record<string, string>>({});
 
   const schaetzung = useMemo(() => stapel.map((f) => exposeKostenSchaetzung(f.size)), [stapel]);
   const summe = schaetzung.reduce((s, e) => s + e.eur, 0);
@@ -114,7 +100,7 @@ export function ExposeImportSeite() {
     setLaeuft(true);
     try {
       setStatus({ text: 'Claude liest das Exposé …' });
-      const r = await exposeAnalysieren(key, name, fotosAn);
+      const r = await exposeAnalysieren(key, name);
       setA({ ...r, key });
       setObjekt(r.objekt);
       setObjektBestehend(null);
@@ -122,9 +108,6 @@ export function ExposeImportSeite() {
       setMaklerBestehend(r.dubletten.makler?.id ?? null);
       setDeal({ status: r.deal.status, nachfassFreq: r.deal.nachfassFreq, notizen: r.deal.notizen, kalk: r.deal.kalk });
       setDublette(null);
-      setErgaenzen(null);
-      setZuordnungen({}); setFotosAus([]);
-      setUebernommen({});
       setStatus({ text: `✅ Analyse abgeschlossen${r.hinweis ? ` · ${r.hinweis}` : ''}` });
       setPhase({ art: 'pruefen', schritt: 1 });
     } catch (e) {
@@ -153,7 +136,7 @@ export function ExposeImportSeite() {
       setStatus({ text: `Lade Exposé hoch${label} …` });
       const { key } = await exposeHochladen(datei);
       setStatus({ text: `Claude liest das Exposé${label} …` });
-      const r = await exposeAnalysieren(key, datei.name, fotosAn);
+      const r = await exposeAnalysieren(key, datei.name);
       setA({ ...r, key });
       setObjekt(r.objekt);
       setObjektBestehend(null);
@@ -161,9 +144,6 @@ export function ExposeImportSeite() {
       setMaklerBestehend(r.dubletten.makler?.id ?? null);
       setDeal({ status: r.deal.status, nachfassFreq: r.deal.nachfassFreq, notizen: r.deal.notizen, kalk: r.deal.kalk });
       setDublette(null);
-      setErgaenzen(null);
-      setZuordnungen({}); setFotosAus([]);
-      setUebernommen({});
       setStatus({ text: `✅ Analyse abgeschlossen${label}${r.hinweis ? ` · ${r.hinweis}` : ''}` });
       setPhase({ art: 'pruefen', schritt: 1 });
     } catch (e) {
@@ -180,22 +160,15 @@ export function ExposeImportSeite() {
     setStatus(null);
   };
 
-  const anlegen = async (ergaenzeDealId: string | null = ergaenzen) => {
-    // Doppelklick (Protokoll 31, W27): während die Übernahme läuft, geht keine zweite los — der Server lehnt sie zusätzlich mit 409 ab
-    if (!a || !datei || laeuft) return;
+  const anlegen = async () => {
+    if (!a || !datei) return;
     setLaeuft(true);
     try {
       const r = await exposeUebernehmen({
-        key: a.key, dateiname: datei.name, extrahiert: a.extrahiert, importId: a.importId,
-        ...(Object.keys({ ...uebernommen, ...zuordnungen }).length
-          // Ins Formular übernommene Angaben gehen mit (geschrieben wird dort nichts doppelt)
-          ? { zuordnungen: Object.entries({ ...uebernommen, ...zuordnungen }).map(([feld, ziel]) => ({ feld, ziel })) }
-          : {}),
-        ...(fotosAus.length ? { bilderAusschliessen: fotosAus } : {}),
+        key: a.key, dateiname: datei.name, extrahiert: a.extrahiert,
         objekt: { ...(objektBestehend ? { bestehendeId: objektBestehend } : {}), daten: objekt },
         makler: { ...(maklerBestehend ? { bestehendeId: maklerBestehend } : {}), daten: makler },
         deal: { ...deal, status: deal.status as (typeof DEAL_STATUS)[number] },
-        ...(ergaenzeDealId ? { ergaenzeDealId } : {}),
       });
       void qc.invalidateQueries();
       if (verbleibend > 0) {
@@ -204,7 +177,6 @@ export function ExposeImportSeite() {
         navigate({ to: '/deals', search: { deal: r.dealId } });
       }
       if (r.warnung) setStatus({ text: r.warnung, fehler: true });
-      else if (r.ergaenzt) setStatus({ text: `✅ Bestehender Deal ergänzt${r.fotos ? `: ${r.fotos} Fotos ans Objekt` : ''}${r.maklerId ? ', Makler gesetzt' : ''}, Exposé abgelegt.` });
     } catch (e) {
       if (e instanceof DublettenFehler) {
         if (verbleibend > 0) {
@@ -225,35 +197,30 @@ export function ExposeImportSeite() {
 
   const schritt = phase.art === 'pruefen' ? phase.schritt : 0;
   // Jeder Schritt prüft seinen eigenen Teil des Vertrags — der Fehler steht dort, wo er entsteht.
-  const fehlerJeSchritt = useMemo((): Record<Schritt, Feldfehler> => ({
+  const fehlerJeSchritt = useMemo(() => ({
     1: pruefe(ObjektVertrag, objekt),
-    2: {},
-    3: pruefe(MaklerVertrag, makler),
-    4: pruefe(DealVertrag, deal),
+    2: pruefe(MaklerVertrag, makler),
+    3: pruefe(DealVertrag, deal),
   }), [objekt, makler, deal]);
   const zahl = (o: Feldfehler) => Object.keys(o).length;
-  const offeneFehler = zahl(fehlerJeSchritt[1]) + zahl(fehlerJeSchritt[3]) + zahl(fehlerJeSchritt[4]);
-  const SCHRITT_NAME: Record<Schritt, string> = { 1: 'Objekt', 2: 'Fotos', 3: 'Makler', 4: 'Deal & Kalkulation' };
-  // Ohne Fotos gibt es den Schritt „Fotos“ nicht — die Reihenfolge bleibt, nur die Nummer 2 entfällt
-  const SCHRITTE: readonly Schritt[] = fotosAn ? [1, 2, 3, 4] : [1, 3, 4];
-  const WEITER: Record<Schritt, string> = { 1: 'Objekt', 2: 'Fotos', 3: 'Makler', 4: 'Deal' };
-  const nachbar = (s: Schritt, richtung: 1 | -1): Schritt => SCHRITTE[SCHRITTE.indexOf(s) + richtung] ?? s;
+  const offeneFehler = zahl(fehlerJeSchritt[1]) + zahl(fehlerJeSchritt[2]) + zahl(fehlerJeSchritt[3]);
+  const SCHRITT_NAME: Record<1 | 2 | 3, string> = { 1: 'Objekt', 2: 'Makler', 3: 'Deal & Kalkulation' };
 
   return (
     <Stack maw={960} mx="auto">
       <Group justify="flex-end">
         <Button variant="subtle" color="red" leftSection={<IconX size={16} />} onClick={() => navigate({ to: '/deals' })}>Abbrechen</Button>
       </Group>
-      <Stepper active={schritt ? SCHRITTE.indexOf(schritt) + 1 : 0} size="sm">
+      <Stepper active={schritt} size="sm">
         <Stepper.Step label="Upload" description="📄" />
         {/* Ein Schritt mit Beanstandung ist schon am Balken erkennbar, nicht erst nach dem Hineinklicken. */}
-        {SCHRITTE.map((nr) => {
+        {([1, 2, 3] as const).map((nr) => {
           const anzahl = phase.art === 'pruefen' ? zahl(fehlerJeSchritt[nr]) : 0;
           return (
             <Stepper.Step
               key={nr}
               label={SCHRITT_NAME[nr]}
-              description={anzahl ? `${anzahl} zu prüfen` : ['🏢', '📷', '🤝', '📋'][nr - 1]}
+              description={anzahl ? `${anzahl} zu prüfen` : ['🏢', '🤝', '📋'][nr - 1]}
               color={anzahl ? 'red' : undefined}
               data-schritt-fehler={anzahl || undefined}
             />
@@ -271,7 +238,6 @@ export function ExposeImportSeite() {
           hinzufuegen={(fs) => setStapel((s) => [...s, ...fs.filter((f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'))])}
           entfernen={(i) => setStapel((s) => s.filter((_, j) => j !== i))}
           analysieren={analysieren} kiBereit={!!ki?.verfuegbar}
-          fotosAn={fotosAn} setFotosAn={setFotosAn}
         />
       )}
 
@@ -279,33 +245,18 @@ export function ExposeImportSeite() {
         <FehlerListe fehler={fehlerJeSchritt[phase.schritt]} titel={`${SCHRITT_NAME[phase.schritt]}: bitte prüfen`} />
       )}
       {phase.art === 'pruefen' && a && phase.schritt === 1 && (
-        <ObjektSchritt a={a} objekt={objekt} setObjekt={setObjekt} bestehend={objektBestehend} setBestehend={setObjektBestehend} ergaenzen={ergaenzen} setErgaenzen={(id) => { setErgaenzen(id); if (id && a.dubletten.objekt) setObjektBestehend(a.dubletten.objekt.id); }} />
-      )}
-      {phase.art === 'pruefen' && a && phase.schritt === 1 && (
-        <ErfassteAngaben
-          a={a} formular={{ objekt, makler, kalkulation: deal.kalk }}
-          schreiben={(f) => { setObjekt(f.objekt); setMakler(f.makler); setDeal((d) => ({ ...d, kalk: f.kalkulation })); }}
-          zuordnungen={zuordnungen} setZuordnungen={setZuordnungen} uebernommen={uebernommen} setUebernommen={setUebernommen}
-        />
+        <ObjektSchritt a={a} objekt={objekt} setObjekt={setObjekt} bestehend={objektBestehend} setBestehend={setObjektBestehend} />
       )}
       {phase.art === 'pruefen' && a && phase.schritt === 2 && (
-        <FotoSchritt bilder={a.bilder ?? []} aus={fotosAus} setAus={setFotosAus} />
-      )}
-      {phase.art === 'pruefen' && a && phase.schritt === 3 && (
         <MaklerSchritt a={a} makler={makler} setMakler={setMakler} bestehend={maklerBestehend} setBestehend={setMaklerBestehend} />
       )}
-      {phase.art === 'pruefen' && a && phase.schritt === 4 && <DealSchritt deal={deal} setDeal={setDeal} />}
+      {phase.art === 'pruefen' && a && phase.schritt === 3 && <DealSchritt deal={deal} setDeal={setDeal} />}
 
       {dublette && (
         <Alert color="orange" title="Deal bereits vorhanden">
           <Text size="sm" mb="xs">Für „{[objekt.strasse, objekt.hausnr].filter(Boolean).join(' ') || 'Objekt'}“ mit Makler „{makler.name || 'Makler'}“ gibt es schon einen Deal.</Text>
           <Group>
-            <Button size="xs" onClick={() => {
-              // Die gespeicherte Analyse gilt als verworfen; schlägt das fehl, geht es trotzdem zum bestehenden Deal
-              if (a?.importId) void exposeImportVerwerfen(a.importId).catch(() => {});
-              navigate({ to: '/deals', search: { deal: dublette } });
-            }}>Exposé überspringen</Button>
-            <Button size="xs" color="teal" loading={laeuft} onClick={() => { const id = dublette; setDublette(null); setErgaenzen(id); void anlegen(id); }}>Zum bestehenden Deal hinzufügen (Fotos, Makler, Exposé)</Button>
+            <Button size="xs" onClick={() => navigate({ to: '/deals', search: { deal: dublette } })}>Exposé überspringen</Button>
             <Button size="xs" variant="default" onClick={() => setDublette(null)}>Zurück zum Wizard</Button>
           </Group>
         </Alert>
@@ -313,13 +264,13 @@ export function ExposeImportSeite() {
 
       {phase.art === 'pruefen' && (
         <Group justify="space-between">
-          <Button variant="default" disabled={phase.schritt === 1} onClick={() => setPhase({ art: 'pruefen', schritt: nachbar(phase.schritt, -1) })}>← Zurück</Button>
-          {phase.schritt < 4 ? (
+          <Button variant="default" disabled={phase.schritt === 1} onClick={() => setPhase({ art: 'pruefen', schritt: (phase.schritt - 1) as 1 | 2 })}>← Zurück</Button>
+          {phase.schritt < 3 ? (
             <Button
               color={zahl(fehlerJeSchritt[phase.schritt]) ? 'orange' : undefined}
-              onClick={() => setPhase({ art: 'pruefen', schritt: nachbar(phase.schritt, 1) })}
+              onClick={() => setPhase({ art: 'pruefen', schritt: (phase.schritt + 1) as 2 | 3 })}
             >
-              Weiter: {WEITER[nachbar(phase.schritt, 1)]} →
+              {phase.schritt === 1 ? 'Weiter: Makler →' : 'Weiter: Deal →'}
             </Button>
           ) : (
             <Button
@@ -327,7 +278,7 @@ export function ExposeImportSeite() {
               loading={laeuft}
               onClick={() => {
                 // Nicht erst den Server abweisen lassen: zum ersten beanstandeten Schritt springen.
-                const offen = SCHRITTE.find((nr) => zahl(fehlerJeSchritt[nr]));
+                const offen = ([1, 2, 3] as const).find((nr) => zahl(fehlerJeSchritt[nr]));
                 if (offen) {
                   setPhase({ art: 'pruefen', schritt: offen });
                   setStatus({ text: `❌ ${SCHRITT_NAME[offen]}: ${zahl(fehlerJeSchritt[offen])} Feld(er) prüfen`, fehler: true });
@@ -362,7 +313,7 @@ export function ExposeImportSeite() {
 function UploadSchritt(p: {
   stapel: File[]; idx: number; bekannt: string[]; schaetzung: { seiten: number; eur: number }[]; summe: number; bestaetigen: boolean;
   kostenOk: boolean; setKostenOk: (v: boolean) => void; laeuft: boolean; hinzufuegen: (f: File[]) => void; entfernen: (i: number) => void;
-  analysieren: () => void; kiBereit: boolean; fotosAn: boolean; setFotosAn: (v: boolean) => void;
+  analysieren: () => void; kiBereit: boolean;
 }) {
   const eingabe = useRef<HTMLInputElement>(null);
   const [ueber, setUeber] = useState(false);
@@ -398,159 +349,43 @@ function UploadSchritt(p: {
           {p.bestaetigen && <Checkbox mt="xs" label="Kosten bestätigen" checked={p.kostenOk} onChange={(e) => p.setKostenOk(e.currentTarget.checked)} />}
         </Paper>
       )}
-      <Group justify="space-between">
-        <Checkbox label="Fotos aus dem Exposé übernehmen" description="Abgewählt entfällt der Schritt „Fotos“, das Objekt bekommt keine Bilder aus dem PDF" checked={p.fotosAn} onChange={(e) => p.setFotosAn(e.currentTarget.checked)} />
+      <Group justify="flex-end">
         <Button size="md" loading={p.laeuft} disabled={!p.stapel[p.idx] || !p.kiBereit || (p.bestaetigen && !p.kostenOk)} onClick={p.analysieren}>Analysieren →</Button>
       </Group>
     </Stack>
   );
 }
 
-const feldLabel = (text: string, konf?: string): ReactNode => <span>{text}<KonfidenzPunkt konf={konf} /></span>;
-
-/**
- * Werte aus dem Exposé, die ein schon gefülltes Formularfeld bestreiten („doppelt“: das KI-Feld gilt, der zweite Wert wartet):
- * als Knopf unter dem Feld, wie die Kontakt-Alternativen beim Makler (Rückmeldung 16.10.2026, statt der Tabelle unten).
- */
-type FeldVorschlag = { wert: string | number | boolean; text: string; feld: string };
-function feldVorschlaege(a: ExposeAnalyseAntwort, pruef: string): FeldVorschlag[] {
-  const aus: FeldVorschlag[] = [];
-  for (const x of [...a.angaben.objekt, ...a.angaben.makler]) {
-    if (x.zuordnung !== 'doppelt' || !x.ziel.feld || GG_ZIELE[x.ziel.feld]?.pruef !== pruef) continue;
-    const wert = x.ziel.wert ?? zielWert(x.ziel.feld, x.wert, x.pfad).wert;
-    if (wert === null || wert === undefined || aus.some((v) => String(v.wert) === String(wert))) continue;
-    aus.push({ wert, text: typeof wert === 'number' ? wert.toLocaleString('de-DE', { maximumFractionDigits: 2 }) : String(wert), feld: x.feld });
-  }
-  return aus;
-}
-/** Knöpfe unter einem Feld; der Wert, der schon im Feld steht, wird nicht angeboten. */
-function Vorschlaege({ liste, aktuell, waehlen }: { liste: FeldVorschlag[]; aktuell: unknown; waehlen: (w: FeldVorschlag['wert']) => void }) {
-  const extra = liste.filter((v) => String(v.wert) !== String(aktuell ?? ''));
-  if (!extra.length) return null;
-  return (
-    <Group gap={4} mt={4} data-vorschlaege>
-      {extra.map((v) => <Button key={v.feld} size="compact-xs" variant="light" title={`Aus dem Exposé: ${v.text}`} onClick={() => waehlen(v.wert)}>{kurzText(v.text, 40)}</Button>)}
-    </Group>
-  );
-}
-/** Welche Angaben als Knopf an einem Formularfeld stehen (und deshalb unten nicht noch einmal). */
-const amFeld = (x: ExposeAngabe) => x.zuordnung === 'doppelt' && !!x.ziel.feld && !!GG_ZIELE[x.ziel.feld]?.pruef;
-
-// >>> Fotos aus dem Exposé: eigener Wizard-Schritt; alle Fotos sind dabei, einzelne lassen sich entfernen
-function FotoSchritt({ bilder, aus, setAus }: { bilder: ExposeAnalyseAntwort['bilder']; aus: number[]; setAus: (a: number[]) => void }) {
-  const weg = new Set(aus);
-  const behalten = bilder.filter((b) => !weg.has(b.nr)).length;
-  return (
-    <Stack aria-label="Fotos aus dem Exposé">
-      <Title order={3}>📷 Fotos aus dem Exposé</Title>
-      {bilder.length === 0 ? (
-        <Text size="sm" c="dimmed">Keine Fotos im Exposé gefunden.</Text>
-      ) : (
-        <>
-          <Group justify="space-between">
-            <Text size="sm">
-              <b>{behalten}</b> von {bilder.length} Fotos werden beim Anlegen ans Objekt übernommen. Logos und Symbole sind schon aussortiert; unpassende Bilder hier entfernen.
-            </Text>
-            {aus.length > 0 && <Button size="compact-sm" variant="subtle" onClick={() => setAus([])}>Alle wieder aufnehmen</Button>}
-          </Group>
-          <SimpleGrid cols={{ base: 2, sm: 3, md: 4 }} spacing="sm">
-            {bilder.map((b) => {
-              const entfernt = weg.has(b.nr);
-              return (
-                <Paper key={b.nr} withBorder p={4} data-foto={b.nr} data-entfernt={entfernt || undefined} style={{ opacity: entfernt ? 0.35 : 1 }}>
-                  <img src={b.url} alt={`Foto von Seite ${b.seite}`} loading="lazy" style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 4, display: 'block' }} />
-                  <Group justify="space-between" mt={4} gap={4}>
-                    <Text size="xs" c="dimmed">S. {b.seite} · {b.breite}×{b.hoehe}</Text>
-                    <Button
-                      size="compact-xs" variant={entfernt ? 'light' : 'subtle'} color={entfernt ? 'teal' : 'red'}
-                      onClick={() => setAus(entfernt ? aus.filter((x) => x !== b.nr) : [...aus, b.nr])}
-                    >{entfernt ? 'Wieder aufnehmen' : 'Entfernen'}</Button>
-                  </Group>
-                </Paper>
-              );
-            })}
-          </SimpleGrid>
-        </>
-      )}
-    </Stack>
-  );
-}
-// <<< Fotos aus dem Exposé
-
-/** Summenzeile unter der Einheitenaufstellung: Summe der Zeilen gegen Wohnfläche und Ist-Miete aus dem Exposé. */
-function EinheitenSumme({ einheiten, wohnflaeche, istmiete }: { einheiten: NonNullable<ExposeObjektDaten['einheiten']>; wohnflaeche: number | null; istmiete: number | null }) {
-  const s = einheitenSumme(einheiten, wohnflaeche, istmiete);
-  const zahl = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits: 2 });
-  const zelle = (ist: number, soll: number | null, weicht: boolean, einheit: string) => (
-    <Text size="xs" fw={700} c={weicht ? 'red' : undefined}>
-      {zahl(ist)}{soll !== null ? <Text span size="xs" fw={400} c="dimmed"> / {zahl(soll)} {einheit}</Text> : null}{weicht ? ' ⚠' : ''}
-    </Text>
-  );
-  return (
-    <Table.Tfoot>
-      <Table.Tr aria-label="Summe Einheiten" data-flaeche-weicht={s.flaecheWeicht || undefined} data-miete-weicht={s.mieteWeicht || undefined}>
-        <Table.Td colSpan={3}><Text size="xs" c="dimmed">Summe / Exposé</Text></Table.Td>
-        <Table.Td>{zelle(s.flaeche, wohnflaeche, s.flaecheWeicht, 'm²')}</Table.Td>
-        <Table.Td>{zelle(s.miete, istmiete, s.mieteWeicht, '€')}</Table.Td>
-        <Table.Td colSpan={3}>{(s.flaecheWeicht || s.mieteWeicht) && <Text size="xs" c="red">Summe weicht vom Exposé ab</Text>}</Table.Td>
-      </Table.Tr>
-    </Table.Tfoot>
-  );
+function Punkt({ konf }: { konf?: string }) {
+  const farbe = konf === 'hoch' ? 'green' : konf === 'mittel' ? 'orange' : 'red';
+  const tipp = konf === 'hoch' ? 'Sicher erkannt' : konf === 'mittel' ? 'Unsicher – bitte prüfen' : 'Nicht erkannt';
+  return <span title={tipp} aria-label={tipp} style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4, background: `var(--mantine-color-${farbe}-6)`, marginLeft: 6 }} />;
 }
 
-function ObjektSchritt({ a, objekt, setObjekt, bestehend, setBestehend, ergaenzen, setErgaenzen }: { a: ExposeAnalyseAntwort; objekt: ExposeObjektDaten; setObjekt: (o: ExposeObjektDaten) => void; bestehend: string | null; setBestehend: (id: string | null) => void; ergaenzen: string | null; setErgaenzen: (id: string | null) => void }) {
+const feldLabel = (text: string, konf?: string): ReactNode => <span>{text}<Punkt konf={konf} /></span>;
+
+function ObjektSchritt({ a, objekt, setObjekt, bestehend, setBestehend }: { a: ExposeAnalyseAntwort; objekt: ExposeObjektDaten; setObjekt: (o: ExposeObjektDaten) => void; bestehend: string | null; setBestehend: (id: string | null) => void }) {
   const k = a.konfidenz;
   const t = (feld: keyof ExposeObjektDaten, label: string, konfSchluessel = feld as string) => (
-    <div>
-      <TextInput label={feldLabel(label, k[konfSchluessel])} value={(objekt[feld] as string) ?? ''} onChange={(e) => setObjekt({ ...objekt, [feld]: e.currentTarget.value })} />
-      <Vorschlaege liste={feldVorschlaege(a, `objekt.${feld}`)} aktuell={objekt[feld]} waehlen={(w) => setObjekt({ ...objekt, [feld]: String(w) })} />
-    </div>
+    <TextInput label={feldLabel(label, k[konfSchluessel])} value={(objekt[feld] as string) ?? ''} onChange={(e) => setObjekt({ ...objekt, [feld]: e.currentTarget.value })} />
   );
   const n = (feld: keyof ExposeObjektDaten, label: string) => (
-    <div>
-      <Zahlfeld label={feldLabel(label, k[feld as string])} value={(objekt[feld] as number) ?? ''} onWert={(v) => setObjekt({ ...objekt, [feld]: v })} {...ZAHL} thousandSeparator={feld === 'baujahr' || feld === 'heizungsbaujahr' ? undefined : '.'} />
-      <Vorschlaege liste={feldVorschlaege(a, `objekt.${feld}`)} aktuell={objekt[feld]} waehlen={(w) => setObjekt({ ...objekt, [feld]: typeof w === 'number' ? w : Number(w) })} />
-    </div>
+    <Zahlfeld label={feldLabel(label, k[feld as string])} value={(objekt[feld] as number) ?? ''} onWert={(v) => setObjekt({ ...objekt, [feld]: v })} {...ZAHL} thousandSeparator={feld === 'baujahr' || feld === 'heizungsbaujahr' ? undefined : '.'} />
   );
   const ea = objekt.energieausweis ?? {};
-  const eaVorschlag = (teil: 'klasse' | 'kennwert' | 'art') => (
-    <Vorschlaege liste={feldVorschlaege(a, `objekt.energieausweis.${teil}`)} aktuell={ea[teil]} waehlen={(w) => setObjekt({ ...objekt, energieausweis: { ...ea, [teil]: teil === 'kennwert' ? Number(w) : String(w) } })} />
-  );
   const einheiten = objekt.einheiten ?? [];
   const setE = (i: number, teil: object) => setObjekt({ ...objekt, einheiten: einheiten.map((e, j) => (j === i ? { ...e, ...teil } : e)) });
   return (
     <Stack>
       <Title order={3}>🏢 Objekt prüfen</Title>
       <Text size="sm" c="dimmed">Erkannte Werte prüfen und korrigieren. Punkt: grün sicher · orange unsicher · rot nicht erkannt.</Text>
-      {a.warnungen.length > 0 && (
-        <Accordion variant="separated" chevronPosition="left" aria-label="Warnungen">
-          <Accordion.Item value="hinweise">
-            <Accordion.Control icon={<span aria-hidden>⚠️</span>}>Hinweise der Analyse ({a.warnungen.length})</Accordion.Control>
-            <Accordion.Panel><Stack gap={2}>{a.warnungen.map((w, i) => <Text key={i} size="sm">{w}</Text>)}</Stack></Accordion.Panel>
-          </Accordion.Item>
-        </Accordion>
-      )}
       {a.dubletten.objekt && (
         <Alert color={bestehend ? 'green' : 'orange'} title={a.dubletten.objekt.sicherheit === 'exact' ? 'Objekt existiert bereits' : 'Ähnliches Objekt gefunden'}>
           <Text size="sm" mb="xs">{a.dubletten.objekt.titel}</Text>
           <Group>
             <Button size="xs" variant={bestehend ? 'filled' : 'light'} onClick={() => setBestehend(a.dubletten.objekt!.id)}>Bestehendes Objekt verwenden</Button>
-            <Button size="xs" variant={bestehend ? 'default' : 'filled'} color="gray" onClick={() => { setBestehend(null); setErgaenzen(null); }}>Neu anlegen</Button>
+            <Button size="xs" variant={bestehend ? 'default' : 'filled'} color="gray" onClick={() => setBestehend(null)}>Neu anlegen</Button>
           </Group>
-          {!!a.bestehendeDeals?.length && (
-            <Stack gap={4} mt="sm" aria-label="Bestehende Deals">
-              <Text size="sm" fw={600}>Zu diesem Objekt gibt es schon {a.bestehendeDeals.length === 1 ? 'einen Deal' : `${a.bestehendeDeals.length} Deals`}. Soll dieses PDF ihn ergänzen?</Text>
-              {a.bestehendeDeals.map((d) => (
-                <Group key={d.id} gap="xs">
-                  <Text size="sm">{d.status} · {d.makler ?? 'ohne Makler'}</Text>
-                  <Button size="xs" variant={ergaenzen === d.id ? 'filled' : 'light'} color="teal" onClick={() => setErgaenzen(ergaenzen === d.id ? null : d.id)}>
-                    {ergaenzen === d.id ? '✓ Wird ergänzt' : 'Diesen Deal ergänzen'}
-                  </Button>
-                </Group>
-              ))}
-              {ergaenzen && <Text size="xs" c="dimmed">Kein neuer Deal: Fotos kommen ans Objekt, der Makler wird eingetragen (falls der Deal keinen hat), das PDF liegt als Exposé am Deal. Zahlen aus diesem Exposé übernimmst du danach im Reiter „Aus dem Exposé“.</Text>}
-            </Stack>
-          )}
         </Alert>
       )}
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
@@ -561,18 +396,9 @@ function ObjektSchritt({ a, objekt, setObjekt, bestehend, setBestehend, ergaenze
       <Text size="xs" fw={700} c="dimmed" tt="uppercase">Energie & Heizung</Text>
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
         {t('heizungsart', 'Heizungsart')}{n('heizungsbaujahr', 'Heizung Baujahr')}
-        <div>
-          <TextInput label={feldLabel('Energieklasse', k.energieklasse)} value={ea.klasse ?? ''} onChange={(e) => setObjekt({ ...objekt, energieausweis: { ...ea, klasse: e.currentTarget.value } })} />
-          {eaVorschlag('klasse')}
-        </div>
-        <div>
-          <Zahlfeld label={feldLabel('Energiekennwert kWh/m²a', k.energiekennwert)} value={ea.kennwert ?? ''} onWert={(v) => setObjekt({ ...objekt, energieausweis: { ...ea, kennwert: v } })} {...ZAHL} />
-          {eaVorschlag('kennwert')}
-        </div>
-        <div>
-          <TextInput label={feldLabel('Energieausweis Art', k.energieart)} value={ea.art ?? ''} onChange={(e) => setObjekt({ ...objekt, energieausweis: { ...ea, art: e.currentTarget.value } })} />
-          {eaVorschlag('art')}
-        </div>
+        <TextInput label={feldLabel('Energieklasse', k.energieklasse)} value={ea.klasse ?? ''} onChange={(e) => setObjekt({ ...objekt, energieausweis: { ...ea, klasse: e.currentTarget.value } })} />
+        <Zahlfeld label={feldLabel('Energiekennwert kWh/m²a', k.energiekennwert)} value={ea.kennwert ?? ''} onWert={(v) => setObjekt({ ...objekt, energieausweis: { ...ea, kennwert: v } })} {...ZAHL} />
+        <TextInput label={feldLabel('Energieausweis Art', k.energieart)} value={ea.art ?? ''} onChange={(e) => setObjekt({ ...objekt, energieausweis: { ...ea, art: e.currentTarget.value } })} />
       </SimpleGrid>
       <Paper withBorder p="sm" aria-label="Einheitenaufstellung">
         <Group justify="space-between" mb="xs">
@@ -581,23 +407,20 @@ function ObjektSchritt({ a, objekt, setObjekt, bestehend, setBestehend, ergaenze
         </Group>
         <ScrollArea>
           <Table miw={620}>
-            <Table.Thead><Table.Tr><Table.Th>Typ</Table.Th><Table.Th>Lage</Table.Th><Table.Th>Zi.</Table.Th><Table.Th>m²</Table.Th><Table.Th>Kaltmiete €</Table.Th><Table.Th>Status</Table.Th><Table.Th>Hinweis</Table.Th><Table.Th /></Table.Tr></Table.Thead>
+            <Table.Thead><Table.Tr><Table.Th>Typ</Table.Th><Table.Th>Lage</Table.Th><Table.Th>Zi.</Table.Th><Table.Th>m²</Table.Th><Table.Th>Kaltmiete €</Table.Th><Table.Th>Status</Table.Th><Table.Th /></Table.Tr></Table.Thead>
             <Table.Tbody>
               {einheiten.map((e, i) => (
-                <Table.Tr key={i} data-hinweis={e.hinweis ?? undefined}>
+                <Table.Tr key={i}>
                   <Table.Td><Select size="xs" w={110} data={['Wohnung', 'Gewerbe', 'Stellplatz', 'Sonstiges']} value={e.typ ?? 'Wohnung'} allowDeselect={false} onChange={(v) => v && setE(i, { typ: v })} aria-label="Typ" /></Table.Td>
                   <Table.Td><TextInput size="xs" w={100} value={e.lage ?? ''} onChange={(ev) => setE(i, { lage: ev.currentTarget.value })} aria-label="Lage" /></Table.Td>
                   <Table.Td><Zahlfeld size="xs" w={60} value={e.zimmer ?? ''} onWert={(v) => setE(i, { zimmer: v })} aria-label="Zimmer" {...ZAHL} /></Table.Td>
-                  {/* Gesamtwert-/Rest-Zeile: sobald Fläche oder Miete von Hand geändert wird, ist der Hinweis erledigt */}
-                  <Table.Td><Zahlfeld size="xs" w={70} value={e.flaeche ?? ''} onWert={(v) => setE(i, { flaeche: v, hinweis: null })} aria-label="Fläche" {...ZAHL} /></Table.Td>
-                  <Table.Td><Zahlfeld size="xs" w={90} value={e.kaltmiete ?? ''} onWert={(v) => setE(i, { kaltmiete: v, hinweis: null })} aria-label="Kaltmiete" {...ZAHL} /></Table.Td>
+                  <Table.Td><Zahlfeld size="xs" w={70} value={e.flaeche ?? ''} onWert={(v) => setE(i, { flaeche: v })} aria-label="Fläche" {...ZAHL} /></Table.Td>
+                  <Table.Td><Zahlfeld size="xs" w={90} value={e.kaltmiete ?? ''} onWert={(v) => setE(i, { kaltmiete: v })} aria-label="Kaltmiete" {...ZAHL} /></Table.Td>
                   <Table.Td><Select size="xs" w={110} data={['Vermietet', 'Leerstand']} value={e.vermiet ?? 'Vermietet'} allowDeselect={false} onChange={(v) => v && setE(i, { vermiet: v })} aria-label="Status" /></Table.Td>
-                  <Table.Td>{e.hinweis ? <Badge size="xs" color="yellow" variant="light">{e.hinweis === 'rest' ? 'Rest aus Gesamtwert, bitte aufteilen' : 'Gesamtwert, bitte aufteilen'}</Badge> : null}</Table.Td>
                   <Table.Td><ActionIcon variant="subtle" color="red" aria-label="Einheit entfernen" onClick={() => setObjekt({ ...objekt, einheiten: einheiten.filter((_, j) => j !== i) })}><IconTrash size={14} /></ActionIcon></Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>
-            {einheiten.length > 0 && <EinheitenSumme einheiten={einheiten} wohnflaeche={objekt.wohnflaeche ?? null} istmiete={objekt.istmiete ?? null} />}
           </Table>
         </ScrollArea>
       </Paper>
@@ -620,10 +443,7 @@ function MaklerSchritt({ a, makler, setMakler, bestehend, setBestehend }: { a: E
   const telFehler = telefonPruefen(makler.tel), mailFehler = emailPruefen(makler.email);
 
   const mitOptionen = (feld: 'name' | 'tel' | 'email', label: string, konf: string | undefined, optionen?: string[]) => {
-    // Alternativen der KI (alleNamen …) plus die „doppelten“ Angaben aus dem Exposé zu diesem Feld
-    const pruefe = feld === 'tel' ? ['makler.mobiltel', 'makler.festnetztel'] : [`makler.${feld}`];
-    const doppelt = pruefe.flatMap((pr) => feldVorschlaege(a, pr).map((v) => v.text));
-    const extra = [...new Set([...(optionen ?? []), ...doppelt].map((o) => o?.trim()).filter(Boolean))].filter((o) => o !== (makler[feld] ?? '').trim());
+    const extra = [...new Set((optionen ?? []).map((o) => o?.trim()).filter(Boolean))].filter((o) => o !== (makler[feld] ?? '').trim());
     return (
       <div>
         <TextInput label={feldLabel(label, konf)} value={makler[feld] ?? ''} onChange={(e) => setMakler({ ...makler, [feld]: e.currentTarget.value })}
@@ -687,168 +507,6 @@ function DealSchritt({ deal, setDeal }: { deal: { status: string; nachfassFreq: 
         <Text size="xs" c="dimmed" mt="xs">Alle Werte lassen sich nach dem Import in der Kalkulation anpassen. Eine 0 bleibt 0.</Text>
       </Paper>
       <Textarea label="Deal-Notizen" autosize minRows={3} value={deal.notizen} onChange={(e) => setDeal({ ...deal, notizen: e.currentTarget.value })} />
-    </Stack>
-  );
-}
-
-// ── Weitere Angaben (Erfassung v2): nicht automatisch zugeordnete Angaben per Dropdown übernehmen ──
-
-/** Die Formulare der Prüfseite unter den Pfaden, die `ExposeZiel.pruef` nennt (objekt.*, makler.*, kalkulation.*). */
-type Formular = { objekt: ExposeObjektDaten; makler: ExposeMaklerDaten; kalkulation: WizardKalk };
-type AngabeArt = 'objekt' | 'makler';
-const NOTIZEN = 'notizen';
-
-function formLesen(f: Formular, pfad: string): unknown {
-  let akt: unknown = f;
-  for (const t of pfad.split('.')) akt = akt && typeof akt === 'object' ? (akt as Record<string, unknown>)[t] : undefined;
-  return akt;
-}
-function formSchreiben(f: Formular, pfad: string, wert: unknown): Formular {
-  const setze = (o: unknown, teile: string[]): Record<string, unknown> => {
-    const basis = o && typeof o === 'object' ? { ...(o as Record<string, unknown>) } : {};
-    const [kopf, ...rest] = teile;
-    basis[kopf!] = rest.length ? setze(basis[kopf!], rest) : wert;
-    return basis;
-  };
-  return setze(f, pfad.split('.')) as Formular;
-}
-const istLeer = (v: unknown) => v === null || v === undefined || (typeof v === 'string' && !v.trim());
-
-function ErfassteAngaben({ a, formular, schreiben, zuordnungen, setZuordnungen, uebernommen, setUebernommen }: {
-  a: ExposeAnalyseAntwort; formular: Formular; schreiben: (f: Formular) => void;
-  zuordnungen: Record<string, string>; setZuordnungen: (z: Record<string, string>) => void;
-  uebernommen: Record<string, string>; setUebernommen: (u: Record<string, string>) => void;
-}) {
-  const [auswahl, setAuswahl] = useState<Record<string, string | null>>({});
-  const [fehler, setFehler] = useState<Record<string, string>>({});
-  const alle = [
-    ...a.angaben.objekt.map((x) => ({ art: 'objekt' as AngabeArt, x })),
-    ...a.angaben.makler.map((x) => ({ art: 'makler' as AngabeArt, x })),
-  ];
-  const erfasst = alle.filter(({ x }) => !istEinheit(x));
-  const automatisch = erfasst.filter(({ x }) => x.zuordnung === 'zugeordnet').length;
-  const anFeldern = erfasst.filter(({ x }) => amFeld(x)).length;
-  // Unten nur, was kein Formularfeld hat; „doppelt“ ohne lesbaren Wert (Nachbarzelle, Platzhalter) bleibt bei „Alle erfassten Angaben“
-  const weitere = erfasst.filter(({ x }) => x.zuordnung !== 'zugeordnet' && !amFeld(x) && !(x.zuordnung === 'doppelt' && (!x.ziel.feld || x.ziel.wert === null)));
-  const zielLabel = (art: AngabeArt, s: string) => (s === NOTIZEN ? 'Notizen' : a.ziele[art].find((z) => z.schluessel === s)?.label ?? s);
-  if (!alle.length) return null;
-
-  /** Angeboten wird, was im Formular noch leer ist oder kein Formularfeld hat — und immer der Vorschlag. */
-  const optionen = (art: AngabeArt, x: ExposeAngabe) => {
-    const vorschlag = x.ziel.quelle === 'vorschlag' ? x.ziel.feld : null;
-    const vergeben = new Set(Object.entries(zuordnungen).filter(([f]) => f !== x.feld).map(([, z]) => z));
-    const passt = (z: ExposeZiel) => z.schluessel === vorschlag
-      || (z.pruef ? istLeer(formLesen(formular, z.pruef)) : !vergeben.has(z.schluessel) || !!GG_ZIELE[z.schluessel]?.liste);
-    const eintrag = (z: ExposeZiel) => ({ value: z.schluessel, label: `${z.label}${z.einheit ? ` (${z.einheit})` : ''}${z.schluessel === vorschlag ? ' · Vorschlag' : ''}` });
-    const ziele = a.ziele[art].filter(passt);
-    return [
-      { group: 'Formular', items: ziele.filter((z) => z.pruef).map(eintrag) },
-      { group: 'Weitere Felder', items: ziele.filter((z) => !z.pruef).map(eintrag) },
-      { group: 'Sonstiges', items: [{ value: NOTIZEN, label: 'In Notizen' }] },
-    ].filter((g) => g.items.length);
-  };
-
-  const uebernehmen = (art: AngabeArt, x: ExposeAngabe, ziel: string) => {
-    setFehler((f) => Object.fromEntries(Object.entries(f).filter(([feld]) => feld !== x.feld)));
-    const pruef = ziel === NOTIZEN ? null : a.ziele[art].find((z) => z.schluessel === ziel)?.pruef ?? null;
-    if (!pruef) {
-      setZuordnungen({ ...zuordnungen, [x.feld]: ziel });
-      return;
-    }
-    // Lesen wie die API: der vorgeschlagene Wert, sonst der Wortlaut für dieses Ziel (Regel in @gg/domain)
-    const wert = ziel === x.ziel.feld && x.ziel.wert !== null ? x.ziel.wert : zielWert(ziel, x.wert, x.pfad).wert;
-    if (wert === null) { setFehler((f) => ({ ...f, [x.feld]: 'Wert passt nicht zu diesem Feld' })); return; }
-    const bisher = formLesen(formular, pruef);
-    const neu = GG_ZIELE[ziel]?.liste && typeof wert === 'string' && typeof bisher === 'string' && bisher.trim() ? `${bisher}\n${wert}` : wert;
-    schreiben(formSchreiben(formular, pruef, neu));
-    setUebernommen({ ...uebernommen, [x.feld]: ziel });
-  };
-
-  return (
-    <Stack gap="sm">
-      <Text size="sm" c="dimmed" data-erfassung>
-        {erfasst.length} Angaben erfasst · {automatisch} automatisch zugeordnet{anFeldern ? ` · ${anFeldern} als Vorschlag am Feld` : ''} · {weitere.length} weitere
-        {a.belegQuote !== null ? ` · ${Math.round(a.belegQuote * 100)} % auf der Seite belegt` : ''}
-      </Text>
-      <Accordion variant="separated" chevronPosition="left">
-      {weitere.length > 0 && (
-        <Accordion.Item value="weitere">
-        <Accordion.Control>Weitere Angaben aus dem Exposé ({weitere.length})</Accordion.Control>
-        <Accordion.Panel>
-        <Paper withBorder p="sm" aria-label="Weitere Angaben">
-          <Text size="xs" c="dimmed" mb="xs">Angaben ohne Formularfeld. In ein weiteres Feld oder in die Notizen übernehmen — sonst bleiben sie im Reiter „Aus dem Exposé“.</Text>
-          <ScrollArea>
-            <Table miw={760} verticalSpacing={4} horizontalSpacing={6}>
-              <Table.Thead><Table.Tr><Table.Th>Bezeichnung</Table.Th><Table.Th>Wert</Table.Th><Table.Th>Seite</Table.Th><Table.Th>Übernehmen in …</Table.Th></Table.Tr></Table.Thead>
-              <Table.Tbody>
-                {weitere.map(({ art, x }) => {
-                  const vorschlag = x.ziel.quelle === 'vorschlag' ? x.ziel.feld : null;
-                  const wahl = x.feld in auswahl ? auswahl[x.feld]! : vorschlag;
-                  const imFormular = uebernommen[x.feld];
-                  const gemerkt = zuordnungen[x.feld];
-                  return (
-                    <Table.Tr key={`${art}:${x.feld}`} data-feld={x.feld} data-zustand={imFormular ? 'uebernommen' : gemerkt ? 'gemerkt' : 'offen'}>
-                      <Table.Td>
-                        <Bezeichnung a={x} />
-                        {x.zuordnung === 'doppelt' && <Badge size="xs" color="yellow" variant="light" mt={2} title="Das Feld ist schon aus einer anderen Angabe gefüllt">doppelt</Badge>}
-                      </Table.Td>
-                      <Table.Td maw={300}><Wortlaut text={x.wert} /></Table.Td>
-                      <Table.Td><Fundstelle a={x} /></Table.Td>
-                      <Table.Td>
-                        {imFormular ? (
-                          <Badge color="teal" variant="light">übernommen → {zielLabel(art, imFormular)}</Badge>
-                        ) : gemerkt ? (
-                          <Group gap={6} wrap="nowrap">
-                            <Badge color="blue" variant="light">{zielLabel(art, gemerkt)} · wird beim Anlegen gespeichert</Badge>
-                            <Button size="compact-xs" variant="subtle" onClick={() => setZuordnungen(Object.fromEntries(Object.entries(zuordnungen).filter(([f]) => f !== x.feld)))}>Rückgängig</Button>
-                          </Group>
-                        ) : (
-                          <Stack gap={2}>
-                            <Group gap={6} wrap="nowrap">
-                              <Select size="xs" w={250} aria-label="Übernehmen in …" placeholder="Übernehmen in …" searchable clearable
-                                data={optionen(art, x)} value={wahl} onChange={(v) => setAuswahl((s) => ({ ...s, [x.feld]: v }))} />
-                              <Button size="compact-xs" variant="light" disabled={!wahl} onClick={() => wahl && uebernehmen(art, x, wahl)}>Übernehmen</Button>
-                            </Group>
-                            {fehler[x.feld] && <Text fz={11} c="red">{fehler[x.feld]}</Text>}
-                            {!fehler[x.feld] && x.ziel.hinweis && <Text fz={11} c="dimmed">{x.ziel.hinweis}</Text>}
-                          </Stack>
-                        )}
-                      </Table.Td>
-                    </Table.Tr>
-                  );
-                })}
-              </Table.Tbody>
-            </Table>
-          </ScrollArea>
-        </Paper>
-        </Accordion.Panel>
-        </Accordion.Item>
-      )}
-        <Accordion.Item value="alle">
-          <Accordion.Control>Alle erfassten Angaben ({alle.length})</Accordion.Control>
-          <Accordion.Panel>
-            <ScrollArea>
-              <Table miw={560} verticalSpacing={4} horizontalSpacing={6} aria-label="Alle erfassten Angaben">
-                <Table.Thead><Table.Tr><Table.Th>Bezeichnung</Table.Th><Table.Th>Wert</Table.Th><Table.Th>Seite</Table.Th><Table.Th>Ziel</Table.Th></Table.Tr></Table.Thead>
-                <Table.Tbody>
-                  {alle.map(({ art, x }) => {
-                    const manuell = uebernommen[x.feld] ?? zuordnungen[x.feld];
-                    const ziel = x.zuordnung === 'zugeordnet' ? x.ziel.label : manuell ? zielLabel(art, manuell) : null;
-                    return (
-                      <Table.Tr key={`${art}:${x.feld}`} data-feld={x.feld}>
-                        <Table.Td><Bezeichnung a={x} /></Table.Td>
-                        <Table.Td maw={320}><Wortlaut text={x.wert} /></Table.Td>
-                        <Table.Td><Fundstelle a={x} /></Table.Td>
-                        <Table.Td><Text size="sm" c={ziel ? undefined : 'dimmed'}>{ziel ? `→ ${ziel}` : '—'}</Text></Table.Td>
-                      </Table.Tr>
-                    );
-                  })}
-                </Table.Tbody>
-              </Table>
-            </ScrollArea>
-          </Accordion.Panel>
-        </Accordion.Item>
-      </Accordion>
     </Stack>
   );
 }
