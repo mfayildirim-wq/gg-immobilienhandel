@@ -176,6 +176,21 @@ Zwei Aktionen verändern etwas außerhalb der App: die AGB-/Provisionsbestätigu
 
 `POST /api/mcp` spricht JSON-RPC (initialize, tools/list, tools/call). Außerhalb einer nachweislich lokalen Umgebung braucht jeder Aufruf einen Schlüssel im Kopf `Authorization: Bearer …` — Cookies zählen nicht; hinterlegt werden nur SHA-256-Hashes in `MCP_API_KEYS` (`label:scope[+scope]:sha256`), verglichen wird in konstanter Zeit. Bereiche: `read`, `write`, `outward`; ein Werkzeug ohne gültigen Bereich ist weder auflistbar noch aufrufbar. Werkzeuge: `list_collections`, `read_collection`, `read_entity`, `list_files`, `read_audit_log` (lesen), `add_note` (schreiben) und `request_outward_approval` (legt nur einen Antrag an — ausgeführt wird nichts). Regeln in `packages/domain/src/mcp/zugang.ts` (Golden Master aus `server/mcp.ts`), Werkzeuge in `apps/api/src/services/mcp.ts`; die Übersicht steht unter Einstellungen → Aktionen nach außen.
 
+Der Endpunkt liegt vor der App-Anmeldung (der Bearer-Kopf trägt den MCP-Schlüssel, kein Supabase-Login); ein GET mit `Accept: text/event-stream` bekommt 405 (kein Ereignisstrom), reine Benachrichtigungen 202. Claude verbinden:
+
+```bash
+# Schlüssel erzeugen und den Hash in Vercel eintragen: MCP_API_KEYS = claude:read:<hash>  (Bereiche mit + verbinden, z. B. read+write)
+openssl rand -hex 32                        # = <schluessel>, nur beim Nutzer aufbewahren
+echo -n '<schluessel>' | shasum -a 256      # = <hash>
+
+# Claude Code
+claude mcp add --transport http gg https://<app>.vercel.app/api/mcp --header "Authorization: Bearer <schluessel>"
+# lokal (AUTH_LOCAL_OPEN=1, ohne Schlüssel)
+claude mcp add --transport http gg-lokal http://localhost:3101/api/mcp
+```
+
+Claude Desktop über `npx mcp-remote https://<app>.vercel.app/api/mcp --header "Authorization: Bearer <schluessel>"`. claude.ai-Connectoren verlangen OAuth und gehen mit einem festen Schlüssel nicht.
+
 ## Audit-Log
 
 **Einstellungen → Audit-Log**: Filter nach Typ, Entität und Zeitraum, Suche in Werten, IDs und Metadaten, Export als JSON oder CSV, „🔐 Hash-Kette prüfen“ und „🗑 Älter als 180 Tage löschen“ (hinterlässt einen Anker, damit die Prüfung ab dem verbliebenen Anfang weiterrechnet). Jede Schreibstelle (Dokumente, Fotos, KI-Aufrufe, PDF-Exporte, Merges) geht über `auditSchreiben` und hängt an der Kette; Zeitstempel in Sekunden wie in der alten App. Kette wörtlich in `packages/domain/src/audit/kette.ts` (Golden Master aus `server/audit-chain.ts`, sha256 wird übergeben), Dienst in `apps/api/src/services/audit.ts`.
