@@ -67,7 +67,7 @@ export function MaklerRechercheEinstellungen() {
         <Title order={4}>🔎 Makler-Recherche</Title>
         <Group gap="xs">
           <Button size="xs" variant="default" disabled={!mitVorschlaegen.length || uebernehmen.isPending} data-recherche-alle-uebernehmen
-            onClick={() => uebernehmen.mutate(mitVorschlaegen, { onSuccess: (r) => setMeldung(`${r.uebernommen} Vorschläge übernommen${r.fehler.length ? ` — ${r.fehler.length} Makler mit Fehler (z. B. geändert): ${r.fehler[0]}` : ''}.`) })}>
+            onClick={() => { uebernehmen.mutateAsync(mitVorschlaegen).then((r) => setMeldung(`${r.uebernommen} Vorschläge übernommen${r.fehler.length ? ` — ${r.fehler.length} Makler mit Fehler (z. B. geändert): ${r.fehler[0]}` : ''}.`), () => {}); }}>
             Vorschläge der Ausgewählten übernehmen ({mitVorschlaegen.length})
           </Button>
           <Button size="xs" disabled={!auswahl.length || laeuft} onClick={() => setDialog(true)} data-recherche-start>
@@ -188,7 +188,9 @@ function StartDialog({ offen, maklerIds, onClose, onGestartet }: { offen: boolea
         {starten.error && <Alert color="red">{starten.error.message}</Alert>}
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>Abbrechen</Button>
-          <Button disabled={!s?.anzahl} loading={starten.isPending} onClick={() => starten.mutate({ maklerIds, mitKi }, { onSuccess: onGestartet })} data-recherche-los>
+          {/* mutateAsync statt mutate(…, { onSuccess }): den Rückruf je Aufruf verwirft TanStack, wenn die Komponente gerade
+              neu abonniert (Dev-Server, CI) — der Lauf war gestartet, der Dialog blieb offen. Fehler zeigt starten.error. */}
+          <Button disabled={!s?.anzahl} loading={starten.isPending} onClick={() => { starten.mutateAsync({ maklerIds, mitKi }).then(onGestartet, () => {}); }} data-recherche-los>
             Starten
           </Button>
         </Group>
