@@ -19,6 +19,7 @@ export * from './makler/persona.ts';
 export * from './makler/kommunikation.ts';
 export * from './makler/kontakte.ts';
 export * from './makler/unternehmen.ts';
+export * from './makler/recherche.ts';
 export * from './deals/kalkulationswerkzeuge.ts';
 export * from './ki/modellwahl.ts';
 export * from './suche.ts';

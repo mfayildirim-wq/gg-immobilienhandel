@@ -1,7 +1,7 @@
 import type { MaklerDetail as Detail } from '@gg/api-contract';
 import {
   dublettenMakler, emailPruefen, kommunikationKopf, kommZeitstempel, mailEntwurf, MAKLER_FREQUENZ_OPTIONEN, maklerDeals, nachfassStand, NICHT_KONTAKTIEREN_FRAGE,
-  normalisiereFrequenz, personaDetectAnrede, resolveVorlage, telefonPruefen, vorlagenFuerKanal, vorlagenKontext, whatsappNummer,
+  normalisiereFrequenz, personaDetectAnrede, RECHERCHE_FELDER, resolveVorlage, telefonPruefen, vorlagenFuerKanal, vorlagenKontext, whatsappNummer,
 } from '@gg/domain';
 import {
   Alert, Anchor, Autocomplete, Badge, Button, Checkbox, Group, Loader, Paper, SegmentedControl, Select, SimpleGrid, Stack, Tabs, Text, Textarea, TextInput, Title,
@@ -11,10 +11,10 @@ import { ListeUmschalter } from './GeteilteAnsicht.tsx';
 import { Reiterleiste } from './Reiterleiste.tsx';
 import { IconCheck, IconDeviceFloppy, IconTrash } from '@tabler/icons-react';
 import { useNavigate } from '@tanstack/react-router';
-import { useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import {
   transkribieren, useKommunikationAnlegen, useListen, useMakler, useMaklerAendern, useMaklerDetail, useMaklerErledigt, useMaklerKi, useMaklerLoeschen, useMaklerPersoenlich,
-  useOsint, useVorlagen, useWhatsappProtokoll,
+  useOsint, useRechercheEntscheiden, useRechercheMakler, useVorlagen, useWhatsappProtokoll,
 } from '../lib/api.ts';
 import { heuteIso, useEinstellung } from '../lib/ansicht.ts';
 import { datumDe } from '../lib/format.ts';
@@ -81,6 +81,35 @@ function Profil({ m, geloescht }: { m: Detail; geloescht?: () => void }) {
   const [frequenz, setFrequenz] = useState(normalisiereFrequenz(m.kontaktFrequenz));
   const [zuletzt, setZuletzt] = useState(m.lastContact ?? '');
   const [hinweis, setHinweis] = useState<string | null>(null);
+  // Makler-Recherche (21.10.2026): offene Vorschläge gelb am Feld; ein Klick setzt den Wert ins Formular, „Speichern“ übernimmt ihn
+  const { data: recherche } = useRechercheMakler(m.id);
+  const entscheiden = useRechercheEntscheiden();
+  const [angenommen, setAngenommen] = useState<number[]>([]);
+  const letzte = recherche?.ergebnisse[0];
+  const offen = (letzte?.vorschlaege ?? []).map((v, i) => ({ ...v, i })).filter((v) => !v.entscheidung && !angenommen.includes(v.i));
+  const imFormular = (v: { feld: string }) => v.feld in f;
+  const annehmen = (liste: typeof offen) => {
+    const passend = liste.filter(imFormular);
+    setF((alt) => ({ ...alt, ...Object.fromEntries(passend.map((v) => [v.feld, v.neu])) }));
+    setAngenommen((a) => [...a, ...passend.map((v) => v.i)]);
+  };
+  const verwerfen = (v: (typeof offen)[number]) => letzte && entscheiden.mutate({ ergebnisId: letzte.id, index: v.i, entscheidung: 'verworfen' });
+  const quelleKurz = (url: string) => { try { const u = new URL(url); return `${u.hostname.replace(/^www\./, '')}${u.pathname === '/' ? '' : u.pathname}`; } catch { return url; } };
+  const mitVorschlag = (feld: string, element: ReactNode) => {
+    const v = offen.find((x) => x.feld === feld);
+    if (!v) return element;
+    return (
+      <div>
+        {element}
+        <Group gap={4} mt={2} wrap="nowrap" data-recherche-vorschlag-feld={feld}>
+          <Button size="compact-xs" color="yellow" variant="filled" c="dark" onClick={() => annehmen([v])} title={`Gefunden auf ${v.quelle}`}>🔎 {v.neu}</Button>
+          <Anchor size="10px" href={v.quelle} target="_blank" rel="noreferrer" c="dimmed">{quelleKurz(v.quelle)} ↗</Anchor>
+          <Button size="compact-xs" variant="subtle" color="gray" onClick={() => verwerfen(v)} aria-label="Vorschlag verwerfen">✕</Button>
+        </Group>
+      </div>
+    );
+  };
+  const nurFirma = offen.filter((v) => !imFormular(v));
   const telFehler = telefonPruefen(f.tel.trim());
   const mailFehler = emailPruefen(f.email.trim());
   const { faellig } = nachfassStand({ nextContact: m.nextContact, lastContact: m.lastContact, frequenz }, heuteIso());
@@ -90,6 +119,26 @@ function Profil({ m, geloescht }: { m: Detail; geloescht?: () => void }) {
     <Stack>
       {fehler && <Alert color="red">{fehler.message}</Alert>}
       {hinweis && <Alert color="yellow" variant="light">{hinweis}</Alert>}
+      {(offen.length > 0 || angenommen.length > 0) && letzte && (
+        <Alert color="yellow" variant="light" title="🔎 Makler-Recherche" data-recherche-hinweis>
+          <Stack gap={4}>
+            {offen.length > 0 && (
+              <Group gap="xs">
+                <Text size="xs">{offen.length} {offen.length === 1 ? 'Vorschlag' : 'Vorschläge'} vom {datumDe(letzte.beendetAm)} — gelb am Feld.</Text>
+                {offen.some(imFormular) && <Button size="compact-xs" color="yellow" c="dark" onClick={() => annehmen(offen)} data-recherche-aktualisieren>Aktualisieren (alle ins Formular)</Button>}
+              </Group>
+            )}
+            {nurFirma.map((v) => (
+              <Group key={v.i} gap={4}>
+                <Text size="xs">{RECHERCHE_FELDER.unternehmen[v.feld as keyof typeof RECHERCHE_FELDER.unternehmen] ?? v.feld}: <b>{v.neu}</b></Text>
+                <Button size="compact-xs" color="yellow" c="dark" loading={entscheiden.isPending} onClick={() => entscheiden.mutate({ ergebnisId: letzte.id, index: v.i, entscheidung: 'uebernommen' })}>Übernehmen</Button>
+                <Button size="compact-xs" variant="subtle" color="gray" onClick={() => verwerfen(v)}>✕</Button>
+              </Group>
+            ))}
+            {angenommen.length > 0 && <Text size="xs" fw={600}>{angenommen.length} ins Formular übernommen — mit „Speichern“ festhalten.</Text>}
+          </Stack>
+        </Alert>
+      )}
       {m.hinweis && <Alert color="orange" variant="light" title="Hinweis">{m.hinweis}</Alert>}
       {(m.mailsAbgemeldet || m.mailingStatus === 'Keine Mails mehr schicken') && (
         <Alert color="red" variant="light">✉️ Keine Mails schicken{m.mailsAbgemeldet ? ' — von allen E-Mails abgemeldet' : ''}</Alert>
@@ -101,22 +150,22 @@ function Profil({ m, geloescht }: { m: Detail; geloescht?: () => void }) {
       </Group>
       <Title order={6}>👤 Kontaktdaten</Title>
       <SimpleGrid cols={2} spacing="xs">
-        <Select label="Anrede" data={['Herr', 'Frau']} clearable value={f.anrede || null} onChange={(v) => setF({ ...f, anrede: v ?? '' })} />
+        {mitVorschlag('anrede', <Select label="Anrede" data={['Herr', 'Frau']} clearable value={f.anrede || null} onChange={(v) => setF({ ...f, anrede: v ?? '' })} />)}
         <div />
         <TextInput label="Vorname" placeholder="Max" value={f.vorname} onChange={(e) => setF({ ...f, vorname: e.currentTarget.value })} />
         <TextInput label="Name" placeholder="Müller" value={f.nachname} onChange={(e) => setF({ ...f, nachname: e.currentTarget.value })} />
-        <TextInput label="Telefon" type="tel" placeholder="+49 711 123456" value={f.tel} error={telFehler} onChange={(e) => setF({ ...f, tel: e.currentTarget.value })} />
-        <TextInput label="E-Mail" type="email" placeholder="name@firma.de" value={f.email} error={mailFehler} onChange={(e) => setF({ ...f, email: e.currentTarget.value })} />
-        <TextInput label="Mobil" type="tel" placeholder="+49 171 1234567" value={f.mobil} onChange={(e) => setF({ ...f, mobil: e.currentTarget.value })} />
-        <TextInput label="Festnetz" type="tel" placeholder="+49 711 123456" value={f.festnetz} onChange={(e) => setF({ ...f, festnetz: e.currentTarget.value })} />
-        <TextInput label="Position" placeholder="Geschäftsführer" value={f.position} onChange={(e) => setF({ ...f, position: e.currentTarget.value })} />
+        {mitVorschlag('tel', <TextInput label="Telefon" type="tel" placeholder="+49 711 123456" value={f.tel} error={telFehler} onChange={(e) => setF({ ...f, tel: e.currentTarget.value })} />)}
+        {mitVorschlag('email', <TextInput label="E-Mail" type="email" placeholder="name@firma.de" value={f.email} error={mailFehler} onChange={(e) => setF({ ...f, email: e.currentTarget.value })} />)}
+        {mitVorschlag('mobil', <TextInput label="Mobil" type="tel" placeholder="+49 171 1234567" value={f.mobil} onChange={(e) => setF({ ...f, mobil: e.currentTarget.value })} />)}
+        {mitVorschlag('festnetz', <TextInput label="Festnetz" type="tel" placeholder="+49 711 123456" value={f.festnetz} onChange={(e) => setF({ ...f, festnetz: e.currentTarget.value })} />)}
+        {mitVorschlag('position', <TextInput label="Position" placeholder="Geschäftsführer" value={f.position} onChange={(e) => setF({ ...f, position: e.currentTarget.value })} />)}
         <Autocomplete label="Stellung" data={['Unternehmer', 'Angestellt']} value={f.stellung} onChange={(v) => setF({ ...f, stellung: v })} />
       </SimpleGrid>
       <Title order={6}>🏢 Unternehmen</Title>
       <SimpleGrid cols={2} spacing="xs">
-        <Autocomplete label="Firma" placeholder="Immobilien GmbH" data={firmen} limit={8} value={f.firma}
-          description="Bestehende Firma wählen oder neue eintragen" onChange={(v) => setF({ ...f, firma: v })} />
-        <TextInput label="Webseite" value={f.webseite} onChange={(e) => setF({ ...f, webseite: e.currentTarget.value })} />
+        {mitVorschlag('firma', <Autocomplete label="Firma" placeholder="Immobilien GmbH" data={firmen} limit={8} value={f.firma}
+          description="Bestehende Firma wählen oder neue eintragen" onChange={(v) => setF({ ...f, firma: v })} />)}
+        {mitVorschlag('webseite', <TextInput label="Webseite" value={f.webseite} onChange={(e) => setF({ ...f, webseite: e.currentTarget.value })} />)}
       </SimpleGrid>
       {m.unternehmen && (
         <Text size="xs" c="dimmed" data-unternehmen-kollegen>
@@ -126,12 +175,12 @@ function Profil({ m, geloescht }: { m: Detail; geloescht?: () => void }) {
           ))}</>}
         </Text>
       )}
-      <TextInput label="Straße und Hausnummer" value={f.strasse} onChange={(e) => setF({ ...f, strasse: e.currentTarget.value })} />
+      {mitVorschlag('strasse', <TextInput label="Straße und Hausnummer" value={f.strasse} onChange={(e) => setF({ ...f, strasse: e.currentTarget.value })} />)}
       <SimpleGrid cols={2} spacing="xs">
-        <TextInput label="PLZ" value={f.plz} maxLength={10} onChange={(e) => setF({ ...f, plz: e.currentTarget.value })} />
-        <TextInput label="Ort" value={f.ort} onChange={(e) => setF({ ...f, ort: e.currentTarget.value })} />
-        <TextInput label="Fax" type="tel" value={f.fax} disabled={!m.unternehmen}
-          description={m.unternehmen ? undefined : 'Erst mit Firma: das Fax gehört dem Unternehmen'} onChange={(e) => setF({ ...f, fax: e.currentTarget.value })} />
+        {mitVorschlag('plz', <TextInput label="PLZ" value={f.plz} maxLength={10} onChange={(e) => setF({ ...f, plz: e.currentTarget.value })} />)}
+        {mitVorschlag('ort', <TextInput label="Ort" value={f.ort} onChange={(e) => setF({ ...f, ort: e.currentTarget.value })} />)}
+        {mitVorschlag('fax', <TextInput label="Fax" type="tel" value={f.fax} disabled={!m.unternehmen}
+          description={m.unternehmen ? undefined : 'Erst mit Firma: das Fax gehört dem Unternehmen'} onChange={(e) => setF({ ...f, fax: e.currentTarget.value })} />)}
       </SimpleGrid>
       {m.weitereKontakte && (
         <Paper withBorder p="xs">
@@ -177,7 +226,13 @@ function Profil({ m, geloescht }: { m: Detail; geloescht?: () => void }) {
         <Button leftSection={<IconDeviceFloppy size={16} />} loading={aendern.isPending} onClick={() => {
           // Keine Pflichtfelder; Format-Fehler nur als Warnung (mkSave)
           setHinweis(telFehler || mailFehler ? '⚠️ Tel/E-Mail-Format ungewöhnlich (trotzdem gespeichert)' : null);
-          aendern.mutate({ version: m.version, ...f, mailsAbgemeldet: abgemeldet, prio, kontaktFrequenz: frequenz, lastContact: zuletzt || m.lastContact || null });
+          const uebernommen = letzte ? angenommen : [];
+          aendern.mutateAsync({ version: m.version, ...f, mailsAbgemeldet: abgemeldet, prio, kontaktFrequenz: frequenz, lastContact: zuletzt || m.lastContact || null })
+            .then(async () => {
+              // Ins Formular übernommene Vorschläge sind jetzt gespeichert: nur noch vermerken
+              for (const i of uebernommen) await entscheiden.mutateAsync({ ergebnisId: letzte!.id, index: i, entscheidung: 'uebernommen', ohneAnwenden: true });
+            })
+            .catch(() => { /* Fehler zeigt die Meldung oben */ });
         }}>Speichern</Button>
       </Group>
     </Stack>

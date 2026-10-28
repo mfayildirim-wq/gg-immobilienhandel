@@ -24,3 +24,6 @@ export { autoImportFromMail, klemmeZeitlimit, zielPruefen, type ImportOptions, t
 export { pdfEinordnen, ersteSeiten, type PdfEinordnung } from './autoimport/pdfPruefung.ts';
 export type { AgbFreigabe } from './autoimport/seite.ts';
 export * from './gedaechtnis.ts';
+export * from './recherche/lesen.ts';
+export * from './recherche/ki.ts';
+export * from './recherche/testseiten.ts';

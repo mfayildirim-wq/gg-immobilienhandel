@@ -13,6 +13,7 @@ import type {
   DealDokument,
   PapierkorbEintrag,
   DublettenPaarSicht,
+  RechercheEntscheiden, RechercheLauf, RechercheMakler, RechercheSchaetzung, RechercheStandSetzen, RechercheStarten, RechercheZeile,
   AuditBefund,
   KiKosten,
   ZugangPruefung, ZugangStatus,
@@ -73,6 +74,7 @@ import type {
   StatusWechsel, AutoImportLauf,
 } from '@gg/api-contract';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
 import { sitzungErneuern, zugriffsToken } from './sitzung.ts';
 
 export class ApiFehler extends Error {
@@ -387,6 +389,69 @@ export const useDublettenIgnorieren = () => useDublettenAendern((e: { id1: strin
 export const useDublettenIgnoriertLeeren = () => useDublettenAendern(() => anfrage<{ ignoriert: number }>('/api/dubletten/ignorieren', { method: 'DELETE' }));
 export const useZusammenfuehren = () => useDublettenAendern((e: MergeAusfuehren) => anfrage<{ protokollId: string; betroffeneDealIds: string[]; betroffeneDateien: number }>('/api/dubletten/zusammenfuehren', senden('POST', e)));
 export const useMergeRueckgaengig = () => useDublettenAendern((e: { id: string; erzwingen: boolean }) => anfrage<{ ok: true }>(`/api/dubletten/protokoll/${e.id}/rueckgaengig`, senden('POST', { erzwingen: e.erzwingen })));
+
+// ── Makler-Recherche (Einstellungen → Makler-Recherche) ─────
+export const useRechercheZeilen = () => useQuery({ queryKey: ['recherche', 'zeilen'], queryFn: () => anfrage<RechercheZeile[]>('/api/makler-recherche') });
+export const useRechercheSchaetzung = (e: RechercheStarten | null) =>
+  useQuery({
+    queryKey: ['recherche', 'schaetzung', e], queryFn: () => anfrage<RechercheSchaetzung>('/api/makler-recherche/schaetzung', senden('POST', e)), enabled: !!e?.maklerIds.length,
+    // Beim Umschalten des KI-Hakens bleibt die alte Schätzung stehen, bis die neue da ist — „Starten“ wird nicht kurz gesperrt
+    placeholderData: (vorher) => vorher,
+  });
+/** Jüngster Lauf; solange er läuft, alle 5 s neu (Fortschritt), sonst jede Minute (Glocke). */
+export const useRechercheLauf = () => useQuery({
+  queryKey: ['recherche', 'lauf'], queryFn: () => anfrage<RechercheLauf | null>('/api/makler-recherche/laeufe/aktuell'),
+  refetchInterval: (q) => (q.state.data?.status === 'laeuft' ? 5000 : 60000),
+});
+export const useRechercheMakler = (id: string | null) =>
+  useQuery({ queryKey: ['recherche', 'makler', id], queryFn: () => anfrage<RechercheMakler>(`/api/makler-recherche/makler/${id}`), enabled: !!id });
+function useRechercheAendern<E, R>(aufruf: (e: E) => Promise<R>, alles = false) {
+  const qc = useQueryClient();
+  // Übernehmen ändert Makler und Unternehmen — dann alles neu; sonst nur die Recherche
+  // Neu laden im Hintergrund (void): sonst wartet „Erfolg“ — und damit z. B. das Schließen des Start-Dialogs — auf alle Abfragen
+  return useMutation({ mutationFn: aufruf, onSettled: () => { void (alles ? qc.invalidateQueries() : qc.invalidateQueries({ queryKey: ['recherche'] })); } });
+}
+export const useRechercheStarten = () => useRechercheAendern((e: RechercheStarten) => anfrage<RechercheLauf>('/api/makler-recherche/laeufe', senden('POST', e)));
+export const useRechercheAbbrechen = () => useRechercheAendern((id: string) => anfrage<RechercheLauf>(`/api/makler-recherche/laeufe/${id}/abbrechen`, { method: 'POST' }));
+export const useRechercheGesehen = () => useRechercheAendern((id: string) => anfrage<{ ok: true }>(`/api/makler-recherche/laeufe/${id}/gesehen`, { method: 'POST' }));
+export const useRechercheStand = () => useRechercheAendern((e: { maklerId: string } & RechercheStandSetzen) => {
+  const { maklerId, ...rest } = e;
+  return anfrage<RechercheMakler>(`/api/makler-recherche/makler/${maklerId}/stand`, senden('PUT', rest));
+});
+export const useRechercheEntscheiden = () => useRechercheAendern((e: RechercheEntscheiden) => anfrage<RechercheMakler>('/api/makler-recherche/entscheiden', senden('POST', e)), true);
+export const useRechercheUebernehmen = () => useRechercheAendern((maklerIds: string[]) => anfrage<{ uebernommen: number; fehler: string[] }>('/api/makler-recherche/uebernehmen', senden('POST', { maklerIds })), true);
+
+/**
+ * Treibt einen laufenden Lauf an: solange die App offen ist (egal welche Seite), Etappe für Etappe. Mehrere offene
+ * Fenster stören sich nicht — der Server teilt die Makler zu. Gibt den aktuellen Lauf zurück (Glocke, Fortschritt).
+ */
+export function useRechercheTreiber() {
+  const qc = useQueryClient();
+  const { data: lauf } = useRechercheLauf();
+  const aktiv = useRef(false);
+  useEffect(() => {
+    if (lauf?.status !== 'laeuft' || aktiv.current) return;
+    aktiv.current = true;
+    void (async () => {
+      let l: RechercheLauf | null = lauf;
+      try {
+        while (l?.status === 'laeuft') {
+          l = await anfrage<RechercheLauf>(`/api/makler-recherche/laeufe/${l.id}/weiter`, { method: 'POST' });
+          qc.setQueryData(['recherche', 'lauf'], l);
+          void qc.invalidateQueries({ queryKey: ['recherche', 'zeilen'] });
+        }
+      } catch {
+        // Netz weg oder Server-Fehler: kurz warten, der nächste Abruf des Laufs setzt wieder an
+        await new Promise((r) => setTimeout(r, 15_000));
+      } finally {
+        aktiv.current = false;
+        void qc.invalidateQueries({ queryKey: ['recherche'] });
+      }
+    })();
+  }, [lauf?.id, lauf?.status]); // eslint-disable-line react-hooks/exhaustive-deps
+  return lauf ?? null;
+}
+
 
 // ── Papierkorb ────────────────────────────────────────────
 export const usePapierkorb = () => useQuery({ queryKey: ['papierkorb'], queryFn: () => anfrage<PapierkorbEintrag[]>('/api/papierkorb') });
