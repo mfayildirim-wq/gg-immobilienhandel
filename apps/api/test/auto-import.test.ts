@@ -26,7 +26,7 @@ describe.skipIf(!url || !CHROME)('Auto-Import über die API (lokale Datenbank, T
   const graph: GraphClient = { wer: async () => ({ name: 'Test', email: 't@example.test' }), angebote: async () => mails, anhang: async () => testPdf('Expose Anhang', 4) };
   const app = createApp({
     db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, speicher, graph, ki: kiAttrappeAutoImport() as never,
-    expose: { speicher, ki: kiAttrappeAutoImport() as never, attrappe: true, texterkennung: null },
+    expose: { speicher, ki: kiAttrappeAutoImport() as never, attrappe: true },
     autoImport: { lokaleZieleErlaubt: true, browserStarten: () => chromium.launch({ executablePath: CHROME!, headless: true, args: ['--no-sandbox'] }) },
   });
   const post = (pfad: string, body: unknown) => app.request(pfad, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });

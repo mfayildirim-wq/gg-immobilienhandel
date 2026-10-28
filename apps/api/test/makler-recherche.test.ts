@@ -12,7 +12,7 @@ describe.skipIf(!url)('Makler-Recherche (21.10.2026): Webseite, ImmoScout, KI-We
   // Ersatz-Internet und KI-Attrappe: kein Abruf verlässt den Rechner
   const app = createApp({
     db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, ki: kiAttrappe(), recherche: { abruf: rechercheTestAbruf(), pauseMs: 0 },
-    expose: { speicher: speicherImSpeicher(), ki: kiAttrappe(), attrappe: true, texterkennung: null },
+    expose: { speicher: speicherImSpeicher(), ki: kiAttrappe(), attrappe: true },
   });
   const k = `Rech${Date.now()}`;
   const ids: string[] = [];

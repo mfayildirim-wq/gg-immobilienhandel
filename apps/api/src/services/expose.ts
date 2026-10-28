@@ -1,35 +1,23 @@
 import type { ExposeAnalyseAntwort, ExposeUebernehmen } from '@gg/api-contract';
 import { type Db, schema } from '@gg/db';
 import {
-  type Angabe, angabenAusImport, belegePruefen, dokumentArtPruefen, steuerzeichenEntfernen, berechneAnkauf, dealEinheitenAusExpose, dublettenDeal, dublettenMakler, dublettenObjekt, einheitAlsEingabe,
-  EXPOSE_V2_SCHEMA, type ExposeV2, exposeVorbereiten, GG_ZIELE, type ImportFuerAngaben, maklerHatDaten, normalisiereFrequenz, telefonErsetzen,
-  telefonNormalisieren, uebernahmeWert, type WeitereKontakte, weitereKontakte, wizardKalkSpeichern, wizardKalkVorbelegen, type ZielArt, zuordnen,
+  berechneAnkauf, dealEinheitenAusExpose, dublettenDeal, dublettenMakler, dublettenObjekt, exposeVorbereiten, einheitAlsEingabe,
+  maklerHatDaten, normalisiereFrequenz, telefonErsetzen, telefonNormalisieren, weitereKontakte, wizardKalkSpeichern, wizardKalkVorbelegen,
 } from '@gg/domain';
 import {
-  analysiereExpose, BUCKETS, bilderAusPdf, type ExposeBild, type Dateispeicher, dokumentSchluessel, EINGANG, istEingangsSchluessel, istPdf, type KiClient, kostenBuchung, pdfDokument, pdfText,
-  tesseractOcr, type Texterkennung,
+  analysiereExpose, BUCKETS, type Dateispeicher, dokumentSchluessel, EINGANG, istEingangsSchluessel, istPdf, type KiClient, kostenBuchung, pdfText,
 } from '@gg/integrations';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
-import { PDFDocument } from 'pdf-lib';
 import { auditSchreiben } from './audit.ts';
 import { FachFehler } from '../fehler.ts';
-import { exposeExtraktionLesen, kalkStandardLesen } from './einstellungen.ts';
-import { detailsLesen, detailsSetzen, fuerAngaben, listeAnhaengen } from './exposeAngaben.ts';
-import { fotoHochladen } from './fotos.ts';
+import { kalkStandardLesen } from './einstellungen.ts';
 import { objektTitel } from './objekte.ts';
-import { MAKLER_AUFGELOEST, MAKLER_FIRMA, MAKLER_NAME, maklerInsUnternehmen, UNTERNEHMEN_JOIN } from './unternehmen.ts';
+import { MAKLER_AUFGELOEST, maklerInsUnternehmen, UNTERNEHMEN_JOIN } from './unternehmen.ts';
 
 export interface ExposeKontext {
   speicher: Dateispeicher;
   ki: KiClient | null;
   attrappe: boolean;
-  /** Fotos aus dem PDF herauslösen; Standard `bilderAusPdf`, im Test austauschbar */
-  bilder?: (pdf: Uint8Array) => Promise<ExposeBild[]>;
-  /**
-   * Texterkennung für Bild-Seiten je Analyse; Standard `tesseractOcr()` (lokal aus node_modules).
-   * `null` = aus (`OCR=aus`, Tests): Bild-Seiten bleiben ohne Text, Scans gehen wie bisher komplett an das gründliche Modell.
-   */
-  texterkennung?: (() => Texterkennung) | null;
 }
 
 export const MAX_EXPOSE_BYTES = 200 * 1024 * 1024;
@@ -70,15 +58,7 @@ async function kostenBuchen(db: Db, model: string, usage: Parameters<typeof kost
   }
 }
 
-/** Erzeuger aus den PDF-Metadaten (Creator, sonst Producer) — für den Hinweis „sieht nicht nach einem Exposé aus“ */
-export async function pdfErzeuger(pdf: Uint8Array): Promise<string | null> {
-  try {
-    const d = await PDFDocument.load(pdf, { ignoreEncryption: true, updateMetadata: false });
-    return d.getCreator()?.trim() || d.getProducer()?.trim() || null;
-  } catch { return null; }
-}
-
-export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, dateiname: string, optionen: { bilder?: boolean } = {}): Promise<ExposeAnalyseAntwort> {
+export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, dateiname: string): Promise<ExposeAnalyseAntwort> {
   if (!istEingangsSchluessel(key)) throw new FachFehler(422, 'Ungültiger Upload-Schlüssel.');
   if (!k.ki) throw new FachFehler(422, 'Keine KI eingerichtet: Anthropic-Schlüssel unter Einstellungen → Zugänge hinterlegen.');
   let pdf: Uint8Array;
@@ -89,62 +69,12 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
   }
   if (!istPdf(pdf)) throw new FachFehler(422, `„${dateiname}“ ist kein PDF.`);
 
-  // Fotos parallel zur Analyse herauslösen (Zeit sparen); ein Fehler dort stoppt die Analyse nicht.
-  // Abgewählt (Häkchen auf der Upload-Seite, 16.10.2026): keine Bilder, der Schritt „Fotos“ entfällt
-  const bilderLauf = optionen.bilder === false
-    ? Promise.resolve({ b: [] as ExposeBild[], fehler: null as unknown })
-    : (k.bilder ?? bilderAusPdf)(pdf).then((b) => ({ b, fehler: null as unknown }), (fehler: unknown) => ({ b: [] as ExposeBild[], fehler }));
-  const einstellung = await exposeExtraktionLesen(db);
-  // Rohdaten ohne KI: Textlayer + Texterkennung der Bild-Seiten (Protokoll 30, P1); der OCR-Worker lebt nur für diese Analyse
-  const texterkennung = k.texterkennung === null ? null : (k.texterkennung ?? tesseractOcr)();
-  if (texterkennung?.grund) console.warn('[expose-analyse] ohne Texterkennung:', texterkennung.grund);
-  // Steuerzeichen aus dem PDF (U+0000 als Aufzählungspunkt) bereinigen — Postgres nimmt sie nicht an (22P05)
-  const analyse = steuerzeichenEntfernen(await analysiereExpose(pdf, dateiname, {
+  const analyse = await analysiereExpose(pdf, dateiname, {
     ki: k.ki,
     pdfText: (b) => pdfText(Buffer.from(b)),
-    dokument: (b) => pdfDokument(b, { ocr: texterkennung?.ocr }),
     buchen: (model, usage, quelle) => kostenBuchen(db, model, usage, quelle),
-  }, { schema: einstellung.schema, kostenGrenzeEur: einstellung.kostenGrenzeEur }).finally(() => texterkennung?.beenden()));
-
-  // v2: Werte gegen die Seitentexte prüfen (nur der Textweg hat Seitentexte), falsche Seiten berichtigen,
-  // dann per Mapping-Tabelle ins Format der Prüfseite
-  let v2: ExposeV2 | null = null;
-  let belegt: (boolean | null)[] = [];
-  let belegQuote: number | null = null;
-  const warnungen = [...analyse.warnungen];
-  let v0: any = analyse.extrahiert;
-  if (analyse.v2) {
-    v2 = analyse.v2;
-    belegt = v2.angaben.map(() => null);
-    if (analyse.seitenTexte.length) {
-      const b = belegePruefen(v2, analyse.seitenTexte);
-      belegt = b.belegt;
-      belegQuote = b.quote;
-      v2 = { ...v2, angaben: v2.angaben.map((x, i) => (b.seiteBerichtigt[i] !== undefined ? { ...x, seite: b.seiteBerichtigt[i]! } : x)) };
-    }
-    const z = zuordnen(v2, belegt);
-    warnungen.push(...z.warnungen);
-    v0 = z.pruefdaten;
-  }
-
-  // Einheitenzeilen und Gesamtwerte (ohne Verteilung) — die Warnungen gehören zur gespeicherten Analyse
-  const v = exposeVorbereiten(v0);
-  warnungen.push(...v.warnungen);
-
-  const importId = crypto.randomUUID();
-  // >>> Fotos aus dem Exposé: in den Eingang, nur die Liste (ohne Bilddaten) in die Analyse
-  const fotos = await bilderAblegen(k.speicher, importId, await bilderLauf);
-  warnungen.push(...fotos.warnungen);
-  // <<< Fotos aus dem Exposé
-  const [zeile] = await db.insert(schema.exposeImporte).values({
-    id: importId, eingangKey: key, dateiname, schemaVersion: analyse.schemaVersion, promptVersion: analyse.promptVersion, modell: analyse.modell,
-    weg: analyse.modus, seitenGelesen: analyse.seitenTexte.length || null, seitenGesamt: analyse.seiten, stopReason: analyse.stopReason,
-    inputTokens: analyse.usage.inputTokens, outputTokens: analyse.usage.outputTokens, dauerMs: analyse.dauerMs, kostenEur: analyse.kostenEur,
-    status: 'analysiert', rohdaten: v2 ?? v0,
-    analyse: { belegt, belegQuote, warnungen, nachfass: analyse.nachfass, wiederholung: analyse.wiederholung, bilder: fotos.liste },
-  }).returning({ createdAt: schema.exposeImporte.createdAt });
-
-  const imp = v2 ? { id: importId, datum: zeile!.createdAt, rohdaten: v2, belegt } : null;
+  });
+  const v = exposeVorbereiten(analyse.extrahiert);
   const standard = await kalkStandardLesen(db);
 
   // Dubletten gegen den aktiven Bestand, neueste zuerst (Reihenfolge wie die alte Liste)
@@ -153,34 +83,15 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
   const dObj = dublettenObjekt(objekte, v.objekt);
   const dMk = dublettenMakler(makler, v.makler);
 
-  // Keine Exposé-Datei (Investment-Rechnung, Tabelle)? Dann fehlen Fotos und Makler — vorne als Hinweis
-  const art = dokumentArtPruefen({ dateiname, seiten: analyse.seiten, bilder: fotos.liste.length, erzeuger: await pdfErzeuger(pdf), maklerGefunden: maklerHatDaten(v.makler) });
-  if (art.hinweis) warnungen.unshift(art.hinweis);
-
-  // Hat das erkannte Objekt schon Deals? Dann kann dieses PDF einen davon ergänzen (Fotos, Makler, Exposé) statt einen zweiten anzulegen
-  const bestehendeDeals = dObj
-    ? (await db.select({ id: schema.deals.id, status: schema.deals.status, makler: MAKLER_NAME, firma: MAKLER_FIRMA })
-      .from(schema.deals).leftJoin(schema.makler, eq(schema.makler.id, schema.deals.maklerId)).leftJoin(schema.unternehmen, UNTERNEHMEN_JOIN)
-      .where(and(eq(schema.deals.objektId, dObj.match.id), isNull(schema.deals.deletedAt))).orderBy(desc(schema.deals.createdAt)))
-      .map((d) => ({ id: d.id, status: d.status, makler: [d.makler, d.firma].filter(Boolean).join(' · ') || null }))
-    : [];
-
   return {
     modus: analyse.modus, modell: analyse.modell, seiten: analyse.seiten, zeichenProSeite: analyse.zeichenProSeite,
     ...(analyse.hinweis ? { hinweis: analyse.hinweis } : {}),
     attrappe: k.attrappe,
-    extrahiert: v0,
-    importId, schemaVersion: analyse.schemaVersion,
-    // Leerer Datensatz: auf der Prüfseite gibt es noch nichts Gespeichertes → Status „leer“
-    angaben: { objekt: imp ? angabenAusImport(imp, 'objekt', {}) : [], makler: imp ? angabenAusImport(imp, 'makler', {}) : [] },
-    ziele: { objekt: zieleListe(['objekt', 'kalkulation']), makler: zieleListe(['makler']) },
-    belegQuote, warnungen,
-    konfidenz: v0?._konfidenz ?? {},
+    extrahiert: analyse.extrahiert,
+    konfidenz: analyse.extrahiert?._konfidenz ?? {},
     objekt: v.objekt,
     makler: { ...v.makler, prio: (dMk?.match.prio as 'A' | 'B' | 'C' | null) ?? 'B' },
     deal: { ...v.deal, kalk: wizardKalkVorbelegen(v.deal.kalk, standard) },
-    bilder: fotos.liste.map((x, i) => ({ nr: i, seite: x.seite, breite: x.breite, hoehe: x.hoehe, url: `/api/expose/importe/${importId}/bilder/${i}` })),
-    bestehendeDeals,
     dubletten: {
       objekt: dObj ? { id: dObj.match.id, titel: [objektTitel(dObj.match), dObj.match.stadt].filter(Boolean).join(', '), sicherheit: dObj.confidence } : null,
       makler: dMk ? { id: dMk.match.id, titel: [dMk.match.name, dMk.match.firma].filter(Boolean).join(' · ') || 'Makler', sicherheit: dMk.confidence } : null,
@@ -188,157 +99,8 @@ export async function exposeAnalysieren(db: Db, k: ExposeKontext, key: unknown, 
   };
 }
 
-// >>> Fotos aus dem Exposé (Protokoll 30 §4.4, §10): alle gefilterten Bilder automatisch ans Objekt, keine Auswahl
-export interface EingangsBild { key: string; seite: number; breite: number; hoehe: number; bytes: number; hash: string }
-
-const bildSchluessel = (importId: string, nr: number) => `${EINGANG}/${importId}/bild-${nr}.jpg`;
-
-async function bilderAblegen(speicher: Dateispeicher, importId: string, lauf: { b: ExposeBild[]; fehler: unknown }) {
-  const warnungen: string[] = [];
-  const liste: EingangsBild[] = [];
-  if (lauf.fehler) {
-    console.error('[expose] Fotos nicht herausgelöst:', lauf.fehler);
-    warnungen.push('Die Fotos konnten nicht aus dem Exposé herausgelöst werden.');
-  }
-  const sortiert = [...lauf.b].sort((a, b) => a.seite - b.seite);
-  let fehlgeschlagen = 0;
-  for (const x of sortiert) {
-    const key = bildSchluessel(importId, liste.length);
-    try {
-      await speicher.ablegen(BUCKETS.pdfs, key, x.bytes, x.mime);
-      liste.push({ key, seite: x.seite, breite: x.breite, hoehe: x.hoehe, bytes: x.bytes.byteLength, hash: x.hash });
-    } catch (e) {
-      console.error('[expose] Foto nicht abgelegt:', e);
-      fehlgeschlagen++;
-    }
-  }
-  if (fehlgeschlagen) warnungen.push(`${fehlgeschlagen} Foto(s) konnten nicht zwischengespeichert werden.`);
-  return { liste, warnungen };
-}
-
-const eingangsBilder = (analyse: unknown): EingangsBild[] => {
-  const l = (analyse as { bilder?: unknown } | null)?.bilder;
-  return Array.isArray(l) ? l.filter((x): x is EingangsBild => !!x && typeof x.key === 'string' && typeof x.seite === 'number') : [];
-};
-
-/** Eingangsbilder eines Imports löschen (nach der Übernahme oder beim Verwerfen). */
-async function bilderLoeschen(speicher: Dateispeicher, bilder: EingangsBild[]) {
-  if (bilder.length) await speicher.loeschen(BUCKETS.pdfs, bilder.map((x) => x.key)).catch((e) => console.error('[expose] Eingangsbilder nicht gelöscht:', e));
-}
-
-/** Ein Eingangsbild eines Imports für die Vorschau auf der Prüfseite. */
-export async function exposeBild(db: Db, speicher: Dateispeicher, importId: string, nr: number) {
-  const [z] = await db.select({ analyse: schema.exposeImporte.analyse }).from(schema.exposeImporte).where(eq(schema.exposeImporte.id, importId));
-  const b = z ? eingangsBilder(z.analyse)[nr] : undefined;
-  if (!b) throw new FachFehler(404, 'Bild nicht gefunden');
-  try {
-    return await speicher.holen(BUCKETS.pdfs, b.key);
-  } catch {
-    throw new FachFehler(404, 'Bild nicht mehr vorhanden');
-  }
-}
-
-/** Bilder eines Imports ans Objekt hängen. Bei bestehendem Objekt keine Doppelten (gleicher Dateiname und gleiche Größe). Wirft nicht. */
-async function bilderUebernehmen(db: Db, speicher: Dateispeicher, objektId: string, bilder: EingangsBild[], warnungen: string[], ausgeschlossen: Set<number> = new Set()): Promise<number> {
-  const vorhanden = new Set((await db.select({ n: schema.objektFotos.dateiname, g: schema.objektFotos.groesseBytes }).from(schema.objektFotos).where(eq(schema.objektFotos.objektId, objektId))).map((f) => `${f.n}|${f.g}`));
-  let n = 0;
-  let fehler = 0;
-  for (const [nr, b] of bilder.entries()) {
-    if (ausgeschlossen.has(nr)) continue; // im Wizard entfernt
-    const dateiname = `Exposé S.${b.seite}-${nr + 1}.jpg`;
-    if (vorhanden.has(`${dateiname}|${b.bytes}`)) continue;
-    try {
-      await fotoHochladen(db, speicher, objektId, await speicher.holen(BUCKETS.pdfs, b.key), dateiname);
-      n++;
-    } catch (e) {
-      console.error('[expose] Foto nicht übernommen:', e);
-      fehler++;
-    }
-  }
-  if (fehler) warnungen.push(`${fehler} Foto(s) konnten nicht ans Objekt übernommen werden.`);
-  return n;
-}
-// <<< Fotos aus dem Exposé
-
-/** gg-Ziele für das Dropdown der Prüfseite; Objekt und Kalkulation stehen dort gemeinsam. */
-const zieleListe = (arten: ZielArt[]) =>
-  Object.entries(GG_ZIELE).filter(([, z]) => arten.includes(z.art)).map(([schluessel, z]) => ({ schluessel, label: z.label, einheit: z.einheit ?? null, pruef: z.pruef ?? null }));
-
 const text = (s: string | undefined | null) => (s && s.trim() ? s.trim() : null);
 const zahl = (n: number | null | undefined) => (typeof n === 'number' && Number.isFinite(n) ? n : null);
-const wertText = (w: unknown) => (typeof w === 'string' ? text(w) : typeof w === 'number' ? String(w) : null);
-
-/**
- * `details` eines neuen Objekts: alle `details`-Ziele aus der Zuordnung (Hausgeld, Provision, Sanierungen …), dazu die
- * Zusatzangaben der Prüfseite wie bisher. Was auf der Prüfseite gesetzt ist, gilt vor dem Wert aus der Zuordnung.
- */
-function objektDetails(d: ExposeUebernehmen['objekt']['daten'], ausZuordnung: Record<string, unknown>, importId: string | undefined): Record<string, unknown> {
-  const details: Record<string, unknown> = { ...ausZuordnung };
-  const pruefseite: Record<string, unknown> = {
-    bruttorendite: zahl(d.bruttorendite), heizungsbaujahr: zahl(d.heizungsbaujahr), energieausweis: d.energieausweis ?? null,
-    lagebeschreibung: text(d.lagebeschreibung), ausstattung: text(d.ausstattung),
-  };
-  for (const [k, w] of Object.entries(pruefseite)) {
-    const alt = details[k];
-    if (k === 'energieausweis' && w && alt && typeof alt === 'object') {
-      details[k] = { ...alt, ...Object.fromEntries(Object.entries(w).filter(([, x]) => x !== null && x !== undefined)) };
-    } else if (w !== null || alt === undefined) {
-      details[k] = w;
-    }
-  }
-  return { ...details, herkunft: 'Exposé-Import', ...(importId ? { importId } : {}) };
-}
-
-/** Spalten, die eine manuelle Zuordnung der Prüfseite direkt schreiben darf (alle übrigen Ziele stehen im Formular). */
-const ZUORDNUNG_SPALTEN = { objekt: new Set(['sollMiete']), makler: new Set(['strasse', 'plz', 'ort', 'weitereKontakte']) };
-
-interface Zuordnungen {
-  objekt: { details: Record<string, unknown>; notizen: string[]; spalten: Record<string, unknown> };
-  makler: { spalten: Record<string, unknown>; weitere: WeitereKontakte };
-}
-
-/**
- * Manuelle Zuordnungen der Prüfseite (`angaben.N` → gg-Ziel oder 'notizen') in Schreibaufträge übersetzen. Ziele mit
- * Prüfseitenfeld (`pruef`) setzt die Oberfläche selbst ins Formular; Kalkulation ebenso. Ungültiges wird übergangen.
- */
-function zuordnungenAuswerten(imp: ImportFuerAngaben, liste: ExposeUebernehmen['zuordnungen'], details: Record<string, unknown>): Zuordnungen {
-  const aus: Zuordnungen = { objekt: { details, notizen: [], spalten: {} }, makler: { spalten: {}, weitere: { namen: [], telefonnummern: [], emails: [] } } };
-  if (!liste?.length) return aus;
-  const angaben = new Map<string, Angabe>([...angabenAusImport(imp, 'objekt', {}), ...angabenAusImport(imp, 'makler', {})].map((a) => [a.feld, a]));
-  for (const { feld, ziel } of liste) {
-    const a = angaben.get(feld);
-    if (!a || !feld.startsWith('angaben.')) continue;
-    const z = ziel === 'notizen' ? null : GG_ZIELE[ziel];
-    if (ziel !== 'notizen' && (!z || z.pruef || z.art === 'kalkulation')) continue;
-    const art = z?.art === 'makler' ? 'makler' : 'objekt';
-    const u = uebernahmeWert(a, ziel, art);
-    if (!u) continue;
-    if (u.notizText !== undefined) aus.objekt.notizen.push(u.notizText);
-    else if (u.detailsSchluessel && art === 'objekt') {
-      const vorher = detailsLesen(aus.objekt.details, u.detailsSchluessel);
-      aus.objekt.details = detailsSetzen(aus.objekt.details, u.detailsSchluessel, u.liste ? listeAnhaengen(vorher, u.wert) : u.wert);
-    } else if (u.spalte && ZUORDNUNG_SPALTEN[art].has(u.spalte)) {
-      if (u.spalte === 'weitereKontakte') {
-        const k = u.wert as WeitereKontakte;
-        aus.makler.weitere.namen.push(...k.namen); aus.makler.weitere.telefonnummern.push(...k.telefonnummern); aus.makler.weitere.emails.push(...k.emails);
-      } else aus[art].spalten[u.spalte] = u.wert;
-    } else continue;
-  }
-  return aus;
-}
-
-/** „Exposé überspringen“: die gespeicherte Analyse gilt als verworfen (nur solange sie nicht übernommen ist). */
-export async function importVerwerfen(db: Db, id: string, speicher?: Dateispeicher) {
-  const [imp] = await db.select({ status: schema.exposeImporte.status, analyse: schema.exposeImporte.analyse }).from(schema.exposeImporte).where(eq(schema.exposeImporte.id, id));
-  if (!imp) throw new FachFehler(404, 'Exposé-Import nicht gefunden');
-  if (imp.status === 'analysiert') {
-    await db.update(schema.exposeImporte).set({ status: 'verworfen', updatedAt: sql`now()` })
-      .where(and(eq(schema.exposeImporte.id, id), eq(schema.exposeImporte.status, 'analysiert')));
-    // Eingangsbilder werden nicht mehr gebraucht
-    if (speicher) await bilderLoeschen(speicher, eingangsBilder(imp.analyse));
-  }
-  return { id };
-}
 
 /**
  * „✅ Deal anlegen“ (ewFinalize): Objekt (neu oder bestehend), Makler (neu mit Ghost-Guard, bestehend mit Telefonregel),
@@ -348,42 +110,10 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
   if (!istEingangsSchluessel(e.key)) throw new FachFehler(422, 'Ungültiger Upload-Schlüssel.');
   const standard = await kalkStandardLesen(db);
 
-  // Gespeicherte Analyse (expose_importe); ohne importId wie bisher das mitgeschickte `extrahiert`
-  let imp: (ImportFuerAngaben & { promptVersion: string | null }) | null = null;
-  let importBilder: EingangsBild[] = [];
-  if (e.importId) {
-    const [z] = await db.select().from(schema.exposeImporte).where(eq(schema.exposeImporte.id, e.importId));
-    if (!z) throw new FachFehler(404, 'Exposé-Import nicht gefunden');
-    importBilder = eingangsBilder(z.analyse);
-    if (z.schemaVersion === EXPOSE_V2_SCHEMA) imp = { ...fuerAngaben(z), promptVersion: z.promptVersion };
-  }
-  const zuordnung = imp ? zuordnen(imp.rohdaten, imp.belegt) : null;
-  const v0 = zuordnung ? zuordnung.pruefdaten : e.extrahiert;
-  const manuell = imp ? zuordnungenAuswerten(imp, e.zuordnungen, objektDetails(e.objekt.daten, zuordnung!.details, e.importId)) : null;
-
   const ids = await db.transaction(async (tx) => {
-    // Doppel-Submit (Protokoll 31, W27): die Import-Zeile wird gesperrt; ist sie nicht mehr „analysiert“, lief die Übernahme schon —
-    // sonst entstehen zwei Objekte und zwei Deals (die Deal-Dublettenprüfung greift nur bei gleichem Objekt)
-    if (e.importId) {
-      const [z] = await tx.select({ status: schema.exposeImporte.status }).from(schema.exposeImporte).where(eq(schema.exposeImporte.id, e.importId)).for('update');
-      if (!z) throw new FachFehler(404, 'Exposé-Import nicht gefunden');
-      if (z.status !== 'analysiert') {
-        throw new FachFehler(409, z.status === 'uebernommen' ? 'Dieses Exposé wurde schon übernommen.' : 'Dieses Exposé wurde verworfen — bitte erneut analysieren.', { status: z.status });
-      }
-    }
     // 1. Objekt
     let objektId: string;
-    let objektNeu = false;
-    let maklerNeu = false;
-    // Ergänzen: das PDF gehört zu einem bestehenden Deal — dessen Objekt, kein neues Objekt, kein neuer Deal
-    let ergaenzen: { id: string; maklerId: string | null } | null = null;
-    if (e.ergaenzeDealId) {
-      const [d] = await tx.select({ id: schema.deals.id, objektId: schema.deals.objektId, maklerId: schema.deals.maklerId }).from(schema.deals)
-        .where(and(eq(schema.deals.id, e.ergaenzeDealId), isNull(schema.deals.deletedAt)));
-      if (!d) throw new FachFehler(404, 'Der zu ergänzende Deal wurde nicht gefunden');
-      ergaenzen = { id: d.id, maklerId: d.maklerId };
-      objektId = d.objektId;
-    } else if (e.objekt.bestehendeId) {
+    if (e.objekt.bestehendeId) {
       const [o] = await tx.select({ id: schema.objekte.id }).from(schema.objekte).where(and(eq(schema.objekte.id, e.objekt.bestehendeId), isNull(schema.objekte.deletedAt)));
       if (!o) throw new FachFehler(404, 'Gewähltes Objekt nicht gefunden');
       objektId = o.id;
@@ -394,20 +124,16 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
         id: objektId, strasse: text(d.strasse), hausnr: text(d.hausnr), plz: text(d.plz), stadt: text(d.stadt), bundesland: text(d.bundesland),
         baujahr: zahl(d.baujahr) === null ? null : Math.round(d.baujahr!), einheitenAnzahl: zahl(d.einheitenAnz) === null ? null : Math.round(d.einheitenAnz!),
         wohnflaeche: zahl(d.wohnflaeche), grundstueck: zahl(d.grundstueck), energieklasse: text(d.energieausweis?.klasse), heizung: text(d.heizungsart),
-        angebotspreis: zahl(d.angebotspreis), istMiete: zahl(d.istmiete), status: 'In Prüfung', erfasstAm: heute,
-        sollMiete: zahl((manuell?.objekt.spalten.sollMiete ?? zuordnung?.werte['objekt.sollmiete']) as number | null),
-        notizen: [text(d.notizen), ...(manuell?.objekt.notizen ?? [])].filter(Boolean).join('\n') || null,
-        details: manuell ? manuell.objekt.details : objektDetails(d, {}, e.importId),
+        angebotspreis: zahl(d.angebotspreis), istMiete: zahl(d.istmiete), status: 'In Prüfung', notizen: text(d.notizen), erfasstAm: heute,
+        details: {
+          bruttorendite: zahl(d.bruttorendite), heizungsbaujahr: zahl(d.heizungsbaujahr), energieausweis: d.energieausweis ?? null,
+          lagebeschreibung: text(d.lagebeschreibung), ausstattung: text(d.ausstattung), herkunft: 'Exposé-Import',
+        },
       });
-      objektNeu = true;
-      // Zusatz je Einheit nur, wenn die Aufstellung auf der Prüfseite gleich lang geblieben ist (Zuordnung nach Index)
-      const einheiten = d.einheiten ?? [];
-      const zusatz = zuordnung && zuordnung.einheitenDetails.length === einheiten.length ? zuordnung.einheitenDetails : null;
-      for (const [sort, x] of einheiten.entries()) {
+      for (const [sort, x] of (d.einheiten ?? []).entries()) {
         await tx.insert(schema.objektEinheiten).values({
           id: `${objektId}:${crypto.randomUUID()}`, objektId, typ: x.typ || 'Wohnung', lage: text(x.lage), zimmer: zahl(x.zimmer),
           flaeche: zahl(x.flaeche), kaltmiete: zahl(x.kaltmiete), vermietung: text(x.vermiet), sort,
-          details: zusatz?.[sort] ?? null,
         });
       }
     }
@@ -416,9 +142,7 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
     let maklerId: string | null = null;
     const m = e.makler.daten;
     const tel = m.tel ? telefonNormalisieren(m.tel) : '';
-    if (ergaenzen?.maklerId) {
-      maklerId = ergaenzen.maklerId;
-    } else if (e.makler.bestehendeId) {
+    if (e.makler.bestehendeId) {
       const [alt] = await tx.select({ id: schema.makler.id, tel: schema.makler.tel }).from(schema.makler).where(and(eq(schema.makler.id, e.makler.bestehendeId), isNull(schema.makler.deletedAt)));
       if (!alt) throw new FachFehler(404, 'Gewählter Makler nicht gefunden');
       maklerId = alt.id;
@@ -430,33 +154,15 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
       await tx.insert(schema.makler).values({
         id: maklerId, name: text(m.name), firma: text(m.firma), tel: text(tel), email: text(m.email), webseite: text(m.webseite),
         mobil: text(m.mobiltel ? telefonNormalisieren(m.mobiltel) : ''), festnetz: text(m.festnetztel ? telefonNormalisieren(m.festnetztel) : ''),
-        // Anschrift aus der Zuordnung; manuelle Zuordnung nur, wo die Zuordnung nichts gefunden hat
-        ...Object.fromEntries((['strasse', 'plz', 'ort'] as const).map((s) => [s, wertText(zuordnung?.werte[`makler.${s}`]) ?? wertText(manuell?.makler.spalten[s])])),
         weitereKontakte: weitereKontakte(
           { name: m.name, tel, mobil: m.mobiltel, festnetz: m.festnetztel, email: m.email },
-          {
-            namen: [...(m.alleNamen ?? []), ...(manuell?.makler.weitere.namen ?? [])],
-            telefonnummern: [...(m.alleTelefonnummern ?? []), ...(manuell?.makler.weitere.telefonnummern ?? [])],
-            emails: [...(m.alleEmails ?? []), ...(manuell?.makler.weitere.emails ?? [])],
-          }),
+          { namen: m.alleNamen, telefonnummern: m.alleTelefonnummern, emails: m.alleEmails }),
         prio: m.prio ?? 'B', kontaktFrequenz: normalisiereFrequenz(m.kontaktFreq || 'Monatlich'),
       });
-      maklerNeu = true;
       await maklerInsUnternehmen(tx, maklerId);
       if (text(m.notizen)) {
         await tx.insert(schema.maklerKommunikation).values({ id: `${maklerId}:${crypto.randomUUID()}`, maklerId, zeitpunkt: sql`now()`, kanal: 'notiz', text: text(m.notizen) });
       }
-    }
-
-    if (ergaenzen) {
-      // Der Deal hatte keinen Makler: jetzt den aus dem Exposé eintragen (Version zählt hoch wie bei jeder Änderung)
-      if (!ergaenzen.maklerId && maklerId) {
-        await tx.update(schema.deals).set({ maklerId, updatedAt: sql`now()`, version: sql`${schema.deals.version} + 1` }).where(eq(schema.deals.id, ergaenzen.id));
-      }
-      if (e.importId) {
-        await tx.update(schema.exposeImporte).set({ dealId: ergaenzen.id, objektId, maklerId, status: 'uebernommen', updatedAt: sql`now()` }).where(eq(schema.exposeImporte.id, e.importId));
-      }
-      return { dealId: ergaenzen.id, objektId, maklerId, ergaenzt: true };
     }
 
     // 3. Deal-Dublette (gleiches Objekt + gleicher Makler)
@@ -469,58 +175,31 @@ export async function exposeUebernehmen(db: Db, k: ExposeKontext, e: ExposeUeber
     const einheiten = dealEinheitenAusExpose(e.objekt.daten.einheiten ?? [], standard.rend_k).map((x) => ({ ...x, id: `${dealId}:${crypto.randomUUID()}`, dealId }));
     const kalk = wizardKalkSpeichern(e.deal.kalk, standard);
     const { kennzahlen } = berechneAnkauf(kalk, einheiten.map((x) => einheitAlsEingabe({ ...x, mieteNeu: null, mieteNeuManuell: false, verkaufspreis: null, stueck: null })), [], standard);
+    // Erster Nachfasstermin heute: ohne nächsten und letzten Kontakt fehlte der Deal im Cockpit (Befund 13.10.2026).
     await tx.insert(schema.deals).values({
       id: dealId, objektId, maklerId, status: e.deal.status, angebotsDatum: heute, nextContact: heute, nachfassFrequenz: normalisiereFrequenz(e.deal.nachfassFreq),
-      notizen: text(e.deal.notizen), kalkulation: { ...kalk, ...kennzahlen }, exposeRohdaten: { ...v0, originalFileName: e.dateiname, ...(e.importId ? { importId: e.importId } : {}) },
+      notizen: text(e.deal.notizen), kalkulation: { ...kalk, ...kennzahlen }, exposeRohdaten: { ...e.extrahiert, originalFileName: e.dateiname },
     });
     for (const x of einheiten) await tx.insert(schema.dealEinheiten).values(x);
     await tx.insert(schema.dealStatusHistorie).values({ id: crypto.randomUUID(), dealId, vonStatus: null, nachStatus: e.deal.status, quelle: 'wizard' });
-    if (e.importId) {
-      await tx.update(schema.exposeImporte).set({ dealId, objektId, maklerId, status: 'uebernommen', updatedAt: sql`now()` }).where(eq(schema.exposeImporte.id, e.importId));
-    }
-    return { dealId, objektId, maklerId, ergaenzt: false };
+    return { dealId, objektId, maklerId };
   });
 
-  // 5. Erst das PDF an den Deal, dann die Fotos: online läuft das in der 60-s-Function, und viele Fotos dürfen das Exposé
-  // nicht verdrängen — ein Deal ohne Exposé wäre der schlimmere Fehler (Protokoll 31, W26). Der Deal besteht auch, wenn beides scheitert.
+  // 5. PDF an den Deal: pdfs/<dealId>.pdf und Eintrag im Dokumentenreiter. Der Deal besteht auch, wenn das scheitert.
   const adresse = [e.objekt.daten.strasse, e.objekt.daten.hausnr].filter(Boolean).join(' ') || 'Objekt';
-  const pdf = await pdfAnDenDeal(db, k, e.key, ids, `Exposé_${adresse}.pdf`);
-  // Fotos aus dem Exposé ans Objekt (Reihenfolge = Seite), danach Eingangsbilder löschen. Fehler → Warnung.
-  const fotoWarnungen: string[] = [];
-  const fotos = importBilder.length ? await bilderUebernehmen(db, k.speicher, ids.objektId, importBilder, fotoWarnungen, new Set(e.bilderAusschliessen ?? [])) : 0;
-  await bilderLoeschen(k.speicher, importBilder);
-  const warnung = [pdf.warnung, ...fotoWarnungen].filter(Boolean).join(' ');
-  return { ...ids, pdfGespeichert: pdf.pdfGespeichert, fotos, ...(warnung ? { warnung } : {}) };
-}
-
-/** PDF an den Deal: pdfs/<dealId>.pdf und Eintrag im Dokumentenreiter; beim Ergänzen als weiteres Exposé. */
-async function pdfAnDenDeal(db: Db, k: ExposeKontext, key: string, ids: { dealId: string; ergaenzt: boolean }, dateiname: string): Promise<{ pdfGespeichert: boolean; warnung?: string }> {
-  if (ids.ergaenzt) {
-    try {
-      const docId = crypto.randomUUID();
-      const docKey = dokumentSchluessel(ids.dealId, docId, dateiname);
-      await k.speicher.kopieren(BUCKETS.pdfs, key, BUCKETS.dealDocs, docKey);
-      const groesse = (await k.speicher.holen(BUCKETS.dealDocs, docKey)).byteLength;
-      await db.insert(schema.dealDokumente).values({ id: docId, dealId: ids.dealId, dateiname, mimeType: 'application/pdf', groesseBytes: groesse, label: 'Exposé (Import, ergänzt)', istExpose: true, storageKey: docKey });
-      await k.speicher.loeschen(BUCKETS.pdfs, [key]).catch(() => undefined);
-      return { pdfGespeichert: true };
-    } catch (err) {
-      console.error('[expose] PDF-Ergänzung fehlgeschlagen:', err);
-      return { pdfGespeichert: false, warnung: 'Deal ergänzt, das Exposé-PDF konnte aber nicht gespeichert werden.' };
-    }
-  }
+  const dateiname = `Exposé_${adresse}.pdf`;
   try {
     const zielKey = `${ids.dealId}.pdf`;
-    await k.speicher.verschieben(BUCKETS.pdfs, key, zielKey);
+    await k.speicher.verschieben(BUCKETS.pdfs, e.key, zielKey);
     const docId = crypto.randomUUID();
     const docKey = dokumentSchluessel(ids.dealId, docId, dateiname);
     await k.speicher.kopieren(BUCKETS.pdfs, zielKey, BUCKETS.dealDocs, docKey);
     const groesse = (await k.speicher.holen(BUCKETS.dealDocs, docKey)).byteLength;
     await db.insert(schema.dealDokumente).values({ id: docId, dealId: ids.dealId, dateiname, mimeType: 'application/pdf', groesseBytes: groesse, label: 'Exposé (Import)', istExpose: true, storageKey: docKey });
-    return { pdfGespeichert: true };
+    return { ...ids, pdfGespeichert: true };
   } catch (err) {
     console.error('[expose] PDF-Übernahme fehlgeschlagen:', err);
-    return { pdfGespeichert: false, warnung: 'Deal angelegt, das Exposé-PDF konnte aber nicht gespeichert werden.' };
+    return { ...ids, pdfGespeichert: false, warnung: 'Deal angelegt, das Exposé-PDF konnte aber nicht gespeichert werden.' };
   }
 }
 

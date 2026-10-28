@@ -9,7 +9,7 @@ const url = process.env.DATABASE_URL ? verlangeLokaleDatenbank(process.env.DATAB
 
 describe.skipIf(!url)('Makler: Felder aus HubSpot im Profil (19.10.2026)', () => {
   const { db, client } = createDb(url!);
-  const app = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, expose: { speicher: speicherImSpeicher(), ki: kiAttrappe(), attrappe: true, texterkennung: null } });
+  const app = createApp({ db, auth: { lokalOffen: true, produktion: false, erlaubteEmails: [] }, expose: { speicher: speicherImSpeicher(), ki: kiAttrappe(), attrappe: true } });
   const k = `Felder${Date.now()}`;
   const ids: string[] = [];
 

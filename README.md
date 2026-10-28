@@ -81,8 +81,8 @@ Knopf „Exposé importieren“ in der Kopfzeile → Upload (Stapel, Kostenschä
 - **Ablage:** Supabase Storage (`SUPABASE_SERVICE_ROLE_KEY`), Buckets `pdfs`, `deal-docs`, `obj-photos` wie in der alten App; Upload zuerst nach `pdfs/_eingang/<uuid>`.
 - **Übernommen und geprüft:** Prompt/Schema wortgleich, Analyse-Wegwahl und PDF-Textlesen mit den Tests der alten App; Dubletten, Telefonregeln und Vorbereitung per Golden Master (150 Fälle); Vorsortierung der Mails (`triageMail`) mit Tests und Beispiel-Mails.
 - **Bewusste Korrekturen:** Deal-Einheiten bekommen `flaeche` (alte App: nur `fl_ist`, Fläche fehlte in der Kalkulation jedes importierten Deals) · Risikopuffer als `rp_pct` (alt `rp`, wirkungslos) · eingegebene 0 bleibt 0 (alt `|| Standard`).
-- **Noch offen:** E-Mail-Angebote aus dem Postfach und Auto-Import-Engine (brauchen Microsoft-Graph-Zugang, Browser, Outward-Gate), Entwurf/Minimieren, Massenimport mit CSV.
-- **v3 — Rohdaten ohne KI, Deutung mit KI (14.10.2026, Protokolle 28–31):** Das PDF wird zuerst ohne KI gelesen (`pdfDokument`: Textlayer mit Zellen, Bild-Seiten per Texterkennung mit tesseract.js, Fotos per `bilderAusPdf`), daraus entstehen im Code die Rohdaten (`rohdatenAusDokument`: Bezeichnung–Wert, Kacheln, Freitexte, Kontakte, Mietlisten-Tabellen, Wörterbuch mit ~400 Synonymen auf OpenImmo-1.2.7-Pfade). Die KI deutet nur noch: **Teil A** ist der bisherige Aufruf (Prompt, Werkzeug, Grenzen wortgleich), dazu ein kleiner Aufruf für unbekannte Bezeichnungen. `zuordnen` in `@gg/domain` führt beides zusammen (Teil A hat Vorrang, Rohdaten füllen Lücken, Widersprüche erscheinen als „doppelt“; Einheiten werden über Fläche/Lage verbunden, Jahresspalten ÷ 12, Mieternamen entfallen). Jeder Import ist eine Akte in `fach.expose_importe` (Rohdaten samt Dokument, nie überschrieben); die Prüfseite zeigt Widersprüche („doppelt“) als Knopf unter dem jeweiligen Feld (wie die Kontakt-Alternativen beim Makler), Angaben ohne Feld eingeklappt unter „Weitere Angaben“ mit Dropdown „Übernehmen in …“, einen Schritt **Fotos** (automatisch ans Objekt), und bei einer Dublette „Zum bestehenden Deal hinzufügen“. Reiter **„Aus dem Exposé“** an Objekt und Makler zeigt alle erfassten Angaben mit Übernahme ins Feld; `objekt_einheiten.details` nimmt Zusatzspalten je Einheit auf. Ein gelerntes Wörterbuch (`expose_bezeichnungen`) und ein Korrekturprotokoll (`import_korrekturen`) waren kurz dabei und wurden am 16.10.2026 vor der Auslieferung wieder entfernt (Migration `expose_importe` neu erzeugt). Alte Deals bleiben unverändert; `pnpm umzug --altimporte` legt für sie optional eine Akte aus den vorhandenen Rohdaten an. Online läuft die Analyse über die 300-s-Function; Texterkennung siehe `DEPLOYMENT.md` (Schalter `OCR=aus`). Messung gegen `main` an 5 Exposés: 0 Felder nur in `main`, 22 nur neu, Kosten gleich (Protokoll 30 §13).
+- **Noch offen:** E-Mail-Angebote aus dem Postfach und Auto-Import-Engine (brauchen Microsoft-Graph-Zugang, Browser, Outward-Gate), Fotos aus dem PDF, Entwurf/Minimieren, Massenimport mit CSV, Vergleich mit echten Exposés.
+- **v3 zurückgenommen (26.10.2026):** Rückmeldung des Kunden: v3 brauchte je Datei 3–4× so lange, Einheitenliste, Provision und Kaufpreis waren oft falsch. Der Import arbeitet wieder wie vor v3 (eine KI-Analyse je PDF). Tabelle `fach.expose_importe` und Spalte `objekt_einheiten.details` bleiben in der Datenbank, werden aber nicht mehr benutzt.
 
 ## Bankgespräch-PDF
 
@@ -113,12 +113,6 @@ Prüft **gegen die laufende alte App**, ob der Neubau fachlich dasselbe zeigt �
 **Regel:** Jede neu übernommene Fachfunktion bekommt hier einen Vergleich (Daten in `datenbestand.ts`, Auslesen in `alt.ts`/`neu.ts`). Neubau-Ansichten tragen dafür `data-*`-Merkmale (z. B. `data-kennzahl`).
 
 **Bisher gefunden:** Datumsanzeige „Zuletzt“ war im Neubau „8.9.2026“, alt „08.09.2026“ → angeglichen.
-
-**Exposé-Import (`pnpm paritaet:expose`, kostet Geld):** dieselben PDFs auf drei Wegen — alte App (laufend, Port 3001), Neubau v0 (derselbe
-Aufruf, portiert) und Neubau v2 (Produktivweg: Rohdaten ohne KI, Teil A auf dem Dokument-Text, Scan → OCR → Text) — und die Felder der
-Prüfseite im Vergleich. `--nur "a,b"` wählt PDFs, `--scan "a"` nimmt ein PDF zusätzlich als nachgestellten Scan (gerastert, ohne Textlayer;
-`pdfAlsScan` aus `@gg/integrations`). alt ↔ v0 zeigt das KI-Rauschen, v0 ↔ v2 die Wirkung der Eingabe. Ergebnisse werden je PDF und Weg
-unter `.cache/paritaet-expose/` abgelegt; Bericht `berichte/paritaet/expose.md` (Protokoll 31 §8.2).
 
 ## Deal-Detail, Makler, Cockpit-KI, Vorlagen
 
@@ -182,6 +176,21 @@ Zwei Aktionen verändern etwas außerhalb der App: die AGB-/Provisionsbestätigu
 ## MCP-Server
 
 `POST /api/mcp` spricht JSON-RPC (initialize, tools/list, tools/call). Außerhalb einer nachweislich lokalen Umgebung braucht jeder Aufruf einen Schlüssel im Kopf `Authorization: Bearer …` — Cookies zählen nicht; hinterlegt werden nur SHA-256-Hashes in `MCP_API_KEYS` (`label:scope[+scope]:sha256`), verglichen wird in konstanter Zeit. Bereiche: `read`, `write`, `outward`; ein Werkzeug ohne gültigen Bereich ist weder auflistbar noch aufrufbar. Werkzeuge: `list_collections`, `read_collection`, `read_entity`, `list_files`, `read_audit_log` (lesen), `add_note` (schreiben) und `request_outward_approval` (legt nur einen Antrag an — ausgeführt wird nichts). Regeln in `packages/domain/src/mcp/zugang.ts` (Golden Master aus `server/mcp.ts`), Werkzeuge in `apps/api/src/services/mcp.ts`; die Übersicht steht unter Einstellungen → Aktionen nach außen.
+
+Der Endpunkt liegt vor der App-Anmeldung (der Bearer-Kopf trägt den MCP-Schlüssel, kein Supabase-Login); ein GET mit `Accept: text/event-stream` bekommt 405 (kein Ereignisstrom), reine Benachrichtigungen 202. Claude verbinden:
+
+```bash
+# Schlüssel erzeugen und den Hash in Vercel eintragen: MCP_API_KEYS = claude:read:<hash>  (Bereiche mit + verbinden, z. B. read+write)
+openssl rand -hex 32                        # = <schluessel>, nur beim Nutzer aufbewahren
+echo -n '<schluessel>' | shasum -a 256      # = <hash>
+
+# Claude Code
+claude mcp add --transport http gg https://<app>.vercel.app/api/mcp --header "Authorization: Bearer <schluessel>"
+# lokal (AUTH_LOCAL_OPEN=1, ohne Schlüssel)
+claude mcp add --transport http gg-lokal http://localhost:3101/api/mcp
+```
+
+Claude Desktop über `npx mcp-remote https://<app>.vercel.app/api/mcp --header "Authorization: Bearer <schluessel>"`. claude.ai-Connectoren verlangen OAuth und gehen mit einem festen Schlüssel nicht.
 
 ## Audit-Log
 

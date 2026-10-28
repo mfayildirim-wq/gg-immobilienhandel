@@ -1,7 +1,7 @@
 import { schema } from '@gg/db';
 import { STANDARD_ABSCHLUSS_BILD, STANDARD_ORGANIGRAMM_BILD } from '@gg/documents';
 import { dokumentSchluessel, fotoSchluessel } from '@gg/integrations';
-import { bsSeedAktionen, bsSeedVorlage, DealStatus, EXPOSE_V0_SCHEMA, normalisiereFrequenz, weitereKontakte, SLIDE_TYP_WERTE, STANDARDBILD_ABSCHLUSS, STANDARDBILD_ORGANIGRAMM, START_STATUS } from '@gg/domain';
+import { bsSeedAktionen, bsSeedVorlage, DealStatus, normalisiereFrequenz, weitereKontakte, SLIDE_TYP_WERTE, STANDARDBILD_ABSCHLUSS, STANDARDBILD_ORGANIGRAMM, START_STATUS } from '@gg/domain';
 import {
   datum,
   ganzzahl,
@@ -30,7 +30,6 @@ export interface Zeilen {
   dealKommentare: Zeile<typeof schema.dealKommentare>[];
   dealKalkVarianten: Zeile<typeof schema.dealKalkVarianten>[];
   dealStatusHistorie: Zeile<typeof schema.dealStatusHistorie>[];
-  exposeImporte: Zeile<typeof schema.exposeImporte>[];
   kundenkalkulationen: Zeile<typeof schema.kundenkalkulationen>[];
   objektFotos: Zeile<typeof schema.objektFotos>[];
   dealDokumente: Zeile<typeof schema.dealDokumente>[];
@@ -217,32 +216,12 @@ function rest(item: Record<string, unknown>, bekannt: Set<string>): Record<strin
 
 const ISO_TAG = (tag: string) => `${tag}T00:00:00.000Z`;
 
-/**
- * Alt-Exposé eines Deals (`_exposeRaw` der alten App bzw. `deals.expose_rohdaten`: { objekt, makler, kalkulation, _konfidenz, originalFileName })
- * als Zeile `expose_importe` im Schema v0. Die ID ist aus der Deal-ID abgeleitet, damit jeder Lauf dieselbe Zeile trifft.
- */
-export function exposeAltimport(dealId: string, objektId: string | null, maklerId: string | null, roh: Record<string, unknown>): Zeile<typeof schema.exposeImporte> {
-  const { originalFileName, importId: _importId, ...v0 } = roh;
-  return {
-    id: `imp:${dealId}`,
-    dealId,
-    objektId,
-    maklerId,
-    dateiname: text(originalFileName),
-    schemaVersion: EXPOSE_V0_SCHEMA,
-    status: 'uebernommen',
-    rohdaten: v0,
-    promptVersion: null, modell: null, weg: null, seitenGelesen: null, seitenGesamt: null, stopReason: null,
-    inputTokens: null, outputTokens: null, dauerMs: null, kostenEur: null, analyse: null,
-  };
-}
-
 export function umformen(kv: KvDaten, stichtag = new Date().toISOString()): Umformung {
   const befunde: Befund[] = [];
   const unbekannteFelder: Record<string, Record<string, number>> = {};
   const z: Zeilen = {
     makler: [], maklerKommunikation: [], objekte: [], objektEinheiten: [], deals: [],
-    dealEinheiten: [], dealSanierungen: [], dealKommentare: [], dealKalkVarianten: [], dealStatusHistorie: [], exposeImporte: [],
+    dealEinheiten: [], dealSanierungen: [], dealKommentare: [], dealKalkVarianten: [], dealStatusHistorie: [],
     kundenkalkulationen: [], objektFotos: [], dealDokumente: [], finanzpraesentationen: [], praesentationFolien: [],
     begleitscheinVorlagen: [], vordrucke: [], begleitscheinAktionen: [], begleitscheine: [], vertriebslisten: [], vertriebslisteZeilen: [],
     projekte: [], projektEinheiten: [], projektMieterhistorie: [], projektAufgaben: [], projektGebaeudeMassnahmen: [], gespeicherteFilter: [], textvorlagen: [], ddChecklisteVorlage: [], einstellungen: [],
@@ -492,11 +471,6 @@ export function umformen(kv: KvDaten, stichtag = new Date().toISOString()): Umfo
       ...(geaendert ? { updatedAt: geaendert } : {}),
       deletedAt: geloeschtAm(d, stichtag),
     });
-
-    if (istObjekt(d._exposeRaw)) {
-      z.exposeImporte.push(exposeAltimport(id, objektId, maklerId ?? null, d._exposeRaw));
-      befund({ schwere: 'info', art: 'expose-altimport', entitaet: 'deals', id, feld: '_exposeRaw', hinweis: 'als expose_importe (v0) überführt' });
-    }
 
     const objEinheiten = objektEinheiten.get(objektId) ?? [];
     let altformatGemeldet = false;

@@ -46,14 +46,6 @@ export const ALTBESTAND = {
       kommentare: [{ ts: '17.09.2026 09:00', text: 'Notartermin' }, { ts: 'Altbestand', text: 'erste Notiz' }],
       notizen: 'steht zusätzlich im Feld',
       kalkVarianten: [{ id: 'v1', name: 'Erstangebot', ts: '2026-03-20T10:00:00.000Z', kalk: { kaufpreis: 1100000 }, einheiten: [], sanierung: [] }],
-      // Rohdaten des alten Exposé-Assistenten (Schema v0): wird eine Zeile expose_importe
-      _exposeRaw: {
-        objekt: { strasse: 'Musterstraße', hausnr: '12', plz: '70178', stadt: 'Stuttgart', baujahr: '1978' },
-        makler: { name: 'Anna Alt', tel: '+49 30 111' },
-        kalkulation: { kaufpreis: 1200000 },
-        _konfidenz: { strasse: 'hoch', baujahr: 'mittel' },
-        originalFileName: 'Exposé Musterstraße.pdf',
-      },
       _prio: { order: 4 }, _due: 'x',
     },
     {

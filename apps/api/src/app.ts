@@ -1,7 +1,5 @@
 import {
   ExposeAnalyseAntwort,
-  ExposeAngabenAntwort,
-  ExposeUebernahme,
   ExposeUebernahmeErgebnis,
   ExposeUebernehmen,
   Kundenkalkulation,
@@ -133,9 +131,8 @@ import { autoSicherungDatei, autoSicherungEinspielen, autoSicherungErstellen, au
 import { filterAnlegen, filterListe, filterLoeschen, filterUmbenennen, filterVorlagenEinrichten, listenAltformat } from './services/listen.ts';
 import { projektAnlegen, projektDealAuswahl, projektDetail, projekteListe, projektLoeschen, projektSpeichern } from './services/projekte.ts';
 import { fotoDatei, fotoHochladen, fotoLoeschen, fotoPort, fotosListe, fotosSortieren } from './services/fotos.ts';
-import { type Dateispeicher, type Geocoder, type GraphClient, AnalyseFehler, type KiClient, KiDienstFehler, KiSchluesselFehler, type PropstackClient, nachrichtenSuche, webSuche, anthropicClient, anthropicSchluesselPruefen, kiMitModell, type Abruf, rechercheTestAbruf } from '@gg/integrations';
-import { bekannteExposeDateien, exposeAnalysieren, exposeEingang, exposeEingangUebernehmen, type ExposeKontext, exposeUebernehmen, importVerwerfen, MAX_EXPOSE_BYTES, exposeBild } from './services/expose.ts';
-import { maklerAngaben, maklerUebernahme, objektAngaben, objektUebernahme } from './services/exposeAngaben.ts';
+import { type Dateispeicher, type Geocoder, type GraphClient, type KiClient, KiSchluesselFehler, type PropstackClient, nachrichtenSuche, webSuche, anthropicClient, anthropicSchluesselPruefen, kiMitModell, type Abruf, rechercheTestAbruf } from '@gg/integrations';
+import { bekannteExposeDateien, exposeAnalysieren, exposeEingang, exposeEingangUebernehmen, type ExposeKontext, exposeUebernehmen, MAX_EXPOSE_BYTES } from './services/expose.ts';
 import { auth, type AuthOptionen } from './middleware/auth.ts';
 import {
   dealAnlegen,
@@ -284,18 +281,8 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, prop
       const quelle = z?.quelle === 'einstellungen' ? 'Schlüssel aus Einstellungen → Zugänge' : 'Schlüssel aus der Umgebung (ANTHROPIC_API_KEY)';
       return c.json({ fehler: `Der Anthropic-Schlüssel wird abgelehnt (ungültig oder gesperrt). Verwendet: ${quelle}${z?.maske ? ` ${z.maske}` : ''}. Bitte unter Einstellungen → Zugänge einen gültigen Schlüssel hinterlegen oder mit „Schlüssel testen“ prüfen.` }, 422);
     }
-    // Anthropic-Fehler (Limit, Guthaben, Überlast, Zeitlimit …) und fachliche Abbrüche der Analyse: die Ursache zeigen
-    if (err instanceof KiDienstFehler) {
-      console.error('[ki]', err.art, err.antwort || err.message);
-      const status = ({ limit: 503, guthaben: 503, rate: 429, ueberlastet: 503, stoerung: 502, anfrage: 502, zeitlimit: 504, netz: 502 } as const)[err.art];
-      return c.json({ fehler: err.meldung, details: { quelle: 'anthropic', art: err.art, status: err.status } }, status);
-    }
-    if (err instanceof AnalyseFehler) return c.json({ fehler: err.message }, 422);
-    // Unerwartet (E6, 16.10.2026): Fach- und KI-Fehler oben im Klartext; technische Ursachen (SQL, Stack, Pfade) nur ins Log,
-    // die Antwort trägt eine Referenz, mit der man die Logzeile findet.
-    const referenz = Math.random().toString(36).slice(2, 10);
-    console.error(`[fehler ${referenz}] ${c.req.method} ${c.req.path}`, err);
-    return c.json({ fehler: `Interner Fehler (Referenz ${referenz})`, details: { pfad: c.req.path, referenz } }, 500);
+    console.error(err);
+    return c.json({ fehler: 'Interner Fehler' }, 500);
   });
 
   app.get('/api/health', async (c) => {
@@ -314,6 +301,28 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, prop
     // Erst aufräumen, dann spiegeln — der Eingang gehört ohnehin nicht ins Archiv
     const eingangEntfernt = await eingangAufraeumen(speicher);
     return { eingangEntfernt, spiegel: await archivSpiegeln(db, speicher) };
+  });
+
+  // ── MCP-Server (alt: server/mcp.ts) — VOR der Anmeldeprüfung, dafür mit eigenem Schlüssel ──
+  // Der Bearer-Kopf trägt hier einen MCP-Schlüssel, kein Supabase-Login. Nur Kopfzeilen, kein Cookie:
+  // ein Browser schickt Cookies bei jedem fremden POST mit.
+  app.post('/api/mcp', async (c) => {
+    const anmeldung = mcpAnmelden(mcpSchluesselAusKopfOderNull(c.req.header()), process.env);
+    if (!anmeldung.ok) {
+      if (anmeldung.detail) console.warn('[mcp] Anmeldung abgelehnt:', anmeldung.detail);
+      return c.json({ jsonrpc: '2.0', id: null, error: { code: -32001, message: anmeldung.message } }, anmeldung.status as 401 | 500);
+    }
+    const rumpf: unknown = await c.req.json().catch(() => null);
+    if (rumpf === null) return c.json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Der Rumpf ist kein gültiges JSON.' } }, 400);
+    const antwort = await mcpVerarbeiten(db, rumpf, anmeldung.sitzung);
+    // Nur Benachrichtigungen: Streamable HTTP verlangt 202 ohne Rumpf
+    return antwort ? c.json(antwort, 200) : c.body(null, 202);
+  });
+  // Ein MCP-Client öffnet per GET einen Ereignisstrom; den gibt es hier nicht — 405 sagt ihm das.
+  // GET ohne diesen Wunsch ist die Übersicht der App und läuft weiter zur Anmeldung.
+  app.get('/api/mcp', async (c, next) => {
+    if ((c.req.header('accept') ?? '').includes('text/event-stream')) return c.body(null, 405, { allow: 'POST' });
+    await next();
   });
 
   app.use('/api/*', auth(authOpt));
@@ -707,19 +716,7 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, prop
     async (c) => { const p = c.req.valid('param'); return c.json(await varianteLoeschen(db, p.id, p.varianteId), 200); },
   );
 
-  // ── MCP-Server (alt: server/mcp.ts) ─────────────────────
-  // Nur Kopfzeilen, kein Cookie: ein Browser schickt Cookies bei jedem fremden POST mit.
-  app.post('/api/mcp', async (c) => {
-    const anmeldung = mcpAnmelden(mcpSchluesselAusKopfOderNull(c.req.header()), process.env);
-    if (!anmeldung.ok) {
-      if (anmeldung.detail) console.warn('[mcp] Anmeldung abgelehnt:', anmeldung.detail);
-      return c.json({ jsonrpc: '2.0', id: null, error: { code: -32001, message: anmeldung.message } }, anmeldung.status as 401 | 500);
-    }
-    const rumpf: unknown = await c.req.json().catch(() => null);
-    if (rumpf === null) return c.json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Der Rumpf ist kein gültiges JSON.' } }, 400);
-    const antwort = await mcpVerarbeiten(db, rumpf, anmeldung.sitzung);
-    return antwort ? c.json(antwort, 200) : c.body(null, 204);
-  });
+  // ── MCP-Server: Übersicht für die App (hinter der Anmeldung; der Endpunkt selbst steht vor ihr) ──
   app.openapi(
     createRoute({ method: 'get', path: '/api/mcp', responses: { 200: json(z.object({ lokal: z.boolean(), schluessel: z.array(z.object({ label: z.string(), scopes: z.array(z.string()) })), verworfen: z.array(z.string()), werkzeuge: z.array(z.object({ name: z.string(), scope: z.string(), title: z.string(), description: z.string() })) }), 'Werkzeuge und Schlüssel') } }),
     (c) => c.json(mcpStand(process.env), 200),
@@ -1267,43 +1264,12 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, prop
     async (c) => c.json(await dokumenteUebernehmen(db, ablage(), c.req.valid('param').id, c.req.valid('json').dateien), 201),
   );
   app.openapi(
-    createRoute({ method: 'post', path: '/api/expose/analyse', ...{ request: body(z.object({ key: z.string(), dateiname: z.string().max(300), bilder: z.boolean().optional() })) }, responses: { 200: json(ExposeAnalyseAntwort, 'ausgewertet'), 404: fehler('Datei fehlt'), 422: fehler('nicht auswertbar') } }),
-    async (c) => { const b = c.req.valid('json'); return c.json(await exposeAnalysieren(db, await exposeMitKi(), b.key, b.dateiname, { bilder: b.bilder ?? true }), 200); },
+    createRoute({ method: 'post', path: '/api/expose/analyse', ...{ request: body(z.object({ key: z.string(), dateiname: z.string().max(300) })) }, responses: { 200: json(ExposeAnalyseAntwort, 'ausgewertet'), 404: fehler('Datei fehlt'), 422: fehler('nicht auswertbar') } }),
+    async (c) => { const b = c.req.valid('json'); return c.json(await exposeAnalysieren(db, await exposeMitKi(), b.key, b.dateiname), 200); },
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/expose/uebernehmen', request: body(ExposeUebernehmen), responses: { 201: json(ExposeUebernahmeErgebnis, 'angelegt'), 404: fehler('nicht gefunden'), 409: fehler('Deal bereits vorhanden'), 422: fehler('ungültig') } }),
     async (c) => c.json(await exposeUebernehmen(db, exposeKontext(), c.req.valid('json'), heuteBerlin()), 201),
-  );
-  app.openapi(
-    createRoute({ method: 'post', path: '/api/expose/importe/{id}/verwerfen', request: { params: IdParam }, responses: { 200: json(z.object({ id: z.string() }), 'verworfen'), 404: fehler('nicht gefunden') } }),
-    async (c) => c.json(await importVerwerfen(db, c.req.valid('param').id, ablage()), 200),
-  );
-
-  // Vorschaubild eines Imports (Auth wie bei /api/photos: Header oder Cookie gg-auth)
-  app.get('/api/expose/importe/:id/bilder/:nr', async (c) => {
-    const nr = Number(c.req.param('nr'));
-    if (!Number.isInteger(nr) || nr < 0) throw new FachFehler(404, 'Bild nicht gefunden');
-    const bytes = await exposeBild(db, ablage(), c.req.param('id'), nr);
-    return alsStrom(bytes, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
-  });
-
-  // ── Reiter „Aus dem Exposé“ (Objekt/Makler) ───────────────
-  const uebernahmeAntworten = { 200: Geaendert, ...konflikt, 422: fehler('kein Ziel für diese Angabe') };
-  app.openapi(
-    createRoute({ method: 'get', path: '/api/objekte/{id}/expose-angaben', request: { params: IdParam }, responses: { 200: json(ExposeAngabenAntwort, 'Angaben aus den Exposé-Importen'), 404: fehler('nicht gefunden') } }),
-    async (c) => c.json(await objektAngaben(db, c.req.valid('param').id), 200),
-  );
-  app.openapi(
-    createRoute({ method: 'post', path: '/api/objekte/{id}/expose-uebernahme', request: { params: IdParam, ...body(ExposeUebernahme) }, responses: uebernahmeAntworten }),
-    async (c) => c.json(await objektUebernahme(db, c.req.valid('param').id, c.req.valid('json')), 200),
-  );
-  app.openapi(
-    createRoute({ method: 'get', path: '/api/makler/{id}/expose-angaben', request: { params: IdParam }, responses: { 200: json(ExposeAngabenAntwort, 'Angaben aus den Exposé-Importen'), 404: fehler('nicht gefunden') } }),
-    async (c) => c.json(await maklerAngaben(db, c.req.valid('param').id), 200),
-  );
-  app.openapi(
-    createRoute({ method: 'post', path: '/api/makler/{id}/expose-uebernahme', request: { params: IdParam, ...body(ExposeUebernahme) }, responses: uebernahmeAntworten }),
-    async (c) => c.json(await maklerUebernahme(db, c.req.valid('param').id, c.req.valid('json')), 200),
   );
   app.get('/api/expose/bekannte-dateien', async (c) => c.json(await bekannteExposeDateien(db)));
 

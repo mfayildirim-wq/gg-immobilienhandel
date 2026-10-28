@@ -21,8 +21,8 @@ graphify-out/
 # Verknüpfung mit dem Vercel-Projekt (Konto-IDs, OIDC-Token) — gehört zum Rechner
 .vercel
 
-# Prüfsatz-Cache der Exposé-Extraktion (KI-Antworten)
-.cache/
-
-# Sprachdaten-Cache von tesseract.js (wird zur Laufzeit geladen)
-*.traineddata
+# Lokale Reste des Gedächtnis-Dienstes (Branch ki-leiste): Schlüssel, Datenbanken, Python-Cache
+__pycache__/
+dienste/gedaechtnis/.env*
+dienste/gedaechtnis/.schluessel*.json
+*.db
