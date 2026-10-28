@@ -204,20 +204,7 @@ claude mcp add --transport http gg-lokal http://localhost:3101/api/mcp
 
 Claude Desktop über `npx mcp-remote https://<app>.vercel.app/api/mcp --header "Authorization: Bearer <schluessel>"`. claude.ai-Connectoren verlangen OAuth und gehen mit einem festen Schlüssel nicht.
 
-Der Endpunkt liegt vor der App-Anmeldung (der Bearer-Kopf trägt den MCP-Schlüssel, kein Supabase-Login); ein GET mit `Accept: text/event-stream` bekommt 405 (kein Ereignisstrom), reine Benachrichtigungen 202. Claude verbinden:
-
-```bash
-# Schlüssel erzeugen und den Hash in Vercel eintragen: MCP_API_KEYS = claude:read:<hash>  (Bereiche mit + verbinden, z. B. read+write)
-openssl rand -hex 32                        # = <schluessel>, nur beim Nutzer aufbewahren
-echo -n '<schluessel>' | shasum -a 256      # = <hash>
-
-# Claude Code
-claude mcp add --transport http gg https://<app>.vercel.app/api/mcp --header "Authorization: Bearer <schluessel>"
-# lokal (AUTH_LOCAL_OPEN=1, ohne Schlüssel)
-claude mcp add --transport http gg-lokal http://localhost:3101/api/mcp
-```
-
-Claude Desktop über `npx mcp-remote https://<app>.vercel.app/api/mcp --header "Authorization: Bearer <schluessel>"`. claude.ai-Connectoren verlangen OAuth und gehen mit einem festen Schlüssel nicht.
+Welche Schreibrechte Claude künftig bekommen soll (direkt, nur mit Freigabe, nie), steht als Vorschlag in `OFFEN.md` → „Schreibrechte für Claude über MCP“.
 
 ## Audit-Log
 
