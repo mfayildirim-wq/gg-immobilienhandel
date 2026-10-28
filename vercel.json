@@ -19,6 +19,10 @@
   },
   "rewrites": [
     {
+      "source": "/api/gedaechtnis/(.*)",
+      "destination": "/api/render"
+    },
+    {
       "source": "/api/auto-import/(.*)",
       "destination": "/api/render"
     },

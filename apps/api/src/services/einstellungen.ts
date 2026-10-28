@@ -89,3 +89,18 @@ export async function kiModellwahlSpeichern(db: Db, wert: KiModellwahl): Promise
   await wertSpeichern(db, SCHLUESSEL_KI_MODELLE, sauber);
   return sauber;
 }
+
+/** KI-Leiste: Websuche und Gedächtnis vor jeder Antwort (beides an, bis jemand es abschaltet). Das Modell steht in der Modellwahl. */
+export interface KiLeisteSchalter { websuche: boolean; gedaechtnis: boolean }
+const SCHLUESSEL_KI_LEISTE = 'ki-leiste';
+
+export async function kiLeisteSchalterLesen(db: Db | Tx): Promise<KiLeisteSchalter> {
+  const r = ((await wertLesen(db, SCHLUESSEL_KI_LEISTE)) ?? {}) as Partial<KiLeisteSchalter>;
+  return { websuche: r.websuche !== false, gedaechtnis: r.gedaechtnis !== false };
+}
+
+export async function kiLeisteSchalterSpeichern(db: Db, s: KiLeisteSchalter): Promise<KiLeisteSchalter> {
+  const sauber = { websuche: Boolean(s.websuche), gedaechtnis: Boolean(s.gedaechtnis) };
+  await wertSpeichern(db, SCHLUESSEL_KI_LEISTE, sauber);
+  return sauber;
+}

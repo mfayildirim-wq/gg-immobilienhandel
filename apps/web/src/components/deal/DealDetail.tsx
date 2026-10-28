@@ -1,11 +1,12 @@
 import { Alert, Group, Loader, Stack, Tabs, Text, Title } from '@mantine/core';
 import { ListeUmschalter } from '../GeteilteAnsicht.tsx';
 import { Reiterleiste } from '../Reiterleiste.tsx';
-import { IconBriefcase, IconBuildingBank, IconCalculator, IconFolder, IconInfoCircle, IconMessages } from '@tabler/icons-react';
+import { IconBrain, IconBriefcase, IconBuildingBank, IconCalculator, IconFolder, IconInfoCircle, IconMessages } from '@tabler/icons-react';
 import { useState } from 'react';
 import { useDealDetail } from '../../lib/api.ts';
 import { useEinstellung } from '../../lib/ansicht.ts';
 import { darfVerlassen } from '../../lib/ungespeichert.ts';
+import { GedaechtnisKasten } from '../GedaechtnisKasten.tsx';
 import { StatusBadge } from '../StatusBadge.tsx';
 import { DateiLeiste, DealDateien } from './DealDateien.tsx';
 import { DealKalkulation } from './DealKalkulation.tsx';
@@ -14,8 +15,9 @@ import { DealKundenkalkulationen } from './DealKundenkalkulationen.tsx';
 import { DealPraesentation } from './DealPraesentation.tsx';
 import { DealUebersicht } from './DealUebersicht.tsx';
 import css from './DealDetail.module.css';
+import { useKiBezug } from '@gg/ki-leiste';
 
-const REITER = ['uebersicht', 'kommunikation', 'kalkulation', 'dateien', 'kundenkalkulation', 'praesentation'] as const;
+const REITER = ['uebersicht', 'kommunikation', 'kalkulation', 'dateien', 'kundenkalkulation', 'praesentation', 'gedaechtnis'] as const;
 type Reiter = (typeof REITER)[number];
 
 /**
@@ -23,6 +25,7 @@ type Reiter = (typeof REITER)[number];
  * Nachfassen), auf der Deal-Liste die Übersicht. Der zuletzt gewählte Reiter wird je Kontext gemerkt.
  */
 export function DealDetail({ id, start = 'uebersicht' }: { id: string; start?: Reiter }) {
+  useKiBezug({ art: 'deal', id });
   const { data: deal, isLoading, error } = useDealDetail(id);
   const [reiter, setReiter] = useEinstellung<Reiter>(`deal.reiter.${start}`, REITER, start);
   // Platz unter der Reiterleiste, in den der aktive Reiter seine Knopfleiste setzt (Kalkulation: Varianten, Verwerfen, Speichern)
@@ -67,6 +70,9 @@ export function DealDetail({ id, start = 'uebersicht' }: { id: string; start?: R
             <Tabs.Tab value="praesentation" leftSection={<IconBuildingBank size={16} />}>
               Bank-Präsentation
             </Tabs.Tab>
+            <Tabs.Tab value="gedaechtnis" leftSection={<IconBrain size={16} />}>
+              Gedächtnis
+            </Tabs.Tab>
           </Reiterleiste>
           <div ref={setLeistenPlatz} />
         </div>
@@ -85,6 +91,9 @@ export function DealDetail({ id, start = 'uebersicht' }: { id: string; start?: R
         </Tabs.Panel>
         <Tabs.Panel value="praesentation" pt="md">
           <DealPraesentation deal={deal} />
+        </Tabs.Panel>
+        <Tabs.Panel value="gedaechtnis" pt="md">
+          <GedaechtnisKasten art="deal" id={deal.id} />
         </Tabs.Panel>
         <Tabs.Panel value="kalkulation" pt="md">
           <DateiLeiste dealId={deal.id} />

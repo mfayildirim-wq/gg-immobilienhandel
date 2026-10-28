@@ -1,0 +1,103 @@
+/* KI-Leiste — Farben über --ki-* anpassbar (gg setzt sie aus Mantine); ohne Vorgabe folgen sie dem Farbschema der Seite. */
+.kl-leiste, .kl-knopf {
+  --kl-hg: var(--ki-hintergrund, Canvas);
+  --kl-text: var(--ki-text, CanvasText);
+  --kl-matt: var(--ki-gedimmt, color-mix(in srgb, CanvasText 60%, transparent));
+  --kl-linie: var(--ki-linie, color-mix(in srgb, CanvasText 15%, transparent));
+  --kl-flaeche: var(--ki-flaeche, color-mix(in srgb, CanvasText 6%, transparent));
+  --kl-akzent: var(--ki-akzent, #2b8a3e);
+  --kl-fehler: var(--ki-fehler, #e03131);
+}
+
+/* Sprechkreis (aus CoSAi): Ringe drehen, der Kern atmet */
+@keyframes am-drehen { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes am-atmen { 0%, 100% { transform: scale(0.96); opacity: 0.85; } 50% { transform: scale(1.04); opacity: 1; } }
+@keyframes am-pulsen { 0% { transform: scale(0.9); } 30% { transform: scale(1.18); } 55% { transform: scale(0.98); } 80% { transform: scale(1.1); } 100% { transform: scale(0.92); } }
+@keyframes am-vibrieren { 0% { transform: translate(0, 0); } 25% { transform: translate(0.9px, -0.6px); } 50% { transform: translate(-0.7px, 0.8px); } 75% { transform: translate(0.5px, 0.7px); } 100% { transform: translate(0, 0); } }
+@keyframes am-scheinen { 0%, 100% { opacity: 0.1; transform: scale(0.98); } 50% { opacity: 0.28; transform: scale(1.03); } }
+.am-dreht { animation: am-drehen 14s linear infinite; }
+.am-dreht-langsam { animation-duration: 60s !important; }
+.am-atmet { animation: am-atmen 3.2s ease-in-out infinite; }
+.am-atmet-schnell { animation-duration: 1.2s; }
+.am-pulst { animation: am-pulsen 0.42s ease-in-out infinite; }
+.am-vibriert { animation: am-vibrieren 0.14s linear infinite; }
+.am-schein { animation: am-scheinen 2.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .am-dreht, .am-atmet, .am-pulst, .am-vibriert, .am-schein { animation: none; }
+}
+
+.kl-knopf { display: inline-flex; padding: 0; border: 0; background: none; border-radius: 50%; cursor: pointer; line-height: 0; }
+.kl-knopf:focus-visible { outline: 2px solid var(--kl-akzent); outline-offset: 2px; }
+
+.kl-leiste {
+  display: flex; flex-direction: column; height: 100%; min-height: 0;
+  background: var(--kl-hg); color: var(--kl-text); font-size: 14px;
+}
+.kl-leiste button { font: inherit; color: inherit; }
+.kl-leiste :is(button, input, select, textarea):focus-visible { outline: 2px solid var(--kl-akzent); outline-offset: 1px; }
+
+.kl-kopf { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--kl-linie); }
+.kl-kopf-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.kl-bezug { color: var(--kl-matt); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kl-symbol { border: 0; background: none; width: 30px; height: 30px; border-radius: 6px; cursor: pointer; font-size: 16px; }
+.kl-symbol:hover:not(:disabled), .kl-symbol[aria-pressed='true'] { background: var(--kl-flaeche); }
+.kl-symbol:disabled { opacity: 0.35; cursor: default; }
+
+.kl-einstellungen { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--kl-linie); background: var(--kl-flaeche); }
+.kl-einstellungen label { display: flex; flex-direction: column; gap: 4px; }
+.kl-einstellungen .kl-schalter { flex-direction: row; align-items: center; gap: 6px; }
+.kl-einstellungen small { color: var(--kl-matt); }
+
+.kl-hinweis { margin: 8px 12px 0; color: var(--kl-matt); }
+.kl-chat { flex: 1 1 55%; min-height: 120px; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; }
+.kl-leer { color: var(--kl-matt); margin: 4px 0; }
+.kl-nutzer { align-self: flex-end; max-width: 85%; padding: 6px 10px; border-radius: 12px 12px 2px 12px; background: var(--kl-akzent); color: #fff; white-space: pre-wrap; overflow-wrap: anywhere; }
+.kl-ki { align-self: stretch; padding: 8px 10px; border-radius: 10px; background: var(--kl-flaeche); overflow-wrap: anywhere; }
+.kl-denkt { color: var(--kl-matt); font-style: italic; margin: 0; }
+.kl-text > :first-child { margin-top: 0; }
+.kl-text > :last-child { margin-bottom: 0; }
+.kl-text table { border-collapse: collapse; font-size: 13px; display: block; overflow-x: auto; }
+.kl-text :is(th, td) { border: 1px solid var(--kl-linie); padding: 3px 6px; text-align: left; }
+.kl-text :is(h1, h2, h3) { font-size: 15px; margin: 10px 0 4px; }
+.kl-roh { white-space: pre-wrap; }
+.kl-quellen { margin: 6px 0 0; padding-left: 18px; font-size: 12px; }
+.kl-fuss { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; color: var(--kl-matt); font-size: 12px; }
+.kl-fuss:empty { display: none; }
+.kl-ablegen { margin-top: 6px; border: 1px solid var(--kl-linie); background: var(--kl-hg); border-radius: 6px; padding: 3px 8px; cursor: pointer; font-size: 12px; }
+.kl-ablegen-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.kl-ablegen-form input { flex: 1 1 160px; min-width: 0; }
+.kl-ablegen-form small { flex-basis: 100%; color: var(--kl-matt); }
+.kl-abgelegt { margin: 6px 0 0; color: var(--kl-akzent); font-size: 12px; }
+.kl-fehler { color: var(--kl-fehler); margin: 4px 12px; }
+
+.kl-eingabe { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--kl-linie); }
+.kl-eingabe textarea { flex: 1; resize: vertical; min-height: 40px; font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--kl-linie); background: var(--kl-hg); color: var(--kl-text); }
+.kl-leiste :is(input, select) { font: inherit; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--kl-linie); background: var(--kl-hg); color: var(--kl-text); }
+.kl-leiste form button, .kl-senden { border: 0; border-radius: 6px; padding: 6px 12px; background: var(--kl-akzent); color: #fff; cursor: pointer; }
+.kl-leiste form button[type='button'] { background: var(--kl-flaeche); color: var(--kl-text); }
+.kl-leiste form button:disabled { opacity: 0.5; cursor: default; }
+
+.kl-unten { flex: 0 1 35%; min-height: 100px; display: flex; flex-direction: column; border-top: 1px solid var(--kl-linie); }
+.kl-reiter { display: flex; gap: 4px; padding: 6px 10px 0; }
+.kl-reiter button { border: 0; background: none; padding: 4px 8px; border-radius: 6px 6px 0 0; cursor: pointer; color: var(--kl-matt); }
+.kl-reiter button[aria-selected='true'] { color: var(--kl-text); font-weight: 600; box-shadow: inset 0 -2px 0 var(--kl-akzent); }
+.kl-unten-inhalt { overflow-y: auto; padding: 6px 10px 10px; }
+.kl-liste { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.kl-zeile { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; border: 0; background: none; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.kl-zeile:hover, .kl-zeile[aria-current='true'] { background: var(--kl-flaeche); }
+.kl-zeile small { color: var(--kl-matt); font-size: 11px; }
+.kl-zeile-titel { font-weight: 600; }
+.kl-auszug { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.kl-liste li > .kl-text { padding: 4px 8px 8px; }
+
+.kl-vorschlag { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--kl-akzent); border-radius: 8px; background: var(--kl-hg); }
+.kl-vorschlag small { color: var(--kl-matt); }
+.kl-vorschlag textarea { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--kl-linie); background: var(--kl-hg); color: var(--kl-text); resize: vertical; }
+.kl-knoepfe { display: flex; gap: 6px; align-items: center; }
+.kl-leiste .kl-knoepfe > button:not(.kl-symbol) { border: 0; border-radius: 6px; padding: 4px 10px; background: var(--kl-akzent); color: #fff; cursor: pointer; }
+.kl-leiste .kl-knoepfe > button.kl-zweit { background: var(--kl-flaeche); color: var(--kl-text); }
+.kl-leiste .kl-knoepfe > button.kl-loeschen { background: var(--kl-fehler); }
+.kl-leiste .kl-knoepfe > button:disabled { opacity: 0.5; cursor: default; }
+.kl-klein { font-size: 12px; }
+.kl-verlauf-zeile { display: flex; align-items: center; gap: 4px; }
+.kl-verlauf-zeile > .kl-zeile { flex: 1; min-width: 0; }

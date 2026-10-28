@@ -1,6 +1,7 @@
 import { gehalteneKarten, type Vorher } from './gehalteneKarten.ts';
-import type { KalkStandard, KiModellwahl } from '@gg/domain';
+import type { GedaechtnisArt, KalkStandard, KiModellwahl } from '@gg/domain';
 import type {
+  GedaechtnisEintrag,
   ExposeAnalyseAntwort,
   ExposeUebernehmen,
   Kundenkalkulation,
@@ -105,7 +106,7 @@ export async function mitToken(headers?: HeadersInit): Promise<HeadersInit> {
 }
 
 /** Bei 401 einmal die Sitzung erneuern und den Aufruf wiederholen (wie apiFetch der alten App). */
-async function holen(pfad: string, init?: RequestInit): Promise<Response> {
+export async function holen(pfad: string, init?: RequestInit): Promise<Response> {
   const bauen = async () => fetch(pfad, { ...init, headers: await mitToken(init?.headers) });
   const res = await bauen();
   if (res.status !== 401) return res;
@@ -788,3 +789,23 @@ export const useAnlaesse = (maklerId: string, aktiv: boolean) =>
 export const useGespraechsoeffner = (maklerId: string | null) =>
   useQuery({ queryKey: ['gespraechsoeffner', maklerId], queryFn: () => anfrage<{ text: string }>(`/api/makler/${maklerId}/ki/gespraechsoeffner`, senden('POST', {})), enabled: !!maklerId, staleTime: Infinity, retry: false });
 export const useOsint = (id: string) => useAendern('makler', () => anfrage<{ persoenlich: Record<string, unknown> }>(`/api/makler/${id}/osint`, senden('POST', {})));
+
+// ── Gedächtnis (zentraler Dienst, 24.10.2026) ─────────────────
+
+export type { GedaechtnisArt };
+export const useGedaechtnisStand = () => useQuery({ queryKey: ['gedaechtnis'], queryFn: () => anfrage<{ verbunden: boolean }>('/api/gedaechtnis'), staleTime: 60_000 });
+export const useGedaechtnis = (art: GedaechtnisArt, id: string, aktiv = true) =>
+  useQuery({
+    queryKey: ['gedaechtnis', art, id],
+    queryFn: () => anfrage<{ eintraege: GedaechtnisEintrag[] }>(`/api/gedaechtnis/${art}/${encodeURIComponent(id)}`),
+    enabled: aktiv, retry: false,
+  });
+export function useGedaechtnisAendern(art: GedaechtnisArt, id: string) {
+  const qc = useQueryClient();
+  const neuLaden = () => { void qc.invalidateQueries({ queryKey: ['gedaechtnis', art, id] }); };
+  return {
+    merken: useMutation({ mutationFn: (text: string) => anfrage<{ neu: GedaechtnisEintrag[]; abgeloest: GedaechtnisEintrag[] }>(`/api/gedaechtnis/${art}/${encodeURIComponent(id)}`, senden('POST', { text })), onSettled: neuLaden }),
+    aendern: useMutation({ mutationFn: (e: { id: string; text: string }) => anfrage<GedaechtnisEintrag>(`/api/gedaechtnis/eintraege/${encodeURIComponent(e.id)}`, senden('PATCH', { text: e.text })), onSettled: neuLaden }),
+    vergessen: useMutation({ mutationFn: (eintragId: string) => anfrage<{ id: string }>(`/api/gedaechtnis/eintraege/${encodeURIComponent(eintragId)}`, { method: 'DELETE' }), onSettled: neuLaden }),
+  };
+}

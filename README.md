@@ -173,9 +173,36 @@ Mit `VITE_SUPABASE_URL` und `VITE_SUPABASE_ANON_KEY` zeigt die Web-App eine Anme
 
 Zwei Aktionen verändern etwas außerhalb der App: die AGB-/Provisionsbestätigung im Auto-Import und das Anlegen einer Einheit in Propstack. Beide laufen durch das Gate aus `packages/domain/src/outward/gate.ts` (wörtlich aus `server/outward-gate.ts`, Golden Master mit 68 Fällen): erlaubt wird nur, wenn **alle** Bedingungen erfüllt sind — bekannte Aktion, kein Not-Aus (`OUTWARD_GATE_KILL`), scharfe Umgebung (nur Vercel-Produktion), Schalter an und Ziel-Host auf der Liste. **Einstellungen → Aktionen nach außen** zeigt Umgebung, Schalter, zusätzliche Hosts, je Aktion eine Probe („was gerade durchginge“) und die offenen Freigabe-Anträge (MCP). Jede Entscheidung steht im Audit-Log.
 
+## Gedächtnis
+
+gg meldet dem zentralen Gedächtnis-Dienst (`dienste/gedaechtnis`, Mem0 mit Mandanten, Freigaben, Ersetzen und Protokoll) Statuswechsel und Kommentare am Deal sowie Kontakt und Betreuung am Makler — als ganzen Stand je Art, ein neuer Stand ersetzt den alten (Texte und Bezüge `gg:deal:<id>`, `gg:makler:<id>` … in `packages/domain/src/gedaechtnis.ts`; seit der KI-Leiste haben alle Dialoge einen Bezug). Die KI-Leiste zeigt das Gedächtnis zum offenen Dialog; am Deal und am Makler zeigt zusätzlich der Reiter **Gedächtnis** alle Einträge zum Bezug, auch die anderer Apps und aus KI-Gesprächen (Claude über MCP); dort lässt sich etwas merken, korrigieren und vergessen. Adresse und Schlüssel: Einstellungen → Zugänge (oder `GEDAECHTNIS_URL`/`GEDAECHTNIS_SCHLUESSEL`); ohne Dienst bleibt gg unverändert, Meldungen warten höchstens 3 s. Mit `KI_ATTRAPPE=1` nutzt gg eine Attrappe im Speicher.
+
+## KI-Leiste (Chat zum offenen Dialog)
+
+Oben in der Mitte öffnet der **rote Sprechkreis** rechts die KI-Leiste (26.10.2026). Sie bezieht sich immer auf den Dialog, in dem man gerade ist: jede Detailansicht meldet sich mit `useKiBezug({ art, id })` (Deal, Makler, Objekt, Projekt, Kundenkalkulation, Vertriebsliste, Begleitschein). Oben steht der grüne Sprechkreis mit dem Dialog, ⚙ stellt Modell (Modellwahl-Bereich „KI-Leiste“, Standard Sonnet 5.5), Websuche und „Gedächtnis mitgeben“ ein; darunter der Chat, unten **Verlauf** und **Gedächtnis** zu diesem Dialog. Die KI bekommt den Datensatz (gekürzt) und das Gedächtnis zum Dialog vorab und liest weiter über **dieselben MCP-Werkzeuge wie Claude/Cowork** — im selben Prozess, nur lesend, im Namen des Nutzers; Marktfragen beantwortet sie mit der Websuche von Anthropic samt Quellen. 
+
+**Verlauf und Gedächtnis sind getrennt.** Jedes Gespräch landet automatisch im **Verlauf** — das wörtliche Protokoll, gespeichert im Gedächtnis-Dienst (`/v1/gespraeche`, nicht in Mem0, nicht durchsuchbar, nur für gg lesbar), je Gespräch löschbar (🗑), nach 90 Tagen ohne Fortsetzung gelöscht; ohne Gedächtnis-Dienst nur bis zum Neustart. Ins **Gedächtnis** kommt nur, was jemand bestätigt: per Knopf „🧠 Im Gedächtnis ablegen“ unter einer Antwort, oder über die **Vorschlagskarte**, wenn die KI auf „merk dir …“ oder bei einem lohnenden Ergebnis (Recherche, Vergleich, Absprachen) das Werkzeug `gedaechtnis_vorschlagen` aufruft — die Karte zeigt Titel und Text zum Ablegen, Ändern oder Verwerfen. Die KI schreibt nie selbst ins Gedächtnis; gleicher Titel ersetzt den alten Eintrag; an der Antwort steht danach „✓ abgelegt“.
+
+Gebaut zum Herauslösen: `packages/ki-kern` (Schleife, MCP-Quelle `quelleAusMcp`/`mcpUeberHttp`, Vorschlagswerkzeug, Verlauf-Schnittstelle, Vertrag) und `packages/ki-leiste` (React ohne Mantine: `KiLeisteRahmen`, `KiKnopf`, `KiLeiste`, `useKiBezug`, `httpTransport`; Farben über `--ki-*`) kennen gg nicht. gg verdrahtet in `apps/api/src/services/kiLeiste.ts` (Beschreibung je Dialog, Verlauf im Gedächtnis-Dienst, MCP im Prozess) und `/api/ki-leiste/*`. Als eigener Dienst tauscht man die Werkzeugquelle gegen `mcpUeberHttp(<App>/api/mcp, Schlüssel)` und die Basisadresse des Transports. Mit `KI_ATTRAPPE=1` antwortet eine Attrappe (`werkzeug:<name> {…}` in der Frage ruft ein Werkzeug, „merk dir …“ schlägt vor).
+
 ## MCP-Server
 
-`POST /api/mcp` spricht JSON-RPC (initialize, tools/list, tools/call). Außerhalb einer nachweislich lokalen Umgebung braucht jeder Aufruf einen Schlüssel im Kopf `Authorization: Bearer …` — Cookies zählen nicht; hinterlegt werden nur SHA-256-Hashes in `MCP_API_KEYS` (`label:scope[+scope]:sha256`), verglichen wird in konstanter Zeit. Bereiche: `read`, `write`, `outward`; ein Werkzeug ohne gültigen Bereich ist weder auflistbar noch aufrufbar. Werkzeuge: `list_collections`, `read_collection`, `read_entity`, `list_files`, `read_audit_log` (lesen), `add_note` (schreiben) und `request_outward_approval` (legt nur einen Antrag an — ausgeführt wird nichts). Regeln in `packages/domain/src/mcp/zugang.ts` (Golden Master aus `server/mcp.ts`), Werkzeuge in `apps/api/src/services/mcp.ts`; die Übersicht steht unter Einstellungen → Aktionen nach außen.
+`POST /api/mcp` spricht JSON-RPC (initialize, tools/list, tools/call). Außerhalb einer nachweislich lokalen Umgebung braucht jeder Aufruf einen Schlüssel im Kopf `Authorization: Bearer …` — Cookies zählen nicht; hinterlegt werden nur SHA-256-Hashes in `MCP_API_KEYS` (`label:scope[+scope]:sha256`), verglichen wird in konstanter Zeit. Bereiche: `read`, `write`, `outward`; ein Werkzeug ohne gültigen Bereich ist weder auflistbar noch aufrufbar. Werkzeuge: `list_collections`, `read_collection`, `read_entity`, `list_files`, `read_audit_log`, `gedaechtnis_suchen`, `gedaechtnis_eintraege` (lesen), `add_note`, `gedaechtnis_merken` (schreiben; Gedächtnis zu jedem Datensatz mit eigenem Dialog über den Gedächtnis-Dienst) und `request_outward_approval` (legt nur einen Antrag an — ausgeführt wird nichts). Regeln in `packages/domain/src/mcp/zugang.ts` (Golden Master aus `server/mcp.ts`), Werkzeuge in `apps/api/src/services/mcp.ts`; die Übersicht steht unter Einstellungen → Aktionen nach außen.
+
+Der Endpunkt liegt vor der App-Anmeldung (der Bearer-Kopf trägt den MCP-Schlüssel, kein Supabase-Login); ein GET mit `Accept: text/event-stream` bekommt 405 (kein Ereignisstrom), reine Benachrichtigungen 202. Claude verbinden:
+
+```bash
+# Schlüssel erzeugen und den Hash in Vercel eintragen: MCP_API_KEYS = claude:read:<hash>  (Bereiche mit + verbinden, z. B. read+write)
+openssl rand -hex 32                        # = <schluessel>, nur beim Nutzer aufbewahren
+echo -n '<schluessel>' | shasum -a 256      # = <hash>
+
+# Claude Code
+claude mcp add --transport http gg https://<app>.vercel.app/api/mcp --header "Authorization: Bearer <schluessel>"
+# lokal (AUTH_LOCAL_OPEN=1, ohne Schlüssel)
+claude mcp add --transport http gg-lokal http://localhost:3101/api/mcp
+```
+
+Claude Desktop über `npx mcp-remote https://<app>.vercel.app/api/mcp --header "Authorization: Bearer <schluessel>"`. claude.ai-Connectoren verlangen OAuth und gehen mit einem festen Schlüssel nicht.
 
 Der Endpunkt liegt vor der App-Anmeldung (der Bearer-Kopf trägt den MCP-Schlüssel, kein Supabase-Login); ein GET mit `Accept: text/event-stream` bekommt 405 (kein Ereignisstrom), reine Benachrichtigungen 202. Claude verbinden:
 

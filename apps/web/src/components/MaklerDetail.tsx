@@ -6,6 +6,7 @@ import {
 import {
   Alert, Anchor, Autocomplete, Badge, Button, Checkbox, Group, Loader, Paper, SegmentedControl, Select, SimpleGrid, Stack, Tabs, Text, Textarea, TextInput, Title,
 } from '@mantine/core';
+import { GedaechtnisKasten } from './GedaechtnisKasten.tsx';
 import { ListeUmschalter } from './GeteilteAnsicht.tsx';
 import { Reiterleiste } from './Reiterleiste.tsx';
 import { IconCheck, IconDeviceFloppy, IconTrash } from '@tabler/icons-react';
@@ -18,8 +19,9 @@ import {
 import { heuteIso, useEinstellung } from '../lib/ansicht.ts';
 import { datumDe } from '../lib/format.ts';
 import { StatusBadge } from './StatusBadge.tsx';
+import { useKiBezug } from '@gg/ki-leiste';
 
-const REITER = ['profil', 'komm', 'persoenlich', 'deals'] as const;
+const REITER = ['profil', 'komm', 'persoenlich', 'deals', 'gedaechtnis'] as const;
 type Reiter = (typeof REITER)[number];
 
 /**
@@ -27,6 +29,7 @@ type Reiter = (typeof REITER)[number];
  * Der zuletzt gewählte Reiter wird je Kontext gemerkt und bleibt beim Wechsel zum nächsten Makler (wie beim Deal).
  */
 export function MaklerDetail({ id, geloescht, start = 'profil' }: { id: string; geloescht?: () => void; start?: 'profil' | 'komm' }) {
+  useKiBezug({ art: 'makler', id });
   const { data: m, isLoading, error } = useMaklerDetail(id);
   const [reiter, setReiter] = useEinstellung<Reiter>(`makler.reiter.${start}`, REITER, start);
   if (isLoading) return <Loader size="sm" />;
@@ -41,6 +44,7 @@ export function MaklerDetail({ id, geloescht, start = 'profil' }: { id: string; 
             <Tabs.Tab value="komm">💬 Kommunikation</Tabs.Tab>
             <Tabs.Tab value="persoenlich">🎯 Persönlich</Tabs.Tab>
             <Tabs.Tab value="deals">🤝 Deals</Tabs.Tab>
+            <Tabs.Tab value="gedaechtnis">🧠 Gedächtnis</Tabs.Tab>
           </Reiterleiste>
         </div>
       </Group>
@@ -49,6 +53,7 @@ export function MaklerDetail({ id, geloescht, start = 'profil' }: { id: string; 
       <Tabs.Panel value="komm" pt="md"><Kommunikation m={m} /></Tabs.Panel>
       <Tabs.Panel value="persoenlich" pt="md"><Persoenlich key={m.version} m={m} /></Tabs.Panel>
       <Tabs.Panel value="deals" pt="md"><Deals maklerId={m.id} /></Tabs.Panel>
+      <Tabs.Panel value="gedaechtnis" pt="md"><GedaechtnisKasten art="makler" id={m.id} /></Tabs.Panel>
     </Tabs>
   );
 }
