@@ -4,7 +4,7 @@ import {
   Alert, Anchor, Badge, Button, Checkbox, Group, Loader, Modal, Paper, Progress, Select, Stack, Table, Text, TextInput, Title,
 } from '@mantine/core';
 import { useNavigate } from '@tanstack/react-router';
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   useRechercheAbbrechen, useRechercheEntscheiden, useRechercheGesehen, useRechercheLauf, useRechercheMakler, useRechercheSchaetzung, useRechercheStand,
   useRechercheStarten, useRechercheUebernehmen, useRechercheZeilen,
@@ -18,6 +18,8 @@ const FELD_LABEL: Record<string, string> = { ...RECHERCHE_FELDER.makler, ...RECH
 
 type Filter = { suche: string; webseite: string; immoscout: string; status: string };
 const FILTER_LEER: Filter = { suche: '', webseite: 'alle', immoscout: 'alle', status: 'alle' };
+/** Zeilen je „Weitere anzeigen“ */
+const SEITE = 200;
 
 function Adresse({ a, art }: { a: RechercheZeile['webseite']; art: string }) {
   if (!a) return <Text size="xs" c="dimmed">–</Text>;
@@ -28,6 +30,33 @@ function Adresse({ a, art }: { a: RechercheZeile['webseite']; art: string }) {
     </Stack>
   );
 }
+
+/** Eine Tabellenzeile (aufgeklappt mit Detail). memo: neu gezeichnet wird nur, wessen Daten, Häkchen oder Aufklappen sich ändern. */
+const Zeile = memo(function Zeile({ z, gewaehlt, offen, umschalten, aufklappen }: {
+  z: RechercheZeile; gewaehlt: boolean; offen: boolean; umschalten: (id: string) => void; aufklappen: (id: string) => void;
+}) {
+  return (
+    <Fragment>
+      <Table.Tr data-recherche-zeile={z.id} style={{ cursor: 'pointer' }} onClick={() => aufklappen(z.id)}>
+        <Table.Td onClick={(e) => e.stopPropagation()}><Checkbox size="xs" aria-label={`${z.name ?? 'Makler'} auswählen`} checked={gewaehlt} onChange={() => umschalten(z.id)} /></Table.Td>
+        <Table.Td><Text size="xs" fw={600}>{z.name ?? '–'}</Text>{z.prio && <Text size="10px" c="dimmed">Prio {z.prio}</Text>}</Table.Td>
+        <Table.Td>{z.firma ?? '–'}</Table.Td>
+        <Table.Td onClick={(e) => e.stopPropagation()}><Adresse a={z.webseite} art="webseite" /></Table.Td>
+        <Table.Td onClick={(e) => e.stopPropagation()}><Adresse a={z.immoscout} art="immoscout" /></Table.Td>
+        <Table.Td onClick={(e) => e.stopPropagation()}>
+          {z.personUrl ? <Anchor href={z.personUrl} target="_blank" rel="noreferrer" size="xs">✓ {new URL(z.personUrl).pathname} ↗</Anchor> : z.letzteRecherche ? '✗' : '–'}
+        </Table.Td>
+        <Table.Td>{z.letzteRecherche ? datumDe(z.letzteRecherche) : '–'}</Table.Td>
+        <Table.Td>{z.status ? <Badge size="xs" variant="light" color={STATUS_FARBE[z.status] ?? 'gray'} tt="none">{RECHERCHE_STATUS[z.status as RechercheStatus] ?? z.status}</Badge> : <Text size="xs" c="dimmed">offen</Text>}</Table.Td>
+        <Table.Td>{z.offeneVorschlaege ? <Badge size="xs" color="yellow" variant="filled" tt="none" data-recherche-vorschlaege={z.offeneVorschlaege}>{z.offeneVorschlaege} offen</Badge> : '–'}</Table.Td>
+        <Table.Td ta="right">{z.kostenEur ? euroGenau(z.kostenEur) : '–'}</Table.Td>
+      </Table.Tr>
+      {offen && (
+        <Table.Tr><Table.Td colSpan={10} p={0}><MaklerRechercheDetail maklerId={z.id} name={z.name} /></Table.Td></Table.Tr>
+      )}
+    </Fragment>
+  );
+});
 
 /** 🔎 Makler-Recherche (21.10.2026): Webseite und ImmoScout-Profil lesen, Vorschläge prüfen und übernehmen. */
 export function MaklerRechercheEinstellungen() {
@@ -40,6 +69,9 @@ export function MaklerRechercheEinstellungen() {
   const [offen, setOffen] = useState<string | null>(null);
   const [dialog, setDialog] = useState(false);
   const [meldung, setMeldung] = useState<string | null>(null);
+  // Nicht alle Makler auf einmal ins DOM: bei rund 1000 Zeilen kostete jedes Neu-Layout (Dialog auf/zu, Laufstand) Sekunden
+  const [angezeigt, setAngezeigt] = useState(SEITE);
+  useEffect(() => setAngezeigt(SEITE), [filter]);
 
   // Wer die Seite ansieht, hat das Ergebnis gesehen: Glocke aus
   useEffect(() => { if (lauf?.ungesehen) gesehen.mutate(lauf.id); }, [lauf?.id, lauf?.ungesehen]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -56,7 +88,10 @@ export function MaklerRechercheEinstellungen() {
   }), [zeilen, filter]);
 
   const alleSichtbarGewaehlt = sichtbar.length > 0 && sichtbar.every((z) => gewaehlt.has(z.id));
-  const umschalten = (id: string) => setGewaehlt((g) => { const n = new Set(g); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  // Stabil (useCallback), damit die Zeilen (memo) bei Häkchen, Dialog und Laufstand nicht alle neu zeichnen — bei
+  // rund 800 Maklern blockierte das die Seite sekundenlang (Klicktest in Acania: Dialog schloss zu spät)
+  const umschalten = useCallback((id: string) => setGewaehlt((g) => { const n = new Set(g); if (n.has(id)) n.delete(id); else n.add(id); return n; }), []);
+  const aufklappen = useCallback((id: string) => setOffen((o) => (o === id ? null : id)), []);
   const auswahl = [...gewaehlt];
   const mitVorschlaegen = zeilen.filter((z) => gewaehlt.has(z.id) && z.offeneVorschlaege > 0).map((z) => z.id);
   const laeuft = lauf?.status === 'laeuft';
@@ -110,29 +145,14 @@ export function MaklerRechercheEinstellungen() {
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {sichtbar.map((z) => (
-            <Fragment key={z.id}>
-              <Table.Tr data-recherche-zeile={z.id} style={{ cursor: 'pointer' }} onClick={() => setOffen(offen === z.id ? null : z.id)}>
-                <Table.Td onClick={(e) => e.stopPropagation()}><Checkbox size="xs" aria-label={`${z.name ?? 'Makler'} auswählen`} checked={gewaehlt.has(z.id)} onChange={() => umschalten(z.id)} /></Table.Td>
-                <Table.Td><Text size="xs" fw={600}>{z.name ?? '–'}</Text>{z.prio && <Text size="10px" c="dimmed">Prio {z.prio}</Text>}</Table.Td>
-                <Table.Td>{z.firma ?? '–'}</Table.Td>
-                <Table.Td onClick={(e) => e.stopPropagation()}><Adresse a={z.webseite} art="webseite" /></Table.Td>
-                <Table.Td onClick={(e) => e.stopPropagation()}><Adresse a={z.immoscout} art="immoscout" /></Table.Td>
-                <Table.Td onClick={(e) => e.stopPropagation()}>
-                  {z.personUrl ? <Anchor href={z.personUrl} target="_blank" rel="noreferrer" size="xs">✓ {new URL(z.personUrl).pathname} ↗</Anchor> : z.letzteRecherche ? '✗' : '–'}
-                </Table.Td>
-                <Table.Td>{z.letzteRecherche ? datumDe(z.letzteRecherche) : '–'}</Table.Td>
-                <Table.Td>{z.status ? <Badge size="xs" variant="light" color={STATUS_FARBE[z.status] ?? 'gray'} tt="none">{RECHERCHE_STATUS[z.status as RechercheStatus] ?? z.status}</Badge> : <Text size="xs" c="dimmed">offen</Text>}</Table.Td>
-                <Table.Td>{z.offeneVorschlaege ? <Badge size="xs" color="yellow" variant="filled" tt="none" data-recherche-vorschlaege={z.offeneVorschlaege}>{z.offeneVorschlaege} offen</Badge> : '–'}</Table.Td>
-                <Table.Td ta="right">{z.kostenEur ? euroGenau(z.kostenEur) : '–'}</Table.Td>
-              </Table.Tr>
-              {offen === z.id && (
-                <Table.Tr><Table.Td colSpan={10} p={0}><MaklerRechercheDetail maklerId={z.id} name={z.name} /></Table.Td></Table.Tr>
-              )}
-            </Fragment>
-          ))}
+          {sichtbar.slice(0, angezeigt).map((z) => <Zeile key={z.id} z={z} gewaehlt={gewaehlt.has(z.id)} offen={offen === z.id} umschalten={umschalten} aufklappen={aufklappen} />)}
         </Table.Tbody>
       </Table>
+      {sichtbar.length > angezeigt && (
+        <Button size="xs" variant="default" onClick={() => setAngezeigt((n) => n + SEITE)} data-recherche-weitere>
+          Weitere {Math.min(SEITE, sichtbar.length - angezeigt)} anzeigen ({angezeigt} von {sichtbar.length} angezeigt)
+        </Button>
+      )}
       {!isLoading && sichtbar.length === 0 && <Text size="sm" c="dimmed">Keine Makler für diesen Filter.</Text>}
       {sichtbar.length > 0 && <Text size="xs" c="dimmed" ta="right">Kosten bisher gesamt: {euroGenau(zeilen.reduce((s, z) => s + z.kostenEur, 0))}</Text>}
 
