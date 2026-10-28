@@ -62,7 +62,13 @@ export function teilerBegrenzen(wert: number, gesamt: number, minListe = 240, mi
   return Math.round(Math.max(minListe, Math.min(wert, gesamt - minDetail)));
 }
 
-export const LAYOUTS = ['nebeneinander', 'untereinander'] as const;
+/** Breite der KI-Leiste beim Ziehen: ganze Pixel, mindestens 320, höchstens bis zur Mitte des Fensters. */
+export const KI_LEISTE_BREITE = 440;
+export function kiLeisteBegrenzen(wert: number, fenster: number): number {
+  return Math.round(Math.max(320, Math.min(wert, fenster / 2)));
+}
+
+export const LAYOUTS =['nebeneinander', 'untereinander'] as const;
 export type Layout = (typeof LAYOUTS)[number];
 
 /**

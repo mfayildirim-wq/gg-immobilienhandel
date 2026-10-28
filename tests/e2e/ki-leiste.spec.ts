@@ -13,6 +13,9 @@ test('KI-Leiste: roter Kreis öffnet die Leiste zum offenen Dialog; Chat, Werkze
   const breiteVorher = (await page.locator('main > *').first().boundingBox())?.width;
   await page.getByRole('button', { name: 'KI-Leiste öffnen' }).click();
   await expect(leiste).toBeVisible();
+  // Offen steht der rote Kreis nicht im Kopf — geschlossen wird mit ✕ in der Leiste
+  await expect(page.getByRole('button', { name: 'KI-Leiste öffnen' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'KI-Leiste schließen' })).toHaveCount(1);
   // Die Leiste liegt als Ebene über dem Inhalt: die Seite darunter behält ihre Breite
   expect((await page.locator('main > *').first().boundingBox())?.width).toBe(breiteVorher);
   await expect(leiste.locator(`[data-ki-bezug="makler:${m.id}"]`)).toContainText(`Makler: ${name}`);
@@ -68,4 +71,34 @@ test('KI-Leiste: roter Kreis öffnet die Leiste zum offenen Dialog; Chat, Werkze
 
   await page.getByRole('button', { name: 'KI-Leiste schließen' }).first().click();
   await expect(leiste).toBeHidden();
+  await expect(page.getByRole('button', { name: 'KI-Leiste öffnen' })).toBeVisible();
+});
+
+test('KI-Leiste: linken Rand ziehen macht sie breiter — höchstens bis zur Fenstermitte, gemerkt; Doppelklick stellt 440 px wieder her', async ({ page }) => {
+  await page.goto('/');
+  const leiste = page.getByRole('region', { name: 'KI-Leiste' });
+  if (!(await leiste.isVisible())) await page.getByRole('button', { name: 'KI-Leiste öffnen' }).click();
+  const rand = page.locator('[data-ki-teiler]');
+  const aside = page.locator('aside:has([data-ki-teiler])');
+  await rand.dblclick();
+  await expect.poll(async () => (await aside.boundingBox())?.width).toBe(440);
+
+  const fenster = page.viewportSize()!.width;
+  const ziehen = async (um: number) => {
+    const b = (await rand.boundingBox())!;
+    await page.mouse.move(b.x + b.width / 2, b.y + 200);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width / 2 - um, b.y + 200, { steps: 5 });
+    await page.mouse.up();
+  };
+  await ziehen(100);
+  await expect.poll(async () => (await aside.boundingBox())?.width).toBe(Math.min(540, Math.round(fenster / 2)));
+  // Weit über die Mitte hinaus: bleibt an der Mitte stehen
+  await ziehen(fenster);
+  await expect.poll(async () => (await aside.boundingBox())?.width).toBe(Math.round(fenster / 2));
+  await page.reload();
+  if (!(await leiste.isVisible())) await page.getByRole('button', { name: 'KI-Leiste öffnen' }).click();
+  await expect.poll(async () => (await aside.boundingBox())?.width).toBe(Math.round(fenster / 2));
+  await rand.dblclick();
+  await expect.poll(async () => (await aside.boundingBox())?.width).toBe(440);
 });
