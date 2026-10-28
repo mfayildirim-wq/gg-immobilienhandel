@@ -23,6 +23,10 @@
       "destination": "/api/render"
     },
     {
+      "source": "/api/makler-recherche/(.*)",
+      "destination": "/api/render"
+    },
+    {
       "source": "/api/cron/(.*)",
       "destination": "/api/render"
     },

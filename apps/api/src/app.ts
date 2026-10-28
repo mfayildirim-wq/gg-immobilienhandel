@@ -94,6 +94,7 @@ import {
   ObjektDetail,
   StatusHistorieEintrag,
   StatusWechsel,
+  RechercheEntscheiden, RechercheLauf, RechercheMakler, RechercheSchaetzung, RechercheStandSetzen, RechercheStarten, RechercheZeile,
 } from '@gg/api-contract';
 import type { Db } from '@gg/db';
 import { AUFBEWAHRUNG, DealStatus, geplanteStufe, type KiBereich, kiModellFuer, rueckwegPruefen, type RueckwegRegeln } from '@gg/domain';
@@ -104,6 +105,7 @@ import type { FinanzPraes } from '@gg/domain';
 import { pdfDateiname, type BankgespraechPayload } from '@gg/documents';
 import { FachFehler } from './fehler.ts';
 import { renderTor } from './middleware/render-tor.ts';
+import { rechercheAbbrechen, rechercheAlleUebernehmen, rechercheEntscheiden, rechercheGesehen, rechercheLaufAktuell, rechercheMakler, rechercheSchaetzung, rechercheStandSetzen, rechercheStarten, rechercheUebersicht, rechercheWeiter } from './services/maklerRecherche.ts';
 import { bankgespraechDaten, pdfExportProtokollieren } from './services/dokumente.ts';
 import {
   praesentationAnlegen, praesentationDetail, praesentationExportProtokollieren, praesentationFuerExport, praesentationLoeschen, praesentationSpeichern,
@@ -129,7 +131,7 @@ import { autoSicherungDatei, autoSicherungEinspielen, autoSicherungErstellen, au
 import { filterAnlegen, filterListe, filterLoeschen, filterUmbenennen, filterVorlagenEinrichten, listenAltformat } from './services/listen.ts';
 import { projektAnlegen, projektDealAuswahl, projektDetail, projekteListe, projektLoeschen, projektSpeichern } from './services/projekte.ts';
 import { fotoDatei, fotoHochladen, fotoLoeschen, fotoPort, fotosListe, fotosSortieren } from './services/fotos.ts';
-import { type Dateispeicher, type Geocoder, type GraphClient, type KiClient, KiSchluesselFehler, type PropstackClient, nachrichtenSuche, webSuche, anthropicClient, anthropicSchluesselPruefen, kiMitModell } from '@gg/integrations';
+import { type Dateispeicher, type Geocoder, type GraphClient, type KiClient, KiSchluesselFehler, type PropstackClient, nachrichtenSuche, webSuche, anthropicClient, anthropicSchluesselPruefen, kiMitModell, type Abruf, rechercheTestAbruf } from '@gg/integrations';
 import { bekannteExposeDateien, exposeAnalysieren, exposeEingang, exposeEingangUebernehmen, type ExposeKontext, exposeUebernehmen, MAX_EXPOSE_BYTES } from './services/expose.ts';
 import { auth, type AuthOptionen } from './middleware/auth.ts';
 import {
@@ -203,6 +205,8 @@ export interface AppKontext {
    * `aktiv: false` schaltet den Bot ab: die Routen antworten 503, die Oberfläche zeigt keine Bot-Knöpfe (Standard: an).
    */
   autoImport?: { aktiv?: boolean; browserStarten?: () => Promise<import('playwright-core').Browser>; maxZeitlimitSek?: number; lokaleZieleErlaubt?: boolean };
+  /** Makler-Recherche: Abruf öffentlicher Seiten (Standard: fetch, mit KI-Attrappe das Ersatz-Internet) und Pause zwischen zwei Seiten. */
+  recherche?: { abruf?: Abruf; pauseMs?: number };
   /** „Schlüssel testen“ für Anthropic; Standard: echte Abfrage der Modellliste. Tests setzen einen Ersatz. */
   kiSchluesselPruefen?: (apiKey: string) => Promise<{ gueltig: boolean; meldung: string }>;
   /** `CRON_SECRET`: ohne dieses Geheimnis antworten die Cron-Routen immer mit 401. */
@@ -230,7 +234,7 @@ const Version = z.object({ version: z.number().int() });
 const Geaendert = json(z.object({ id: z.string(), version: z.number().int() }), 'geändert');
 const konflikt = { 400: fehler('Eingabe ungültig'), 404: fehler('nicht gefunden'), 409: fehler('Versionskonflikt') };
 
-export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, cronGeheimnis, kiSchluesselPruefen = anthropicSchluesselPruefen, autoImport, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
+export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, propstack: propstackOpt, graph: graphOpt, openaiKey, suche: sucheOpt, speicher: speicherOpt, oauthRueckweg = { online: false, erlaubteHosts: [] }, cronGeheimnis, kiSchluesselPruefen = anthropicSchluesselPruefen, autoImport, recherche: rechercheOpt, pdf = { drucken: bankgespraechPdf, schleuse: erzeugeSchleuse(SCHLEUSE_STANDARD) } }: AppKontext) {
   const autoImportAktiv = autoImport?.aktiv ?? true;
   const exposeKontext = () => {
     if (!expose) throw new FachFehler(422, 'Dateiablage ist nicht eingerichtet (SUPABASE_SERVICE_ROLE_KEY).');
@@ -929,6 +933,59 @@ export function createApp({ db, auth: authOpt, expose, ki: kiOpt, geocoder, prop
   app.openapi(
     createRoute({ method: 'delete', path: '/api/audit/aelter-als/{tage}', request: { params: z.object({ tage: z.coerce.number().int().min(1).max(3650) }) }, responses: { 200: json(z.object({ entfernt: z.number() }), 'aufgeräumt, Anker gesetzt') } }),
     async (c) => c.json(await auditAufraeumen(db, c.req.valid('param').tage), 200),
+  );
+
+  // ── Makler-Recherche (21.10.2026): Webseite, ImmoScout, KI — Vorschläge zum Übernehmen ──
+  // Online leitet vercel.json diese Routen in die lange Function (Etappen mit Seitenabrufen und KI).
+  const rechercheDienste = async () => ({
+    ki: await kiAktuell('makler'),
+    abruf: rechercheOpt?.abruf ?? (expose?.attrappe ? rechercheTestAbruf() : fetch),
+    pauseMs: rechercheOpt?.pauseMs ?? (expose?.attrappe ? 0 : undefined),
+  });
+  const MaklerIds = z.object({ maklerIds: z.array(z.string().min(1)).min(1).max(2000) });
+  app.openapi(
+    createRoute({ method: 'get', path: '/api/makler-recherche', responses: { 200: json(z.array(RechercheZeile), 'alle Makler mit Recherche-Stand') } }),
+    async (c) => c.json(await rechercheUebersicht(db), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/makler-recherche/schaetzung', request: body(RechercheStarten), responses: { 200: json(RechercheSchaetzung, 'Kostenschätzung') } }),
+    async (c) => c.json(await rechercheSchaetzung(db, c.req.valid('json')), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/makler-recherche/laeufe', request: body(RechercheStarten), responses: { 200: json(RechercheLauf, 'gestartet'), 400: fehler('keine Makler'), 409: fehler('es läuft schon einer') } }),
+    async (c) => c.json(await rechercheStarten(db, c.req.valid('json'), null), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'get', path: '/api/makler-recherche/laeufe/aktuell', responses: { 200: json(RechercheLauf.nullable(), 'jüngster Lauf oder null') } }),
+    async (c) => c.json(await rechercheLaufAktuell(db), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/makler-recherche/laeufe/{id}/weiter', request: { params: IdParam }, responses: { 200: json(RechercheLauf, 'nächste Etappe erledigt'), 404: fehler('nicht gefunden') } }),
+    async (c) => c.json(await rechercheWeiter(db, c.req.valid('param').id, await rechercheDienste()), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/makler-recherche/laeufe/{id}/abbrechen', request: { params: IdParam }, responses: { 200: json(RechercheLauf, 'abgebrochen'), 404: fehler('nicht gefunden') } }),
+    async (c) => c.json(await rechercheAbbrechen(db, c.req.valid('param').id), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/makler-recherche/laeufe/{id}/gesehen', request: { params: IdParam }, responses: { 200: json(z.object({ ok: z.literal(true) }), 'Glocke aus') } }),
+    async (c) => c.json(await rechercheGesehen(db, c.req.valid('param').id), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'get', path: '/api/makler-recherche/makler/{id}', request: { params: IdParam }, responses: { 200: json(RechercheMakler, 'Stand und letzte Ergebnisse'), 404: fehler('nicht gefunden') } }),
+    async (c) => c.json(await rechercheMakler(db, c.req.valid('param').id), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'put', path: '/api/makler-recherche/makler/{id}/stand', request: { params: IdParam, ...body(RechercheStandSetzen) }, responses: { 200: json(RechercheMakler, 'gesetzt'), 400: fehler('Adresse ungültig'), 404: fehler('nicht gefunden') } }),
+    async (c) => c.json(await rechercheStandSetzen(db, c.req.valid('param').id, c.req.valid('json')), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/makler-recherche/entscheiden', request: body(RechercheEntscheiden), responses: { 200: json(RechercheMakler, 'entschieden'), 404: fehler('nicht gefunden'), 409: fehler('schon entschieden oder Versionskonflikt') } }),
+    async (c) => c.json(await rechercheEntscheiden(db, c.req.valid('json')), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/makler-recherche/uebernehmen', request: body(MaklerIds), responses: { 200: json(z.object({ uebernommen: z.number().int(), fehler: z.array(z.string()) }), 'übernommen') } }),
+    async (c) => c.json(await rechercheAlleUebernehmen(db, c.req.valid('json').maklerIds), 200),
   );
 
   // ── Dubletten (alt: Einstellungen → Dublettenprüfung) ───

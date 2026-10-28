@@ -999,3 +999,73 @@ export const PersonaStand = z.object({ profil: PersonaProfil.nullable(), konfide
 export type PersonaStand = z.infer<typeof PersonaStand>;
 export const NachrichtEntwurf = z.object({ wa: z.string(), email: z.object({ subject: z.string(), body: z.string() }) });
 export type NachrichtEntwurf = z.infer<typeof NachrichtEntwurf>;
+
+// ── Makler-Recherche (21.10.2026) ──────────────────────────
+
+const RechercheQuelle = z.enum(['bekannt', 'email', 'firmenname', 'ki', 'hand']);
+const RechercheAdresse = z.object({ url: z.string(), quelle: RechercheQuelle }).nullable();
+
+export const RechercheVorschlag = z.object({
+  ziel: z.enum(['makler', 'unternehmen']), feld: z.string(), alt: z.string().nullable(), neu: z.string(), quelle: z.string(),
+  entscheidung: z.enum(['uebernommen', 'verworfen']).nullable(), entschiedenAm: z.string().nullable(),
+});
+export type RechercheVorschlag = z.infer<typeof RechercheVorschlag>;
+
+/** Eine Zeile der Tabelle unter Einstellungen → Makler-Recherche. */
+export const RechercheZeile = z.object({
+  id: z.string(), name: z.string().nullable(), firma: z.string().nullable(), prio: z.string().nullable(),
+  /** Gespeicherter Stand, sonst bekannte Webseite, sonst aus der E-Mail-Domain (noch nicht geprüft) */
+  webseite: RechercheAdresse,
+  immoscout: RechercheAdresse,
+  personUrl: z.string().nullable(),
+  status: z.string().nullable(),
+  letzteRecherche: z.string().nullable(),
+  offeneVorschlaege: z.number().int(),
+  kostenEur: z.number(),
+});
+export type RechercheZeile = z.infer<typeof RechercheZeile>;
+
+export const RechercheStarten = z.object({ maklerIds: z.array(z.string().min(1)).min(1).max(2000), mitKi: z.boolean() });
+export type RechercheStarten = z.infer<typeof RechercheStarten>;
+
+export const RechercheSchaetzung = z.object({
+  anzahl: z.number().int(), mitWebseite: z.number().int(), ohneWebseite: z.number().int(),
+  euro: z.number(), kiSucheMakler: z.number().int(), warnung: z.boolean(),
+});
+export type RechercheSchaetzung = z.infer<typeof RechercheSchaetzung>;
+
+export const RechercheLauf = z.object({
+  id: z.string(), status: z.enum(['laeuft', 'fertig', 'abgebrochen']), mitKi: z.boolean(), anzahl: z.number().int(),
+  erledigt: z.number().int(), gefunden: z.number().int(), fehler: z.number().int(), kostenEur: z.number(),
+  gestartetAm: z.string(), beendetAm: z.string().nullable(),
+  /** Glocke: fertig oder abgebrochen und noch nicht angesehen */
+  ungesehen: z.boolean(),
+});
+export type RechercheLauf = z.infer<typeof RechercheLauf>;
+
+export const RechercheErgebnis = z.object({
+  id: z.string(), laufId: z.string(), status: z.string(),
+  schritte: z.array(z.object({ zeit: z.string(), text: z.string(), url: z.string().optional() })),
+  vorschlaege: z.array(RechercheVorschlag),
+  kostenEur: z.number(), beendetAm: z.string().nullable(), fehler: z.string().nullable(),
+});
+export type RechercheErgebnis = z.infer<typeof RechercheErgebnis>;
+
+/** Recherche zu einem Makler: Stand und die letzten Ergebnisse (neueste zuerst). */
+export const RechercheMakler = z.object({
+  maklerId: z.string(), webseite: RechercheAdresse, immoscout: RechercheAdresse, personUrl: z.string().nullable(),
+  status: z.string().nullable(), letzteRecherche: z.string().nullable(), kostenEur: z.number(),
+  ergebnisse: z.array(RechercheErgebnis),
+});
+export type RechercheMakler = z.infer<typeof RechercheMakler>;
+
+/** Adressen von Hand setzen oder löschen (null). */
+export const RechercheStandSetzen = z.object({ webseite: z.string().trim().max(500).nullable().optional(), immoscoutUrl: z.string().trim().max(500).nullable().optional() });
+export type RechercheStandSetzen = z.infer<typeof RechercheStandSetzen>;
+
+export const RechercheEntscheiden = z.object({
+  ergebnisId: z.string().min(1), index: z.number().int().min(0), entscheidung: z.enum(['uebernommen', 'verworfen']),
+  /** Nur vermerken: der Wert wurde schon mit dem Makler-Formular gespeichert (Vorschlag ins Feld übernommen, dann „Speichern“) */
+  ohneAnwenden: z.boolean().optional(),
+});
+export type RechercheEntscheiden = z.infer<typeof RechercheEntscheiden>;
