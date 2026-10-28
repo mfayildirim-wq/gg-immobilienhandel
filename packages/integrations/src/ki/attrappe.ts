@@ -17,6 +17,9 @@ export function kiAttrappe(): KiClient {
     async nachricht(body: any) {
       // Aufrufe ohne Werkzeug (Makler-KI, Persona): feste, erkennbare Textantworten
       if (!body?.tools) return { content: [{ type: 'text', text: textAntwort(String(body?.messages?.[0]?.content ?? '')) }], usage: { input_tokens: 0, output_tokens: 0 } };
+      // Makler-Recherche: Websuche und Auswertung der Testseiten (rechercheTestAbruf)
+      if (body.tools[0]?.type === 'web_search_20250305') return rechercheWebsucheAttrappe(String(body.messages?.[0]?.content ?? ''));
+      if (body.tools[0]?.name === 'recherche_ergebnis') return rechercheAuswertungAttrappe(String(body.messages?.[0]?.content ?? ''));
       if (body.tools[0]?.name === 'extract_einheiten') {
         // Einheiten-Zeilen „Einheit: Typ | Lage | Zimmer | Fläche | Kaltmiete“ direkt aus dem (unkomprimierten) Test-PDF
         const dok = body.messages?.[0]?.content?.find?.((c: any) => c.type === 'document')?.source?.data ?? '';
@@ -97,4 +100,38 @@ function textAntwort(prompt: string): string {
   }
   if (prompt.startsWith('Analysiere die Kommunikation zwischen')) return 'Test-Modus: sachlich-freundliche Beziehung per Sie.';
   return 'Test-Modus: Zusammenfassung der Kommunikation.';
+}
+
+/** Makler-Recherche, Websuche: „Beispiel“ im Namen findet die Testseite, sonst nichts; zählt eine Suche. */
+function rechercheWebsucheAttrappe(frage: string) {
+  const name = /Name: (.*)/.exec(frage)?.[1] ?? '';
+  const ergebnis = /beispiel/i.test(name) ? { webseite: 'https://beispiel-immobilien.example.test/', immoscout: null } : { webseite: null, immoscout: null };
+  return { content: [{ type: 'text', text: JSON.stringify(ergebnis) }], usage: { input_tokens: 0, output_tokens: 0, server_tool_use: { web_search_requests: 1 } } };
+}
+
+/** Makler-Recherche, Auswertung: „Feld: Wert“-Zeilen je Seite; Personenangaben nur von der Seite, die den Namen nennt. */
+function rechercheAuswertungAttrappe(frage: string) {
+  const name = (/Makler: (.*)/.exec(frage)?.[1] ?? '').trim();
+  const person: Record<string, { wert: string; quelle: string }> = {};
+  const firma: Record<string, { wert: string; quelle: string }> = {};
+  let personSeite = '';
+  for (const teil of frage.split(/^### Seite \d+: /m).slice(1)) {
+    const url = teil.split('\n')[0]!.trim();
+    const zeile = (feld: string) => new RegExp(`^${feld}: (.+)$`, 'mi').exec(teil)?.[1]?.trim();
+    const genannt = name.length > 2 && teil.toLowerCase().includes(name.toLowerCase());
+    if (genannt && !personSeite) personSeite = url;
+    if (genannt) {
+      for (const [feld, schluessel] of [['Position', 'position'], ['Mobil', 'mobil'], ['Telefon', 'tel']] as const) {
+        const w = zeile(feld);
+        if (w && !person[schluessel]) person[schluessel] = { wert: w, quelle: url };
+      }
+    }
+    const anschrift = /^Anschrift: (.+?), (\d{5}) (.+)$/mi.exec(teil);
+    if (anschrift && !firma.strasse) Object.assign(firma, { strasse: { wert: anschrift[1]!, quelle: url }, plz: { wert: anschrift[2]!, quelle: url }, ort: { wert: anschrift[3]!.trim(), quelle: url } });
+    for (const [feld, schluessel] of [['Firma', 'name'], ['Telefon Zentrale', 'telefonZentrale'], ['Fax', 'fax'], ['E-Mail Zentrale', 'emailZentrale']] as const) {
+      const w = zeile(feld);
+      if (w && !firma[schluessel]) firma[schluessel] = { wert: w, quelle: url };
+    }
+  }
+  return { content: [{ type: 'tool_use', name: 'recherche_ergebnis', input: { personGenannt: !!personSeite, personSeite, person, firma } }], usage: { input_tokens: 0, output_tokens: 0 } };
 }

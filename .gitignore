@@ -20,3 +20,9 @@ graphify-out/
 
 # Verknüpfung mit dem Vercel-Projekt (Konto-IDs, OIDC-Token) — gehört zum Rechner
 .vercel
+
+# Lokale Reste des Gedächtnis-Dienstes (Branch ki-leiste): Schlüssel, Datenbanken, Python-Cache
+__pycache__/
+dienste/gedaechtnis/.env*
+dienste/gedaechtnis/.schluessel*.json
+*.db

@@ -1,4 +1,4 @@
-import { DealStatus, Frequenz, GEDAECHTNIS_ARTEN } from '@gg/domain';
+import { DealStatus, Frequenz } from '@gg/domain';
 import { z } from 'zod';
 
 /** Gemeinsamer Vertrag zwischen apps/api und apps/web. */
@@ -202,7 +202,7 @@ export const KalkStandardSchema = z.object({
 
 /** KI-Modell je Bereich: Modellkennung oder „standard“ (wie bisher). Unbekanntes setzt die API auf „standard“ zurück. */
 const KiModell = z.string().min(1).max(100);
-export const KiModellwahlSchema = z.object({ praesentation: KiModell, expose: KiModell, makler: KiModell, autoimport: KiModell, assistent: KiModell });
+export const KiModellwahlSchema = z.object({ praesentation: KiModell, expose: KiModell, makler: KiModell, autoimport: KiModell });
 
 // ── Makler- und Objekt-Detail ──────────────────────────────
 
@@ -1000,44 +1000,72 @@ export type PersonaStand = z.infer<typeof PersonaStand>;
 export const NachrichtEntwurf = z.object({ wa: z.string(), email: z.object({ subject: z.string(), body: z.string() }) });
 export type NachrichtEntwurf = z.infer<typeof NachrichtEntwurf>;
 
-// ── Gedächtnis (zentraler Dienst, 24.10.2026) ─────────────────
+// ── Makler-Recherche (21.10.2026) ──────────────────────────
 
-export const GedaechtnisEintrag = z.object({
-  id: z.string(), text: z.string(), app: z.string(), objekt: z.string().nullable(), art: z.string().nullable(),
-  quelle: z.string().nullable(), von: z.string().nullable(), score: z.number().nullable(), am: z.string().nullable(),
-  titel: z.string().nullable().optional(),
-});
-export type GedaechtnisEintrag = z.infer<typeof GedaechtnisEintrag>;
-export const GedaechtnisArtParam = z.enum(GEDAECHTNIS_ARTEN);
-export const GedaechtnisMerken = z.object({ text: z.string().trim().min(1).max(4000) });
-export const GedaechtnisSuchen = z.object({ frage: z.string().trim().min(1).max(1000), art: GedaechtnisArtParam.optional(), id: z.string().optional() });
-export const GedaechtnisAblage = z.object({ neu: z.array(GedaechtnisEintrag), abgeloest: z.array(GedaechtnisEintrag) });
+const RechercheQuelle = z.enum(['bekannt', 'email', 'firmenname', 'ki', 'hand']);
+const RechercheAdresse = z.object({ url: z.string(), quelle: RechercheQuelle }).nullable();
 
-// ── KI-Leiste (26.10.2026; Typen in @gg/ki-kern/vertrag) ─────
+export const RechercheVorschlag = z.object({
+  ziel: z.enum(['makler', 'unternehmen']), feld: z.string(), alt: z.string().nullable(), neu: z.string(), quelle: z.string(),
+  entscheidung: z.enum(['uebernommen', 'verworfen']).nullable(), entschiedenAm: z.string().nullable(),
+});
+export type RechercheVorschlag = z.infer<typeof RechercheVorschlag>;
 
-export const KiBezug = z.object({ art: z.string().min(1).max(40), id: z.string().min(1).max(200) });
-const KiSchritt = z.object({ art: z.enum(['werkzeug', 'websuche']), name: z.string(), ok: z.boolean(), kurz: z.string().optional() });
-const KiNachricht = z.object({
-  rolle: z.enum(['nutzer', 'ki']), text: z.string(), am: z.string(), schritte: z.array(KiSchritt).optional(),
-  quellen: z.array(z.object({ url: z.string(), titel: z.string() })).optional(), gedaechtnis: z.number().optional(), modell: z.string().optional(),
-  vorschlag: z.object({ titel: z.string(), text: z.string(), status: z.enum(['abgelegt', 'verworfen']).optional() }).optional(),
-  abgelegt: z.string().optional(),
+/** Eine Zeile der Tabelle unter Einstellungen → Makler-Recherche. */
+export const RechercheZeile = z.object({
+  id: z.string(), name: z.string().nullable(), firma: z.string().nullable(), prio: z.string().nullable(),
+  /** Gespeicherter Stand, sonst bekannte Webseite, sonst aus der E-Mail-Domain (noch nicht geprüft) */
+  webseite: RechercheAdresse,
+  immoscout: RechercheAdresse,
+  personUrl: z.string().nullable(),
+  status: z.string().nullable(),
+  letzteRecherche: z.string().nullable(),
+  offeneVorschlaege: z.number().int(),
+  kostenEur: z.number(),
 });
-export const KiGespraechKopf = z.object({ id: z.string(), bezug: KiBezug.nullable(), titel: z.string(), von: z.string(), am: z.string(), anzahl: z.number() });
-export const KiGespraech = KiGespraechKopf.extend({ nachrichten: z.array(KiNachricht) });
-export const KiEinstellungen = z.object({ modell: z.string().min(1).max(100), websuche: z.boolean(), gedaechtnis: z.boolean() });
-export const KiStand = z.object({ verfuegbar: z.boolean(), gedaechtnis: z.boolean(), verlaufDauerhaft: z.boolean(), einstellungen: KiEinstellungen, modelle: z.array(z.object({ id: z.string(), label: z.string() })) });
-const KiGedaechtnisEintrag = z.object({
-  id: z.string(), text: z.string(), titel: z.string().nullable().optional(), quelle: z.string().nullable().optional(), von: z.string().nullable().optional(), am: z.string().nullable().optional(),
+export type RechercheZeile = z.infer<typeof RechercheZeile>;
+
+export const RechercheStarten = z.object({ maklerIds: z.array(z.string().min(1)).min(1).max(2000), mitKi: z.boolean() });
+export type RechercheStarten = z.infer<typeof RechercheStarten>;
+
+export const RechercheSchaetzung = z.object({
+  anzahl: z.number().int(), mitWebseite: z.number().int(), ohneWebseite: z.number().int(),
+  euro: z.number(), kiSucheMakler: z.number().int(), warnung: z.boolean(),
 });
-export const KiBezugSicht = z.object({
-  bezug: KiBezug, label: z.string(), titel: z.string(),
-  gedaechtnis: z.object({ verbunden: z.boolean(), eintraege: z.array(KiGedaechtnisEintrag), fehler: z.string().optional() }),
-  gespraeche: z.array(KiGespraechKopf),
+export type RechercheSchaetzung = z.infer<typeof RechercheSchaetzung>;
+
+export const RechercheLauf = z.object({
+  id: z.string(), status: z.enum(['laeuft', 'fertig', 'abgebrochen']), mitKi: z.boolean(), anzahl: z.number().int(),
+  erledigt: z.number().int(), gefunden: z.number().int(), fehler: z.number().int(), kostenEur: z.number(),
+  gestartetAm: z.string(), beendetAm: z.string().nullable(),
+  /** Glocke: fertig oder abgebrochen und noch nicht angesehen */
+  ungesehen: z.boolean(),
 });
-export const KiSenden = z.object({ gespraechId: z.string().max(100).nullable().optional(), bezug: KiBezug.nullable().optional(), text: z.string().trim().min(1).max(8000) });
-export const KiAblegen = z.object({
-  bezug: KiBezug, titel: z.string().trim().min(1).max(200), text: z.string().trim().min(1).max(100_000),
-  gespraechId: z.string().max(100).nullable().optional(), nachricht: z.number().int().min(0).nullable().optional(),
+export type RechercheLauf = z.infer<typeof RechercheLauf>;
+
+export const RechercheErgebnis = z.object({
+  id: z.string(), laufId: z.string(), status: z.string(),
+  schritte: z.array(z.object({ zeit: z.string(), text: z.string(), url: z.string().optional() })),
+  vorschlaege: z.array(RechercheVorschlag),
+  kostenEur: z.number(), beendetAm: z.string().nullable(), fehler: z.string().nullable(),
 });
-export const KiVorschlagVerwerfen = z.object({ gespraechId: z.string().min(1).max(100), nachricht: z.number().int().min(0) });
+export type RechercheErgebnis = z.infer<typeof RechercheErgebnis>;
+
+/** Recherche zu einem Makler: Stand und die letzten Ergebnisse (neueste zuerst). */
+export const RechercheMakler = z.object({
+  maklerId: z.string(), webseite: RechercheAdresse, immoscout: RechercheAdresse, personUrl: z.string().nullable(),
+  status: z.string().nullable(), letzteRecherche: z.string().nullable(), kostenEur: z.number(),
+  ergebnisse: z.array(RechercheErgebnis),
+});
+export type RechercheMakler = z.infer<typeof RechercheMakler>;
+
+/** Adressen von Hand setzen oder löschen (null). */
+export const RechercheStandSetzen = z.object({ webseite: z.string().trim().max(500).nullable().optional(), immoscoutUrl: z.string().trim().max(500).nullable().optional() });
+export type RechercheStandSetzen = z.infer<typeof RechercheStandSetzen>;
+
+export const RechercheEntscheiden = z.object({
+  ergebnisId: z.string().min(1), index: z.number().int().min(0), entscheidung: z.enum(['uebernommen', 'verworfen']),
+  /** Nur vermerken: der Wert wurde schon mit dem Makler-Formular gespeichert (Vorschlag ins Feld übernommen, dann „Speichern“) */
+  ohneAnwenden: z.boolean().optional(),
+});
+export type RechercheEntscheiden = z.infer<typeof RechercheEntscheiden>;

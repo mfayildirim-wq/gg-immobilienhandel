@@ -149,6 +149,22 @@ nur `'+`, `49…` ohne `+`, `4.97E+12`). Die Migration entfernt den Marker, erg�
 oder in Exponentialschreibweise. Auf der privaten Prod: 343 Nummern, davon 30 geleert. Die Dubletten „gleiche
 Telefonnummer“ gehen dadurch von 441 auf 107 Paare zurück (27 Makler mit `'+` galten untereinander als Dubletten).
 
+## Makler-Recherche (Migration `makler_recherche`, 21.10.2026)
+
+Neue Tabellen `makler_recherche` (Stand je Makler: Webseite, ImmoScout-Profil, Quelle, Datum, Kosten), `recherche_laeufe` und
+`recherche_ergebnisse` (Schritte und Vorschläge je Lauf). Die Migration legt nur an, an vorhandenen Daten ändert sich nichts;
+nach dem Deploy passiert nichts von allein — Abrufe und KI-Kosten entstehen erst, wenn jemand unter Einstellungen →
+Makler-Recherche Makler auswählt und startet.
+
+- **Wege je Makler:** Firmen-Webseite (bekannt, sonst aus der E-Mail-Domain) → ImmoScout24-Profil (aus dem Firmennamen) →
+  KI-Websuche nur, wenn im Start-Dialog angehakt und vorher nichts gefunden. Die Probe vom 21.10. (Vercel) zeigte: Webseiten
+  und ImmoScout-Profile kommen per einfachem Abruf durch; DuckDuckGo (403), Bing (Fremdtreffer) und Google (Captcha) nicht.
+- **Hintergrund:** Etappen zu drei Maklern, angestoßen von der geöffneten App (jede Seite). `vercel.json` leitet
+  `/api/makler-recherche/*` in die 300-s-Function. Ist kein Fenster offen, ruht der Lauf und geht beim nächsten Öffnen weiter.
+- **KI:** Bereich „Makler und Persona“ (Einstellungen → KI-Modelle). Auswerten ca. 0,3 Cent je Makler, KI-Websuche ca. 3 Cent;
+  ab 5 € geschätzten Kosten warnt der Dialog rot. Kosten stehen je Makler, je Lauf und im Audit (`kicall`, Quelle `makler-recherche`).
+- **Sicherung:** `makler_recherche` ist enthalten; Läufe und Ergebnisse nicht (Protokoll).
+
 ## Vor jedem Deployment
 
 ```bash

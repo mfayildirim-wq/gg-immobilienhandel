@@ -1,11 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
-declare module 'hono' {
-  /** Wer angemeldet ist (E-Mail; lokal offen: „lokal“) — z. B. für den Verlauf der KI-Leiste. */
-  interface ContextVariableMap { nutzer: string }
-}
-
 export interface AuthOptionen {
   /** Nur außerhalb von Produktion wirksam. */
   lokalOffen: boolean;
@@ -24,10 +19,7 @@ export function auth(opt: AuthOptionen): MiddlewareHandler {
     : null;
 
   return async (c, next) => {
-    if (opt.lokalOffen && !opt.produktion) {
-      c.set('nutzer', 'lokal');
-      return next();
-    }
+    if (opt.lokalOffen && !opt.produktion) return next();
 
     // Header zuerst; Bilder und Download-Links tragen keinen — dort steht das Token im Cookie `gg-auth`
     const ausKopf = c.req.header('authorization')?.replace(/^Bearer\s+/i, '');
@@ -38,7 +30,6 @@ export function auth(opt: AuthOptionen): MiddlewareHandler {
       const { payload } = await jwtVerify(token, jwks);
       const email = typeof payload.email === 'string' ? payload.email.toLowerCase() : '';
       if (!opt.erlaubteEmails.includes(email)) return c.json({ fehler: 'Kein Zugriff' }, 403);
-      c.set('nutzer', email);
     } catch {
       return c.json({ fehler: 'Anmeldung ungültig' }, 401);
     }

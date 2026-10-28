@@ -19,11 +19,11 @@
   },
   "rewrites": [
     {
-      "source": "/api/gedaechtnis/(.*)",
+      "source": "/api/auto-import/(.*)",
       "destination": "/api/render"
     },
     {
-      "source": "/api/auto-import/(.*)",
+      "source": "/api/makler-recherche/(.*)",
       "destination": "/api/render"
     },
     {

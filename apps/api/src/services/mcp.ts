@@ -14,23 +14,16 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { type Db, schema } from '@gg/db';
 import {
-  type GedaechtnisArt, LOKALE_SCOPES, MCP_FEHLERTEXTE, type McpFehlerCode, MCP_KEYS_ENV, type McpScope, MCP_SERVER_NAME, MCP_SERVER_VERSION,
+  LOKALE_SCOPES, MCP_FEHLERTEXTE, type McpFehlerCode, MCP_KEYS_ENV, type McpScope, MCP_SERVER_NAME, MCP_SERVER_VERSION,
   mcpSchluesselAusKopf, nachweislichLokal, schluesselVerzeichnis, type Umgebung, werkzeugErlaubt, werkzeugVerzeichnis,
 } from '@gg/domain';
-import type { GedaechtnisDienst } from '@gg/integrations';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
-import { FachFehler } from '../fehler.ts';
 import { auditListe, auditSchreiben } from './audit.ts';
 import { dealDetail, dealListe } from './deals.ts';
 import { dokumenteListe } from './dealDokumente.ts';
-import { gedaechtnisAblegen, gedaechtnisEintraege, gedaechtnisSuchen } from './gedaechtnis.ts';
 import { freigabeBeantragen } from './outward.ts';
-import { begleitscheinDetail } from './begleitscheine.ts';
-import { kundenkalkulationDetail } from './kundenkalkulationen.ts';
 import { maklerDetail, maklerListe } from './makler.ts';
 import { objektDetail, objekteListe } from './objekte.ts';
-import { projektDetail } from './projekte.ts';
-import { vertriebslisteDetail } from './vertriebslisten.ts';
 
 /** Kopfzeilen von Hono kommen als flaches Objekt; die Regel erwartet die lose Form. */
 export const mcpSchluesselAusKopfOderNull = (kopf: Record<string, string | undefined>) => mcpSchluesselAusKopf(kopf);
@@ -60,14 +53,10 @@ export function mcpAnmelden(vorgelegt: string | null, env: Umgebung): McpAnmeldu
 
 export class McpWerkzeugFehler extends Error {}
 
-/** Was ein Werkzeug außer der Datenbank braucht; der Gedächtnis-Dienst wird erst beim Aufruf aufgelöst. */
-export interface McpUmfeld { gedaechtnis: () => Promise<GedaechtnisDienst | null> }
-const OHNE_UMFELD: McpUmfeld = { gedaechtnis: async () => null };
-
 interface Werkzeug {
   name: string; scope: McpScope; title: string; description: string;
   inputSchema: Record<string, unknown>;
-  run(db: Db, args: Record<string, unknown>, sitzung: McpSitzung, umfeld: McpUmfeld): Promise<unknown>;
+  run(db: Db, args: Record<string, unknown>, sitzung: McpSitzung): Promise<unknown>;
 }
 
 const text = (args: Record<string, unknown>, feld: string, pflicht = true): string => {
@@ -82,42 +71,6 @@ const zahl = (args: Record<string, unknown>, feld: string, standard: number) => 
 };
 
 const BEREICHE = ['deals', 'makler', 'objekte'] as const;
-
-/** Einzeln lesbar ist alles, was in gg einen eigenen Dialog hat — dieselben Bestände haben ein Gedächtnis. */
-const EINZELN: Record<string, { art: GedaechtnisArt; lesen: (db: Db, id: string) => Promise<unknown> }> = {
-  deals: { art: 'deal', lesen: dealDetail },
-  makler: { art: 'makler', lesen: maklerDetail },
-  objekte: { art: 'objekt', lesen: objektDetail },
-  projekte: { art: 'projekt', lesen: projektDetail },
-  kundenkalkulationen: { art: 'kundenkalkulation', lesen: kundenkalkulationDetail },
-  vertriebslisten: { art: 'vertriebsliste', lesen: vertriebslisteDetail },
-  begleitscheine: { art: 'begleitschein', lesen: begleitscheinDetail },
-};
-/** Bestand zur Gedächtnis-Art, z. B. für die KI-Leiste: 'objekt' → 'objekte'. */
-export const mcpBestandZu = (art: GedaechtnisArt) => Object.entries(EINZELN).find(([, e]) => e.art === art)?.[0] ?? null;
-
-const GEDAECHTNIS_BEREICHE: Record<string, GedaechtnisArt> = Object.fromEntries(Object.entries(EINZELN).map(([b, e]) => [b, e.art]));
-const gedaechtnisBezugArgs = { collection: { type: 'string', enum: Object.keys(GEDAECHTNIS_BEREICHE) }, id: { type: 'string' } };
-function gedaechtnisBezugAus(args: Record<string, unknown>, pflicht: true): { art: GedaechtnisArt; id: string };
-function gedaechtnisBezugAus(args: Record<string, unknown>, pflicht: false): { art: GedaechtnisArt; id: string } | undefined;
-function gedaechtnisBezugAus(args: Record<string, unknown>, pflicht: boolean) {
-  const bereich = text(args, 'collection', pflicht);
-  const id = text(args, 'id', pflicht);
-  if (!bereich && !id) return undefined;
-  const art = GEDAECHTNIS_BEREICHE[bereich];
-  if (!art) throw new McpWerkzeugFehler(`Gedächtnis gibt es für ${Object.keys(GEDAECHTNIS_BEREICHE).join(', ')}, nicht für "${bereich}".`);
-  if (!id) throw new McpWerkzeugFehler('Feld "id" fehlt oder ist leer.');
-  return { art, id };
-}
-/** Fehler des Dienstes (nicht eingerichtet, nicht erreichbar, nicht erlaubt) gehen als Werkzeugfehler an die KI. */
-async function ausDemGedaechtnis<T>(f: () => Promise<T>): Promise<T> {
-  try {
-    return await f();
-  } catch (e) {
-    if (e instanceof FachFehler) throw new McpWerkzeugFehler(e.message);
-    throw e;
-  }
-}
 
 export const MCP_WERKZEUGE: Werkzeug[] = [
   {
@@ -149,14 +102,15 @@ export const MCP_WERKZEUGE: Werkzeug[] = [
   },
   {
     name: 'read_entity', scope: 'read', title: 'Datensatz lesen',
-    description: 'Liest einen Datensatz mit allen Feldern: Deal, Makler, Objekt, Projekt, Kundenkalkulation, Vertriebsliste oder Begleitschein.',
-    inputSchema: { type: 'object', properties: { collection: { type: 'string', enum: Object.keys(EINZELN) }, id: { type: 'string' } }, required: ['collection', 'id'], additionalProperties: false },
+    description: 'Liest einen Deal, Makler oder ein Objekt mit allen Feldern.',
+    inputSchema: { type: 'object', properties: { collection: { type: 'string', enum: [...BEREICHE] }, id: { type: 'string' } }, required: ['collection', 'id'], additionalProperties: false },
     async run(db, args) {
       const bereich = text(args, 'collection');
       const id = text(args, 'id');
-      const e = EINZELN[bereich];
-      if (!e) throw new McpWerkzeugFehler(`Unbekannter Bestand "${bereich}".`);
-      return e.lesen(db, id);
+      if (bereich === 'deals') return dealDetail(db, id);
+      if (bereich === 'makler') return maklerDetail(db, id);
+      if (bereich === 'objekte') return objektDetail(db, id);
+      throw new McpWerkzeugFehler(`Unbekannter Bestand "${bereich}".`);
     },
   },
   {
@@ -195,46 +149,6 @@ export const MCP_WERKZEUGE: Werkzeug[] = [
     },
   },
   {
-    name: 'gedaechtnis_suchen', scope: 'read', title: 'Im Gedächtnis suchen',
-    description: 'Sucht im zentralen Gedächtnis (gg-Ereignisse, gemerkte Notizen, KI-Gespräche, freigegebene andere Apps). '
-      + 'Mit `collection` und `id` nur zu einem Datensatz (Deal, Makler, Objekt, Projekt …).',
-    inputSchema: { type: 'object', properties: { frage: { type: 'string' }, ...gedaechtnisBezugArgs }, required: ['frage'], additionalProperties: false },
-    async run(_db, args, _sitzung, umfeld) {
-      const frage = text(args, 'frage');
-      const bezug = gedaechtnisBezugAus(args, false);
-      return ausDemGedaechtnis(async () => gedaechtnisSuchen(await umfeld.gedaechtnis(), frage, bezug));
-    },
-  },
-  {
-    name: 'gedaechtnis_eintraege', scope: 'read', title: 'Gedächtnis zu einem Datensatz',
-    description: 'Alle gültigen Gedächtnis-Einträge zu einem Deal, Makler, Objekt, Projekt … — neueste zuerst (wie in der KI-Leiste der App).',
-    inputSchema: { type: 'object', properties: gedaechtnisBezugArgs, required: ['collection', 'id'], additionalProperties: false },
-    async run(_db, args, _sitzung, umfeld) {
-      const { art, id } = gedaechtnisBezugAus(args, true);
-      return ausDemGedaechtnis(async () => gedaechtnisEintraege(await umfeld.gedaechtnis(), art, id));
-    },
-  },
-  {
-    // 26.10.2026: wörtlich als EIN Eintrag — die Faktenextraktion zerlegte eine Recherche in viele Einzeleinträge
-    name: 'gedaechtnis_merken', scope: 'write', title: 'Im Gedächtnis ablegen',
-    description: 'Legt ein Ergebnis zu einem Datensatz (Deal, Makler, Objekt, Projekt …) im Gedächtnis ab, z. B. eine Recherche, eine Zusammenfassung oder Absprachen. '
-      + 'Gespeichert wird genau ein Eintrag mit `titel` und dem vollständigen `text` (Markdown: Überschriften, Listen, Tabellen, Links); '
-      + 'in gg ist er in der KI-Leiste und im Reiter „Gedächtnis“ zu sehen. Derselbe Titel am selben Datensatz ersetzt den alten Eintrag — '
-      + 'für eine neue Fassung also denselben Titel nehmen, für ein anderes Thema einen anderen.',
-    inputSchema: {
-      type: 'object',
-      properties: { ...gedaechtnisBezugArgs, titel: { type: 'string', description: 'kurz, z. B. „Vergleichsangebote Umgebung“' }, text: { type: 'string' } },
-      required: ['collection', 'id', 'titel', 'text'], additionalProperties: false,
-    },
-    async run(_db, args, sitzung, umfeld) {
-      const { art, id } = gedaechtnisBezugAus(args, true);
-      const titel = text(args, 'titel').slice(0, 200);
-      const inhalt = text(args, 'text');
-      if (inhalt.length > 100_000) throw new McpWerkzeugFehler('Der Text ist zu lang (höchstens 100 000 Zeichen).');
-      return ausDemGedaechtnis(async () => gedaechtnisAblegen(await umfeld.gedaechtnis(), art, id, titel, inhalt, `mcp:${sitzung.label}`));
-    },
-  },
-  {
     name: 'request_outward_approval', scope: 'outward', title: 'Freigabe für eine Aktion nach außen beantragen',
     description: 'Legt einen Freigabe-Antrag an. Es wird NICHTS ausgeführt: die Freigabe erfolgt in der App, '
       + 'und auch danach läuft die Aktion nur, wenn das Default-Deny-Gate sie durchlässt.',
@@ -265,7 +179,7 @@ const ergebnis = (id: RpcId, result: unknown) => ({ jsonrpc: '2.0' as const, id,
 const fehler = (id: RpcId, code: number, message: string) => ({ jsonrpc: '2.0' as const, id, error: { code, message } });
 
 /** Ein JSON-RPC-Aufruf. `null` bedeutet: Benachrichtigung, es geht keine Antwort zurück. */
-export async function mcpAufruf(db: Db, nachricht: any, sitzung: McpSitzung, umfeld: McpUmfeld = OHNE_UMFELD) {
+export async function mcpAufruf(db: Db, nachricht: any, sitzung: McpSitzung) {
   const id: RpcId = nachricht?.id ?? null;
   const benachrichtigung = nachricht?.id === undefined;
   if (nachricht?.jsonrpc !== '2.0') return benachrichtigung ? null : fehler(id, RPC.INVALID_REQUEST, 'Feld "jsonrpc" muss "2.0" sein.');
@@ -296,7 +210,7 @@ export async function mcpAufruf(db: Db, nachricht: any, sitzung: McpSitzung, umf
         return fehler(id, RPC.FORBIDDEN, `Werkzeug "${name}" verlangt den Bereich "${werkzeug.scope}"; dieser Schlüssel hat ${sitzung.scopes.join(', ') || 'keinen'}.`);
       }
       try {
-        const wert = await werkzeug.run(db, (nachricht.params?.arguments ?? {}) as Record<string, unknown>, sitzung, umfeld);
+        const wert = await werkzeug.run(db, (nachricht.params?.arguments ?? {}) as Record<string, unknown>, sitzung);
         return ergebnis(id, { content: [{ type: 'text', text: JSON.stringify(wert, null, 1) }], isError: false });
       } catch (e) {
         if (e instanceof McpWerkzeugFehler) return ergebnis(id, { content: [{ type: 'text', text: e.message }], isError: true });
@@ -310,12 +224,12 @@ export async function mcpAufruf(db: Db, nachricht: any, sitzung: McpSitzung, umf
 }
 
 /** Ein Rumpf kann eine Nachricht oder ein Stapel sein. */
-export async function mcpVerarbeiten(db: Db, rumpf: unknown, sitzung: McpSitzung, umfeld: McpUmfeld = OHNE_UMFELD) {
+export async function mcpVerarbeiten(db: Db, rumpf: unknown, sitzung: McpSitzung) {
   if (Array.isArray(rumpf)) {
-    const antworten = (await Promise.all(rumpf.map((n) => mcpAufruf(db, n, sitzung, umfeld)))).filter(Boolean);
+    const antworten = (await Promise.all(rumpf.map((n) => mcpAufruf(db, n, sitzung)))).filter(Boolean);
     return antworten.length ? antworten : null;
   }
-  return mcpAufruf(db, rumpf, sitzung, umfeld);
+  return mcpAufruf(db, rumpf, sitzung);
 }
 
 /** Übersicht für die Oberfläche: Bereiche, Werkzeuge, hinterlegte Schlüssel (nur Label und Bereiche). */

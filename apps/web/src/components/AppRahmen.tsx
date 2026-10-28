@@ -1,4 +1,4 @@
-import { ActionIcon, Anchor, AppShell, Box, Burger, Button, Group, NavLink, Text, Title, Tooltip, useMantineColorScheme } from '@mantine/core';
+import { ActionIcon, Anchor, AppShell, Box, Burger, Button, Group, Indicator, NavLink, Text, Title, Tooltip, useMantineColorScheme } from '@mantine/core';
 import { useDisclosure, useMediaQuery } from '@mantine/hooks';
 import {
   IconBuildingCommunity,
@@ -12,25 +12,15 @@ import {
   IconFileImport,
   IconMail,
   IconSearch,
-  IconUsers, IconChecklist, IconTableShare, IconChartBar } from '@tabler/icons-react';
+  IconUsers, IconChecklist, IconTableShare, IconChartBar, IconBellRinging } from '@tabler/icons-react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
-import { type CSSProperties, Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { AbmeldenKnopf } from './Anmeldung.tsx';
 import { GlobaleSuche } from './GlobaleSuche.tsx';
 import { EINSTELLUNGEN_SEITEN } from '../lib/einstellungenSeiten.tsx';
 import { brotkrumen } from '../lib/brotkrumen.ts';
 import { KopfPlatzKontext } from './AnsichtMenue.tsx';
-import { httpTransport, KiKnopf, KiLeiste, KiLeisteRahmen, useKiLeiste } from '@gg/ki-leiste';
-import { holen } from '../lib/api.ts';
-import { markdownAlsHtml } from '../lib/markdown.ts';
-
-/** KI-Leiste: spricht mit /api/ki-leiste, mit der Anmeldung der Sitzung (Token, bei 401 einmal erneuert). */
-const kiTransport = httpTransport('/api/ki-leiste', holen);
-/** Farben der Leiste aus dem Mantine-Thema — hell und dunkel wie die übrige App */
-const KI_FARBEN = {
-  '--ki-hintergrund': 'var(--mantine-color-body)', '--ki-text': 'var(--mantine-color-text)', '--ki-gedimmt': 'var(--mantine-color-dimmed)',
-  '--ki-linie': 'var(--mantine-color-default-border)', '--ki-flaeche': 'var(--mantine-color-default-hover)', '--ki-fehler': 'var(--mantine-color-error)',
-} as CSSProperties;
+import { useRechercheTreiber } from '../lib/api.ts';
 
 const NAVIGATION = [
   { to: '/', label: 'Ankauf', icon: IconTarget },
@@ -44,26 +34,12 @@ const NAVIGATION = [
   { to: '/angebote', label: 'Angebote', icon: IconMail },
 ] as const;
 
-export function AppRahmen() {
-  return (
-    <KiLeisteRahmen transport={kiTransport}>
-      <Rahmen />
-    </KiLeisteRahmen>
-  );
-}
-
 /**
  * App-Rahmen im neuen Design: einklappbare Seitenleiste links. Die Wählmaschine gehört zur Ankaufseite (Knopf über der Liste).
  * Die Kopfzeile zeigt als Brotkrumen, auf welcher Seite man ist, und hält links von „Exposé importieren“ einen Platz
  * frei, in den eine Seite ihr Menü „Ansicht und Filter“ setzt (`AnsichtMenue`).
- * Oben in der Mitte der rote Sprechkreis: öffnet rechts die KI-Leiste zum gerade offenen Dialog (26.10.2026),
- * als Ebene über dem Inhalt, ohne ihn zu verschieben.
  */
-function Rahmen() {
-  const ki = useKiLeiste();
-  // Einmal geöffnet bleibt die Leiste aufgebaut — Zuklappen behält das laufende Gespräch
-  const [kiAufgebaut, setKiAufgebaut] = useState(ki.offen);
-  useEffect(() => { if (ki.offen) setKiAufgebaut(true); }, [ki.offen]);
+export function AppRahmen() {
   const [mobilOffen, { toggle: mobilUmschalten, close: mobilSchliessen }] = useDisclosure(false);
   const [leisteOffen, { toggle: leisteUmschalten }] = useDisclosure(true);
   // Eingeklappt bleibt die Leiste als Symbolspalte stehen; die Maus darüber klappt sie vorübergehend aus.
@@ -76,6 +52,8 @@ function Rahmen() {
   const ausgeklappt = leisteOffen || ueberfahren;
   const schmal = desktop && !ausgeklappt;
   const leisteSichtbar = desktop ? true : mobilOffen;
+  // Makler-Recherche läuft in Etappen weiter, solange die App offen ist; ein fertiger, ungesehener Lauf zeigt die Glocke
+  const rechercheGlocke = !!useRechercheTreiber()?.ungesehen;
   // Untermenü Einstellungen: auf einer Einstellungsseite offen, sonst per Klick
   const [einstellungenOffen, setEinstellungenOffen] = useState(pfad.startsWith('/einstellungen'));
   const krumen = brotkrumen(pfad, NAVIGATION, EINSTELLUNGEN_SEITEN);
@@ -95,9 +73,6 @@ function Rahmen() {
       padding="md"
     >
       <AppShell.Header>
-        <Box pos="absolute" left="50%" top="50%" style={{ transform: 'translate(-50%, -50%)', zIndex: 1 }}>
-          <KiKnopf />
-        </Box>
         <Group h="100%" px="md" justify="space-between" wrap="nowrap">
           <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
             <Burger opened={mobilOffen} onClick={mobilUmschalten} hiddenFrom="sm" size="sm" aria-label="Menü" />
@@ -164,7 +139,8 @@ function Rahmen() {
           <Tooltip label="Einstellungen" position="right" disabled={!schmal}>
             <NavLink
               label={schmal ? undefined : 'Einstellungen'}
-              leftSection={<IconSettings size={18} />}
+              leftSection={<Indicator disabled={!rechercheGlocke} color="orange" size={8} offset={2}><IconSettings size={18} /></Indicator>}
+              rightSection={rechercheGlocke && !schmal ? <IconBellRinging size={16} color="var(--mantine-color-orange-6)" aria-label="Makler-Recherche fertig" data-recherche-glocke /> : undefined}
               active={pfad.startsWith('/einstellungen') && !einstellungenOffen}
               opened={einstellungenOffen && !schmal}
               onChange={setEinstellungenOffen}
@@ -178,6 +154,7 @@ function Rahmen() {
                   to={`/einstellungen/${unter}`}
                   label={label}
                   leftSection={<Icon size={16} />}
+                  rightSection={unter === 'makler-recherche' && rechercheGlocke ? <IconBellRinging size={14} color="var(--mantine-color-orange-6)" /> : undefined}
                   active={pfad === `/einstellungen/${unter}`}
                   styles={{ label: { fontWeight: pfad === `/einstellungen/${unter}` ? 700 : undefined } }}
                   onClick={() => { mobilSchliessen(); setUeberfahren(false); }}
@@ -209,23 +186,6 @@ function Rahmen() {
           <Outlet />
         </KopfPlatzKontext.Provider>
       </AppShell.Main>
-
-      {/* Als Ebene über dem Inhalt: die Seite darunter behält ihre Breite und verschiebt sich nicht */}
-      <Box
-        component="aside"
-        inert={!ki.offen}
-        pos="fixed"
-        top={56}
-        right={0}
-        bottom={0}
-        w="min(440px, 100vw)"
-        style={{
-          ...KI_FARBEN, zIndex: 150, borderLeft: '1px solid var(--mantine-color-default-border)', boxShadow: 'var(--mantine-shadow-xl)',
-          transform: ki.offen ? 'none' : 'translateX(100%)', visibility: ki.offen ? undefined : 'hidden', transition: 'transform 150ms ease, visibility 150ms',
-        }}
-      >
-        {kiAufgebaut && <KiLeiste darstellen={markdownAlsHtml} />}
-      </Box>
 
       <GlobaleSuche offen={sucheOffen} schliessen={suche.close} />
     </AppShell>

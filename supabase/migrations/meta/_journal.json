@@ -120,6 +120,13 @@
       "when": 1792569303114,
       "tag": "20261021075503_makler_telefon_bereinigen",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792588058998,
+      "tag": "20261021130738_makler_recherche",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-const STANDARD = { praesentation: 'standard', expose: 'standard', makler: 'standard', autoimport: 'standard', assistent: 'standard' };
+const STANDARD = { praesentation: 'standard', expose: 'standard', makler: 'standard', autoimport: 'standard' };
 
 test('KI-Modelle: je Bereich ein Modell wählen, speichern, Werkseinstellung zurück', async ({ page }) => {
   await page.request.put('/api/einstellungen/ki-modelle', { data: STANDARD });
