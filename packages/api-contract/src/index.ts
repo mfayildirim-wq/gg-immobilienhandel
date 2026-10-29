@@ -1039,7 +1039,7 @@ export const KiBezugSicht = z.object({
   gedaechtnis: z.object({ verbunden: z.boolean(), eintraege: z.array(KiGedaechtnisEintrag), fehler: z.string().optional() }),
   gespraeche: z.array(KiGespraechKopf),
 });
-export const KiSenden = z.object({ gespraechId: z.string().max(100).nullable().optional(), bezug: KiBezug.nullable().optional(), text: z.string().trim().min(1).max(8000) });
+export const KiSenden = z.object({ gespraechId: z.string().max(100).nullable().optional(), bezug: KiBezug.nullable().optional(), text: z.string().trim().min(1).max(100_000) });
 export const KiAblegen = z.object({
   bezug: KiBezug, titel: z.string().trim().min(1).max(200), text: z.string().trim().min(1).max(100_000),
   gespraechId: z.string().max(100).nullable().optional(), nachricht: z.number().int().min(0).nullable().optional(),
