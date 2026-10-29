@@ -832,3 +832,26 @@ export const rechercheErgebnisse = fach
     ],
   )
   .enableRLS();
+
+/**
+ * Verlauf der KI-Leiste ohne Gedächtnis-Dienst (29.10.2026): das wörtliche Protokoll je Gespräch. Im Arbeitsspeicher
+ * ging es auf Vercel verloren, sobald eine andere Instanz antwortete („Gespräch nicht gefunden“). Mit Gedächtnis-Dienst
+ * liegt der Verlauf dort; diese Tabelle bleibt dann leer.
+ */
+export const kiGespraeche = fach
+  .table(
+    'ki_gespraeche',
+    {
+      id: text('id').primaryKey(),
+      bezugArt: text('bezug_art'),
+      bezugId: text('bezug_id'),
+      titel: text('titel').notNull(),
+      von: text('von').notNull(),
+      am: timestamp('am', { withTimezone: true, mode: 'string' }).notNull(),
+      anzahl: integer('anzahl').notNull(),
+      /** KiNachricht[] */
+      nachrichten: jsonb('nachrichten').notNull().default(sql`'[]'::jsonb`),
+    },
+    (t) => [index('ki_gespraeche_bezug_idx').on(t.bezugArt, t.bezugId, t.am)],
+  )
+  .enableRLS();

@@ -13,14 +13,27 @@ import {
   IconMail,
   IconSearch,
   IconUsers, IconChecklist, IconTableShare, IconChartBar, IconBellRinging } from '@tabler/icons-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
-import { Fragment, useEffect, useState } from 'react';
+import { type CSSProperties, Fragment, type KeyboardEvent as TastenEreignis, type PointerEvent as ZeigerEreignis, useEffect, useRef, useState } from 'react';
+import teilerCss from './GeteilteAnsicht.module.css';
+import { KI_LEISTE_BREITE, kiLeisteBegrenzen, useZahlEinstellung } from '../lib/ansicht.ts';
 import { AbmeldenKnopf } from './Anmeldung.tsx';
 import { GlobaleSuche } from './GlobaleSuche.tsx';
 import { EINSTELLUNGEN_SEITEN } from '../lib/einstellungenSeiten.tsx';
 import { brotkrumen } from '../lib/brotkrumen.ts';
 import { KopfPlatzKontext } from './AnsichtMenue.tsx';
-import { useRechercheTreiber } from '../lib/api.ts';
+import { httpTransport, KiKnopf, KiLeiste, KiLeisteRahmen, useKiLeiste } from '@gg/ki-leiste';
+import { holen, useRechercheTreiber } from '../lib/api.ts';
+import { markdownAlsHtml } from '../lib/markdown.ts';
+
+/** KI-Leiste: spricht mit /api/ki-leiste, mit der Anmeldung der Sitzung (Token, bei 401 einmal erneuert). */
+const kiTransport = httpTransport('/api/ki-leiste', holen);
+/** Farben der Leiste aus dem Mantine-Thema — hell und dunkel wie die übrige App */
+const KI_FARBEN = {
+  '--ki-hintergrund': 'var(--mantine-color-body)', '--ki-text': 'var(--mantine-color-text)', '--ki-gedimmt': 'var(--mantine-color-dimmed)',
+  '--ki-linie': 'var(--mantine-color-default-border)', '--ki-flaeche': 'var(--mantine-color-default-hover)', '--ki-fehler': 'var(--mantine-color-error)',
+} as CSSProperties;
 
 const NAVIGATION = [
   { to: '/', label: 'Ankauf', icon: IconTarget },
@@ -34,12 +47,27 @@ const NAVIGATION = [
   { to: '/angebote', label: 'Angebote', icon: IconMail },
 ] as const;
 
+export function AppRahmen() {
+  return (
+    <KiLeisteRahmen transport={kiTransport}>
+      <Rahmen />
+    </KiLeisteRahmen>
+  );
+}
+
 /**
  * App-Rahmen im neuen Design: einklappbare Seitenleiste links. Die Wählmaschine gehört zur Ankaufseite (Knopf über der Liste).
  * Die Kopfzeile zeigt als Brotkrumen, auf welcher Seite man ist, und hält links von „Exposé importieren“ einen Platz
  * frei, in den eine Seite ihr Menü „Ansicht und Filter“ setzt (`AnsichtMenue`).
+ * Oben in der Mitte der rote Sprechkreis: öffnet rechts die KI-Leiste zum gerade offenen Dialog (26.10.2026),
+ * als Ebene über dem Inhalt, ohne ihn zu verschieben.
  */
-export function AppRahmen() {
+function Rahmen() {
+  const queryClient = useQueryClient();
+  const ki = useKiLeiste();
+  // Einmal geöffnet bleibt die Leiste aufgebaut — Zuklappen behält das laufende Gespräch
+  const [kiAufgebaut, setKiAufgebaut] = useState(ki.offen);
+  useEffect(() => { if (ki.offen) setKiAufgebaut(true); }, [ki.offen]);
   const [mobilOffen, { toggle: mobilUmschalten, close: mobilSchliessen }] = useDisclosure(false);
   const [leisteOffen, { toggle: leisteUmschalten }] = useDisclosure(true);
   // Eingeklappt bleibt die Leiste als Symbolspalte stehen; die Maus darüber klappt sie vorübergehend aus.
@@ -52,6 +80,31 @@ export function AppRahmen() {
   const ausgeklappt = leisteOffen || ueberfahren;
   const schmal = desktop && !ausgeklappt;
   const leisteSichtbar = desktop ? true : mobilOffen;
+  // Breite der KI-Leiste: gemerkt je Gerät, beim Ziehen bis zur Fenstermitte
+  const [kiGemerkt, setKiGemerkt] = useZahlEinstellung('ki-leiste.breite');
+  const [kiZieht, setKiZieht] = useState<number | null>(null);
+  const kiStart = useRef<{ zeiger: number; breite: number } | null>(null);
+  const kiBreite = kiZieht ?? (desktop ? kiLeisteBegrenzen(kiGemerkt ?? KI_LEISTE_BREITE, window.innerWidth) : KI_LEISTE_BREITE);
+  const kiZiehenBeginnt = (e: ZeigerEreignis<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    kiStart.current = { zeiger: e.clientX, breite: kiBreite };
+    setKiZieht(kiBreite);
+  };
+  const kiZiehen = (e: ZeigerEreignis<HTMLDivElement>) => {
+    if (kiStart.current) setKiZieht(kiLeisteBegrenzen(kiStart.current.breite + kiStart.current.zeiger - e.clientX, window.innerWidth));
+  };
+  const kiZiehenEndet = () => {
+    if (!kiStart.current) return;
+    kiStart.current = null;
+    if (kiZieht !== null) setKiGemerkt(kiZieht);
+    setKiZieht(null);
+  };
+  const kiTaste = (e: TastenEreignis<HTMLDivElement>) => {
+    const richtung = ({ ArrowLeft: 1, ArrowRight: -1 } as Record<string, number>)[e.key];
+    if (!richtung) return;
+    e.preventDefault();
+    setKiGemerkt(kiLeisteBegrenzen(kiBreite + richtung * 40, window.innerWidth));
+  };
   // Makler-Recherche läuft in Etappen weiter, solange die App offen ist; ein fertiger, ungesehener Lauf zeigt die Glocke
   const rechercheGlocke = !!useRechercheTreiber()?.ungesehen;
   // Untermenü Einstellungen: auf einer Einstellungsseite offen, sonst per Klick
@@ -73,6 +126,12 @@ export function AppRahmen() {
       padding="md"
     >
       <AppShell.Header>
+        {/* Bei offener Leiste ausgeblendet: dort stehen der grüne Kreis und ✕ zum Schließen */}
+        {!ki.offen && (
+          <Box pos="absolute" left="50%" top="50%" style={{ transform: 'translate(-50%, -50%)', zIndex: 1 }}>
+            <KiKnopf />
+          </Box>
+        )}
         <Group h="100%" px="md" justify="space-between" wrap="nowrap">
           <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
             <Burger opened={mobilOffen} onClick={mobilUmschalten} hiddenFrom="sm" size="sm" aria-label="Menü" />
@@ -186,6 +245,35 @@ export function AppRahmen() {
           <Outlet />
         </KopfPlatzKontext.Provider>
       </AppShell.Main>
+
+      {/* Als Ebene über dem Inhalt: die Seite darunter behält ihre Breite und verschiebt sich nicht */}
+      <Box
+        component="aside"
+        inert={!ki.offen}
+        pos="fixed"
+        top={56}
+        right={0}
+        bottom={0}
+        w={`min(${kiBreite}px, 100vw)`}
+        style={{
+          ...KI_FARBEN, zIndex: 150, borderLeft: '1px solid var(--mantine-color-default-border)', boxShadow: 'var(--mantine-shadow-xl)',
+          transform: ki.offen ? 'none' : 'translateX(100%)', visibility: ki.offen ? undefined : 'hidden', transition: 'transform 150ms ease, visibility 150ms',
+          userSelect: kiZieht !== null ? 'none' : undefined,
+        }}
+      >
+        {/* Linker Rand: ziehen ändert die Breite (bis zur Fenstermitte), Doppelklick stellt den Standard wieder her */}
+        {desktop && (
+          <div
+            role="separator" tabIndex={0} className={teilerCss.teiler} data-zieht={kiZieht !== null || undefined} data-ki-teiler
+            aria-orientation="vertical" aria-label="Breite der KI-Leiste ändern" aria-valuenow={kiBreite}
+            title="Ziehen ändert die Breite der KI-Leiste — Doppelklick stellt den Standard wieder her"
+            style={{ position: 'absolute', left: -6, top: 0, bottom: 0, width: 12, zIndex: 1 }}
+            onPointerDown={kiZiehenBeginnt} onPointerMove={kiZiehen} onPointerUp={kiZiehenEndet} onPointerCancel={kiZiehenEndet}
+            onKeyDown={kiTaste} onDoubleClick={() => setKiGemerkt(null)}
+          />
+        )}
+        {kiAufgebaut && <KiLeiste darstellen={markdownAlsHtml} nachAenderung={() => void queryClient.invalidateQueries()} />}
+      </Box>
 
       <GlobaleSuche offen={sucheOffen} schliessen={suche.close} />
     </AppShell>

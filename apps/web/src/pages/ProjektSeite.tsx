@@ -14,12 +14,14 @@ import { useEffect, useState } from 'react';
 import { heuteIso } from '../lib/ansicht.ts';
 import { useAutomatischSpeichern } from '../lib/automatischSpeichern.ts';
 import { projektSpeichern, useProjekt, useProjektLoeschen } from '../lib/api.ts';
+import { useKiBezug } from '@gg/ki-leiste';
 
 type Stand = Omit<Projekt, 'id' | 'dealId' | 'version' | 'updatedAt'>;
 type Aendern = (f: (s: Stand) => Stand) => void;
 
 export function ProjektSeite() {
   const { id } = useParams({ from: '/projekte/$id' });
+  useKiBezug({ art: 'projekt', id });
   const { data, isLoading, error } = useProjekt(id);
   if (isLoading) return <Loader size="sm" />;
   if (error || !data) return <Alert color="red">{error?.message ?? 'Projekt nicht gefunden'}</Alert>;

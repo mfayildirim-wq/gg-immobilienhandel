@@ -183,6 +183,67 @@ richtig). Vorher lief beides online leer, weil `@napi-rs/canvas` dem API-Paket f
       Rendern; Rohdaten-Heuristik nach `integrations`; tote Reste (`pruefung.ts`, Werkzeug-Schema v2, Kostengrenze,
       Einstellung `expose-extraktion`).
 
+## Schreibrechte für Claude über MCP (Vorschlag, 28.10.2026)
+
+Anlass: Der Kunde sucht in Claude Cowork neue Makler und will sie danach mit „aktualisiere diese in gg-immo“ anlegen
+oder ändern. Eine Mail zu einem Makler soll Claude ebenfalls in gg speichern. Heute kann MCP nur lesen sowie
+`add_note`, `gedaechtnis_merken` und `request_outward_approval`. Gebaut ist noch nichts, die Freigabe stimmt der
+Kunde ab.
+
+**Grundsätze**
+
+- Claude schreibt nur über die bestehenden Services in `apps/api/src/services`, also mit Versionsprüfung,
+  Statusverlauf und Dublettenprüfung. Claude kann nichts, was die App selbst nicht auch kann.
+- Jede Änderung kommt ins Audit-Log, mit altem und neuem Wert und dem Vermerk „über Claude“
+  (Schlüssel-Label).
+- Feld-Whitelist je Werkzeug; Felder außerhalb der Liste weist das Werkzeug ab.
+- Rechte vergibt der Schlüssel (`MCP_API_KEYS`): `read`, `write` (🟢), neu `freigabe` (🟡: Claude stellt einen
+  Antrag, ausgeführt wird erst nach Bestätigung in der App, wie beim Outward-Gate). 🔴 gibt es für keinen
+  Schlüssel.
+
+**🟢 Direkt schreiben (Bereich `write`)**
+
+| Bereich | Werkzeug (geplant) | Route heute |
+|---|---|---|
+| Makler anlegen (mit Dublettenprüfung: Name, E-Mail, Telefon) | `create_makler` | `POST /api/makler` |
+| Makler ändern (Kontakt, Firma, Prio, Webseite …) | `update_makler` | `PATCH /api/makler/{id}` |
+| Persönliches zum Makler | `update_makler` | `PUT /api/makler/{id}/persoenlich` |
+| Mail, Anruf oder Notiz eintragen (setzt den letzten Kontakt) | `add_communication` | `POST /api/makler/{id}/kommunikation` |
+| Nächster Termin, „Erledigt“ (Makler und Deal) | `set_termin`, `set_erledigt` | `…/termin`, `…/erledigt` |
+| Anruf-Ergebnis (wie in der Wählmaschine) | `add_anruf_ergebnis` | `…/anruf-ergebnis` |
+| Kommentar am Deal | `add_deal_kommentar` | `POST /api/deals/{id}/kommentare` |
+| Objekt anlegen und ändern (Adresse, Baujahr, Flächen …) | `create_objekt`, `update_objekt` | `POST`/`PATCH /api/objekte` |
+| Gedächtnis zu Makler/Deal | `gedaechtnis_merken` (vorhanden) | Gedächtnis-Dienst |
+| Makler-Recherche starten, Vorschläge übernehmen | `recherche_starten`, `recherche_uebernehmen` | `/api/makler-recherche/*` |
+
+**🟡 Nur mit Freigabe in der App (Bereich `freigabe`)**
+
+| Bereich | Warum |
+|---|---|
+| Deal anlegen, Status wechseln | Der Status steuert Ankauf und Statistik (Service mit `deal_status_historie`). |
+| Ankaufs- und Kundenkalkulation ändern | Rechenkerne mit Geldbeträgen; Fehler fallen nicht sofort auf. |
+| Begleitscheine, Vertriebslisten, Präsentationen | Daraus entstehen Dokumente für Dritte. |
+| Dubletten zusammenführen | Rückgängig machbar, greift aber tief in die Daten ein. |
+| Exposé übernehmen | Legt Objekt, Makler und Deal auf einmal an. |
+| Propstack-Einheit anlegen | Wirkt nach außen, läuft ohnehin über das Outward-Gate. |
+
+**🔴 Nie für Claude**
+
+- Löschen aller Art: Makler, Deals, Objekte, Papierkorb leeren, Audit-Log kürzen.
+- Einstellungen und Zugänge: MCP-Schlüssel, M365, KI-Modelle, Vorlagen, das Outward-Gate selbst.
+- Sicherung einspielen, weil das den Bestand überschreibt.
+- Mails über M365 verschicken und Freigaben erteilen, sonst könnte Claude sich selbst freigeben.
+
+**Erste Stufe (Empfehlung)**
+
+- [ ] `create_makler` mit Dublettenprüfung (bei Treffer: Kandidaten zurückgeben statt anlegen)
+- [ ] `update_makler` mit Feld-Whitelist und Versionsprüfung
+- [ ] `add_communication` (Mail/Anruf/Notiz; setzt den letzten Kontakt)
+- [ ] `set_termin`, `set_erledigt`
+- [ ] Audit-Vermerk „über Claude“, Regeln in `packages/domain/src/mcp/zugang.ts` mit Test, README und
+      Kundennachricht (`claude:read+write:<hash>`) anpassen
+- [ ] Danach je nach Bedarf Objekte und die 🟡-Punkte über den Bereich `freigabe`
+
 ## Erledigt (21.09.2026)
 
 - [x] CI grün — sie lief erst seit dem Anlegen des Remotes und war von Anfang an rot (keine Dateiablage, kein Chrome-Pfad)

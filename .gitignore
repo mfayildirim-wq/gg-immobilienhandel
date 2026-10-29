@@ -26,3 +26,6 @@ __pycache__/
 dienste/gedaechtnis/.env*
 dienste/gedaechtnis/.schluessel*.json
 *.db
+
+# Zwischenstände der Paritätsprüfungen (können Exposé-Inhalte enthalten)
+.cache/

@@ -10,6 +10,7 @@ export const KI_BEREICHE = [
   { id: 'expose', label: 'Exposé und Unterlagen', beschreibung: 'Exposé-Analyse, Einheiten aus der Mieterliste', bisher: 'Haiku 4.5, bei dünnem Ergebnis und Scans Sonnet 5; Mieterliste Sonnet 4.5' },
   { id: 'makler', label: 'Makler und Persona', beschreibung: 'Zusammenfassung, Profil, Entwürfe, Kontaktanlässe', bisher: 'Haiku 4.5; Stilanalyse Sonnet 4.5' },
   { id: 'autoimport', label: 'Auto-Import', beschreibung: 'Seiten, Links und PDFs einordnen, Exposé aus Mailtext', bisher: 'Haiku 4.5; Mailtext Sonnet 4.5' },
+  { id: 'assistent', label: 'KI-Leiste', beschreibung: 'Chat rechts zum gerade offenen Dialog, mit Werkzeugen und Gedächtnis', bisher: 'Sonnet 5.5' },
 ] as const;
 
 export type KiBereich = (typeof KI_BEREICHE)[number]['id'];
@@ -25,7 +26,7 @@ export const KI_MODELLE = [
 
 export type KiModellwahl = Record<KiBereich, string>;
 
-export const KI_MODELLWAHL_STANDARD: KiModellwahl = { praesentation: KI_STANDARD, expose: KI_STANDARD, makler: KI_STANDARD, autoimport: KI_STANDARD };
+export const KI_MODELLWAHL_STANDARD: KiModellwahl = { praesentation: KI_STANDARD, expose: KI_STANDARD, makler: KI_STANDARD, autoimport: KI_STANDARD, assistent: KI_STANDARD };
 
 const bekannt = (id: unknown): id is string => id === KI_STANDARD || KI_MODELLE.some((m) => m.id === id);
 

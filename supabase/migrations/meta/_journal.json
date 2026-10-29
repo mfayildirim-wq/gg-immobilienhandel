@@ -127,6 +127,13 @@
       "when": 1792588058998,
       "tag": "20261021130738_makler_recherche",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1793271439713,
+      "tag": "20261029105719_ki_gespraeche",
+      "breakpoints": true
     }
   ]
 }

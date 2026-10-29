@@ -12,6 +12,7 @@ import { useObjektAendern, useObjektDetail, useObjektLoeschen } from '../lib/api
 import { alsZahl } from '../lib/format.ts';
 import { ObjektFotos } from './ObjektFotos.tsx';
 import { StatusBadge } from './StatusBadge.tsx';
+import { useKiBezug } from '@gg/ki-leiste';
 
 const ZAHL = { decimalSeparator: ',', thousandSeparator: '.', hideControls: true } as const;
 type Einheit = Omit<ObjektEinheit, 'id'> & { id?: string };
@@ -21,6 +22,7 @@ const GEBAEUDE_ZAHLEN = [['baujahr', 'Baujahr'], ['einheitenAnzahl', 'Einheiten 
 const PREISE = [['angebotspreis', 'Angebotspreis €'], ['zielpreis', 'Zielkaufpreis €'], ['istMiete', 'Ist-Miete/Mo €'], ['sollMiete', 'Soll-Miete/Mo €']] as const;
 
 export function ObjektDetail({ id, geloescht }: { id: string; geloescht?: () => void }) {
+  useKiBezug({ art: 'objekt', id });
   const { data: o, isLoading, error } = useObjektDetail(id);
   if (isLoading) return <Loader size="sm" />;
   if (error || !o) return <Alert color="red">{error?.message ?? 'Objekt nicht gefunden'}</Alert>;

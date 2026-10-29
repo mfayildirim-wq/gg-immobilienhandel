@@ -1,4 +1,4 @@
-import { DealStatus, Frequenz } from '@gg/domain';
+import { DealStatus, Frequenz, GEDAECHTNIS_ARTEN } from '@gg/domain';
 import { z } from 'zod';
 
 /** Gemeinsamer Vertrag zwischen apps/api und apps/web. */
@@ -202,7 +202,7 @@ export const KalkStandardSchema = z.object({
 
 /** KI-Modell je Bereich: Modellkennung oder „standard“ (wie bisher). Unbekanntes setzt die API auf „standard“ zurück. */
 const KiModell = z.string().min(1).max(100);
-export const KiModellwahlSchema = z.object({ praesentation: KiModell, expose: KiModell, makler: KiModell, autoimport: KiModell });
+export const KiModellwahlSchema = z.object({ praesentation: KiModell, expose: KiModell, makler: KiModell, autoimport: KiModell, assistent: KiModell });
 
 // ── Makler- und Objekt-Detail ──────────────────────────────
 
@@ -999,6 +999,53 @@ export const PersonaStand = z.object({ profil: PersonaProfil.nullable(), konfide
 export type PersonaStand = z.infer<typeof PersonaStand>;
 export const NachrichtEntwurf = z.object({ wa: z.string(), email: z.object({ subject: z.string(), body: z.string() }) });
 export type NachrichtEntwurf = z.infer<typeof NachrichtEntwurf>;
+
+// ── Gedächtnis (zentraler Dienst, 24.10.2026) ─────────────────
+
+export const GedaechtnisEintrag = z.object({
+  id: z.string(), text: z.string(), app: z.string(), objekt: z.string().nullable(), art: z.string().nullable(),
+  quelle: z.string().nullable(), von: z.string().nullable(), score: z.number().nullable(), am: z.string().nullable(),
+  titel: z.string().nullable().optional(),
+});
+export type GedaechtnisEintrag = z.infer<typeof GedaechtnisEintrag>;
+export const GedaechtnisArtParam = z.enum(GEDAECHTNIS_ARTEN);
+export const GedaechtnisMerken = z.object({ text: z.string().trim().min(1).max(4000) });
+export const GedaechtnisSuchen = z.object({ frage: z.string().trim().min(1).max(1000), art: GedaechtnisArtParam.optional(), id: z.string().optional() });
+export const GedaechtnisAblage = z.object({ neu: z.array(GedaechtnisEintrag), abgeloest: z.array(GedaechtnisEintrag) });
+
+// ── KI-Leiste (26.10.2026; Typen in @gg/ki-kern/vertrag) ─────
+
+export const KiBezug = z.object({ art: z.string().min(1).max(40), id: z.string().min(1).max(200) });
+const KiSchritt = z.object({ art: z.enum(['werkzeug', 'websuche']), name: z.string(), ok: z.boolean(), kurz: z.string().optional() });
+const KiNachricht = z.object({
+  rolle: z.enum(['nutzer', 'ki']), text: z.string(), am: z.string(), schritte: z.array(KiSchritt).optional(),
+  quellen: z.array(z.object({ url: z.string(), titel: z.string() })).optional(), gedaechtnis: z.number().optional(), modell: z.string().optional(),
+  vorschlag: z.object({ titel: z.string(), text: z.string(), status: z.enum(['abgelegt', 'verworfen']).optional() }).optional(),
+  abgelegt: z.string().optional(),
+  aenderungen: z.array(z.object({
+    werkzeug: z.string(), titel: z.string(), argumente: z.record(z.string(), z.unknown()),
+    status: z.enum(['uebernommen', 'verworfen', 'fehler']).optional(), ergebnis: z.string().optional(),
+  })).optional(),
+});
+export const KiGespraechKopf = z.object({ id: z.string(), bezug: KiBezug.nullable(), titel: z.string(), von: z.string(), am: z.string(), anzahl: z.number() });
+export const KiGespraech = KiGespraechKopf.extend({ nachrichten: z.array(KiNachricht) });
+export const KiEinstellungen = z.object({ modell: z.string().min(1).max(100), websuche: z.boolean(), gedaechtnis: z.boolean() });
+export const KiStand = z.object({ verfuegbar: z.boolean(), gedaechtnis: z.boolean(), verlaufDauerhaft: z.boolean(), einstellungen: KiEinstellungen, modelle: z.array(z.object({ id: z.string(), label: z.string() })) });
+const KiGedaechtnisEintrag = z.object({
+  id: z.string(), text: z.string(), titel: z.string().nullable().optional(), quelle: z.string().nullable().optional(), von: z.string().nullable().optional(), am: z.string().nullable().optional(),
+});
+export const KiBezugSicht = z.object({
+  bezug: KiBezug, label: z.string(), titel: z.string(),
+  gedaechtnis: z.object({ verbunden: z.boolean(), eintraege: z.array(KiGedaechtnisEintrag), fehler: z.string().optional() }),
+  gespraeche: z.array(KiGespraechKopf),
+});
+export const KiSenden = z.object({ gespraechId: z.string().max(100).nullable().optional(), bezug: KiBezug.nullable().optional(), text: z.string().trim().min(1).max(100_000) });
+export const KiAblegen = z.object({
+  bezug: KiBezug, titel: z.string().trim().min(1).max(200), text: z.string().trim().min(1).max(100_000),
+  gespraechId: z.string().max(100).nullable().optional(), nachricht: z.number().int().min(0).nullable().optional(),
+});
+export const KiVorschlagVerwerfen = z.object({ gespraechId: z.string().min(1).max(100), nachricht: z.number().int().min(0) });
+export const KiAenderungEntscheiden = KiVorschlagVerwerfen.extend({ aenderung: z.number().int().min(0), aktion: z.enum(['uebernehmen', 'verwerfen']) });
 
 // ── Makler-Recherche (21.10.2026) ──────────────────────────
 

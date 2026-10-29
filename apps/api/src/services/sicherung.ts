@@ -37,6 +37,7 @@ export const SICHERUNG_AUSGENOMMEN: Record<string, string> = {
   geoVerortungen: 'Zwischenspeicher des Kartendienstes (Adresse → Stadtteil); entsteht bei der nächsten Lagebeschreibung neu.',
   rechercheLaeufe: 'Protokoll der Recherche-Läufe; was gefunden wurde, steht je Makler in maklerRecherche.',
   rechercheErgebnisse: 'Schritte und Vorschläge je Lauf; Übernommenes steht am Makler, die gefundenen Adressen in maklerRecherche.',
+  kiGespraeche: 'Gesprächsprotokoll der KI-Leiste; keine Geschäftsdaten, nach 90 Tagen ohne Fortsetzung gelöscht.',
 };
 
 type Tabellenname = (typeof SICHERUNG_TABELLEN)[number];
