@@ -6,10 +6,13 @@
  * Verlauf und Gedächtnis sind getrennt: jedes Gespräch landet im Verlauf (Protokoll, nur diese App). Ins Gedächtnis kommt
  * nur, was der Nutzer bestätigt — per Knopf unter der Antwort oder über eine Karte, wenn die KI es vorschlägt
  * (`gedaechtnis_vorschlagen`: auf „merk dir das“ oder bei lohnenden Ergebnissen). Die KI selbst schreibt nie ins Gedächtnis.
+ *
+ * Daten der App ändert die KI ebenso nur mit Bestätigung (29.10.2026): die Werkzeuge aus `aendern` werden ihr angeboten,
+ * ein Aufruf führt aber nichts aus, sondern wird eine Karte an der Antwort; erst „Übernehmen“ ruft das Werkzeug auf.
  */
 import type {
-  KiAblegen, KiBezug, KiBezugSicht, KiEinstellungen, KiGedaechtnisEintrag, KiGespraech, KiModellAngebot, KiNachricht, KiSenden, KiStand,
-  KiVorschlag, KiVorschlagVerwerfen,
+  KiAblegen, KiAenderung, KiAenderungEntscheiden, KiBezug, KiBezugSicht, KiEinstellungen, KiGedaechtnisEintrag, KiGespraech, KiModellAngebot,
+  KiNachricht, KiSenden, KiStand, KiVorschlag, KiVorschlagVerwerfen,
 } from './vertrag.ts';
 import type { Modell } from './modell.ts';
 import { kiAntworten } from './schleife.ts';
@@ -44,6 +47,8 @@ export interface KiDienstOptionen {
   modelle: KiModellAngebot[];
   /** Werkzeuge im Namen des Nutzers */
   werkzeuge: (nutzer: string) => WerkzeugQuelle;
+  /** Werkzeuge, die Daten ändern — die KI bekommt sie nur als Vorschlag, ausgeführt wird nach Bestätigung im Namen des Nutzers */
+  aendern?: (nutzer: string) => WerkzeugQuelle;
   gedaechtnis: () => Promise<KiGedaechtnis | null>;
   /** Hat dieser Dialog ein Gedächtnis? (gg: alles mit eigenem Dialog) */
   hatGedaechtnis: (bezug: KiBezug) => boolean;
@@ -62,6 +67,9 @@ const MAX_KONTEXT = 8000;
 const MAX_EINTRAG = 1500;
 const MAX_EINTRAEGE = 20;
 const MAX_VERLAUF = 20;
+/** So viele Änderungen darf eine Antwort vorschlagen */
+const MAX_AENDERUNGEN = 10;
+const VORSCHLAG_HINWEIS = '[Führt nichts aus: legt dem Nutzer eine Karte vor, erst „Übernehmen“ speichert.] ';
 
 const gekuerzt = (t: string, n: number) => (t.length > n ? `${t.slice(0, n)}…` : t);
 
@@ -103,7 +111,7 @@ export function kiDienst(o: KiDienstOptionen) {
     }
   }
 
-  function systemText(b: { bezug: KiBezug; beschreibung: BezugBeschreibung } | null, eintraege: KiGedaechtnisEintrag[] | null, e: KiEinstellungen): string {
+  function systemText(b: { bezug: KiBezug; beschreibung: BezugBeschreibung } | null, eintraege: KiGedaechtnisEintrag[] | null, e: KiEinstellungen, aendern: boolean): string {
     const teile = [
       `Du bist der KI-Assistent in der App „${o.app}“. Heute ist ${jetzt().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.`,
       'Antworte auf Deutsch, knapp und sachlich, in Markdown; Vergleiche als Tabelle. Erfinde keine Daten — was du nicht weißt, liest du mit den Werkzeugen nach oder sagst, dass es fehlt.',
@@ -118,11 +126,17 @@ export function kiDienst(o: KiDienstOptionen) {
           + eintraege.slice(0, MAX_EINTRAEGE).map((x) => `- ${x.titel ? `[${x.titel}] ` : ''}${gekuerzt(x.text, MAX_EINTRAG)}${x.am ? ` (${x.am.slice(0, 10)})` : ''}`).join('\n'));
       }
     }
+    const lesen = aendern
+      ? 'Mit den Werkzeugen liest du weitere Daten der App. Ändern geht nur per Vorschlag: die Schreibwerkzeuge führen nichts aus, '
+        + 'sondern legen dem Nutzer eine Karte vor; erst „Übernehmen“ speichert. Lies vorher mit read_entity die aktuelle "version" '
+        + 'und prüfe vor dem Anlegen, ob es den Eintrag schon gibt. Was auf einer anderen Änderung aufbaut (z. B. Kommunikation zu '
+        + 'einem Makler, den es noch nicht gibt), schlage erst vor, wenn die erste übernommen ist. Nenne die Vorschläge in deiner Antwort.'
+      : 'Mit den Werkzeugen liest du weitere Daten der App; ändern kannst du nichts.';
     teile.push(eintraege
-      ? 'Mit den Werkzeugen liest du weitere Daten der App; ändern kannst du nichts. Ins Gedächtnis schreibst du nie selbst: '
+      ? `${lesen} Ins Gedächtnis schreibst du nie selbst: `
         + 'sagt der Nutzer „merk dir …“ oder ist dein Ergebnis es wert, aufbewahrt zu werden, rufe gedaechtnis_vorschlagen auf — '
         + 'der Nutzer bestätigt dann per Karte. Erwähne den Vorschlag in deiner Antwort mit einem Satz.'
-      : 'Mit den Werkzeugen liest du weitere Daten der App; ändern kannst du nichts. Ein Gedächtnis gibt es hier nicht — '
+      : `${lesen} Ein Gedächtnis gibt es hier nicht — `
         + 'sagt der Nutzer „merk dir …“, erkläre, dass das nur bei einem geöffneten Datensatz geht.');
     if (e.websuche) teile.push('Für Fragen nach außen (Marktpreise, Vergleichsangebote, Firmen, Personen) nutze die Websuche und nenne die Quellen.');
     return teile.join('\n\n');
@@ -195,9 +209,18 @@ export function kiDienst(o: KiDienstOptionen) {
       // Vorschlagen nur, wo es ein Gedächtnis gibt; der Aufruf landet als Karte an der Antwort, nicht im Gedächtnis
       const mcp = o.werkzeuge(nutzer);
       let vorschlag: KiVorschlag | undefined;
+      // Schreibwerkzeuge: angeboten werden sie, ein Aufruf wird zur Karte an der Antwort
+      const aenderWerkzeuge = o.aendern ? await o.aendern(nutzer).liste() : [];
+      const aenderungen: KiAenderung[] = [];
       const quelle: WerkzeugQuelle = {
         liste: mcp.liste,
         async aufrufen(name, args) {
+          const schreibt = aenderWerkzeuge.find((w) => w.name === name);
+          if (schreibt) {
+            if (aenderungen.length >= MAX_AENDERUNGEN) return { text: `Höchstens ${MAX_AENDERUNGEN} Vorschläge je Antwort.`, fehler: true };
+            aenderungen.push({ werkzeug: name, titel: schreibt.title ?? name, argumente: args });
+            return { text: 'Vorschlag steht als Karte unter deiner Antwort; ausgeführt wird erst, wenn der Nutzer „Übernehmen“ klickt. Nicht erneut aufrufen.', fehler: false };
+          }
           if (name !== VORSCHLAG_WERKZEUG.name) return mcp.aufrufen(name, args);
           const titel = String(args.titel ?? '').trim().slice(0, 200);
           const text = String(args.text ?? '').trim();
@@ -207,9 +230,13 @@ export function kiDienst(o: KiDienstOptionen) {
           return { text: 'Die Karte steht unter deiner Antwort; der Nutzer entscheidet. Nicht erneut aufrufen.', fehler: false };
         },
       };
-      const werkzeuge = [...await mcp.liste(), ...(eintraege ? [VORSCHLAG_WERKZEUG] : [])];
+      const werkzeuge = [
+        ...await mcp.liste(),
+        ...aenderWerkzeuge.map((w) => ({ ...w, description: VORSCHLAG_HINWEIS + w.description })),
+        ...(eintraege ? [VORSCHLAG_WERKZEUG] : []),
+      ];
       const ergebnis = await kiAntworten({
-        modell, system: systemText(beschrieben, eintraege, einstellungen), verlauf: alt?.nachrichten ?? [], frage,
+        modell, system: systemText(beschrieben, eintraege, einstellungen, aenderWerkzeuge.length > 0), verlauf: alt?.nachrichten ?? [], frage,
         werkzeuge, quelle, websuche: einstellungen.websuche, fristMs: o.fristMs,
       });
 
@@ -224,6 +251,7 @@ export function kiDienst(o: KiDienstOptionen) {
           ...(eintraege ? { gedaechtnis: eintraege.length } : {}),
           ...(ergebnis.modell ? { modell: ergebnis.modell } : {}),
           ...(vorschlag ? { vorschlag } : {}),
+          ...(aenderungen.length ? { aenderungen } : {}),
         },
       ];
       const g: KiGespraech = alt
@@ -248,6 +276,31 @@ export function kiDienst(o: KiDienstOptionen) {
         }));
       }
       return ergebnis;
+    },
+
+    /** Eine vorgeschlagene Änderung übernehmen (jetzt erst wird das Werkzeug aufgerufen) oder verwerfen — je Karte einmal. */
+    async aenderungEntscheiden(a: KiAenderungEntscheiden, nutzer: string) {
+      const g = await gespraechLaden(a.gespraechId);
+      const n = g.nachrichten[a.nachricht];
+      const karte = n?.rolle === 'ki' ? n.aenderungen?.[a.aenderung] : undefined;
+      if (!n || !karte) throw new KiLeisteFehler(404, 'Vorschlag nicht gefunden.');
+      if (karte.status) throw new KiLeisteFehler(422, 'Über diesen Vorschlag ist schon entschieden.');
+      let neu: KiAenderung;
+      if (a.aktion === 'verwerfen') {
+        neu = { ...karte, status: 'verworfen' };
+      } else {
+        if (!o.aendern) throw new KiLeisteFehler(403, 'Ändern ist hier nicht freigegeben.');
+        let r: { text: string; fehler: boolean };
+        try {
+          r = await o.aendern(nutzer).aufrufen(karte.werkzeug, karte.argumente);
+        } catch (e) {
+          r = { text: (e as Error).message, fehler: true };
+        }
+        neu = { ...karte, status: r.fehler ? 'fehler' : 'uebernommen', ergebnis: gekuerzt(r.text, 2000) };
+      }
+      g.nachrichten[a.nachricht] = { ...n, aenderungen: n.aenderungen!.map((x, i) => (i === a.aenderung ? neu : x)) };
+      await (await speicher()).speichern(g);
+      return g;
     },
 
     async vorschlagVerwerfen(v: KiVorschlagVerwerfen) {

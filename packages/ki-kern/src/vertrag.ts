@@ -29,6 +29,18 @@ export interface KiNachricht {
   vorschlag?: KiVorschlag;
   /** Titel, unter dem diese Antwort (oder ihr Vorschlag) im Gedächtnis abgelegt wurde */
   abgelegt?: string;
+  /** Die KI schlägt Änderungen an Daten der App vor — ausgeführt wird erst, wenn der Nutzer übernimmt */
+  aenderungen?: KiAenderung[];
+}
+
+export interface KiAenderung {
+  werkzeug: string;
+  /** Für Menschen, z. B. „Makler ändern“ */
+  titel: string;
+  argumente: Record<string, unknown>;
+  status?: 'uebernommen' | 'verworfen' | 'fehler';
+  /** Antwort des Werkzeugs nach „Übernehmen“ bzw. die Fehlermeldung */
+  ergebnis?: string;
 }
 
 export interface KiVorschlag { titel: string; text: string; status?: 'abgelegt' | 'verworfen' }
@@ -82,3 +94,5 @@ export interface KiSenden { gespraechId?: string | null; bezug?: KiBezug | null;
 /** `gespraechId` + `nachricht` (Index): die Antwort, aus der abgelegt wird — dort wird es vermerkt */
 export interface KiAblegen { bezug: KiBezug; titel: string; text: string; gespraechId?: string | null; nachricht?: number | null }
 export interface KiVorschlagVerwerfen { gespraechId: string; nachricht: number }
+/** `nachricht` (Index der Antwort) + `aenderung` (Index der Karte) */
+export interface KiAenderungEntscheiden { gespraechId: string; nachricht: number; aenderung: number; aktion: 'uebernehmen' | 'verwerfen' }

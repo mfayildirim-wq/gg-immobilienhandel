@@ -99,5 +99,9 @@
 .kl-leiste .kl-knoepfe > button.kl-loeschen { background: var(--kl-fehler); }
 .kl-leiste .kl-knoepfe > button:disabled { opacity: 0.5; cursor: default; }
 .kl-klein { font-size: 12px; }
+.kl-felder { display: grid; gap: 2px; margin: 0; font-size: 12px; }
+.kl-felder > div { display: grid; grid-template-columns: minmax(80px, 30%) 1fr; gap: 8px; }
+.kl-felder dt { color: var(--kl-matt); }
+.kl-felder dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .kl-verlauf-zeile { display: flex; align-items: center; gap: 4px; }
 .kl-verlauf-zeile > .kl-zeile { flex: 1; min-width: 0; }

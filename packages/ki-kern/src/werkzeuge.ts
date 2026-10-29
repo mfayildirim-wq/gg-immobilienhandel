@@ -4,7 +4,7 @@
  * im selben Prozess (`mcpAufruf`); als eigener Dienst über HTTP (`mcpUeberHttp`). Die Quelle sieht in beiden Fällen gleich aus.
  */
 
-export interface Werkzeug { name: string; description: string; inputSchema: Record<string, unknown> }
+export interface Werkzeug { name: string; title?: string; description: string; inputSchema: Record<string, unknown> }
 export interface WerkzeugErgebnis { text: string; fehler: boolean }
 export interface WerkzeugQuelle {
   liste(): Promise<Werkzeug[]>;
@@ -21,7 +21,7 @@ export function quelleAusMcp(rpc: McpRpc): WerkzeugQuelle {
     async liste() {
       const a = await rufe('tools/list');
       if (a?.error) throw new Error(`MCP tools/list: ${a.error.message}`);
-      return (a?.result?.tools ?? []).map((t: any) => ({ name: t.name, description: t.description ?? '', inputSchema: t.inputSchema ?? { type: 'object' } }));
+      return (a?.result?.tools ?? []).map((t: any) => ({ name: t.name, ...(t.title ? { title: String(t.title) } : {}), description: t.description ?? '', inputSchema: t.inputSchema ?? { type: 'object' } }));
     },
     async aufrufen(name, argumente) {
       const a = await rufe('tools/call', { name, arguments: argumente });

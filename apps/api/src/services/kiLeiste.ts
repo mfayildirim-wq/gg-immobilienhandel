@@ -1,6 +1,6 @@
 /**
  * KI-Leiste (26.10.2026): gg verdrahtet den KI-Dienst aus @gg/ki-kern. Die Werkzeuge sind die des eigenen MCP-Servers
- * (im selben Prozess, nur lesend, im Namen des angemeldeten Nutzers); Gedächtnis und Verlauf liegen im zentralen
+ * (im selben Prozess, lesend, im Namen des angemeldeten Nutzers; die Schreibwerkzeuge nur als Vorschlag mit Bestätigung); Gedächtnis und Verlauf liegen im zentralen
  * Gedächtnis-Dienst (der Verlauf getrennt vom Wissen). Was gg-spezifisch ist — welcher Dialog wie heißt und welche Daten er hat — steht hier.
  */
 import type { Db } from '@gg/db';
@@ -10,7 +10,7 @@ import {
 import { GedaechtnisFehler, type GedaechtnisDienst } from '@gg/integrations';
 import {
   type BezugBeschreibung, type KiBezug, kiDienst, type KiGespraech, type KiNachricht, type Modell, quelleAusMcp, type VerlaufSpeicher,
-  verlaufImArbeitsspeicher,
+  verlaufImArbeitsspeicher, type WerkzeugQuelle,
 } from '@gg/ki-kern';
 import { FachFehler } from '../fehler.ts';
 import { begleitscheinDetail } from './begleitscheine.ts';
@@ -105,6 +105,15 @@ const fluechtig = verlaufImArbeitsspeicher();
 
 // ── Zusammenbau ─────────────────────────────────────────────
 
+/** Gedächtnis schreibt die Leiste über ihre eigene Karte (`gedaechtnis_vorschlagen`), nicht über das MCP-Werkzeug. */
+const NICHT_IN_DER_LEISTE = new Set(['gedaechtnis_merken']);
+function ohne(q: WerkzeugQuelle): WerkzeugQuelle {
+  return {
+    liste: async () => (await q.liste()).filter((w) => !NICHT_IN_DER_LEISTE.has(w.name)),
+    aufrufen: async (name, args) => (NICHT_IN_DER_LEISTE.has(name) ? { text: `"${name}" gibt es in der Leiste nicht.`, fehler: true } : q.aufrufen(name, args)),
+  };
+}
+
 export interface KiLeisteUmfeld {
   /** Das Modell zur Kennung; `null` = kein Schlüssel */
   modell: (modellId: string) => Promise<Modell | null>;
@@ -119,6 +128,8 @@ export function kiLeiste(db: Db, u: KiLeisteUmfeld) {
     modelle: KI_MODELLE.map((m) => ({ id: m.id, label: m.label })),
     // Die Leiste sieht dieselben Werkzeuge wie Claude über MCP — nur lesend, im Namen des Nutzers
     werkzeuge: (nutzer) => quelleAusMcp(async (n) => mcpAufruf(db, n, { label: `leiste:${nutzer}`, scopes: ['read'], modus: 'key' }, mcpUmfeld)),
+    // Schreiben (29.10.2026): dieselben Werkzeuge wie Cowork mit `write` — die KI schlägt vor, der Nutzer übernimmt
+    aendern: (nutzer) => ohne(quelleAusMcp(async (n) => mcpAufruf(db, n, { label: `leiste:${nutzer}`, scopes: ['write'], modus: 'key' }, mcpUmfeld))),
     gedaechtnis: async () => {
       const dienst = await u.gedaechtnis();
       if (!dienst) return null;

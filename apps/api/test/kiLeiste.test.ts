@@ -50,7 +50,7 @@ describe.skipIf(!url)('KI-Leiste: Chat zum Dialog über die API (26.10.2026)', (
     expect(g).toMatchObject({ bezug: { art: 'objekt', id: o.id }, titel: 'Wie ist die Lage?', von: 'lokal', anzahl: 2 });
     expect(g.nachrichten[1]).toMatchObject({ rolle: 'ki', text: '## Lage\n\nRuhige Seitenstraße.', gedaechtnis: 1, modell: 'claude-test' });
     expect(g.nachrichten[1].schritte).toEqual([{ art: 'werkzeug', name: 'read_entity', ok: false, kurz: '{"collection":"objekte","id":"OBJ"}' }]);
-    // Systemtext: Dialog, Gedächtnis, Weg zum Datensatz; Werkzeuge: nur lesende aus dem MCP
+    // Systemtext: Dialog, Gedächtnis, Weg zum Datensatz; Werkzeuge: lesende aus dem MCP, schreibende nur als Vorschlag
     const erste = modell.anfragen[0]!;
     expect(erste.system).toContain(`Dialog: Objekt „${k}weg 3“`);
     expect(erste.system).toContain('- [Besichtigung] Dach muss neu');
@@ -58,7 +58,8 @@ describe.skipIf(!url)('KI-Leiste: Chat zum Dialog über die API (26.10.2026)', (
     const namen = erste.tools.map((t) => t.name);
     expect(namen).toContain('read_entity');
     expect(namen).toContain('web_search');
-    expect(namen).not.toContain('add_note');
+    expect(erste.tools.find((t) => t.name === 'update_objekt')?.description).toMatch(/^\[Führt nichts aus/);
+    expect(erste.system).toContain('Ändern geht nur per Vorschlag');
     expect(namen).not.toContain('gedaechtnis_merken');
 
     // Der Verlauf liegt im Gedächtnis-Dienst — als Gespräch, nicht als Wissen
@@ -75,6 +76,42 @@ describe.skipIf(!url)('KI-Leiste: Chat zum Dialog über die API (26.10.2026)', (
 
     expect((await lies(senden(app, 'DELETE', `/api/ki-leiste/gespraeche/${g.id}`))).geloescht).toBe(true);
     expect((await app.request(`/api/ki-leiste/gespraeche/${g.id}`)).status).toBe(404);
+  });
+
+  it('Ändern mit Bestätigung: die KI schlägt vor, erst „Übernehmen“ schreibt — im Namen des Nutzers und im Audit-Log', async () => {
+    const app = createApp({ db, auth: offen, gedaechtnis });
+    const o = await lies(senden(app, 'POST', '/api/objekte', { strasse: `${k}allee`, hausnr: '7', stadt: 'Ulm' }));
+    angelegt.objekte.push(o.id);
+    const modell = drehbuchModell([
+      { content: [
+        { type: 'tool_use', id: 'a', name: 'update_objekt', input: { id: o.id, version: o.version, baujahr: 1972 } },
+        { type: 'tool_use', id: 'b', name: 'update_objekt', input: { id: o.id, version: o.version, wohnflaeche: 300 } },
+      ], stop_reason: 'tool_use' },
+      { content: [{ type: 'text', text: 'Baujahr und Wohnfläche vorgeschlagen.' }], stop_reason: 'end_turn' },
+    ]);
+    const mitModell = createApp({ db, auth: offen, gedaechtnis, kiLeisteModell: modell });
+    const g = await lies(senden(mitModell, 'POST', '/api/ki-leiste/senden', { bezug: { art: 'objekt', id: o.id }, text: 'Baujahr 1972, 300 m²' }));
+    expect(g.nachrichten[1].aenderungen).toEqual([
+      { werkzeug: 'update_objekt', titel: 'Objekt ändern', argumente: { id: o.id, version: o.version, baujahr: 1972 } },
+      { werkzeug: 'update_objekt', titel: 'Objekt ändern', argumente: { id: o.id, version: o.version, wohnflaeche: 300 } },
+    ]);
+    // Noch nichts geschrieben
+    expect((await lies(app.request(`/api/objekte/${o.id}`))).baujahr).toBeNull();
+
+    const entscheiden = (aenderung: number, aktion: string) => senden(app, 'POST', '/api/ki-leiste/aenderung', { gespraechId: g.id, nachricht: 1, aenderung, aktion });
+    const nach = await lies(entscheiden(0, 'uebernehmen'));
+    expect(nach.nachrichten[1].aenderungen[0]).toMatchObject({ status: 'uebernommen' });
+    expect(await lies(app.request(`/api/objekte/${o.id}`))).toMatchObject({ baujahr: 1972, version: o.version + 1 });
+    expect((await entscheiden(0, 'uebernehmen')).status).toBe(422);
+    // Die zweite Karte trägt die alte Version — die Prüfung des Servers greift, die Karte zeigt den Fehler
+    const zweite = await lies(entscheiden(1, 'uebernehmen'));
+    expect(zweite.nachrichten[1].aenderungen[1]).toMatchObject({ status: 'fehler', ergebnis: expect.stringContaining('zwischenzeitlich geändert') });
+    expect((await lies(app.request(`/api/objekte/${o.id}`))).wohnflaeche).toBeNull();
+
+    const audit = await lies(app.request(`/api/audit?entity=objekt&suche=${o.id}`));
+    const eintrag = audit.zeilen.find((z: { source: string; entityId: string }) => z.source === 'mcp/update_objekt' && z.entityId === o.id);
+    expect(JSON.parse(eintrag.metadata)).toEqual({ mcp: 'leiste:lokal', ueber: 'KI-Leiste (vom Nutzer übernommen)' });
+    expect(JSON.parse(eintrag.newValue)).toEqual({ baujahr: 1972 });
   });
 
   it('„merk dir …“: die KI schlägt vor, gespeichert wird erst nach Bestätigung; Verwerfen wird vermerkt', async () => {

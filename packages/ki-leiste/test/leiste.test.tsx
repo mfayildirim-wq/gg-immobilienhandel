@@ -1,18 +1,19 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { KiAblegen, KiBezug, KiGespraech } from '@gg/ki-kern/vertrag';
+import type { KiAblegen, KiAenderung, KiAenderungEntscheiden, KiBezug, KiGespraech } from '@gg/ki-kern/vertrag';
 import { httpTransport, KiKnopf, KiLeiste, KiLeisteRahmen, type KiTransport, titelVorschlag, useKiBezug } from '../src/index.ts';
 
 afterEach(cleanup);
 
-function attrappe(antwort = '## Vergleich\n\nDrei Angebote', vorschlag?: { titel: string; text: string }): KiTransport & { gesendet: unknown[]; abgelegt: KiAblegen[]; geloescht: string[] } {
+function attrappe(antwort = '## Vergleich\n\nDrei Angebote', vorschlag?: { titel: string; text: string }, aenderungen?: KiAenderung[]): KiTransport & { gesendet: unknown[]; abgelegt: KiAblegen[]; geloescht: string[]; entschieden: KiAenderungEntscheiden[] } {
+  const entschieden: KiAenderungEntscheiden[] = [];
   const gesendet: unknown[] = [];
   const abgelegt: KiAblegen[] = [];
   const geloescht: string[] = [];
   const gespeichert = new Map<string, KiGespraech>();
   return {
-    gesendet, abgelegt, geloescht,
+    gesendet, abgelegt, geloescht, entschieden,
     stand: async () => ({ verfuegbar: true, gedaechtnis: true, verlaufDauerhaft: true, einstellungen: { modell: 'm', websuche: true, gedaechtnis: true }, modelle: [{ id: 'm', label: 'M' }] }),
     einstellungenSpeichern: async (e) => e,
     bezug: async (b: KiBezug) => ({
@@ -26,7 +27,7 @@ function attrappe(antwort = '## Vergleich\n\nDrei Angebote', vorschlag?: { titel
       gesendet.push(s);
       const g: KiGespraech = {
         id: 'g1', bezug: s.bezug ?? null, titel: s.text, von: 'ich', am: '', anzahl: 2,
-        nachrichten: [{ rolle: 'nutzer', text: s.text, am: '1' }, { rolle: 'ki', text: antwort, am: '2', gedaechtnis: 1, schritte: [{ art: 'websuche', name: 'web_search', ok: true, kurz: 'Ulm' }], ...(vorschlag ? { vorschlag } : {}) }],
+        nachrichten: [{ rolle: 'nutzer', text: s.text, am: '1' }, { rolle: 'ki', text: antwort, am: '2', gedaechtnis: 1, schritte: [{ art: 'websuche', name: 'web_search', ok: true, kurz: 'Ulm' }], ...(vorschlag ? { vorschlag } : {}), ...(aenderungen ? { aenderungen } : {}) }],
       };
       gespeichert.set(g.id, structuredClone(g));
       return g;
@@ -41,6 +42,14 @@ function attrappe(antwort = '## Vergleich\n\nDrei Angebote', vorschlag?: { titel
     async vorschlagVerwerfen(v) {
       const g = gespeichert.get(v.gespraechId)!;
       g.nachrichten[v.nachricht] = { ...g.nachrichten[v.nachricht]!, vorschlag: { ...g.nachrichten[v.nachricht]!.vorschlag!, status: 'verworfen' } };
+      return structuredClone(g);
+    },
+    async aenderungEntscheiden(a) {
+      entschieden.push(a);
+      const g = gespeichert.get(a.gespraechId)!;
+      const n = g.nachrichten[a.nachricht]!;
+      const status = a.aktion === 'verwerfen' ? 'verworfen' as const : n.aenderungen![a.aenderung]!.argumente.version === 1 ? 'uebernommen' as const : 'fehler' as const;
+      g.nachrichten[a.nachricht] = { ...n, aenderungen: n.aenderungen!.map((x, i) => (i === a.aenderung ? { ...x, status, ...(status === 'fehler' ? { ergebnis: 'Makler wurde zwischenzeitlich geändert' } : {}) } : x)) };
       return structuredClone(g);
     },
     async gespraechLoeschen(id) { geloescht.push(id); return {}; },
@@ -136,6 +145,38 @@ describe('KI-Leiste', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Gespräch löschen: Frühere Frage' }));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Wirklich löschen' })); });
     expect(t.geloescht).toEqual(['alt']);
+  });
+
+  it('Änderung der KI: Karte mit Feldern (ohne Version); erst „Übernehmen“ speichert, danach lädt die App neu; Fehler und Verwerfen an der Karte', async () => {
+    const t = attrappe('Zwei Änderungen vorgeschlagen.', undefined, [
+      { werkzeug: 'update_makler', titel: 'Makler ändern', argumente: { id: 'm1', version: 1, prio: 'A', mobil: null } },
+      { werkzeug: 'update_makler', titel: 'Makler ändern', argumente: { id: 'm1', version: 0, webseite: 'https://b.example' } },
+      { werkzeug: 'add_communication', titel: 'Kommunikation beim Makler eintragen', argumente: { maklerId: 'm1', kanal: 'email', text: 'Angebot' } },
+    ]);
+    const neuLaden = vi.fn();
+    render(<KiLeisteRahmen transport={t}><Dialog b={{ art: 'makler', id: 'm1' }} /><KiLeiste nachAenderung={neuLaden} /></KiLeisteRahmen>);
+    await screen.findByText('Makler: Titel m1');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Frage an die KI' }), { target: { value: 'Prio A' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Senden' })); });
+    const karten = await screen.findAllByRole('group', { name: /^Änderung: / });
+    expect(karten).toHaveLength(3);
+    expect(karten[0]!.textContent).toContain('prioA');
+    expect(karten[0]!.textContent).toContain('mobil(leer)');
+    expect(karten[0]!.textContent).not.toContain('version');
+    expect(t.entschieden).toEqual([]);
+
+    await act(async () => { fireEvent.click(within(karten[0]!).getByRole('button', { name: 'Übernehmen' })); });
+    expect(t.entschieden).toEqual([{ gespraechId: 'g1', nachricht: 1, aenderung: 0, aktion: 'uebernehmen' }]);
+    expect(await screen.findByText('✓ Übernommen')).toBeTruthy();
+    expect(neuLaden).toHaveBeenCalledTimes(1);
+
+    await act(async () => { fireEvent.click(within(screen.getAllByRole('group', { name: /^Änderung: / })[1]!).getByRole('button', { name: 'Übernehmen' })); });
+    expect((await screen.findByRole('alert')).textContent).toContain('Nicht übernommen: Makler wurde zwischenzeitlich geändert');
+    expect(neuLaden).toHaveBeenCalledTimes(1);
+
+    await act(async () => { fireEvent.click(within(screen.getAllByRole('group', { name: /^Änderung: / })[2]!).getByRole('button', { name: 'Verwerfen' })); });
+    expect(await screen.findByText('Verworfen.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Übernehmen' })).toBeNull();
   });
 
   it('Titelvorschlag: erste Überschrift, sonst die Frage', () => {
