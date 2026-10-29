@@ -12,23 +12,27 @@
  *  • Protokollfehler sind JSON-RPC-Fehler, Werkzeugfehler ein Ergebnis mit `isError`.
  */
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { AnrufErgebnisSpeichern, KommunikationAnlegen, MaklerAendern, MaklerAnlegen, MaklerPersoenlich, ObjektAendern, ObjektAnlegen } from '@gg/api-contract';
 import { type Db, schema } from '@gg/db';
 import {
-  type GedaechtnisArt, LOKALE_SCOPES, MCP_FEHLERTEXTE, type McpFehlerCode, MCP_KEYS_ENV, type McpScope, MCP_SERVER_NAME, MCP_SERVER_VERSION,
-  mcpSchluesselAusKopf, nachweislichLokal, schluesselVerzeichnis, type Umgebung, werkzeugErlaubt, werkzeugVerzeichnis,
+  anlegenTrotzTreffern, feldAenderungen, type GedaechtnisArt, LOKALE_SCOPES, maklerKandidaten, maklerSuchen, MCP_FEHLERTEXTE, type McpFehlerCode,
+  MCP_KEYS_ENV, type McpScope, MCP_SERVER_NAME, MCP_SERVER_VERSION, mcpSchluesselAusKopf, nachweislichLokal, objektKandidaten,
+  schluesselVerzeichnis, type Umgebung, werkzeugErlaubt, werkzeugVerzeichnis,
 } from '@gg/domain';
 import type { GedaechtnisDienst } from '@gg/integrations';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { z } from 'zod';
 import { FachFehler } from '../fehler.ts';
+import { anrufErgebnis, dealAnrufErgebnis, terminSetzen } from './ankauf.ts';
 import { auditListe, auditSchreiben } from './audit.ts';
-import { dealDetail, dealListe } from './deals.ts';
+import { dealDetail, dealErledigt, dealListe } from './deals.ts';
 import { dokumenteListe } from './dealDokumente.ts';
 import { gedaechtnisAblegen, gedaechtnisEintraege, gedaechtnisSuchen } from './gedaechtnis.ts';
 import { freigabeBeantragen } from './outward.ts';
 import { begleitscheinDetail } from './begleitscheine.ts';
 import { kundenkalkulationDetail } from './kundenkalkulationen.ts';
-import { maklerDetail, maklerListe } from './makler.ts';
-import { objektDetail, objekteListe } from './objekte.ts';
+import { kommunikationAnlegen, maklerAendern, maklerAnlegen, maklerDetail, maklerErledigt, maklerListe, maklerPersoenlichSpeichern } from './makler.ts';
+import { objektAendern, objektAnlegen, objektDetail, objekteListe } from './objekte.ts';
 import { projektDetail } from './projekte.ts';
 import { vertriebslisteDetail } from './vertriebslisten.ts';
 
@@ -119,6 +123,55 @@ async function ausDemGedaechtnis<T>(f: () => Promise<T>): Promise<T> {
   }
 }
 
+// ── Schreiben (29.10.2026): dieselben Verträge und Services wie die App ──
+
+const heuteBerlin = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' }).format(new Date());
+
+/** Werkzeug-Argumente gegen den Vertrag der App; ein unbekanntes Feld ist ein Fehler, kein stilles Weglassen. */
+function pruefen<S extends z.ZodObject>(vertrag: S, args: Record<string, unknown>): z.output<S> {
+  const r = vertrag.strict().safeParse(args);
+  if (r.success) return r.data as z.output<S>;
+  throw new McpWerkzeugFehler(`Eingabe ungültig: ${r.error.issues.map((i) => `${i.path.join('.') || 'Eingabe'}: ${i.message}`).join('; ')}`);
+}
+/** Eingabeschema für Claude aus demselben Vertrag — was hier steht, ist zugleich die Liste der erlaubten Felder. */
+const alsSchema = (vertrag: z.ZodObject) => z.toJSONSchema(vertrag.strict(), { io: 'input', unrepresentable: 'any' }) as Record<string, unknown>;
+
+/** Jede Änderung über Claude steht im Audit-Log: alter und neuer Wert, Werkzeug und Schlüssel. */
+const protokollieren = (db: Db, sitzung: McpSitzung, e: { werkzeug: string; entity: string; entityId: string; action: string; alt?: unknown; neu?: unknown }) =>
+  auditSchreiben(db, {
+    type: 'mutation', entity: e.entity, entityId: e.entityId, action: e.action, collection: e.entity, source: `mcp/${e.werkzeug}`,
+    oldValue: e.alt, newValue: e.neu, metadata: { mcp: sitzung.label, ueber: 'Claude (MCP)' },
+  });
+
+const Id = z.string().trim().min(1);
+const Version = z.number().int().describe('Version aus read_entity. Hat jemand den Datensatz inzwischen geändert, lehnt gg ab: neu lesen, dann erneut.');
+const TrotzdemAnlegen = z.boolean().optional().describe('Nur setzen, wenn die gemeldeten ähnlichen Einträge geprüft wurden und keiner gemeint ist.');
+const Ziel = z.enum(['makler', 'deals']);
+
+/** Makler ändern: alle Felder der App außer „letzter Kontakt“ (den setzt die Kommunikation), dazu der Persönlich-Reiter. */
+const MaklerAendernMcp = MaklerAendern.omit({ lastContact: true }).extend({
+  id: Id, version: Version,
+  geburtsdatum: MaklerPersoenlich.shape.geburtsdatum.optional(), anredeForm: MaklerPersoenlich.shape.anredeForm.optional(),
+});
+/** Makler anlegen: Grundfelder wie im Dialog „Neuer Makler“, dazu Kontakt- und Herkunftsfelder. */
+const MaklerZusatz = MaklerAendern.pick({ webseite: true, mobil: true, festnetz: true, strasse: true, plz: true, ort: true, anrede: true, position: true, hinweis: true, quelle: true, nextContact: true });
+const MaklerNeuMcp = MaklerAnlegen.extend({ ...MaklerZusatz.shape, trotzdemAnlegen: TrotzdemAnlegen });
+const KommunikationMcp = KommunikationAnlegen.extend({ maklerId: Id });
+const TerminMcp = z.object({ collection: Ziel, id: Id, version: Version, nextContact: z.iso.date().nullable().describe('JJJJ-MM-TT; null entfernt den Termin') });
+const ErledigtMcp = z.object({ collection: Ziel, id: Id, version: Version });
+const AnrufMcp = AnrufErgebnisSpeichern.extend({
+  collection: Ziel, id: Id, version: Version,
+  notiz: AnrufErgebnisSpeichern.shape.notiz.optional(),
+  frequenz: AnrufErgebnisSpeichern.shape.frequenz.optional().describe('Ohne Angabe bleibt die bisherige Frequenz'),
+  rueckrufDatum: AnrufErgebnisSpeichern.shape.rueckrufDatum.optional(),
+});
+const ObjektNeuMcp = ObjektAnlegen.extend({ trotzdemAnlegen: TrotzdemAnlegen });
+/** Objekt ändern ohne die Einheitenaufstellung — die ersetzt die ganze Liste und bleibt der App vorbehalten. */
+const ObjektAendernMcp = ObjektAendern.omit({ einheiten: true }).extend({ id: Id, version: Version });
+
+const maklerKurz = (m: { id: string; name: string | null; firma: string | null; email: string | null; tel: string | null; prio: string | null; version: number }) =>
+  ({ id: m.id, name: m.name, firma: m.firma, email: m.email, tel: m.tel, prio: m.prio, version: m.version });
+
 export const MCP_WERKZEUGE: Werkzeug[] = [
   {
     name: 'list_collections', scope: 'read', title: 'Bestände auflisten',
@@ -179,8 +232,130 @@ export const MCP_WERKZEUGE: Werkzeug[] = [
     },
   },
   {
+    name: 'find_makler', scope: 'read', title: 'Makler suchen',
+    description: 'Sucht Makler nach Name, Firma, E-Mail oder Telefon (jedes Wort muss vorkommen). Vor dem Anlegen oder Ändern nutzen.',
+    inputSchema: { type: 'object', properties: { suche: { type: 'string' }, limit: { type: 'number' } }, required: ['suche'], additionalProperties: false },
+    async run(db, args) {
+      const treffer = maklerSuchen(await maklerListe(db), text(args, 'suche'), Math.min(Math.max(zahl(args, 'limit', 20), 1), 100));
+      return { treffer: treffer.map(maklerKurz) };
+    },
+  },
+  {
+    name: 'create_makler', scope: 'write', title: 'Makler anlegen',
+    description: 'Legt einen Makler an. Vorher prüft gg auf Dubletten: gleiche E-Mail oder Telefonnummer sperrt (dann update_makler), '
+      + 'ein ähnlicher Name sperrt, bis "trotzdemAnlegen": true gesetzt ist. Gibt die Kandidaten zurück.',
+    inputSchema: alsSchema(MaklerNeuMcp),
+    async run(db, args, sitzung) {
+      const { trotzdemAnlegen, ...e } = pruefen(MaklerNeuMcp, args);
+      if (!e.name?.trim() && !e.firma?.trim()) throw new McpWerkzeugFehler('Name oder Firma angeben.');
+      const kandidaten = maklerKandidaten(e, await maklerListe(db));
+      const darf = anlegenTrotzTreffern(kandidaten, trotzdemAnlegen ?? false);
+      if (!darf.ok) return { angelegt: false, grund: darf.grund, kandidaten: kandidaten.map((k) => ({ ...maklerKurz(k.eintrag), sicherheit: k.sicherheit, grund: k.grund })) };
+      const { vorname, name, firma, tel, email, prio, kontaktFrequenz, ...zusatz } = e;
+      const neu = await maklerAnlegen(db, { vorname, name, firma, tel, email, prio, kontaktFrequenz });
+      const version = Object.values(zusatz).some((v) => v !== undefined) ? (await maklerAendern(db, neu.id, { version: neu.version, ...zusatz })).version : neu.version;
+      await protokollieren(db, sitzung, { werkzeug: 'create_makler', entity: 'makler', entityId: neu.id, action: 'mcp-create', neu: e });
+      return { angelegt: true, id: neu.id, version };
+    },
+  },
+  {
+    name: 'update_makler', scope: 'write', title: 'Makler ändern',
+    description: 'Ändert Felder eines Maklers (Kontakt, Firma, Webseite, Anschrift, Prio, Frequenz, Hinweis, Geburtstag …). '
+      + 'Nur mitgegebene Felder ändern sich; "" leert ein Feld. Firma, Webseite und Anschrift gelten für das Unternehmen.',
+    inputSchema: alsSchema(MaklerAendernMcp),
+    async run(db, args, sitzung) {
+      const { id, geburtsdatum, anredeForm, ...e } = pruefen(MaklerAendernMcp, args);
+      const vorher = await maklerDetail(db, id);
+      const { version } = await maklerAendern(db, id, e);
+      const persoenlich = (vorher.persoenlich ?? {}) as { geburtsdatum?: string; anredeForm?: '' | 'du' | 'sie' };
+      if (geburtsdatum !== undefined || anredeForm !== undefined) {
+        await maklerPersoenlichSpeichern(db, id, { geburtsdatum: geburtsdatum ?? persoenlich.geburtsdatum ?? '', anredeForm: anredeForm ?? persoenlich.anredeForm ?? '' });
+      }
+      const aenderungen = feldAenderungen({ ...vorher, ...persoenlich }, { ...e, geburtsdatum, anredeForm });
+      await protokollieren(db, sitzung, { werkzeug: 'update_makler', entity: 'makler', entityId: id, action: 'mcp-update', alt: Object.fromEntries(aenderungen.map((a) => [a.feld, a.alt])), neu: Object.fromEntries(aenderungen.map((a) => [a.feld, a.neu])) });
+      return { id, version: (await maklerDetail(db, id)).version, geaendert: aenderungen.map((a) => a.feld) };
+    },
+  },
+  {
+    name: 'add_communication', scope: 'write', title: 'Kommunikation beim Makler eintragen',
+    description: 'Trägt eine Mail, einen Anruf, eine WhatsApp oder eine Notiz in die Kommunikation des Maklers ein. '
+      + 'Mit "datum" (Tag der Mail) rückt der letzte Kontakt auf diesen Tag, ohne auf heute — nie zurück.',
+    inputSchema: alsSchema(KommunikationMcp),
+    async run(db, args, sitzung) {
+      const { maklerId, ...e } = pruefen(KommunikationMcp, args);
+      const neu = await kommunikationAnlegen(db, maklerId, e, heuteBerlin());
+      await protokollieren(db, sitzung, { werkzeug: 'add_communication', entity: 'makler', entityId: maklerId, action: 'mcp-kommunikation', neu: e });
+      return { id: neu.id, maklerId };
+    },
+  },
+  {
+    name: 'set_next_contact', scope: 'write', title: 'Nächsten Kontakt setzen',
+    description: 'Setzt den nächsten Kontakttermin eines Maklers oder Deals (null entfernt ihn).',
+    inputSchema: alsSchema(TerminMcp),
+    async run(db, args, sitzung) {
+      const e = pruefen(TerminMcp, args);
+      const r = await terminSetzen(db, e.collection, e.id, e.version, e.nextContact);
+      await protokollieren(db, sitzung, { werkzeug: 'set_next_contact', entity: e.collection === 'deals' ? 'deal' : 'makler', entityId: e.id, action: 'mcp-termin', neu: { nextContact: e.nextContact } });
+      return r;
+    },
+  },
+  {
+    name: 'mark_done', scope: 'write', title: 'Als erledigt markieren',
+    description: '„Erledigt“ wie im Cockpit: letzter Kontakt heute, nächster nach der Kontakt- bzw. Nachfassfrequenz.',
+    inputSchema: alsSchema(ErledigtMcp),
+    async run(db, args, sitzung) {
+      const e = pruefen(ErledigtMcp, args);
+      const r = e.collection === 'deals' ? await dealErledigt(db, e.id, e.version, heuteBerlin()) : await maklerErledigt(db, e.id, e.version, heuteBerlin());
+      await protokollieren(db, sitzung, { werkzeug: 'mark_done', entity: e.collection === 'deals' ? 'deal' : 'makler', entityId: e.id, action: 'mcp-erledigt', neu: r });
+      return r;
+    },
+  },
+  {
+    name: 'log_call_result', scope: 'write', title: 'Anruf-Ergebnis eintragen',
+    description: 'Wie in der Wählmaschine: Ergebnis (erreicht, nicht, rueckruf) mit Notiz; setzt letzten und nächsten Kontakt. '
+      + 'Am Makler wird die Notiz ein Anruf in der Kommunikation, am Deal ein Kommentar.',
+    inputSchema: alsSchema(AnrufMcp),
+    async run(db, args, sitzung) {
+      const { collection, id, ...e } = pruefen(AnrufMcp, args);
+      const deal = collection === 'deals';
+      const frequenz = e.frequenz ?? (deal ? (await dealDetail(db, id)).nachfassFrequenz : (await maklerDetail(db, id)).kontaktFrequenz) ?? 'Monatlich';
+      const eingabe = { version: e.version, ergebnis: e.ergebnis, notiz: e.notiz ?? '', frequenz, rueckrufDatum: e.rueckrufDatum ?? null };
+      const r = deal ? await dealAnrufErgebnis(db, id, eingabe, heuteBerlin()) : await anrufErgebnis(db, id, eingabe, heuteBerlin());
+      await protokollieren(db, sitzung, { werkzeug: 'log_call_result', entity: deal ? 'deal' : 'makler', entityId: id, action: 'mcp-anruf', neu: eingabe });
+      return r;
+    },
+  },
+  {
+    name: 'create_objekt', scope: 'write', title: 'Objekt anlegen',
+    description: 'Legt ein Objekt an. Gleiche Adresse sperrt (dann update_objekt), eine ähnliche Adresse sperrt, bis "trotzdemAnlegen": true gesetzt ist.',
+    inputSchema: alsSchema(ObjektNeuMcp),
+    async run(db, args, sitzung) {
+      const { trotzdemAnlegen, ...e } = pruefen(ObjektNeuMcp, args);
+      if (!e.strasse?.trim() && !e.stadt?.trim()) throw new McpWerkzeugFehler('Straße oder Stadt angeben.');
+      const kandidaten = objektKandidaten(e, await objekteListe(db));
+      const darf = anlegenTrotzTreffern(kandidaten, trotzdemAnlegen ?? false);
+      if (!darf.ok) return { angelegt: false, grund: darf.grund, kandidaten: kandidaten.map((k) => ({ ...k.eintrag, sicherheit: k.sicherheit, grund: k.grund })) };
+      const neu = await objektAnlegen(db, e);
+      await protokollieren(db, sitzung, { werkzeug: 'create_objekt', entity: 'objekt', entityId: neu.id, action: 'mcp-create', neu: e });
+      return { angelegt: true, id: neu.id, version: neu.version };
+    },
+  },
+  {
+    name: 'update_objekt', scope: 'write', title: 'Objekt ändern',
+    description: 'Ändert Felder eines Objekts (Adresse, Baujahr, Flächen, Preise, Mieten, Notizen …); null leert eine Zahl. Die Einheitenaufstellung bleibt der App vorbehalten.',
+    inputSchema: alsSchema(ObjektAendernMcp),
+    async run(db, args, sitzung) {
+      const { id, ...e } = pruefen(ObjektAendernMcp, args);
+      const vorher = await objektDetail(db, id);
+      const r = await objektAendern(db, id, e);
+      const aenderungen = feldAenderungen(vorher, e);
+      await protokollieren(db, sitzung, { werkzeug: 'update_objekt', entity: 'objekt', entityId: id, action: 'mcp-update', alt: Object.fromEntries(aenderungen.map((a) => [a.feld, a.alt])), neu: Object.fromEntries(aenderungen.map((a) => [a.feld, a.neu])) });
+      return { ...r, geaendert: aenderungen.map((a) => a.feld) };
+    },
+  },
+  {
     name: 'add_note', scope: 'write', title: 'Notiz anlegen',
-    description: 'Hängt einen Kommentar an einen Deal — der einzige Schreibweg dieses Servers.',
+    description: 'Hängt einen Kommentar an einen Deal.',
     inputSchema: { type: 'object', properties: { dealId: { type: 'string' }, text: { type: 'string' } }, required: ['dealId', 'text'], additionalProperties: false },
     async run(db, args, sitzung) {
       const dealId = text(args, 'dealId');
@@ -276,7 +451,10 @@ export async function mcpAufruf(db: Db, nachricht: any, sitzung: McpSitzung, umf
         protocolVersion: '2024-11-05',
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
-        instructions: `Angemeldet als "${sitzung.label}" mit den Bereichen ${sitzung.scopes.join(', ')}.`,
+        instructions: `Angemeldet als "${sitzung.label}" mit den Bereichen ${sitzung.scopes.join(', ')}.`
+          + (sitzung.scopes.includes('write')
+            ? ' Vor dem Anlegen mit find_makler bzw. read_collection prüfen, ob es den Eintrag schon gibt; vor dem Ändern mit read_entity die aktuelle "version" lesen. Jede Änderung steht im Audit-Log.'
+            : ''),
       });
     case 'notifications/initialized':
       return null;
@@ -300,6 +478,8 @@ export async function mcpAufruf(db: Db, nachricht: any, sitzung: McpSitzung, umf
         return ergebnis(id, { content: [{ type: 'text', text: JSON.stringify(wert, null, 1) }], isError: false });
       } catch (e) {
         if (e instanceof McpWerkzeugFehler) return ergebnis(id, { content: [{ type: 'text', text: e.message }], isError: true });
+        // Fachfehler der Services (nicht gefunden, Version veraltet …) sagen Claude, was zu tun ist
+        if (e instanceof FachFehler) return ergebnis(id, { content: [{ type: 'text', text: e.details ? `${e.message} ${JSON.stringify(e.details)}` : e.message }], isError: true });
         console.error(`[mcp] Werkzeug "${name}" fehlgeschlagen:`, e);
         return ergebnis(id, { content: [{ type: 'text', text: `Das Werkzeug "${name}" ist fehlgeschlagen. Einzelheiten stehen im Server-Log.` }], isError: true });
       }
