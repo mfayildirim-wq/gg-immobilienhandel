@@ -74,6 +74,30 @@ test('KI-Leiste: roter Kreis öffnet die Leiste zum offenen Dialog; Chat, Werkze
   await expect(page.getByRole('button', { name: 'KI-Leiste öffnen' })).toBeVisible();
 });
 
+test('KI-Leiste: Änderung nur mit Bestätigung — Karte zeigt die Felder, „Übernehmen“ speichert am Makler', async ({ page }) => {
+  const name = `Ändern ${Date.now()}`;
+  const m = await (await page.request.post('/api/makler', { data: { name, tel: '0711 3', prio: 'B' } })).json();
+  await page.goto(`/makler?makler=${m.id}`);
+  const leiste = page.getByRole('region', { name: 'KI-Leiste' });
+  if (!(await leiste.isVisible())) await page.getByRole('button', { name: 'KI-Leiste öffnen' }).click();
+  await expect(leiste.locator(`[data-ki-bezug="makler:${m.id}"]`)).toContainText(name);
+
+  // Die Attrappe ruft das Schreibwerkzeug — es wird zur Karte, gespeichert ist noch nichts
+  const frage = leiste.getByRole('textbox', { name: 'Frage an die KI' });
+  await frage.fill(`werkzeug:update_makler {"id":"${m.id}","version":${m.version},"prio":"A","hinweis":"über die Leiste"}`);
+  await frage.press('Enter');
+  const karte = leiste.getByRole('group', { name: 'Änderung: Makler ändern' });
+  await expect(karte).toContainText('prio');
+  await expect(karte).toContainText('über die Leiste');
+  await expect(karte).not.toContainText('version');
+  expect((await (await page.request.get(`/api/makler/${m.id}`)).json()).prio).toBe('B');
+
+  await karte.getByRole('button', { name: 'Übernehmen' }).click();
+  await expect(karte).toContainText('✓ Übernommen');
+  await expect(karte.getByRole('button', { name: 'Übernehmen' })).toHaveCount(0);
+  expect(await (await page.request.get(`/api/makler/${m.id}`)).json()).toMatchObject({ prio: 'A', hinweis: 'über die Leiste' });
+});
+
 test('KI-Leiste: linken Rand ziehen macht sie breiter — höchstens bis zur Fenstermitte, gemerkt; Doppelklick stellt 440 px wieder her', async ({ page }) => {
   await page.goto('/');
   const leiste = page.getByRole('region', { name: 'KI-Leiste' });

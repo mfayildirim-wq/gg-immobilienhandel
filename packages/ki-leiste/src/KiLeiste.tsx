@@ -1,12 +1,13 @@
 /**
  * Die Leiste rechts: oben der grüne Sprechkreis mit dem Dialog, in dem man gerade ist, und ⚙ für Modell und Gedächtnis;
  * darunter der Chat; unten Verlauf und Gedächtnis zu diesem Dialog. Jede Antwort lässt sich mit Titel im Gedächtnis ablegen.
+ * Schlägt die KI Änderungen an Daten vor, stehen sie als Karten unter der Antwort — gespeichert wird erst mit „Übernehmen“.
  *
  * Kein UI-Baukasten, nur React und `ki-leiste.css` (Farben über --ki-*), damit jede App sie einbauen kann.
  * Markdown wandelt die App (`darstellen`, muss bereinigtes HTML liefern); ohne sie erscheint der Text unverändert.
  */
 import { type FormEvent, type KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react';
-import type { KiBezugSicht, KiEinstellungen, KiGedaechtnisEintrag, KiGespraech, KiGespraechKopf, KiNachricht, KiStand } from '@gg/ki-kern/vertrag';
+import type { KiAenderung, KiBezugSicht, KiEinstellungen, KiGedaechtnisEintrag, KiGespraech, KiGespraechKopf, KiNachricht, KiStand } from '@gg/ki-kern/vertrag';
 import { useKiLeiste } from './kontext.tsx';
 import { Sprechkreis } from './Sprechkreis.tsx';
 
@@ -15,6 +16,8 @@ export const KI_GRUEN = '#2b8a3e';
 export interface KiLeisteProps {
   /** Markdown → bereinigtes HTML */
   darstellen?: (markdown: string) => string;
+  /** Nach einer übernommenen Änderung: die App lädt ihre Daten neu */
+  nachAenderung?: () => void;
 }
 
 const QUELLE: Record<string, string> = { api: 'aus der App', ki: 'gemerkt', hand: 'korrigiert', ablage: 'abgelegt', mcp: 'Claude' };
@@ -26,7 +29,7 @@ function Inhalt({ text, darstellen }: { text: string; darstellen?: (md: string) 
   return <div className="kl-text" dangerouslySetInnerHTML={{ __html: darstellen(text) }} />;
 }
 
-export function KiLeiste({ darstellen }: KiLeisteProps) {
+export function KiLeiste({ darstellen, nachAenderung }: KiLeisteProps) {
   const { transport, bezug, setOffen } = useKiLeiste();
   const [stand, setStand] = useState<KiStand | null>(null);
   const [sicht, setSicht] = useState<KiBezugSicht | null>(null);
@@ -138,7 +141,12 @@ export function KiLeiste({ darstellen }: KiLeisteProps) {
               setGespraech(await transport.gespraech(gespraech.id));
               void sichtLaden();
             } : undefined}
-            verwerfen={gespraech ? async () => setGespraech(await transport.vorschlagVerwerfen({ gespraechId: gespraech.id, nachricht: i })) : undefined} />
+            verwerfen={gespraech ? async () => setGespraech(await transport.vorschlagVerwerfen({ gespraechId: gespraech.id, nachricht: i })) : undefined}
+            entscheiden={gespraech ? async (aenderung, aktion) => {
+              const g = await transport.aenderungEntscheiden({ gespraechId: gespraech.id, nachricht: i, aenderung, aktion });
+              setGespraech(g);
+              if (g.nachrichten[i]?.aenderungen?.[aenderung]?.status === 'uebernommen') { nachAenderung?.(); void sichtLaden(); }
+            } : undefined} />
         ))}
         {wartend && <p className="kl-denkt" role="status">Denkt nach …</p>}
         <div ref={ende} />
@@ -180,9 +188,10 @@ export function KiLeiste({ darstellen }: KiLeisteProps) {
 }
 
 type Ablegen = (titel: string, text: string) => Promise<void>;
+type Entscheiden = (aenderung: number, aktion: 'uebernehmen' | 'verwerfen') => Promise<void>;
 
-function Nachricht({ n, darstellen, frage, ablegen, verwerfen }: {
-  n: KiNachricht; darstellen?: (md: string) => string; frage?: string; ablegen?: Ablegen; verwerfen?: () => Promise<void>;
+function Nachricht({ n, darstellen, frage, ablegen, verwerfen, entscheiden }: {
+  n: KiNachricht; darstellen?: (md: string) => string; frage?: string; ablegen?: Ablegen; verwerfen?: () => Promise<void>; entscheiden?: Entscheiden;
 }) {
   if (n.rolle === 'nutzer') return <div className="kl-nutzer" data-ki-nachricht="nutzer">{n.text}</div>;
   const werkzeuge = (n.schritte ?? []).filter((s) => s.art === 'werkzeug' && s.name !== 'gedaechtnis_vorschlagen');
@@ -201,11 +210,48 @@ function Nachricht({ n, darstellen, frage, ablegen, verwerfen }: {
         {suchen.length > 0 && <span title={suchen.map((s) => s.kurz).join('\n')}>🌐 {suchen.length}× gesucht</span>}
         {n.gedaechtnis !== undefined && <span>🧠 {n.gedaechtnis} aus dem Gedächtnis</span>}
       </div>
+      {n.aenderungen?.map((a, j) => <Aenderung key={j} a={a} entscheiden={entscheiden ? (aktion) => entscheiden(j, aktion) : undefined} />)}
       {n.abgelegt ? <p className="kl-abgelegt" role="status">✓ Im Gedächtnis abgelegt: {n.abgelegt}</p>
         : offenerVorschlag && ablegen ? <Vorschlag titel={offenerVorschlag.titel} text={offenerVorschlag.text} ablegen={ablegen} verwerfen={verwerfen} />
         : n.vorschlag?.status === 'verworfen' ? <p className="kl-leer kl-klein">Vorschlag fürs Gedächtnis verworfen.</p>
         : ablegen ? <Ablegen vorschlag={titelVorschlag(n.text, frage)} text={n.text} ablegen={ablegen} /> : null}
     </article>
+  );
+}
+
+/** Wert für die Karte: Text unverändert, sonst kurz als JSON */
+const wertText = (v: unknown) => (v === null ? '(leer)' : typeof v === 'string' ? (v || '(leer)') : JSON.stringify(v));
+/** Technisches für die Prüfung weglassen — die Version prüft der Server beim Übernehmen */
+const VERBORGEN = new Set(['version']);
+
+/** Die KI schlägt eine Änderung an Daten vor — erst „Übernehmen“ führt sie aus. */
+function Aenderung({ a, entscheiden }: { a: KiAenderung; entscheiden?: (aktion: 'uebernehmen' | 'verwerfen') => Promise<void> }) {
+  const [laeuft, setLaeuft] = useState(false);
+  const [fehler, setFehler] = useState('');
+  const felder = Object.entries(a.argumente).filter(([k]) => !VERBORGEN.has(k));
+  const tun = async (aktion: 'uebernehmen' | 'verwerfen') => {
+    if (!entscheiden) return;
+    setLaeuft(true);
+    setFehler('');
+    try { await entscheiden(aktion); } catch (e) { setFehler(fehlerText(e)); } finally { setLaeuft(false); }
+  };
+  return (
+    <div className="kl-vorschlag kl-aenderung" role="group" aria-label={`Änderung: ${a.titel}`} data-ki-aenderung={a.status ?? 'offen'}>
+      <strong>✏️ {a.titel}</strong>
+      <dl className="kl-felder">
+        {felder.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{wertText(v)}</dd></div>)}
+      </dl>
+      {a.status === 'uebernommen' ? <p className="kl-abgelegt" role="status">✓ Übernommen</p>
+        : a.status === 'verworfen' ? <p className="kl-leer kl-klein">Verworfen.</p>
+        : a.status === 'fehler' ? <p className="kl-fehler" role="alert">Nicht übernommen: {a.ergebnis}</p>
+        : entscheiden && (
+          <div className="kl-knoepfe">
+            <button type="button" disabled={laeuft} onClick={() => void tun('uebernehmen')}>Übernehmen</button>
+            <button type="button" className="kl-zweit" disabled={laeuft} onClick={() => void tun('verwerfen')}>Verwerfen</button>
+          </div>
+        )}
+      {fehler && <span className="kl-fehler" role="alert">{fehler}</span>}
+    </div>
   );
 }
 

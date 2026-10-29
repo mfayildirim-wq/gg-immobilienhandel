@@ -13,6 +13,7 @@ import {
   IconMail,
   IconSearch,
   IconUsers, IconChecklist, IconTableShare, IconChartBar, IconBellRinging } from '@tabler/icons-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { type CSSProperties, Fragment, type KeyboardEvent as TastenEreignis, type PointerEvent as ZeigerEreignis, useEffect, useRef, useState } from 'react';
 import teilerCss from './GeteilteAnsicht.module.css';
@@ -62,6 +63,7 @@ export function AppRahmen() {
  * als Ebene über dem Inhalt, ohne ihn zu verschieben.
  */
 function Rahmen() {
+  const queryClient = useQueryClient();
   const ki = useKiLeiste();
   // Einmal geöffnet bleibt die Leiste aufgebaut — Zuklappen behält das laufende Gespräch
   const [kiAufgebaut, setKiAufgebaut] = useState(ki.offen);
@@ -270,7 +272,7 @@ function Rahmen() {
             onKeyDown={kiTaste} onDoubleClick={() => setKiGemerkt(null)}
           />
         )}
-        {kiAufgebaut && <KiLeiste darstellen={markdownAlsHtml} />}
+        {kiAufgebaut && <KiLeiste darstellen={markdownAlsHtml} nachAenderung={() => void queryClient.invalidateQueries()} />}
       </Box>
 
       <GlobaleSuche offen={sucheOffen} schliessen={suche.close} />

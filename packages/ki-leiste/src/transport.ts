@@ -2,7 +2,7 @@
  * Wie die Leiste mit dem KI-Dienst spricht. Heute: `/api/ki-leiste` der eigenen App; als eigener Dienst nur eine andere
  * Basisadresse. `holen` bringt die Anmeldung mit (gg: Bearer-Token der Sitzung).
  */
-import type { KiAblegen, KiBezug, KiBezugSicht, KiEinstellungen, KiGespraech, KiGespraechKopf, KiSenden, KiStand, KiVorschlagVerwerfen } from '@gg/ki-kern/vertrag';
+import type { KiAblegen, KiAenderungEntscheiden, KiBezug, KiBezugSicht, KiEinstellungen, KiGespraech, KiGespraechKopf, KiSenden, KiStand, KiVorschlagVerwerfen } from '@gg/ki-kern/vertrag';
 
 export interface KiTransport {
   stand(): Promise<KiStand>;
@@ -13,6 +13,7 @@ export interface KiTransport {
   senden(s: KiSenden): Promise<KiGespraech>;
   ablegen(a: KiAblegen): Promise<unknown>;
   vorschlagVerwerfen(v: KiVorschlagVerwerfen): Promise<KiGespraech>;
+  aenderungEntscheiden(a: KiAenderungEntscheiden): Promise<KiGespraech>;
   gespraechLoeschen(id: string): Promise<unknown>;
 }
 
@@ -39,6 +40,7 @@ export function httpTransport(basis: string, holen: Holen = (u, i) => fetch(u, i
     senden: (x) => rufe('/senden', 'POST', x),
     ablegen: (x) => rufe('/ablegen', 'POST', x),
     vorschlagVerwerfen: (x) => rufe('/vorschlag-verwerfen', 'POST', x),
+    aenderungEntscheiden: (x) => rufe('/aenderung', 'POST', x),
     gespraechLoeschen: (id) => rufe(`/gespraeche/${e(id)}`, 'DELETE'),
   };
 }

@@ -140,7 +140,8 @@ const alsSchema = (vertrag: z.ZodObject) => z.toJSONSchema(vertrag.strict(), { i
 const protokollieren = (db: Db, sitzung: McpSitzung, e: { werkzeug: string; entity: string; entityId: string; action: string; alt?: unknown; neu?: unknown }) =>
   auditSchreiben(db, {
     type: 'mutation', entity: e.entity, entityId: e.entityId, action: e.action, collection: e.entity, source: `mcp/${e.werkzeug}`,
-    oldValue: e.alt, newValue: e.neu, metadata: { mcp: sitzung.label, ueber: 'Claude (MCP)' },
+    // Die KI-Leiste schreibt nur, was der angemeldete Nutzer per Karte übernommen hat (Label `leiste:<nutzer>`)
+    oldValue: e.alt, newValue: e.neu, metadata: { mcp: sitzung.label, ueber: sitzung.label.startsWith('leiste:') ? 'KI-Leiste (vom Nutzer übernommen)' : 'Claude (MCP)' },
   });
 
 const Id = z.string().trim().min(1);

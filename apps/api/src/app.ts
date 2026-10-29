@@ -1,5 +1,5 @@
 import {
-  KiAblegen, KiBezugSicht, KiEinstellungen, KiGespraech, KiGespraechKopf, KiSenden, KiStand, KiVorschlagVerwerfen,
+  KiAblegen, KiBezugSicht, KiEinstellungen, KiGespraech, KiGespraechKopf, KiSenden, KiStand, KiVorschlagVerwerfen, KiAenderungEntscheiden,
   GedaechtnisAblage,
   GedaechtnisArtParam,
   GedaechtnisEintrag,
@@ -813,6 +813,10 @@ export function createApp({ db, auth: authOpt, expose, gedaechtnis: gedaechtnisO
   app.openapi(
     createRoute({ method: 'post', path: '/api/ki-leiste/vorschlag-verwerfen', request: body(KiVorschlagVerwerfen), responses: { 200: json(KiGespraech, 'Gespräch'), 404: fehler('nicht gefunden') } }),
     async (c) => c.json(await leiste.vorschlagVerwerfen(c.req.valid('json')), 200),
+  );
+  app.openapi(
+    createRoute({ method: 'post', path: '/api/ki-leiste/aenderung', request: body(KiAenderungEntscheiden), responses: { 200: json(KiGespraech, 'Gespräch mit entschiedener Karte'), 404: fehler('nicht gefunden'), 422: fehler('schon entschieden') } }),
+    async (c) => c.json(await leiste.aenderungEntscheiden(c.req.valid('json'), c.get('nutzer') ?? 'unbekannt'), 200),
   );
   app.openapi(
     createRoute({ method: 'post', path: '/api/ki-leiste/senden', request: body(KiSenden), responses: { 200: json(KiGespraech, 'Gespräch mit Antwort'), 503: fehler('KI nicht eingerichtet') } }),

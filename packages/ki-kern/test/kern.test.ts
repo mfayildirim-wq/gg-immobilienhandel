@@ -68,7 +68,7 @@ describe('Werkzeuge aus MCP', () => {
 });
 
 describe('KI-Dienst', () => {
-  const aufbau = (o: { gedaechtnis?: KiGedaechtnisEintrag[] | 'kaputt' | null; modell?: ReturnType<typeof drehbuchModell> | null } = {}) => {
+  const aufbau = (o: { gedaechtnis?: KiGedaechtnisEintrag[] | 'kaputt' | null; modell?: ReturnType<typeof drehbuchModell> | null; aendern?: (nutzer: string) => WerkzeugQuelle } = {}) => {
     let einstellungen: KiEinstellungen = { modell: 'm1', websuche: false, gedaechtnis: true };
     const abgelegt: unknown[] = [];
     const verlauf = verlaufImArbeitsspeicher();
@@ -78,6 +78,7 @@ describe('KI-Dienst', () => {
       modell: async () => (o.modell === null ? null : o.modell ?? attrappenModell()),
       modelle: [{ id: 'm1', label: 'Eins' }],
       werkzeuge: () => quelle(),
+      ...(o.aendern ? { aendern: o.aendern } : {}),
       gedaechtnis: async () => (o.gedaechtnis === null ? null : {
         async eintraege() { if (o.gedaechtnis === 'kaputt') throw new Error('Dienst weg'); return o.gedaechtnis ?? []; },
         async ablegen(bezug, titel, text, von) { abgelegt.push({ bezug, titel, text, von }); return { ok: true }; },
@@ -160,6 +161,64 @@ describe('KI-Dienst', () => {
     await dienst.senden({ text: 'Allgemein' }, 'anna');
     expect(modell.anfragen[3]!.tools.map((t) => t.name)).not.toContain('gedaechtnis_vorschlagen');
     expect(modell.anfragen[3]!.system).toContain('nur bei einem geöffneten Datensatz');
+  });
+
+  it('Änderungen: die KI schlägt vor (Karte), ausgeführt wird erst beim Übernehmen im Namen des Nutzers; je Karte einmal', async () => {
+    const ausgefuehrt: { nutzer: string; name: string; args: unknown }[] = [];
+    const aendern = (nutzer: string): WerkzeugQuelle => ({
+      async liste() { return [{ name: 'update_makler', title: 'Makler ändern', description: 'ändert', inputSchema: { type: 'object' } }]; },
+      async aufrufen(name, args) {
+        ausgefuehrt.push({ nutzer, name, args });
+        return (args as { version?: number }).version === 1 ? { text: '{"version":2}', fehler: false } : { text: 'Makler wurde zwischenzeitlich geändert', fehler: true };
+      },
+    });
+    const modell = drehbuchModell([
+      { content: [
+        { type: 'tool_use', id: 'a1', name: 'update_makler', input: { id: 'm1', version: 1, prio: 'A' } },
+        { type: 'tool_use', id: 'a2', name: 'update_makler', input: { id: 'm1', version: 0, mobil: '0171' } },
+      ], stop_reason: 'tool_use' },
+      { content: [{ type: 'text', text: 'Zwei Änderungen vorgeschlagen.' }], stop_reason: 'end_turn' },
+    ]);
+    const { dienst } = aufbau({ gedaechtnis: [], modell, aendern });
+    const g = await dienst.senden({ bezug: { art: 'makler', id: 'm1' }, text: 'Prio A und Mobil 0171' }, 'anna');
+    expect(ausgefuehrt).toEqual([]);
+    expect(g.nachrichten[1]!.aenderungen).toEqual([
+      { werkzeug: 'update_makler', titel: 'Makler ändern', argumente: { id: 'm1', version: 1, prio: 'A' } },
+      { werkzeug: 'update_makler', titel: 'Makler ändern', argumente: { id: 'm1', version: 0, mobil: '0171' } },
+    ]);
+    const angebot = modell.anfragen[0]!.tools.find((t) => t.name === 'update_makler')!;
+    expect(angebot.description).toMatch(/^\[Führt nichts aus/);
+    expect(modell.anfragen[0]!.system).toContain('Ändern geht nur per Vorschlag');
+    expect(modell.anfragen[0]!.messages).toHaveLength(1);
+    expect(modell.anfragen[1]!.messages[2]!.content).toEqual(expect.arrayContaining([expect.objectContaining({ content: expect.stringContaining('erst, wenn der Nutzer „Übernehmen“') })]));
+
+    const uebernommen = await dienst.aenderungEntscheiden({ gespraechId: g.id, nachricht: 1, aenderung: 0, aktion: 'uebernehmen' }, 'anna');
+    expect(ausgefuehrt).toEqual([{ nutzer: 'anna', name: 'update_makler', args: { id: 'm1', version: 1, prio: 'A' } }]);
+    expect(uebernommen.nachrichten[1]!.aenderungen![0]).toMatchObject({ status: 'uebernommen', ergebnis: '{"version":2}' });
+    await expect(dienst.aenderungEntscheiden({ gespraechId: g.id, nachricht: 1, aenderung: 0, aktion: 'uebernehmen' }, 'anna')).rejects.toThrow('schon entschieden');
+    // Fehler des Werkzeugs (z. B. veraltete Version) steht an der Karte
+    const fehler = await dienst.aenderungEntscheiden({ gespraechId: g.id, nachricht: 1, aenderung: 1, aktion: 'uebernehmen' }, 'anna');
+    expect(fehler.nachrichten[1]!.aenderungen![1]).toMatchObject({ status: 'fehler', ergebnis: 'Makler wurde zwischenzeitlich geändert' });
+    await expect(dienst.aenderungEntscheiden({ gespraechId: g.id, nachricht: 1, aenderung: 5, aktion: 'verwerfen' }, 'anna')).rejects.toThrow('Vorschlag nicht gefunden');
+  });
+
+  it('Änderungen verwerfen führt nichts aus; ohne `aendern` werden keine Schreibwerkzeuge angeboten', async () => {
+    const ausgefuehrt: string[] = [];
+    const aendern = (): WerkzeugQuelle => ({
+      async liste() { return [{ name: 'create_makler', description: 'legt an', inputSchema: { type: 'object' } }]; },
+      async aufrufen(name) { ausgefuehrt.push(name); return { text: 'ok', fehler: false }; },
+    });
+    const { dienst } = aufbau({ gedaechtnis: [], aendern });
+    const g = await dienst.senden({ bezug: { art: 'makler', id: 'm1' }, text: 'werkzeug:create_makler {"name":"Neu"}' }, 'u');
+    expect(g.nachrichten[1]!.aenderungen).toEqual([{ werkzeug: 'create_makler', titel: 'create_makler', argumente: { name: 'Neu' } }]);
+    const v = await dienst.aenderungEntscheiden({ gespraechId: g.id, nachricht: 1, aenderung: 0, aktion: 'verwerfen' }, 'u');
+    expect(v.nachrichten[1]!.aenderungen![0]!.status).toBe('verworfen');
+    expect(ausgefuehrt).toEqual([]);
+
+    const modell = drehbuchModell([{ content: [{ type: 'text', text: 'x' }], stop_reason: 'end_turn' }]);
+    await aufbau({ gedaechtnis: [], modell }).dienst.senden({ text: 'x' }, 'u');
+    expect(modell.anfragen[0]!.tools.map((t) => t.name)).toEqual(['read_entity']);
+    expect(modell.anfragen[0]!.system).toContain('ändern kannst du nichts');
   });
 
   it('Attrappe schlägt „merk dir …“ vor; Gespräche lassen sich löschen', async () => {

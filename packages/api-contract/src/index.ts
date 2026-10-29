@@ -1022,6 +1022,10 @@ const KiNachricht = z.object({
   quellen: z.array(z.object({ url: z.string(), titel: z.string() })).optional(), gedaechtnis: z.number().optional(), modell: z.string().optional(),
   vorschlag: z.object({ titel: z.string(), text: z.string(), status: z.enum(['abgelegt', 'verworfen']).optional() }).optional(),
   abgelegt: z.string().optional(),
+  aenderungen: z.array(z.object({
+    werkzeug: z.string(), titel: z.string(), argumente: z.record(z.string(), z.unknown()),
+    status: z.enum(['uebernommen', 'verworfen', 'fehler']).optional(), ergebnis: z.string().optional(),
+  })).optional(),
 });
 export const KiGespraechKopf = z.object({ id: z.string(), bezug: KiBezug.nullable(), titel: z.string(), von: z.string(), am: z.string(), anzahl: z.number() });
 export const KiGespraech = KiGespraechKopf.extend({ nachrichten: z.array(KiNachricht) });
@@ -1041,6 +1045,7 @@ export const KiAblegen = z.object({
   gespraechId: z.string().max(100).nullable().optional(), nachricht: z.number().int().min(0).nullable().optional(),
 });
 export const KiVorschlagVerwerfen = z.object({ gespraechId: z.string().min(1).max(100), nachricht: z.number().int().min(0) });
+export const KiAenderungEntscheiden = KiVorschlagVerwerfen.extend({ aenderung: z.number().int().min(0), aktion: z.enum(['uebernehmen', 'verwerfen']) });
 
 // ── Makler-Recherche (21.10.2026) ──────────────────────────
 
