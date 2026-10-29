@@ -3,15 +3,16 @@
  * (im selben Prozess, lesend, im Namen des angemeldeten Nutzers; die Schreibwerkzeuge nur als Vorschlag mit Bestätigung); Gedächtnis und Verlauf liegen im zentralen
  * Gedächtnis-Dienst (der Verlauf getrennt vom Wissen). Was gg-spezifisch ist — welcher Dialog wie heißt und welche Daten er hat — steht hier.
  */
-import type { Db } from '@gg/db';
+import { type Db, schema } from '@gg/db';
 import {
   type GedaechtnisArt, istGedaechtnisArt, KI_MODELLE, KI_STANDARD, kiModellFuer, maklerAnzeigename,
 } from '@gg/domain';
 import { GedaechtnisFehler, type GedaechtnisDienst } from '@gg/integrations';
 import {
   type BezugBeschreibung, type KiBezug, kiDienst, type KiGespraech, type KiNachricht, type Modell, quelleAusMcp, type VerlaufSpeicher,
-  verlaufImArbeitsspeicher, type WerkzeugQuelle,
+  type WerkzeugQuelle,
 } from '@gg/ki-kern';
+import { and, desc, eq, isNull, lt, sql } from 'drizzle-orm';
 import { FachFehler } from '../fehler.ts';
 import { begleitscheinDetail } from './begleitscheine.ts';
 import { dealDetail } from './deals.ts';
@@ -100,8 +101,41 @@ export function verlaufImDienst(dienst: GedaechtnisDienst): VerlaufSpeicher {
   };
 }
 
-/** Ohne Gedächtnis-Dienst (lokal): Verlauf nur im Arbeitsspeicher, bis zum Neustart. */
-const fluechtig = verlaufImArbeitsspeicher();
+/** Wie im Gedächtnis-Dienst: Gespräche ohne Fortsetzung verschwinden nach 90 Tagen. */
+const VERLAUF_TAGE = 90;
+
+/**
+ * Ohne Gedächtnis-Dienst liegt der Verlauf in der gg-Datenbank (29.10.2026). Vorher im Arbeitsspeicher — auf Vercel
+ * antwortet aber nicht immer dieselbe Instanz, dann fehlte das Gespräch beim Fortsetzen oder Übernehmen.
+ */
+export function verlaufInDatenbank(db: Db): VerlaufSpeicher {
+  const t = schema.kiGespraeche;
+  const kopf = { id: t.id, bezugArt: t.bezugArt, bezugId: t.bezugId, titel: t.titel, von: t.von, am: t.am, anzahl: t.anzahl };
+  const alsKopf = (z: { id: string; bezugArt: string | null; bezugId: string | null; titel: string; von: string; am: string; anzahl: number }) => ({
+    id: z.id, bezug: z.bezugArt && z.bezugId ? { art: z.bezugArt, id: z.bezugId } : null, titel: z.titel, von: z.von,
+    am: new Date(z.am).toISOString(), anzahl: z.anzahl,
+  });
+  return {
+    async liste(bezug, anzahl) {
+      const zeilen = await db.select(kopf).from(t)
+        .where(bezug ? and(eq(t.bezugArt, bezug.art), eq(t.bezugId, bezug.id)) : isNull(t.bezugArt))
+        .orderBy(desc(t.am)).limit(anzahl);
+      return zeilen.map(alsKopf);
+    },
+    async laden(id) {
+      const [z] = await db.select({ ...kopf, nachrichten: t.nachrichten }).from(t).where(eq(t.id, id));
+      return z ? { ...alsKopf(z), nachrichten: z.nachrichten as KiNachricht[] } : null;
+    },
+    async speichern(g: KiGespraech) {
+      const zeile = { id: g.id, bezugArt: g.bezug?.art ?? null, bezugId: g.bezug?.id ?? null, titel: g.titel, von: g.von, am: g.am, anzahl: g.anzahl, nachrichten: g.nachrichten };
+      await db.insert(t).values(zeile).onConflictDoUpdate({ target: t.id, set: zeile });
+      await db.delete(t).where(lt(t.am, sql`now() - make_interval(days => ${VERLAUF_TAGE})`));
+    },
+    async loeschen(id) {
+      return (await db.delete(t).where(eq(t.id, id)).returning({ id: t.id })).length > 0;
+    },
+  };
+}
 
 // ── Zusammenbau ─────────────────────────────────────────────
 
@@ -144,7 +178,7 @@ export function kiLeiste(db: Db, u: KiLeisteUmfeld) {
     hatGedaechtnis: (b) => istGedaechtnisArt(b.art),
     verlauf: async () => {
       const dienst = await u.gedaechtnis();
-      return dienst ? { speicher: verlaufImDienst(dienst), dauerhaft: true } : { speicher: fluechtig, dauerhaft: false };
+      return dienst ? { speicher: verlaufImDienst(dienst), dauerhaft: true } : { speicher: verlaufInDatenbank(db), dauerhaft: true };
     },
     beschreiben: (b) => beschreiben(db, b),
     einstellungen: {

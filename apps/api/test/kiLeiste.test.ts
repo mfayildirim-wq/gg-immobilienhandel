@@ -114,6 +114,32 @@ describe.skipIf(!url)('KI-Leiste: Chat zum Dialog über die API (26.10.2026)', (
     expect(JSON.parse(eintrag.newValue)).toEqual({ baujahr: 1972 });
   });
 
+  it('Ohne Gedächtnis-Dienst liegt der Verlauf in der Datenbank: eine andere Instanz setzt fort und übernimmt (vorher „Gespräch nicht gefunden“)', async () => {
+    const o = await lies(senden(createApp({ db, auth: offen }), 'POST', '/api/objekte', { strasse: `${k}ring`, hausnr: '2', stadt: 'Ulm' }));
+    angelegt.objekte.push(o.id);
+    const modell = drehbuchModell([
+      { content: [{ type: 'tool_use', id: 'a', name: 'update_objekt', input: { id: o.id, version: o.version, baujahr: 1990 } }], stop_reason: 'tool_use' },
+      { content: [{ type: 'text', text: 'Baujahr vorgeschlagen.' }], stop_reason: 'end_turn' },
+      { content: [{ type: 'text', text: 'Weiter.' }], stop_reason: 'end_turn' },
+    ]);
+    // Zwei Instanzen ohne Gedächtnis-Dienst — wie zwei Vercel-Funktionen
+    const eins = createApp({ db, auth: offen, kiLeisteModell: modell });
+    const zwei = createApp({ db, auth: offen, kiLeisteModell: modell });
+    expect((await lies(eins.request('/api/ki-leiste/stand'))).verlaufDauerhaft).toBe(true);
+    const g = await lies(senden(eins, 'POST', '/api/ki-leiste/senden', { bezug: { art: 'objekt', id: o.id }, text: 'Baujahr 1990' }));
+    expect((await lies(zwei.request(`/api/ki-leiste/bezug/objekt/${o.id}`))).gespraeche).toEqual([expect.objectContaining({ id: g.id, titel: 'Baujahr 1990', anzahl: 2 })]);
+
+    const nach = await lies(senden(zwei, 'POST', '/api/ki-leiste/aenderung', { gespraechId: g.id, nachricht: 1, aenderung: 0, aktion: 'uebernehmen' }));
+    expect(nach.nachrichten[1].aenderungen[0].status).toBe('uebernommen');
+    expect((await lies(eins.request(`/api/objekte/${o.id}`))).baujahr).toBe(1990);
+    const weiter = await lies(senden(eins, 'POST', '/api/ki-leiste/senden', { gespraechId: g.id, text: 'Und jetzt?' }));
+    expect(weiter.nachrichten.map((n: { text: string }) => n.text)).toEqual(['Baujahr 1990', 'Baujahr vorgeschlagen.', 'Und jetzt?', 'Weiter.']);
+    expect(weiter.nachrichten[1].aenderungen[0].status).toBe('uebernommen');
+
+    expect((await lies(senden(zwei, 'DELETE', `/api/ki-leiste/gespraeche/${g.id}`))).geloescht).toBe(true);
+    expect((await eins.request(`/api/ki-leiste/gespraeche/${g.id}`)).status).toBe(404);
+  });
+
   it('„merk dir …“: die KI schlägt vor, gespeichert wird erst nach Bestätigung; Verwerfen wird vermerkt', async () => {
     const app = createApp({ db, auth: offen, gedaechtnis });
     const modell = drehbuchModell([
@@ -148,7 +174,7 @@ describe.skipIf(!url)('KI-Leiste: Chat zum Dialog über die API (26.10.2026)', (
     expect((await app.request('/api/ki-leiste/bezug/objekt/gibt-es-nicht')).status).toBe(404);
     expect((await app.request('/api/ki-leiste/bezug/papierkorb/1')).status).toBe(404);
     expect((await senden(app, 'POST', '/api/ki-leiste/ablegen', { bezug: { art: 'deal', id: 'x' }, titel: 't', text: 'x' })).status).toBe(503);
-    // ohne Gedächtnis-Dienst: Verlauf nur bis zum Neustart
-    expect((await lies(app.request('/api/ki-leiste/stand'))).verlaufDauerhaft).toBe(false);
+    // ohne Gedächtnis-Dienst: Verlauf in der gg-Datenbank (29.10.2026), also auch dauerhaft
+    expect((await lies(app.request('/api/ki-leiste/stand'))).verlaufDauerhaft).toBe(true);
   });
 });
