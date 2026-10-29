@@ -23,12 +23,12 @@ function kandidaten<T>(neu: any, bestand: readonly T[], vergleich: (a: any, b: a
 }
 
 /** Anzeigename wie in der App: „Vorname Name“; ohne Vorname steht der volle Name in `name`. */
-export const maklerAnzeigename = (m: { vorname?: string | null; name?: string | null }) =>
+const anzeigename = (m: { vorname?: string | null; name?: string | null }) =>
   [m.vorname, m.name].map((s) => (s ?? '').trim()).filter(Boolean).join(' ');
 
 /** Gleiche E-Mail oder Telefonnummer (sicher), ähnlicher Name (unsicher) — dieselbe Regel wie unter „Dubletten“. */
 export const maklerKandidaten = <T>(neu: { vorname?: string | null; name?: string | null; firma?: string | null; tel?: string | null; email?: string | null }, bestand: readonly T[]) =>
-  kandidaten({ ...neu, name: maklerAnzeigename(neu) }, bestand, maklerVergleich);
+  kandidaten({ ...neu, name: anzeigename(neu) }, bestand, maklerVergleich);
 
 /** Gleiche oder ähnliche Adresse — dieselbe Regel wie unter „Dubletten“. */
 export const objektKandidaten = <T>(neu: { strasse?: string | null; hausnr?: string | null; stadt?: string | null; plz?: string | null }, bestand: readonly T[]) =>
