@@ -119,7 +119,9 @@ const AnrufMcp = AnrufErgebnisSpeichern.extend({
   frequenz: AnrufErgebnisSpeichern.shape.frequenz.optional().describe('Ohne Angabe bleibt die bisherige Frequenz'),
   rueckrufDatum: AnrufErgebnisSpeichern.shape.rueckrufDatum.optional(),
 });
-const ObjektNeuMcp = ObjektAnlegen.extend({ trotzdemAnlegen: TrotzdemAnlegen });
+/** Objekt anlegen: Adresse und Eckdaten wie im Dialog, dazu was ein Exposé hergibt (Baujahr, Heizung, Mieten …). */
+const ObjektZusatz = ObjektAendern.pick({ bundesland: true, baujahr: true, grundstueck: true, energieklasse: true, heizung: true, zielpreis: true, istMiete: true, sollMiete: true, notizen: true });
+const ObjektNeuMcp = ObjektAnlegen.extend({ ...ObjektZusatz.shape, trotzdemAnlegen: TrotzdemAnlegen });
 /** Objekt ändern ohne die Einheitenaufstellung — die ersetzt die ganze Liste und bleibt der App vorbehalten. */
 const ObjektAendernMcp = ObjektAendern.omit({ einheiten: true }).extend({ id: Id, version: Version });
 
@@ -282,7 +284,9 @@ export const MCP_WERKZEUGE: Werkzeug[] = [
   },
   {
     name: 'create_objekt', scope: 'write', title: 'Objekt anlegen',
-    description: 'Legt ein Objekt an. Gleiche Adresse sperrt (dann update_objekt), eine ähnliche Adresse sperrt, bis "trotzdemAnlegen": true gesetzt ist.',
+    description: 'Legt ein Objekt an — auch aus einem eingefügten Exposé-Text: alle erkennbaren Felder mitgeben (Adresse, Einheiten, Wohnfläche, '
+      + 'Angebotspreis, Baujahr, Grundstück, Heizung, Energieklasse, Ist-Miete p. a.; Weiteres wie Lage, Ausstattung, Quelle/Link kurz in "notizen"). '
+      + 'Gleiche Adresse sperrt (dann update_objekt), eine ähnliche Adresse sperrt, bis "trotzdemAnlegen": true gesetzt ist.',
     inputSchema: alsSchema(ObjektNeuMcp),
     async run(db, args, sitzung) {
       const { trotzdemAnlegen, ...e } = pruefen(ObjektNeuMcp, args);
@@ -290,9 +294,11 @@ export const MCP_WERKZEUGE: Werkzeug[] = [
       const kandidaten = objektKandidaten(e, await objekteListe(db));
       const darf = anlegenTrotzTreffern(kandidaten, trotzdemAnlegen ?? false);
       if (!darf.ok) return { angelegt: false, grund: darf.grund, kandidaten: kandidaten.map((k) => ({ ...k.eintrag, sicherheit: k.sicherheit, grund: k.grund })) };
-      const neu = await objektAnlegen(db, e);
+      const { strasse, hausnr, plz, stadt, einheitenAnzahl, wohnflaeche, angebotspreis, ...zusatz } = e;
+      const neu = await objektAnlegen(db, { strasse, hausnr, plz, stadt, einheitenAnzahl, wohnflaeche, angebotspreis });
+      const version = Object.values(zusatz).some((v) => v !== undefined) ? (await objektAendern(db, neu.id, { version: neu.version, ...zusatz })).version : neu.version;
       await protokollieren(db, sitzung, { werkzeug: 'create_objekt', entity: 'objekt', entityId: neu.id, action: 'mcp-create', neu: e });
-      return { angelegt: true, id: neu.id, version: neu.version };
+      return { angelegt: true, id: neu.id, version };
     },
   },
   {

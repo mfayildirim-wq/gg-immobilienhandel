@@ -1353,8 +1353,9 @@ describe.skipIf(!url)('Deal-Ablauf gegen die lokale Datenbank', () => {
       expect((await lies(app.request(`/api/makler/${m.id}`))).kommunikation[0]).toMatchObject({ kanal: 'anruf' });
 
       // Objekt anlegen (gleiche Adresse sperrt) und ändern ohne Einheiten
-      const o = await werkzeug('create_objekt', { strasse: `${kennung}weg`, hausnr: '3', stadt: 'Ulm' });
+      const o = await werkzeug('create_objekt', { strasse: `${kennung}weg`, hausnr: '3', stadt: 'Ulm', angebotspreis: 890000, baujahr: 1958, heizung: 'Gas', notizen: 'Aus ImmoScout-Exposé' });
       expect(o.wert).toMatchObject({ angelegt: true });
+      expect(await lies(app.request(`/api/objekte/${o.wert.id}`))).toMatchObject({ angebotspreis: 890000, baujahr: 1958, heizung: 'Gas', notizen: 'Aus ImmoScout-Exposé', version: o.wert.version });
       angelegt.objekte.push(o.wert.id);
       expect((await werkzeug('create_objekt', { strasse: `${kennung}weg`, hausnr: '3', stadt: 'Ulm', trotzdemAnlegen: true })).wert).toMatchObject({ angelegt: false });
       expect((await werkzeug('update_objekt', { id: o.wert.id, version: o.wert.version, einheiten: [] })).fehler).toBe(true);
