@@ -881,7 +881,31 @@ export function createApp({ db, auth: authOpt, expose, gedaechtnis: gedaechtnisO
   );
   // ── Auto-Import: aus einer Angebots-Mail selbstständig das Exposé holen ──
   // Der Lauf gehört zur Anfrage (online: lang laufende Function); das Ergebnis steht in der Tabelle und im Exposé-Eingang.
-  // Abgeschaltet (AUTO_IMPORT_AKTIV) startet und bricht nichts — der Verlauf bleibt lesbar.
+  // VORÜBERGEHEND (nur test, 29.10.2026): Seitenprobe — öffnet eine URL einmal wie der Auto-Import und meldet, was ankommt
+  app.get('/api/auto-import/seitenprobe', async (c) => {
+    const { zielPruefen: pruefen } = await import('@gg/integrations');
+    const ziel = pruefen(c.req.query('url') ?? '');
+    if (!ziel.ok) return c.json({ fehler: ziel.grund }, 400);
+    const browser = await (autoImport?.browserStarten ?? browserStarten)();
+    try {
+      const kontext = await browser.newContext({
+        viewport: { width: 1400, height: 900 }, locale: 'de-DE',
+        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      });
+      const seite = await kontext.newPage();
+      const antwort = await seite.goto(ziel.url.href, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+      await seite.waitForTimeout(3000);
+      const text = (await seite.innerText('body').catch(() => '')).replace(/\s+/g, ' ').trim();
+      const titel = await seite.title();
+      return c.json({
+        status: antwort?.status() ?? null, endUrl: seite.url(), titel, textLaenge: text.length, textAnfang: text.slice(0, 600),
+        roboterSperre: /kein roboter|captcha|not a robot/i.test(`${titel} ${text.slice(0, 2000)}`),
+      }, 200);
+    } finally {
+      await browser.close();
+    }
+  });
+  // Abgeschaltet (AUTO_IMPORT_AKTIV) startet und bricht nichts — der Verlauf bleibt lesbar.  // Abgeschaltet (AUTO_IMPORT_AKTIV) startet und bricht nichts — der Verlauf bleibt lesbar.
   const botFreigeschaltet = () => { if (!autoImportAktiv) throw new FachFehler(503, 'Der Auto-Import ist in dieser Umgebung abgeschaltet (AUTO_IMPORT_AKTIV).'); };
   app.openapi(
     createRoute({ method: 'post', path: '/api/auto-import/lauf', request: body(z.object({ mailUid: z.string().min(1).max(500) })), responses: { 200: json(AutoImportLauf, 'Ergebnis des Laufs'), 404: fehler('Mail fehlt'), 422: fehler('nicht eingerichtet'), 429: fehler('alle Plätze belegt'), 503: fehler('abgeschaltet oder Anhänge unvollständig') } }),
