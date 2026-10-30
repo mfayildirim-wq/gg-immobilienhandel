@@ -1251,7 +1251,11 @@ describe.skipIf(!url)('Deal-Ablauf gegen die lokale Datenbank', () => {
       expect(init.result.serverInfo.name).toBe('gg-immobilienhandel');
 
       const liste = await (await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' })).json() as { result: { tools: { name: string }[] } };
-      expect(liste.result.tools.map((t) => t.name)).toEqual(['list_collections', 'read_collection', 'read_entity', 'list_files', 'read_audit_log', 'add_note', 'request_outward_approval']);
+      expect(liste.result.tools.map((t) => t.name)).toEqual([
+        'list_collections', 'read_collection', 'read_entity', 'list_files', 'read_audit_log', 'find_makler',
+        'create_makler', 'update_makler', 'add_communication', 'set_next_contact', 'mark_done', 'log_call_result', 'create_objekt', 'update_objekt',
+        'add_note', 'request_outward_approval',
+      ]);
 
       const gelesen = await (await rpc({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'read_entity', arguments: { collection: 'deals', id: d.id } } })).json() as { result: { content: { text: string }[]; isError: boolean } };
       expect(gelesen.result.isError).toBe(false);
@@ -1286,6 +1290,98 @@ describe.skipIf(!url)('Deal-Ablauf gegen die lokale Datenbank', () => {
     } finally {
       if (alt.lokal === undefined) delete process.env.AUTH_LOCAL_OPEN; else process.env.AUTH_LOCAL_OPEN = alt.lokal;
       if (alt.keys === undefined) delete process.env.MCP_API_KEYS; else process.env.MCP_API_KEYS = alt.keys;
+      if (alt.vercel === undefined) delete process.env.VERCEL; else process.env.VERCEL = alt.vercel;
+    }
+  });
+
+  it('MCP schreibt wie die App: Makler anlegen mit Dublettenprüfung, ändern, Kommunikation, Termin, Erledigt, Anruf, Objekt; alles im Audit-Log', async () => {
+    const alt = { lokal: process.env.AUTH_LOCAL_OPEN, vercel: process.env.VERCEL };
+    process.env.AUTH_LOCAL_OPEN = '1';
+    delete process.env.VERCEL;
+    const werkzeug = async (name: string, args: Record<string, unknown>) => {
+      const r = await (await app.request('/api/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) })).json() as { result: { isError: boolean; content: { text: string }[] } };
+      const text = r.result.content[0]!.text;
+      return { fehler: r.result.isError, text, wert: r.result.isError ? null : JSON.parse(text) };
+    };
+    const kennung = `mcp${Date.now()}`;
+    try {
+      // Anlegen mit Zusatzfeldern; Telefon normalisiert wie in der App
+      const neu = await werkzeug('create_makler', { vorname: 'Cora', name: `Cowork ${kennung}`, firma: `Firma ${kennung}`, email: `${kennung}@beispiel.de`, tel: '0049 (711) 555', webseite: 'https://cora.example', quelle: 'Recherche Claude' });
+      expect(neu.wert).toMatchObject({ angelegt: true });
+      angelegt.makler.push(neu.wert.id);
+      const m = await lies(app.request(`/api/makler/${neu.wert.id}`));
+      expect(m).toMatchObject({ name: `Cora Cowork ${kennung}`, tel: '+49 711 555', webseite: 'https://cora.example', quelle: 'Recherche Claude', version: neu.wert.version });
+
+      // Gleiche E-Mail sperrt immer; ähnlicher Name sperrt bis „trotzdemAnlegen“
+      const doppelt = await werkzeug('create_makler', { name: 'Ganz Anders', email: `${kennung}@BEISPIEL.de`, trotzdemAnlegen: true });
+      expect(doppelt.wert).toMatchObject({ angelegt: false, kandidaten: [{ id: m.id, sicherheit: 'exact' }] });
+      const aehnlich = await werkzeug('create_makler', { vorname: 'Cora', name: `Cowork ${kennung}x` });
+      expect(aehnlich.wert).toMatchObject({ angelegt: false, kandidaten: [{ id: m.id, sicherheit: 'fuzzy' }] });
+      const trotzdem = await werkzeug('create_makler', { vorname: 'Cora', name: `Cowork ${kennung}x`, trotzdemAnlegen: true });
+      expect(trotzdem.wert).toMatchObject({ angelegt: true });
+      angelegt.makler.push(trotzdem.wert.id);
+
+      // Suchen findet beide
+      expect((await werkzeug('find_makler', { suche: `cowork ${kennung}` })).wert.treffer.map((t: { id: string }) => t.id).sort()).toEqual([m.id, trotzdem.wert.id].sort());
+
+      // Ändern: nur erlaubte Felder, Version geprüft, Persönliches mit
+      const unbekannt = await werkzeug('update_makler', { id: m.id, version: m.version, lastContact: '2026-01-01' });
+      expect(unbekannt).toMatchObject({ fehler: true });
+      expect(unbekannt.text).toContain('Eingabe ungültig');
+      const geaendert = await werkzeug('update_makler', { id: m.id, version: m.version, prio: 'A', mobil: '0171 1234', geburtsdatum: '1.2.1970' });
+      expect(geaendert.wert).toMatchObject({ geaendert: ['prio', 'mobil', 'geburtsdatum'] });
+      const veraltet = await werkzeug('update_makler', { id: m.id, version: m.version, prio: 'C' });
+      expect(veraltet).toMatchObject({ fehler: true });
+      expect(veraltet.text).toContain('zwischenzeitlich geändert');
+      const nachher = await lies(app.request(`/api/makler/${m.id}`));
+      expect(nachher).toMatchObject({ prio: 'A', mobil: '0171 1234', persoenlich: { geburtsdatum: '1.2.1970' } });
+
+      // Mail eintragen: letzter Kontakt rückt auf das Maildatum
+      expect((await werkzeug('add_communication', { maklerId: m.id, kanal: 'email', richtung: 'eingehend', betreff: 'Neues Angebot', text: 'MFH in Ulm', datum: '2026-10-20' })).fehler).toBe(false);
+      let stand = await lies(app.request(`/api/makler/${m.id}`));
+      expect(stand.kommunikation[0]).toMatchObject({ kanal: 'email', betreff: 'Neues Angebot' });
+      expect(stand.lastContact).toBe('2026-10-20');
+
+      // Termin, Erledigt, Anruf-Ergebnis
+      expect((await werkzeug('set_next_contact', { collection: 'makler', id: m.id, version: stand.version, nextContact: '2026-12-01' })).fehler).toBe(false);
+      stand = await lies(app.request(`/api/makler/${m.id}`));
+      expect(stand.nextContact).toBe('2026-12-01');
+      expect((await werkzeug('mark_done', { collection: 'makler', id: m.id, version: stand.version })).fehler).toBe(false);
+      stand = await lies(app.request(`/api/makler/${m.id}`));
+      const anruf = await werkzeug('log_call_result', { collection: 'makler', id: m.id, version: stand.version, ergebnis: 'erreicht', notiz: 'Schickt Unterlagen' });
+      expect(anruf.fehler).toBe(false);
+      expect((await lies(app.request(`/api/makler/${m.id}`))).kommunikation[0]).toMatchObject({ kanal: 'anruf' });
+
+      // Objekt anlegen (gleiche Adresse sperrt) und ändern ohne Einheiten
+      const o = await werkzeug('create_objekt', { strasse: `${kennung}weg`, hausnr: '3', stadt: 'Ulm', angebotspreis: 890000, baujahr: 1958, heizung: 'Gas', notizen: 'Aus ImmoScout-Exposé' });
+      expect(o.wert).toMatchObject({ angelegt: true });
+      expect(await lies(app.request(`/api/objekte/${o.wert.id}`))).toMatchObject({ angebotspreis: 890000, baujahr: 1958, heizung: 'Gas', notizen: 'Aus ImmoScout-Exposé', version: o.wert.version });
+      angelegt.objekte.push(o.wert.id);
+      expect((await werkzeug('create_objekt', { strasse: `${kennung}weg`, hausnr: '3', stadt: 'Ulm', trotzdemAnlegen: true })).wert).toMatchObject({ angelegt: false });
+      expect((await werkzeug('update_objekt', { id: o.wert.id, version: o.wert.version, einheiten: [] })).fehler).toBe(true);
+      expect((await werkzeug('update_objekt', { id: o.wert.id, version: o.wert.version, baujahr: 1965, wohnflaeche: 420 })).wert).toMatchObject({ geaendert: ['wohnflaeche', 'baujahr'] });
+      expect(await lies(app.request(`/api/objekte/${o.wert.id}`))).toMatchObject({ baujahr: 1965, wohnflaeche: 420 });
+
+      // Am Deal: Termin, Anruf-Ergebnis wird Kommentar, Erledigt
+      const d = await lies(post('/api/deals', { objektId: o.wert.id }));
+      let deal = await lies(app.request(`/api/deals/${d.id}`));
+      expect((await werkzeug('set_next_contact', { collection: 'deals', id: d.id, version: deal.version, nextContact: '2026-11-15' })).fehler).toBe(false);
+      deal = await lies(app.request(`/api/deals/${d.id}`));
+      expect(deal.nextContact).toBe('2026-11-15');
+      expect((await werkzeug('log_call_result', { collection: 'deals', id: d.id, version: deal.version, ergebnis: 'rueckruf', notiz: 'Ruft Montag zurück', rueckrufDatum: '2026-11-02' })).wert).toMatchObject({ nextContact: '2026-11-02' });
+      deal = await lies(app.request(`/api/deals/${d.id}`));
+      expect(deal.kommentare[0].text).toContain('Ruft Montag zurück');
+      expect((await werkzeug('mark_done', { collection: 'deals', id: d.id, version: deal.version })).fehler).toBe(false);
+
+      // Audit: jede Änderung mit Werkzeug und Vermerk „über Claude“
+      const audit = await lies(app.request(`/api/audit?entity=makler&suche=${m.id}`));
+      const quellen = audit.zeilen.filter((e: { entityId: string }) => e.entityId === m.id).map((e: { source: string }) => e.source);
+      expect(quellen).toEqual(expect.arrayContaining(['mcp/create_makler', 'mcp/update_makler', 'mcp/add_communication', 'mcp/set_next_contact', 'mcp/mark_done', 'mcp/log_call_result']));
+      const aenderung = audit.zeilen.find((e: { source: string }) => e.source === 'mcp/update_makler');
+      expect(JSON.parse(aenderung.oldValue)).toEqual({ prio: 'B', mobil: null, geburtsdatum: null });
+      expect(aenderung.metadata).toContain('Claude (MCP)');
+    } finally {
+      if (alt.lokal === undefined) delete process.env.AUTH_LOCAL_OPEN; else process.env.AUTH_LOCAL_OPEN = alt.lokal;
       if (alt.vercel === undefined) delete process.env.VERCEL; else process.env.VERCEL = alt.vercel;
     }
   });
